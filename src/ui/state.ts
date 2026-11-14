@@ -1,0 +1,232 @@
+import type {
+  AnalysisConfig,
+  EngineCapabilities,
+  ModelId,
+  ModelKind,
+  Point2D,
+  ScaleMode,
+  SedimentStatsReport,
+} from '../types/index.js';
+import type { AnalysisSession } from '../modules/pipelineController.js';
+import type {
+  PhotoProcessStatus,
+  PhotoRecord,
+  SiteRecord,
+} from '../modules/projectStorage.js';
+import type {
+  SiteAnalysisOptions,
+  SiteAnalysisReport,
+} from '../modules/siteAnalysis.js';
+
+export type EditorToolMode =
+  | 'inspect'
+  | 'split'
+  | 'merge'
+  | 'delete'
+  | 'addPolygon'
+  | 'excludePoly'
+  | 'excludeBrush'
+  | 'calibrate'
+  | 'rectify';
+
+export type DashboardTab = 'psd' | 'adequacy' | 'shape' | 'fabric';
+export type ModalKind = 'models' | 'export' | 'about' | null;
+export type SwStatus = 'unsupported' | 'registering' | 'ready' | 'error';
+
+export interface OverlaySettings {
+  instanceIds: boolean;
+  wentworthColors: boolean;
+  ellipses: boolean;
+  orientations: boolean;
+  borderTruncated: boolean;
+  opacity: number;
+  loupe: boolean;
+  loupeZoom: 2 | 4;
+}
+
+export interface UiAnalysisParams {
+  model: ModelKind | 'auto';
+  scaleMode: ScaleMode;
+  applyClahe: boolean;
+  claheClipLimit: number;
+  excludeBorder: boolean;
+  flowThreshold: number;
+  cellprobThreshold: number;
+  minSize: number;
+  maxGrainAreaFraction: number;
+}
+
+export interface AppState {
+  capabilities: EngineCapabilities | null;
+  isOnline: boolean;
+  swStatus: SwStatus;
+
+  sites: SiteRecord[];
+  activeSiteId: string | null;
+  photos: PhotoRecord[];
+  activePhotoId: string | null;
+
+  sessions: Map<string, AnalysisSession>;
+  photoStatuses: Map<string, PhotoProcessStatus>;
+  photoErrors: Map<string, string>;
+  thumbUrls: Map<string, string>;
+
+  siteReport: SiteAnalysisReport | null;
+  singlePhotoStats: SedimentStatsReport | null;
+  dashboardScope: 'site' | 'photo';
+  dashboardTab: DashboardTab;
+  psdXAxis: 'mm' | 'phi';
+  histogramStepPhi: 0.5 | 1.0;
+
+  activeTool: EditorToolMode;
+  overlays: OverlaySettings;
+  selectedGrainIds: Set<number>;
+  inspectedGrainId: number | null;
+  pendingCalibrationPoints: Point2D[];
+  pendingRectifyPoints: Point2D[];
+
+  analysisParams: UiAnalysisParams;
+  siteOptions: SiteAnalysisOptions;
+
+  batchRunning: boolean;
+  batchProgress: {
+    completed: number;
+    total: number;
+    currentPhotoId: string;
+    currentLabel: string;
+    stageDetail?: string;
+  } | null;
+
+  activeModal: ModalKind;
+  modelDownloads: Map<
+    ModelId,
+    {
+      active: boolean;
+      percent: number;
+      loadedBytes: number;
+      totalBytes: number;
+      speedMBps: number;
+      error?: string;
+    }
+  >;
+  statusMessage: string;
+}
+
+export function createInitialState(): AppState {
+  return {
+    capabilities: null,
+    isOnline: typeof navigator !== 'undefined' ? navigator.onLine : true,
+    swStatus: 'unsupported',
+
+    sites: [],
+    activeSiteId: null,
+    photos: [],
+    activePhotoId: null,
+
+    sessions: new Map(),
+    photoStatuses: new Map(),
+    photoErrors: new Map(),
+    thumbUrls: new Map(),
+
+    siteReport: null,
+    singlePhotoStats: null,
+    dashboardScope: 'site',
+    dashboardTab: 'psd',
+    psdXAxis: 'mm',
+    histogramStepPhi: 0.5,
+
+    activeTool: 'inspect',
+    overlays: {
+      instanceIds: true,
+      wentworthColors: false,
+      ellipses: false,
+      orientations: false,
+      borderTruncated: true,
+      opacity: 0.45,
+      loupe: false,
+      loupeZoom: 2,
+    },
+    selectedGrainIds: new Set(),
+    inspectedGrainId: null,
+    pendingCalibrationPoints: [],
+    pendingRectifyPoints: [],
+
+    analysisParams: {
+      model: 'auto',
+      scaleMode: 'auto',
+      applyClahe: false,
+      claheClipLimit: 2.0,
+      excludeBorder: true,
+      flowThreshold: 0.4,
+      cellprobThreshold: 0.0,
+      minSize: 15,
+      maxGrainAreaFraction: 0.15,
+    },
+    siteOptions: {
+      poolingMode: 'physical-area',
+      sizeMetric: 'bAxis',
+      minBaxisPx: 15,
+      harmonizePhysicalCutoff: true,
+      wolmanPointsPerPhoto: 100,
+      bootstrapReplicates: 500,
+      bootstrapSeed: 42,
+      confidenceLevel: 0.95,
+    },
+
+    batchRunning: false,
+    batchProgress: null,
+
+    activeModal: null,
+    modelDownloads: new Map(),
+    statusMessage: 'Ready — 100% local browser workspace',
+  };
+}
+
+export class AppStore {
+  private state: AppState;
+  private readonly listeners = new Set<(state: AppState) => void>();
+
+  constructor(initial?: AppState) {
+    this.state = initial ?? createInitialState();
+  }
+
+  getState(): AppState {
+    return this.state;
+  }
+
+  setState(updater: Partial<AppState> | ((prev: AppState) => AppState)): void {
+    if (typeof updater === 'function') {
+      this.state = updater(this.state);
+    } else {
+      this.state = { ...this.state, ...updater };
+    }
+    for (const listener of this.listeners) {
+      listener(this.state);
+    }
+  }
+
+  subscribe(listener: (state: AppState) => void): () => void {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+}
+
+export function toAnalysisConfig(
+  params: UiAnalysisParams,
+): Omit<AnalysisConfig, 'signal' | 'onProgress' | 'calibration'> {
+  return {
+    model: params.model,
+    scaleMode: params.scaleMode,
+    applyClahe: params.applyClahe,
+    claheClipLimit: params.claheClipLimit,
+    excludeBorder: params.excludeBorder,
+    postProcess: {
+      flowThreshold: params.flowThreshold,
+      cellprobThreshold: params.cellprobThreshold,
+      minSize: params.minSize,
+      maxGrainAreaFraction: params.maxGrainAreaFraction,
+    },
+  };
+}

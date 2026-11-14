@@ -85,3 +85,46 @@ if (fs.existsSync(ortSrcDir)) {
 } else {
   console.warn('[build] Warning: node_modules/onnxruntime-web/dist not found; dist/ort/ will be empty.');
 }
+
+// 5. Bundle browser UI (src/ui/main.ts -> dist/ui/main.js, src/ui/main.css -> dist/ui/main.css)
+const uiEntry = path.join(srcDir, 'ui', 'main.ts');
+const uiCssEntry = path.join(srcDir, 'ui', 'main.css');
+const uiDistDir = path.join(distDir, 'ui');
+fs.mkdirSync(uiDistDir, { recursive: true });
+
+if (fs.existsSync(uiEntry)) {
+  await build({
+    entryPoints: [uiEntry],
+    outfile: path.join(uiDistDir, 'main.js'),
+    format: 'esm',
+    platform: 'browser',
+    target: 'es2022',
+    bundle: true,
+    sourcemap: true,
+  });
+  console.log('[build] Bundled src/ui/main.ts to dist/ui/main.js.');
+}
+
+if (fs.existsSync(uiCssEntry)) {
+  await build({
+    entryPoints: [uiCssEntry],
+    outfile: path.join(uiDistDir, 'main.css'),
+    bundle: true,
+    sourcemap: true,
+  });
+  console.log('[build] Bundled src/ui/main.css to dist/ui/main.css.');
+}
+
+// 6. Copy src/index.html -> dist/index.html and src/sw.js -> dist/sw.js
+const indexHtmlSrc = path.join(srcDir, 'index.html');
+if (fs.existsSync(indexHtmlSrc)) {
+  fs.copyFileSync(indexHtmlSrc, path.join(distDir, 'index.html'));
+  console.log('[build] Copied src/index.html to dist/index.html.');
+}
+
+const swSrc = path.join(srcDir, 'sw.js');
+if (fs.existsSync(swSrc)) {
+  fs.copyFileSync(swSrc, path.join(distDir, 'sw.js'));
+  console.log('[build] Copied src/sw.js to dist/sw.js.');
+}
+
