@@ -78,6 +78,7 @@ export class CanvasViewport {
   private mouseImgPt: Point2D | null = null;
   private mouseStagePt: Point2D | null = null;
   private maskDirty = true;
+  private rafId: number | null = null;
 
   constructor(
     stage: HTMLElement,
@@ -98,6 +99,25 @@ export class CanvasViewport {
     this.bindEvents();
   }
 
+  private scheduleRender(): void {
+    if (this.rafId !== null) return;
+    this.rafId = requestAnimationFrame(() => {
+      this.rafId = null;
+      this.render();
+    });
+  }
+
+  private zoomAtStagePoint(sx: number, sy: number, factor: number): void {
+    if (!this.photo) return;
+    const nextZoom = Math.max(0.1, Math.min(24, this.zoom * factor));
+    const imgX = (sx - this.panX) / this.zoom;
+    const imgY = (sy - this.panY) / this.zoom;
+    this.zoom = nextZoom;
+    this.panX = sx - imgX * this.zoom;
+    this.panY = sy - imgY * this.zoom;
+    this.scheduleRender();
+  }
+
   private bindEvents(): void {
     this.stage.addEventListener('wheel', (e) => {
       e.preventDefault();
@@ -106,13 +126,7 @@ export class CanvasViewport {
       const sx = e.clientX - rect.left;
       const sy = e.clientY - rect.top;
       const factor = e.deltaY < 0 ? 1.14 : 1 / 1.14;
-      const nextZoom = Math.max(0.1, Math.min(24, this.zoom * factor));
-      const imgX = (sx - this.panX) / this.zoom;
-      const imgY = (sy - this.panY) / this.zoom;
-      this.zoom = nextZoom;
-      this.panX = sx - imgX * this.zoom;
-      this.panY = sy - imgY * this.zoom;
-      this.render();
+      this.zoomAtStagePoint(sx, sy, factor);
     }, { passive: false });
 
     this.stage.addEventListener('pointerdown', (e) => {
@@ -168,7 +182,7 @@ export class CanvasViewport {
         this.panY += e.clientY - this.lastPointerY;
         this.lastPointerX = e.clientX;
         this.lastPointerY = e.clientY;
-        this.render();
+        this.scheduleRender();
         return;
       }
 
@@ -219,8 +233,44 @@ export class CanvasViewport {
       this.commitActiveShape();
     });
 
+    // Keyboard panning & zoom when the canvas viewport itself is focused
+    this.stage.addEventListener('keydown', (e) => {
+      if (!this.photo) return;
+      const step = e.shiftKey ? 120 : 40;
+      const rect = this.stage.getBoundingClientRect();
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        this.panX += step;
+        this.scheduleRender();
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        this.panX -= step;
+        this.scheduleRender();
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        this.panY += step;
+        this.scheduleRender();
+      } else if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        this.panY -= step;
+        this.scheduleRender();
+      } else if (e.key === '+' || e.key === '=') {
+        e.preventDefault();
+        this.zoomAtStagePoint(rect.width / 2, rect.height / 2, 1.2);
+      } else if (e.key === '-' || e.key === '_') {
+        e.preventDefault();
+        this.zoomAtStagePoint(rect.width / 2, rect.height / 2, 1 / 1.2);
+      } else if (e.key === '0') {
+        e.preventDefault();
+        this.fitToScreen();
+      }
+    });
+
     window.addEventListener('keydown', (e) => {
-      if (e.code === 'Space' && !isInputFocused()) {
+      if (e.code === 'Space' && !isInteractiveFocused()) {
+        if (e.target === this.stage) {
+          e.preventDefault();
+        }
         this.spaceDown = true;
         this.stage.classList.add('panning');
       } else if (e.key === 'Enter' && this.activePoints.length >= 2) {
@@ -239,7 +289,7 @@ export class CanvasViewport {
       }
     });
 
-    const ro = new ResizeObserver(() => this.render());
+    const ro = new ResizeObserver(() => this.scheduleRender());
     ro.observe(this.stage);
   }
 
@@ -591,9 +641,18 @@ export class CanvasViewport {
   }
 }
 
-function isInputFocused(): boolean {
+function isInteractiveFocused(): boolean {
   const el = document.activeElement;
   if (!el) return false;
+  if (el.closest('dialog[open]')) return true;
   const tag = el.tagName.toLowerCase();
-  return tag === 'input' || tag === 'textarea' || tag === 'select';
+  return (
+    tag === 'input' ||
+    tag === 'textarea' ||
+    tag === 'select' ||
+    tag === 'button' ||
+    tag === 'a' ||
+    tag === 'summary' ||
+    el.getAttribute('role') === 'tab'
+  );
 }
