@@ -16,7 +16,8 @@ function esc(s: string): string {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 const PCT_KEYS: ReadonlyArray<{ key: keyof PsdPercentiles; pct: number }> = [
@@ -237,7 +238,10 @@ export function renderPsdChartSvg(input: PsdChartInput): string {
   return parts.join('');
 }
 
-export function renderConvergenceChartSvg(points: readonly ConvergencePoint[]): string {
+export function renderConvergenceChartSvg(
+  points: readonly ConvergencePoint[],
+  lightTheme = false,
+): string {
   const W = 400;
   const H = 180;
   const padL = 44;
@@ -246,9 +250,12 @@ export function renderConvergenceChartSvg(points: readonly ConvergencePoint[]): 
   const padB = 28;
   const plotW = W - padL - padR;
   const plotH = H - padT - padB;
+  const bg = lightTheme ? '#ffffff' : '#0c1014';
+  const fg = lightTheme ? '#1a202c' : '#e8eef4';
+  const muted = lightTheme ? '#4a5568' : '#8fa0b2';
 
   if (points.length === 0) {
-    return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg"><rect width="${W}" height="${H}" fill="#0c1014"/><text x="${W / 2}" y="${H / 2}" text-anchor="middle" fill="#6e8091" font-size="11" font-family="system-ui, sans-serif">Add &amp; analyze photos to view 1..N convergence</text></svg>`;
+    return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg"><rect width="${W}" height="${H}" fill="${bg}"/><text x="${W / 2}" y="${H / 2}" text-anchor="middle" fill="${muted}" font-size="11" font-family="system-ui, sans-serif">Add &amp; analyze photos to view 1..N convergence</text></svg>`;
   }
 
   const allY = points.flatMap((p) => [p.D16, p.D50, p.D84, p.ciLoD50, p.ciHiD50]).filter((v) => v > 0);
@@ -262,8 +269,8 @@ export function renderConvergenceChartSvg(points: readonly ConvergencePoint[]): 
 
   const parts: string[] = [];
   parts.push(`<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`);
-  parts.push(`<rect width="${W}" height="${H}" fill="#0c1014" />`);
-  parts.push(`<text x="${padL}" y="14" fill="#e8eef4" font-size="10.5" font-weight="700" font-family="system-ui, sans-serif">Cumulative Convergence (1..N Photos): D₁₆ / D₅₀ ± 95% CI / D₈₄</text>`);
+  parts.push(`<rect width="${W}" height="${H}" fill="${bg}" />`);
+  parts.push(`<text x="${padL}" y="14" fill="${fg}" font-size="10.5" font-weight="700" font-family="system-ui, sans-serif">Cumulative Convergence (1..N Photos): D₁₆ / D₅₀ ± 95% CI / D₈₄</text>`);
 
   // CI ribbon for D50
   if (points.length > 1) {
@@ -276,26 +283,29 @@ export function renderConvergenceChartSvg(points: readonly ConvergencePoint[]): 
     const pts = points.map((p, i) => `${xPx(i).toFixed(1)},${yPx(getter(p)).toFixed(1)}`).join(' ');
     parts.push(`<polyline points="${pts}" fill="none" stroke="${col}" stroke-width="${w}" />`);
   };
-  line((p) => p.D84, '#e74c3c', 1.4);
-  line((p) => p.D50, '#f5a623', 2.2);
-  line((p) => p.D16, '#2ecc71', 1.4);
+  line((p) => p.D84, '#d93829', 1.4);
+  line((p) => p.D50, '#d98300', 2.2);
+  line((p) => p.D16, '#1e9e56', 1.4);
 
   for (let i = 0; i < points.length; i++) {
     const p = points[i];
     if (!p) continue;
     const x = xPx(i);
-    parts.push(`<circle cx="${x.toFixed(1)}" cy="${yPx(p.D50).toFixed(1)}" r="3" fill="#f5a623" />`);
-    parts.push(`<text x="${x.toFixed(1)}" y="${padT + plotH + 12}" text-anchor="middle" fill="#8fa0b2" font-size="9" font-family="ui-monospace, monospace">${p.photoCount}</text>`);
+    parts.push(`<circle cx="${x.toFixed(1)}" cy="${yPx(p.D50).toFixed(1)}" r="3" fill="#d98300" />`);
+    parts.push(`<text x="${x.toFixed(1)}" y="${padT + plotH + 12}" text-anchor="middle" fill="${muted}" font-size="9" font-family="ui-monospace, monospace">${p.photoCount}</text>`);
   }
 
-  parts.push(`<text x="${padL - 4}" y="${padT + 6}" text-anchor="end" fill="#8fa0b2" font-size="8.5" font-family="ui-monospace, monospace">${yMax.toFixed(1)}</text>`);
-  parts.push(`<text x="${padL - 4}" y="${padT + plotH}" text-anchor="end" fill="#8fa0b2" font-size="8.5" font-family="ui-monospace, monospace">${yMin.toFixed(1)}</text>`);
-  parts.push(`<text x="${padL + plotW / 2}" y="${H - 4}" text-anchor="middle" fill="#8fa0b2" font-size="9.5" font-family="system-ui, sans-serif">Number of Pooled Photos (k)</text>`);
+  parts.push(`<text x="${padL - 4}" y="${padT + 6}" text-anchor="end" fill="${muted}" font-size="8.5" font-family="ui-monospace, monospace">${yMax.toFixed(1)}</text>`);
+  parts.push(`<text x="${padL - 4}" y="${padT + plotH}" text-anchor="end" fill="${muted}" font-size="8.5" font-family="ui-monospace, monospace">${yMin.toFixed(1)}</text>`);
+  parts.push(`<text x="${padL + plotW / 2}" y="${H - 4}" text-anchor="middle" fill="${muted}" font-size="9.5" font-family="system-ui, sans-serif">Number of Pooled Photos (k)</text>`);
   parts.push('</svg>');
   return parts.join('');
 }
 
-export function renderJackknifeChartSvg(jackknife: JackknifeSensitivityReport | null): string {
+export function renderJackknifeChartSvg(
+  jackknife: JackknifeSensitivityReport | null,
+  lightTheme = false,
+): string {
   const W = 400;
   const barH = 18;
   const items = jackknife?.perPhoto ?? [];
@@ -304,9 +314,13 @@ export function renderJackknifeChartSvg(jackknife: JackknifeSensitivityReport | 
   const padR = 45;
   const padT = 24;
   const plotW = W - padL - padR;
+  const bg = lightTheme ? '#ffffff' : '#0c1014';
+  const fg = lightTheme ? '#1a202c' : '#e8eef4';
+  const muted = lightTheme ? '#4a5568' : '#8fa0b2';
+  const axisCol = lightTheme ? '#cbd5e1' : '#3b4b5c';
 
   if (items.length === 0) {
-    return `<svg viewBox="0 0 ${W} 90" xmlns="http://www.w3.org/2000/svg"><rect width="${W}" height="90" fill="#0c1014"/><text x="${W / 2}" y="48" text-anchor="middle" fill="#6e8091" font-size="11" font-family="system-ui, sans-serif">Requires ≥ 2 included photos for Jackknife sensitivity</text></svg>`;
+    return `<svg viewBox="0 0 ${W} 90" xmlns="http://www.w3.org/2000/svg"><rect width="${W}" height="90" fill="${bg}"/><text x="${W / 2}" y="48" text-anchor="middle" fill="${muted}" font-size="11" font-family="system-ui, sans-serif">Requires ≥ 2 included photos for Jackknife sensitivity</text></svg>`;
   }
 
   const maxAbs = Math.max(12, ...items.map((p) => Math.abs(p.relPctD50)));
@@ -314,27 +328,30 @@ export function renderJackknifeChartSvg(jackknife: JackknifeSensitivityReport | 
 
   const parts: string[] = [];
   parts.push(`<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`);
-  parts.push(`<rect width="${W}" height="${H}" fill="#0c1014" />`);
-  parts.push(`<text x="10" y="15" fill="#e8eef4" font-size="10.5" font-weight="700" font-family="system-ui, sans-serif">Leave-One-Out Jackknife Influence on D₅₀ (%)</text>`);
-  parts.push(`<line x1="${zeroX.toFixed(1)}" y1="${padT}" x2="${zeroX.toFixed(1)}" y2="${H - 8}" stroke="#3b4b5c" />`);
+  parts.push(`<rect width="${W}" height="${H}" fill="${bg}" />`);
+  parts.push(`<text x="10" y="15" fill="${fg}" font-size="10.5" font-weight="700" font-family="system-ui, sans-serif">Leave-One-Out Jackknife Influence on D₅₀ (%)</text>`);
+  parts.push(`<line x1="${zeroX.toFixed(1)}" y1="${padT}" x2="${zeroX.toFixed(1)}" y2="${H - 8}" stroke="${axisCol}" />`);
 
   items.forEach((item, i) => {
     const y = padT + i * barH;
     const w = (Math.abs(item.relPctD50) / maxAbs) * (plotW / 2);
     const x = item.relPctD50 >= 0 ? zeroX : zeroX - w;
-    const col = item.highInfluence ? '#e74c3c' : '#3b9eff';
+    const col = item.highInfluence ? '#e74c3c' : '#2b7de9';
     const shortLabel = item.label.length > 14 ? `${item.label.slice(0, 13)}…` : item.label;
 
-    parts.push(`<text x="${padL - 6}" y="${y + 12}" text-anchor="end" fill="#9fb0c0" font-size="9.5" font-family="system-ui, sans-serif">${esc(shortLabel)}</text>`);
+    parts.push(`<text x="${padL - 6}" y="${y + 12}" text-anchor="end" fill="${muted}" font-size="9.5" font-family="system-ui, sans-serif">${esc(shortLabel)}</text>`);
     parts.push(`<rect x="${x.toFixed(1)}" y="${y + 3}" width="${Math.max(1.5, w).toFixed(1)}" height="11" rx="2" fill="${col}" />`);
-    parts.push(`<text x="${W - 6}" y="${y + 12}" text-anchor="end" fill="${item.highInfluence ? '#ff8577' : '#8fa0b2'}" font-size="9" font-family="ui-monospace, monospace">${item.relPctD50 >= 0 ? '+' : ''}${item.relPctD50.toFixed(1)}%</text>`);
+    parts.push(`<text x="${W - 6}" y="${y + 12}" text-anchor="end" fill="${item.highInfluence ? (lightTheme ? '#b91c1c' : '#ff8577') : muted}" font-size="9" font-family="ui-monospace, monospace">${item.relPctD50 >= 0 ? '+' : ''}${item.relPctD50.toFixed(1)}%</text>`);
   });
 
   parts.push('</svg>');
   return parts.join('');
 }
 
-export function renderWentworthHistogramSvg(bins: readonly WentworthBin[]): string {
+export function renderWentworthHistogramSvg(
+  bins: readonly WentworthBin[],
+  lightTheme = false,
+): string {
   const W = 400;
   const H = 180;
   const padL = 38;
@@ -343,9 +360,12 @@ export function renderWentworthHistogramSvg(bins: readonly WentworthBin[]): stri
   const padB = 34;
   const plotW = W - padL - padR;
   const plotH = H - padT - padB;
+  const bg = lightTheme ? '#ffffff' : '#0c1014';
+  const fg = lightTheme ? '#1a202c' : '#e8eef4';
+  const muted = lightTheme ? '#4a5568' : '#8fa0b2';
 
   if (bins.length === 0) {
-    return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg"><rect width="${W}" height="${H}" fill="#0c1014"/><text x="${W / 2}" y="${H / 2}" text-anchor="middle" fill="#6e8091" font-size="11" font-family="system-ui, sans-serif">Calibrate in mm to view Wentworth φ histogram</text></svg>`;
+    return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg"><rect width="${W}" height="${H}" fill="${bg}"/><text x="${W / 2}" y="${H / 2}" text-anchor="middle" fill="${muted}" font-size="11" font-family="system-ui, sans-serif">Calibrate in mm to view Wentworth φ histogram</text></svg>`;
   }
 
   const maxPct = Math.max(10, ...bins.map((b) => b.weightPct));
@@ -353,27 +373,28 @@ export function renderWentworthHistogramSvg(bins: readonly WentworthBin[]): stri
 
   const parts: string[] = [];
   parts.push(`<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`);
-  parts.push(`<rect width="${W}" height="${H}" fill="#0c1014" />`);
-  parts.push(`<text x="${padL}" y="14" fill="#e8eef4" font-size="10.5" font-weight="700" font-family="system-ui, sans-serif">Wentworth Size Histogram (Weight %)</text>`);
+  parts.push(`<rect width="${W}" height="${H}" fill="${bg}" />`);
+  parts.push(`<text x="${padL}" y="14" fill="${fg}" font-size="10.5" font-weight="700" font-family="system-ui, sans-serif">Wentworth Size Histogram (Weight %)</text>`);
 
   bins.forEach((b, i) => {
     const h = (b.weightPct / maxPct) * plotH;
     const x = padL + i * bw + 1;
     const y = padT + plotH - h;
-    parts.push(`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${Math.max(2, bw - 2).toFixed(1)}" height="${h.toFixed(1)}" fill="#3b9eff" rx="1" />`);
+    parts.push(`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${Math.max(2, bw - 2).toFixed(1)}" height="${h.toFixed(1)}" fill="#2b7de9" rx="1" />`);
     if (bins.length <= 16 || i % 2 === 0) {
-      parts.push(`<text x="${(x + bw / 2 - 1).toFixed(1)}" y="${padT + plotH + 12}" text-anchor="middle" fill="#8fa0b2" font-size="8" font-family="ui-monospace, monospace">${b.phiMin.toFixed(1)}</text>`);
+      parts.push(`<text x="${(x + bw / 2 - 1).toFixed(1)}" y="${padT + plotH + 12}" text-anchor="middle" fill="${muted}" font-size="8" font-family="ui-monospace, monospace">${b.phiMin.toFixed(1)}</text>`);
     }
   });
 
-  parts.push(`<text x="${padL - 4}" y="${padT + 8}" text-anchor="end" fill="#8fa0b2" font-size="8.5" font-family="ui-monospace, monospace">${maxPct.toFixed(0)}%</text>`);
-  parts.push(`<text x="${padL + plotW / 2}" y="${H - 4}" text-anchor="middle" fill="#8fa0b2" font-size="9.5" font-family="system-ui, sans-serif">φ Size Class (lower bound)</text>`);
+  parts.push(`<text x="${padL - 4}" y="${padT + 8}" text-anchor="end" fill="${muted}" font-size="8.5" font-family="ui-monospace, monospace">${maxPct.toFixed(0)}%</text>`);
+  parts.push(`<text x="${padL + plotW / 2}" y="${H - 4}" text-anchor="middle" fill="${muted}" font-size="9.5" font-family="system-ui, sans-serif">φ Size Class (lower bound)</text>`);
   parts.push('</svg>');
   return parts.join('');
 }
 
 export function renderAspectRatioHistogramSvg(
   grains: readonly ExtendedGrainMorphometrics[],
+  lightTheme = false,
 ): string {
   const W = 400;
   const H = 145;
@@ -383,9 +404,12 @@ export function renderAspectRatioHistogramSvg(
   const padB = 26;
   const plotW = W - padL - padR;
   const plotH = H - padT - padB;
+  const bg = lightTheme ? '#ffffff' : '#0c1014';
+  const fg = lightTheme ? '#1a202c' : '#e8eef4';
+  const muted = lightTheme ? '#4a5568' : '#8fa0b2';
 
   if (grains.length === 0) {
-    return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg"><rect width="${W}" height="${H}" fill="#0c1014"/><text x="${W / 2}" y="${H / 2}" text-anchor="middle" fill="#6e8091" font-size="11" font-family="system-ui, sans-serif">No grains for Aspect Ratio (b/a) distribution</text></svg>`;
+    return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg"><rect width="${W}" height="${H}" fill="${bg}"/><text x="${W / 2}" y="${H / 2}" text-anchor="middle" fill="${muted}" font-size="11" font-family="system-ui, sans-serif">No grains for Aspect Ratio (b/a) distribution</text></svg>`;
   }
 
   const numBins = 10;
@@ -399,40 +423,44 @@ export function renderAspectRatioHistogramSvg(
 
   const parts: string[] = [];
   parts.push(`<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`);
-  parts.push(`<rect width="${W}" height="${H}" fill="#0c1014" />`);
-  parts.push(`<text x="${padL}" y="14" fill="#e8eef4" font-size="10.5" font-weight="700" font-family="system-ui, sans-serif">Aspect Ratio (b / a) Distribution (n=${grains.length})</text>`);
+  parts.push(`<rect width="${W}" height="${H}" fill="${bg}" />`);
+  parts.push(`<text x="${padL}" y="14" fill="${fg}" font-size="10.5" font-weight="700" font-family="system-ui, sans-serif">Aspect Ratio (b / a) Distribution (n=${grains.length})</text>`);
 
   counts.forEach((c, i) => {
     const h = (c / maxC) * plotH;
     const x = padL + i * bw + 2;
     const y = padT + plotH - h;
-    parts.push(`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${Math.max(4, bw - 4).toFixed(1)}" height="${h.toFixed(1)}" fill="#2ecc71" rx="1" />`);
-    parts.push(`<text x="${(x + bw / 2 - 2).toFixed(1)}" y="${padT + plotH + 11}" text-anchor="middle" fill="#8fa0b2" font-size="8" font-family="ui-monospace, monospace">${(i / numBins).toFixed(1)}</text>`);
+    parts.push(`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${Math.max(4, bw - 4).toFixed(1)}" height="${h.toFixed(1)}" fill="#23a85c" rx="1" />`);
+    parts.push(`<text x="${(x + bw / 2 - 2).toFixed(1)}" y="${padT + plotH + 11}" text-anchor="middle" fill="${muted}" font-size="8" font-family="ui-monospace, monospace">${(i / numBins).toFixed(1)}</text>`);
   });
 
   parts.push('</svg>');
   return parts.join('');
 }
 
-export function renderFabricRoseSvg(rose: FabricRoseStats): string {
+export function renderFabricRoseSvg(rose: FabricRoseStats, lightTheme = false): string {
   const W = 320;
   const H = 220;
   const cx = W / 2;
   const cy = H / 2 + 6;
   const R = 76;
+  const bg = lightTheme ? '#ffffff' : '#0c1014';
+  const fg = lightTheme ? '#1a202c' : '#e8eef4';
+  const muted = lightTheme ? '#4a5568' : '#8fa0b2';
+  const gridCol = lightTheme ? '#cbd5e1' : '#26323e';
 
   const parts: string[] = [];
   parts.push(`<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`);
-  parts.push(`<rect width="${W}" height="${H}" fill="#0c1014" />`);
-  parts.push(`<text x="${cx}" y="15" text-anchor="middle" fill="#e8eef4" font-size="10.5" font-weight="700" font-family="system-ui, sans-serif">180° Symmetric Axial Fabric Rose (n=${rose.grainCount})</text>`);
+  parts.push(`<rect width="${W}" height="${H}" fill="${bg}" />`);
+  parts.push(`<text x="${cx}" y="15" text-anchor="middle" fill="${fg}" font-size="10.5" font-weight="700" font-family="system-ui, sans-serif">180° Symmetric Axial Fabric Rose (n=${rose.grainCount})</text>`);
 
   for (const frac of [0.33, 0.66, 1.0]) {
-    parts.push(`<circle cx="${cx}" cy="${cy}" r="${(R * frac).toFixed(1)}" fill="none" stroke="#26323e" />`);
+    parts.push(`<circle cx="${cx}" cy="${cy}" r="${(R * frac).toFixed(1)}" fill="none" stroke="${gridCol}" />`);
   }
-  parts.push(`<line x1="${cx - R - 6}" y1="${cy}" x2="${cx + R + 6}" y2="${cy}" stroke="#26323e" />`);
-  parts.push(`<line x1="${cx}" y1="${cy - R - 6}" x2="${cx}" y2="${cy + R + 6}" stroke="#26323e" />`);
-  parts.push(`<text x="${cx}" y="${cy - R - 9}" text-anchor="middle" fill="#8fa0b2" font-size="8.5" font-family="ui-monospace, monospace">0° (Vert)</text>`);
-  parts.push(`<text x="${cx + R + 10}" y="${cy + 3}" text-anchor="start" fill="#8fa0b2" font-size="8.5" font-family="ui-monospace, monospace">90°</text>`);
+  parts.push(`<line x1="${cx - R - 6}" y1="${cy}" x2="${cx + R + 6}" y2="${cy}" stroke="${gridCol}" />`);
+  parts.push(`<line x1="${cx}" y1="${cy - R - 6}" x2="${cx}" y2="${cy + R + 6}" stroke="${gridCol}" />`);
+  parts.push(`<text x="${cx}" y="${cy - R - 9}" text-anchor="middle" fill="${muted}" font-size="8.5" font-family="ui-monospace, monospace">0° (Vert)</text>`);
+  parts.push(`<text x="${cx + R + 10}" y="${cy + 3}" text-anchor="start" fill="${muted}" font-size="8.5" font-family="ui-monospace, monospace">90°</text>`);
 
   const maxPct = Math.max(5, ...rose.bins.map((b) => b.proportionPct));
   for (const bin of rose.bins) {
@@ -447,7 +475,7 @@ export function renderFabricRoseSvg(rose: FabricRoseStats): string {
       const x2 = cx + rad * Math.cos(a1);
       const y2 = cy + rad * Math.sin(a1);
       parts.push(
-        `<path d="M ${cx} ${cy} L ${x1.toFixed(1)} ${y1.toFixed(1)} A ${rad.toFixed(1)} ${rad.toFixed(1)} 0 0 1 ${x2.toFixed(1)} ${y2.toFixed(1)} Z" fill="rgba(59, 158, 255, 0.55)" stroke="#5ab0ff" stroke-width="0.8" />`,
+        `<path d="M ${cx} ${cy} L ${x1.toFixed(1)} ${y1.toFixed(1)} A ${rad.toFixed(1)} ${rad.toFixed(1)} 0 0 1 ${x2.toFixed(1)} ${y2.toFixed(1)} Z" fill="rgba(59, 158, 255, 0.55)" stroke="#3b9eff" stroke-width="0.8" />`,
       );
     }
   }
@@ -459,12 +487,12 @@ export function renderFabricRoseSvg(rose: FabricRoseStats): string {
     const dx = len * Math.cos(meanRad);
     const dy = len * Math.sin(meanRad);
     parts.push(
-      `<line x1="${(cx - dx).toFixed(1)}" y1="${(cy - dy).toFixed(1)}" x2="${(cx + dx).toFixed(1)}" y2="${(cy + dy).toFixed(1)}" stroke="#f5a623" stroke-width="2.2" />`,
+      `<line x1="${(cx - dx).toFixed(1)}" y1="${(cy - dy).toFixed(1)}" x2="${(cx + dx).toFixed(1)}" y2="${(cy + dy).toFixed(1)}" stroke="#d98300" stroke-width="2.2" />`,
     );
   }
 
   parts.push(
-    `<text x="${cx}" y="${H - 6}" text-anchor="middle" fill="#9fb0c0" font-size="9" font-family="ui-monospace, monospace">Mean: ${rose.meanAxialDeg.toFixed(1)}° | R=${rose.resultantLength.toFixed(3)} | Z=${rose.rayleighZ.toFixed(2)}${rose.rayleighP !== null ? ` (p=${rose.rayleighP.toFixed(3)})` : ''}</text>`,
+    `<text x="${cx}" y="${H - 6}" text-anchor="middle" fill="${muted}" font-size="9" font-family="ui-monospace, monospace">Mean: ${rose.meanAxialDeg.toFixed(1)}° | R=${rose.resultantLength.toFixed(3)} | Z=${rose.rayleighZ.toFixed(2)}${rose.rayleighP !== null ? ` (p=${rose.rayleighP.toFixed(3)})` : ''}</text>`,
   );
   parts.push('</svg>');
   return parts.join('');

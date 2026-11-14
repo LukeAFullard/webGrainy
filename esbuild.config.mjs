@@ -115,16 +115,12 @@ if (fs.existsSync(uiCssEntry)) {
   console.log('[build] Bundled src/ui/main.css to dist/ui/main.css.');
 }
 
-// 6. Copy src/index.html -> dist/index.html and src/sw.js -> dist/sw.js
-const indexHtmlSrc = path.join(srcDir, 'index.html');
-if (fs.existsSync(indexHtmlSrc)) {
-  fs.copyFileSync(indexHtmlSrc, path.join(distDir, 'index.html'));
-  console.log('[build] Copied src/index.html to dist/index.html.');
-}
-
-const swSrc = path.join(srcDir, 'sw.js');
-if (fs.existsSync(swSrc)) {
-  fs.copyFileSync(swSrc, path.join(distDir, 'sw.js'));
-  console.log('[build] Copied src/sw.js to dist/sw.js.');
+// 6. Copy src/index.html, src/sw.js, src/manifest.webmanifest, and src/icon.svg -> dist/
+for (const staticAsset of ['index.html', 'sw.js', 'manifest.webmanifest', 'icon.svg']) {
+  const assetSrc = path.join(srcDir, staticAsset);
+  if (fs.existsSync(assetSrc)) {
+    fs.copyFileSync(assetSrc, path.join(distDir, staticAsset));
+    console.log(`[build] Copied src/${staticAsset} to dist/${staticAsset}.`);
+  }
 }
 

@@ -64,7 +64,26 @@ function esc(s: string): string {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+async function yieldToMain(): Promise<void> {
+  const w = window as unknown as { scheduler?: { yield?: () => Promise<void> } };
+  if (w.scheduler && typeof w.scheduler.yield === 'function') {
+    await w.scheduler.yield();
+  } else {
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  }
+}
+
+const lightSchemeQuery =
+  typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+    ? window.matchMedia('(prefers-color-scheme: light)')
+    : null;
+
+function isLightColorScheme(): boolean {
+  return lightSchemeQuery?.matches ?? false;
 }
 
 function makeId(prefix: string): string {
@@ -87,6 +106,7 @@ let viewport: CanvasViewport | null = null;
 let batchAbortController: AbortController | null = null;
 const modelAbortControllers = new Map<ModelId, AbortController>();
 let cachedQuota: StorageQuotaInfo | null = null;
+let lastAnnouncedMsg = '';
 
 // Persistent DOM containers created once
 let topbarEl!: HTMLElement;
@@ -97,9 +117,16 @@ let footerEl!: HTMLElement;
 let inspectorEl!: HTMLElement;
 let emptyStateEl!: HTMLElement;
 let dashboardEl!: HTMLElement;
-let modalRootEl!: HTMLElement;
+let appDialogEl!: HTMLDialogElement;
+let srAnnouncerEl!: HTMLElement;
 let fileInputEl!: HTMLInputElement;
 let archiveInputEl!: HTMLInputElement;
+
+function announceStatus(message: string): void {
+  if (!srAnnouncerEl || !message || message === lastAnnouncedMsg) return;
+  lastAnnouncedMsg = message;
+  srAnnouncerEl.textContent = message;
+}
 
 function getActiveSite(state: AppState): SiteRecord | null {
   return state.sites.find((s) => s.siteId === state.activeSiteId) ?? null;
@@ -254,6 +281,7 @@ async function handleFilesAdded(files: FileList | File[]): Promise<void> {
   if (!site) return;
 
   const added: PhotoRecord[] = [];
+  let taskDeadline = performance.now() + 50;
   for (const file of Array.from(files)) {
     if (!file.type.startsWith('image/')) continue;
     try {
@@ -285,6 +313,10 @@ async function handleFilesAdded(files: FileList | File[]): Promise<void> {
       store.setState({
         statusMessage: `Failed to import ${file.name}: ${err instanceof Error ? err.message : String(err)}`,
       });
+    }
+    if (performance.now() >= taskDeadline) {
+      await yieldToMain();
+      taskDeadline = performance.now() + 50;
     }
   }
 
@@ -551,19 +583,19 @@ function renderTopbar(state: AppState): void {
     </div>
     <div class="topbar-center">
       <span class="status-pill ${caps?.hasWebGPU || caps?.hasWasmSimd ? 'ok' : ''}">
-        <span class="dot"></span>${gpuLabel}
+        <span class="dot" aria-hidden="true"></span>${gpuLabel}
       </span>
       <span class="status-pill ${state.swStatus === 'ready' ? 'ok' : ''}">
-        <span class="dot"></span>${swLabel}
+        <span class="dot" aria-hidden="true"></span>${swLabel}
       </span>
       <span class="status-pill ${state.isOnline ? '' : 'warn'}">
-        <span class="dot"></span>${state.isOnline ? 'Online (HF Ready)' : 'Offline Mode'}
+        <span class="dot" aria-hidden="true"></span>${state.isOnline ? 'Online (HF Ready)' : 'Offline Mode'}
       </span>
     </div>
     <div class="topbar-right">
-      <button class="btn btn-sm" data-open-modal="models">Models (${caps?.cachedModels.length ?? 0}/2)</button>
-      <button class="btn btn-sm" data-open-modal="export">Export</button>
-      <button class="btn btn-sm" data-open-modal="about">About &amp; Citations</button>
+      <button type="button" class="btn btn-sm" data-open-modal="models">Models (${caps?.cachedModels.length ?? 0}/2)</button>
+      <button type="button" class="btn btn-sm" data-open-modal="export">Export</button>
+      <button type="button" class="btn btn-sm" data-open-modal="about">About &amp; Citations</button>
     </div>
   `;
 }
@@ -575,17 +607,19 @@ function renderSidebar(state: AppState): void {
     const st = state.photoStatuses.get(ph.photoId);
     return !st || st === 'pending' || st === 'error';
   }).length;
+  const prevDetailsOpen = sidebarEl.querySelector('details')?.open ?? true;
+  const prevPhotoScroll = sidebarEl.querySelector('.photo-list')?.scrollTop ?? 0;
 
   sidebarEl.innerHTML = `
     <div class="panel-section">
       <div class="panel-header">
         <span class="panel-title">Site Workspace</span>
         <div class="row">
-          <button class="btn btn-sm" data-action="new-site">+ Site</button>
-          <button class="btn btn-sm" data-action="import-archive">Import</button>
+          <button type="button" class="btn btn-sm" data-action="new-site">+ Site</button>
+          <button type="button" class="btn btn-sm" data-action="import-archive">Import</button>
         </div>
       </div>
-      <select class="select" id="site-select">
+      <select class="select" id="site-select" aria-label="Select active field site">
         ${state.sites
           .map(
             (s) =>
@@ -601,25 +635,25 @@ function renderSidebar(state: AppState): void {
         <div class="row">
           ${
             state.batchRunning
-              ? `<button class="btn btn-sm btn-danger" data-action="cancel-batch">Cancel</button>`
-              : `<button class="btn btn-sm btn-primary" data-action="run-batch" ${state.photos.length === 0 ? 'disabled' : ''}>Run Pending (${pendingCount})</button>`
+              ? `<button type="button" class="btn btn-sm btn-danger" data-action="cancel-batch">Cancel</button>`
+              : `<button type="button" class="btn btn-sm btn-primary" data-action="run-batch" ${state.photos.length === 0 ? 'disabled' : ''}>Run Pending (${pendingCount})</button>`
           }
         </div>
       </div>
 
-      <div class="dropzone" id="photo-dropzone">
-        <div class="dropzone-text">Drop gravel photos here or <strong>click to browse</strong></div>
-        <div style="font-size:10px;color:var(--text-muted);margin-top:2px;">Local-only EXIF &amp; dimension parsing</div>
-      </div>
+      <button type="button" class="dropzone" id="photo-dropzone">
+        <span class="dropzone-text">Drop gravel photos here or <strong>click to browse</strong></span>
+        <span style="display:block;font-size:0.65rem;color:var(--text-muted);margin-top:2px;">Local-only EXIF &amp; dimension parsing</span>
+      </button>
 
       ${
         state.batchRunning && state.batchProgress
           ? `<div style="margin-top:8px;">
-              <div class="row-between" style="font-size:11px;margin-bottom:3px;">
+              <div class="row-between" style="font-size:0.7rem;margin-bottom:3px;">
                 <span>${esc(state.batchProgress.currentLabel)}</span>
                 <span>${state.batchProgress.completed}/${state.batchProgress.total}</span>
               </div>
-              <div class="progress-bar"><div class="progress-fill" style="width:${((state.batchProgress.completed / Math.max(1, state.batchProgress.total)) * 100).toFixed(1)}%"></div></div>
+              <progress class="native-progress" value="${state.batchProgress.completed}" max="${Math.max(1, state.batchProgress.total)}" aria-label="Batch segmentation progress"></progress>
             </div>`
           : ''
       }
@@ -627,7 +661,7 @@ function renderSidebar(state: AppState): void {
       <div class="photo-list" style="margin-top:8px;">
         ${
           state.photos.length === 0
-            ? `<div style="font-size:11px;color:var(--text-muted);padding:8px 0;">No photos in this site yet.</div>`
+            ? `<div style="font-size:0.7rem;color:var(--text-muted);padding:8px 0;">No photos in this site yet.</div>`
             : state.photos
                 .map((ph) => {
                   const status = state.photoStatuses.get(ph.photoId) ?? 'pending';
@@ -636,17 +670,19 @@ function renderSidebar(state: AppState): void {
                   const thumb = state.thumbUrls.get(ph.photoId) ?? '';
                   const isActive = ph.photoId === state.activePhotoId;
                   return `
-                    <div class="photo-item ${isActive ? 'active' : ''}" data-photo-id="${esc(ph.photoId)}">
-                      <input type="checkbox" data-toggle-include="${esc(ph.photoId)}" ${ph.included ? 'checked' : ''} title="Include in site aggregate" />
-                      <img class="photo-thumb" src="${thumb}" alt="" />
-                      <div class="photo-meta">
-                        <div class="photo-name" title="${esc(ph.label)}">${esc(ph.label)}</div>
-                        <div class="photo-sub">
-                          ${ph.width}×${ph.height}${ph.calibration ? ` · ${ph.calibration.mmPerPx.toFixed(3)}mm/px` : ' · uncal'}
-                          ${recModel ? ` · ${recModel}` : ''}
-                        </div>
-                      </div>
-                      <span class="badge ${status}">${status}</span>
+                    <div class="photo-item ${isActive ? 'active' : ''}">
+                      <input type="checkbox" data-toggle-include="${esc(ph.photoId)}" ${ph.included ? 'checked' : ''} aria-label="Include ${esc(ph.label)} in site aggregate" title="Include in site aggregate" />
+                      <button type="button" class="photo-select-btn" data-photo-id="${esc(ph.photoId)}" aria-current="${isActive ? 'true' : 'false'}">
+                        <img class="photo-thumb" src="${thumb}" alt="" />
+                        <span class="photo-meta">
+                          <span class="photo-name" title="${esc(ph.label)}">${esc(ph.label)}</span>
+                          <span class="photo-sub">
+                            ${ph.width}×${ph.height}${ph.calibration ? ` · ${ph.calibration.mmPerPx.toFixed(3)}mm/px` : ' · uncal'}
+                            ${recModel ? ` · ${recModel}` : ''}
+                          </span>
+                        </span>
+                        <span class="badge ${status}">${status}</span>
+                      </button>
                     </div>
                   `;
                 })
@@ -656,7 +692,7 @@ function renderSidebar(state: AppState): void {
     </div>
 
     <div class="panel-section">
-      <details open>
+      <details ${prevDetailsOpen ? 'open' : ''}>
         <summary>Inference &amp; Post-Processing Controls</summary>
         <div class="grid-2" style="margin-top:8px;">
           <label class="field-label">
@@ -705,11 +741,16 @@ function renderSidebar(state: AppState): void {
           <label class="checkbox-label">
             <input type="checkbox" data-param="applyClahe" ${p.applyClahe ? 'checked' : ''} /> Apply CLAHE
           </label>
-          <button class="btn btn-sm" data-action="run-active" ${!state.activePhotoId || state.batchRunning ? 'disabled' : ''}>Analyze Active Photo</button>
+          <button type="button" class="btn btn-sm" data-action="run-active" ${!state.activePhotoId || state.batchRunning ? 'disabled' : ''}>Analyze Active Photo</button>
         </div>
       </details>
     </div>
   `;
+
+  const photoListEl = sidebarEl.querySelector('.photo-list');
+  if (photoListEl && prevPhotoScroll > 0) {
+    photoListEl.scrollTop = prevPhotoScroll;
+  }
 }
 
 function renderToolbarAndOverlays(state: AppState): void {
@@ -732,45 +773,45 @@ function renderToolbarAndOverlays(state: AppState): void {
     ${tools
       .map(
         (t) =>
-          `<button class="btn btn-sm ${state.activeTool === t.id ? 'active' : ''}" data-tool="${t.id}">${t.label}</button>`,
+          `<button type="button" class="btn btn-sm ${state.activeTool === t.id ? 'active' : ''}" aria-pressed="${state.activeTool === t.id ? 'true' : 'false'}" data-tool="${t.id}">${t.label}</button>`,
       )
       .join('')}
     ${
       state.activeTool === 'merge' && state.selectedGrainIds.size >= 2
-        ? `<button class="btn btn-sm btn-primary" data-action="commit-merge">Merge (${state.selectedGrainIds.size})</button>`
+        ? `<button type="button" class="btn btn-sm btn-primary" data-action="commit-merge">Merge (${state.selectedGrainIds.size})</button>`
         : ''
     }
-    <span class="toolbar-sep"></span>
-    <button class="btn btn-sm" data-action="undo" ${session?.canUndo ? '' : 'disabled'}>Undo</button>
-    <button class="btn btn-sm" data-action="redo" ${session?.canRedo ? '' : 'disabled'}>Redo</button>
-    <button class="btn btn-sm" data-action="fit-view" ${activePhoto ? '' : 'disabled'}>Fit</button>
+    <span class="toolbar-sep" aria-hidden="true"></span>
+    <button type="button" class="btn btn-sm" data-action="undo" ${session?.canUndo ? '' : 'disabled'}>Undo</button>
+    <button type="button" class="btn btn-sm" data-action="redo" ${session?.canRedo ? '' : 'disabled'}>Redo</button>
+    <button type="button" class="btn btn-sm" data-action="fit-view" ${activePhoto ? '' : 'disabled'}>Fit</button>
   `;
 
   const ov = state.overlays;
   let toolPrompt = '';
   if (state.activeTool === 'calibrate') {
     toolPrompt = `
-      <span class="toolbar-sep"></span>
+      <span class="toolbar-sep" aria-hidden="true"></span>
       <span>Calibrate (${state.pendingCalibrationPoints.length}/2 pts):</span>
-      <select class="select" id="cal-preset" style="width:auto;padding:2px 6px;">
+      <select class="select" id="cal-preset" aria-label="Calibration reference preset" style="width:auto;padding:2px 6px;">
         <option value="100|mm">100 mm Ruler</option>
         <option value="25|mm">25 mm Coin</option>
         <option value="500|mm">500 mm Quadrat</option>
         <option value="custom">Custom…</option>
       </select>
-      <input class="input" id="cal-length" type="number" value="100" step="1" min="0.1" style="width:65px;padding:2px 6px;" />
-      <select class="select" id="cal-unit" style="width:auto;padding:2px 6px;">
+      <input class="input" id="cal-length" type="number" value="100" step="1" min="0.1" aria-label="Calibration length" style="width:65px;padding:2px 6px;" />
+      <select class="select" id="cal-unit" aria-label="Calibration unit" style="width:auto;padding:2px 6px;">
         <option value="mm">mm</option>
         <option value="cm">cm</option>
       </select>
-      <button class="btn btn-sm" data-action="copy-scale-all" ${activePhoto?.calibration ? '' : 'disabled'}>Copy Scale to Site</button>
+      <button type="button" class="btn btn-sm" data-action="copy-scale-all" ${activePhoto?.calibration ? '' : 'disabled'}>Copy Scale to Site</button>
     `;
   } else if (state.activeTool === 'rectify') {
     toolPrompt = `
-      <span class="toolbar-sep"></span>
+      <span class="toolbar-sep" aria-hidden="true"></span>
       <span>4-Pt Rectify (${state.pendingRectifyPoints.length}/4 TL→TR→BR→BL):</span>
-      <input class="input" id="rect-w" type="number" value="500" step="10" min="10" style="width:60px;padding:2px 6px;" title="Width (mm)" />×
-      <input class="input" id="rect-h" type="number" value="500" step="10" min="10" style="width:60px;padding:2px 6px;" title="Height (mm)" />mm
+      <input class="input" id="rect-w" type="number" value="500" step="10" min="10" aria-label="Rectification physical width in mm" style="width:60px;padding:2px 6px;" title="Width (mm)" />×
+      <input class="input" id="rect-h" type="number" value="500" step="10" min="10" aria-label="Rectification physical height in mm" style="width:60px;padding:2px 6px;" title="Height (mm)" />mm
     `;
   }
 
@@ -798,6 +839,10 @@ function renderViewportExtras(state: AppState): void {
     <span>${activePhoto ? `${activePhoto.width}×${activePhoto.height}px | Zoom ${zoomPct}%` : ''}${pt ? ` | (${Math.round(pt.x)}, ${Math.round(pt.y)})` : ''}</span>
   `;
 
+  if (!state.batchRunning) {
+    announceStatus(state.statusMessage);
+  }
+
   if (state.inspectedGrainId !== null && session && activePhoto) {
     const grain = session.getResult().grains.find((g) => g.id === state.inspectedGrainId);
     if (grain) {
@@ -813,7 +858,7 @@ function renderViewportExtras(state: AppState): void {
       inspectorEl.innerHTML = `
         <div class="row-between" style="margin-bottom:4px;">
           <strong>Grain #${grain.id}</strong>
-          <button class="btn btn-sm" data-action="close-inspector">×</button>
+          <button type="button" class="btn btn-sm" data-action="close-inspector" aria-label="Close grain inspector">×</button>
         </div>
         <div style="font-family:var(--font-mono);line-height:1.5;">
           <div>b-axis: ${grain.bAxisMm !== undefined ? `${grain.bAxisMm.toFixed(2)} mm` : `${grain.bAxisPx.toFixed(1)} px`}</div>
@@ -841,6 +886,7 @@ function renderDashboard(state: AppState): void {
   const activePhoto = getActivePhoto(state);
   const activeSession = activePhoto ? state.sessions.get(activePhoto.photoId) ?? null : null;
   const isSite = state.dashboardScope === 'site';
+  const lightTheme = isLightColorScheme();
 
   const psd = isSite ? report?.psd : single?.areaWeightedB;
   const unit = isSite ? (report?.unit ?? 'px') : (single?.unit ?? 'px');
@@ -861,18 +907,19 @@ function renderDashboard(state: AppState): void {
           ciLower: isSite ? report?.bootstrapCi.lower : undefined,
           ciUpper: isSite ? report?.bootstrapCi.upper : undefined,
           perPhotoCurves: isSite ? report?.perPhoto : undefined,
+          lightTheme,
         })
-      : `<svg viewBox="0 0 400 220" xmlns="http://www.w3.org/2000/svg"><rect width="400" height="220" fill="#0c1014"/><text x="200" y="110" text-anchor="middle" fill="#6e8091" font-size="12" font-family="system-ui, sans-serif">No segmented grains yet</text></svg>`;
+      : `<svg viewBox="0 0 400 220" xmlns="http://www.w3.org/2000/svg"><rect width="400" height="220" fill="${lightTheme ? '#ffffff' : '#0c1014'}"/><text x="200" y="110" text-anchor="middle" fill="${lightTheme ? '#4a5568' : '#8fa0b2'}" font-size="12" font-family="system-ui, sans-serif">No segmented grains yet</text></svg>`;
 
     tabContent = `
       <div class="row-between" style="margin-top:8px;">
         <div class="row">
-          <button class="btn btn-sm ${state.psdXAxis === 'mm' ? 'active' : ''}" data-psd-x="mm">mm (log₁₀)</button>
-          <button class="btn btn-sm ${state.psdXAxis === 'phi' ? 'active' : ''}" data-psd-x="phi">phi (φ)</button>
+          <button type="button" class="btn btn-sm ${state.psdXAxis === 'mm' ? 'active' : ''}" aria-pressed="${state.psdXAxis === 'mm' ? 'true' : 'false'}" data-psd-x="mm">mm (log₁₀)</button>
+          <button type="button" class="btn btn-sm ${state.psdXAxis === 'phi' ? 'active' : ''}" aria-pressed="${state.psdXAxis === 'phi' ? 'true' : 'false'}" data-psd-x="phi">phi (φ)</button>
         </div>
         ${
           report
-            ? `<span style="font-size:10px;color:var(--text-secondary);">95% CI: [${report.bootstrapCi.lower.D50.toFixed(1)}, ${report.bootstrapCi.upper.D50.toFixed(1)}] ${unit}</span>`
+            ? `<span style="font-size:0.65rem;color:var(--text-secondary);">95% CI: [${report.bootstrapCi.lower.D50.toFixed(1)}, ${report.bootstrapCi.upper.D50.toFixed(1)}] ${unit}</span>`
             : ''
         }
       </div>
@@ -881,22 +928,22 @@ function renderDashboard(state: AppState): void {
         fw
           ? `<div class="stat-grid" style="margin-top:8px;">
               <div class="stat-card"><div class="stat-label">Folk &amp; Ward Mean</div><div class="stat-value">${fw.meanMm.toFixed(1)} mm</div><div class="stat-sub">${fw.meanPhi.toFixed(2)} φ</div></div>
-              <div class="stat-card"><div class="stat-label">Sorting (σ_I)</div><div class="stat-value">${fw.sortingPhi.toFixed(2)} φ</div><div class="stat-sub">${fw.sortingLabel}</div></div>
-              <div class="stat-card"><div class="stat-label">Skew / Kurt</div><div class="stat-value">${fw.skewnessPhi.toFixed(2)}</div><div class="stat-sub">${fw.skewnessLabel} · K=${fw.kurtosisPhi.toFixed(2)}</div></div>
+              <div class="stat-card"><div class="stat-label">Sorting (σ_I)</div><div class="stat-value">${fw.sortingPhi.toFixed(2)} φ</div><div class="stat-sub">${esc(fw.sortingLabel)}</div></div>
+              <div class="stat-card"><div class="stat-label">Skew / Kurt</div><div class="stat-value">${fw.skewnessPhi.toFixed(2)}</div><div class="stat-sub">${esc(fw.skewnessLabel)} · K=${fw.kurtosisPhi.toFixed(2)}</div></div>
             </div>`
           : ''
       }
     `;
   } else if (state.dashboardTab === 'adequacy') {
     const adeq = report?.adequacy;
-    const convSvg = renderConvergenceChartSvg(report?.convergence ?? []);
-    const jackSvg = renderJackknifeChartSvg(report?.jackknife ?? null);
+    const convSvg = renderConvergenceChartSvg(report?.convergence ?? [], lightTheme);
+    const jackSvg = renderJackknifeChartSvg(report?.jackknife ?? null, lightTheme);
     tabContent = `
       ${
         adeq
           ? `<div class="stat-grid" style="margin-top:8px;">
-              <div class="stat-card"><div class="stat-label">Adequacy</div><div class="stat-value">${adeq.rating}</div><div class="stat-sub">n_eff = ${Math.round(adeq.effectiveGrainCount)} (100/200/400)</div></div>
-              <div class="stat-card"><div class="stat-label">Max Clast Ratio</div><div class="stat-value">${(adeq.largestClastAreaRatio * 100).toFixed(1)}%</div><div class="stat-sub">${adeq.largestClastWarning === 'none' ? 'OK (<5%)' : adeq.largestClastWarning.toUpperCase()}</div></div>
+              <div class="stat-card"><div class="stat-label">Adequacy</div><div class="stat-value">${esc(adeq.rating)}</div><div class="stat-sub">n_eff = ${Math.round(adeq.effectiveGrainCount)} (100/200/400)</div></div>
+              <div class="stat-card"><div class="stat-label">Max Clast Ratio</div><div class="stat-value">${(adeq.largestClastAreaRatio * 100).toFixed(1)}%</div><div class="stat-sub">${adeq.largestClastWarning === 'none' ? 'OK (<5%)' : esc(adeq.largestClastWarning.toUpperCase())}</div></div>
               <div class="stat-card"><div class="stat-label">Cutoff (mm)</div><div class="stat-value">${report?.dCutoffCommonMm !== null && report?.dCutoffCommonMm !== undefined ? report.dCutoffCommonMm.toFixed(2) : '—'}</div><div class="stat-sub">${report?.excludedTruncationCount ?? 0} trunc excl</div></div>
             </div>`
           : ''
@@ -937,17 +984,17 @@ function renderDashboard(state: AppState): void {
     tabContent = `
       <div class="row-between" style="margin-top:8px;">
         <div class="row">
-          <button class="btn btn-sm ${state.histogramStepPhi === 0.5 ? 'active' : ''}" data-phi-step="0.5">0.5 φ bins</button>
-          <button class="btn btn-sm ${state.histogramStepPhi === 1.0 ? 'active' : ''}" data-phi-step="1.0">1.0 φ bins</button>
+          <button type="button" class="btn btn-sm ${state.histogramStepPhi === 0.5 ? 'active' : ''}" aria-pressed="${state.histogramStepPhi === 0.5 ? 'true' : 'false'}" data-phi-step="0.5">0.5 φ bins</button>
+          <button type="button" class="btn btn-sm ${state.histogramStepPhi === 1.0 ? 'active' : ''}" aria-pressed="${state.histogramStepPhi === 1.0 ? 'true' : 'false'}" data-phi-step="1.0">1.0 φ bins</button>
         </div>
         ${
           packingInfo
-            ? `<span style="font-size:11px;color:var(--text-secondary);">Clast Packing: ${packingInfo.clastPackingPct.toFixed(1)}% · Matrix: ${packingInfo.exposedMatrixPct.toFixed(1)}%</span>`
+            ? `<span style="font-size:0.7rem;color:var(--text-secondary);">Clast Packing: ${packingInfo.clastPackingPct.toFixed(1)}% · Matrix: ${packingInfo.exposedMatrixPct.toFixed(1)}%</span>`
             : ''
         }
       </div>
-      <div class="chart-box">${renderWentworthHistogramSvg(bins)}</div>
-      <div class="chart-box">${renderAspectRatioHistogramSvg(extGrains)}</div>
+      <div class="chart-box">${renderWentworthHistogramSvg(bins, lightTheme)}</div>
+      <div class="chart-box">${renderAspectRatioHistogramSvg(extGrains, lightTheme)}</div>
     `;
   } else {
     const rose =
@@ -958,20 +1005,22 @@ function renderDashboard(state: AppState): void {
             binCount: 12,
           });
     tabContent = `
-      <div class="chart-box">${renderFabricRoseSvg(rose)}</div>
+      <div class="chart-box">${renderFabricRoseSvg(rose, lightTheme)}</div>
       <div class="basis-banner">
         Axial 180° double-angle statistics (Curray 1956; Mardia &amp; Jupp 2000). 0° = Image Vertical (Top/Bottom), 90° = Image Horizontal.
       </div>
     `;
   }
 
+  const prevDashScroll = dashboardEl.scrollTop;
+
   dashboardEl.innerHTML = `
     <div class="panel-section">
       <div class="row-between" style="margin-bottom:6px;">
         <span class="panel-title">Scientific Dashboard</span>
         <div class="row">
-          <button class="btn btn-sm ${isSite ? 'active' : ''}" data-scope="site">Pooled Site</button>
-          <button class="btn btn-sm ${!isSite ? 'active' : ''}" data-scope="photo">Active Photo</button>
+          <button type="button" class="btn btn-sm ${isSite ? 'active' : ''}" aria-pressed="${isSite ? 'true' : 'false'}" data-scope="site">Pooled Site</button>
+          <button type="button" class="btn btn-sm ${!isSite ? 'active' : ''}" aria-pressed="${!isSite ? 'true' : 'false'}" data-scope="photo">Active Photo</button>
         </div>
       </div>
       <div class="grid-2">
@@ -994,7 +1043,7 @@ function renderDashboard(state: AppState): void {
       <div class="basis-banner">${esc(basisLabel)}</div>
       ${
         report && report.warnings.length > 0
-          ? `<div class="warning-banner">${report.warnings.map(esc).join('<br/>')}</div>`
+          ? `<div class="warning-banner" role="alert">${report.warnings.map(esc).join('<br/>')}</div>`
           : ''
       }
       <div class="stat-grid" style="margin-top:8px;">
@@ -1004,48 +1053,131 @@ function renderDashboard(state: AppState): void {
       </div>
     </div>
 
-    <div class="tabs">
+    <div class="tabs" role="tablist" aria-label="Dashboard analyses">
       ${(['psd', 'adequacy', 'shape', 'fabric'] as DashboardTab[])
-        .map(
-          (tab) =>
-            `<button class="tab-btn ${state.dashboardTab === tab ? 'active' : ''}" data-tab="${tab}">${
-              tab === 'psd'
-                ? 'PSD'
-                : tab === 'adequacy'
-                  ? 'Adequacy'
-                  : tab === 'shape'
-                    ? 'Shape'
-                    : 'Fabric'
-            }</button>`,
-        )
+        .map((tab) => {
+          const selected = state.dashboardTab === tab;
+          const label =
+            tab === 'psd'
+              ? 'PSD'
+              : tab === 'adequacy'
+                ? 'Adequacy'
+                : tab === 'shape'
+                  ? 'Shape'
+                  : 'Fabric';
+          return `<button type="button" class="tab-btn" role="tab" id="tab-${tab}" aria-selected="${selected ? 'true' : 'false'}" aria-controls="dashboard-tabpanel" tabindex="${selected ? '0' : '-1'}" data-tab="${tab}">${label}</button>`;
+        })
         .join('')}
     </div>
 
-    <div class="panel-section" style="border-bottom:none;">
+    <div class="panel-section" id="dashboard-tabpanel" role="tabpanel" aria-labelledby="tab-${state.dashboardTab}" style="border-bottom:none;">
       ${tabContent}
     </div>
   `;
+
+  dashboardEl.scrollTop = prevDashScroll;
 }
 
 function renderModals(state: AppState): void {
+  if (!appDialogEl) return;
   if (state.activeModal === 'models') {
-    modalRootEl.innerHTML = renderModelsModalHtml(state, cachedQuota);
+    appDialogEl.innerHTML = renderModelsModalHtml(state, cachedQuota);
   } else if (state.activeModal === 'export') {
-    modalRootEl.innerHTML = renderExportModalHtml(state);
+    appDialogEl.innerHTML = renderExportModalHtml(state);
   } else if (state.activeModal === 'about') {
-    modalRootEl.innerHTML = renderAboutModalHtml();
+    appDialogEl.innerHTML = renderAboutModalHtml();
   } else {
-    modalRootEl.innerHTML = '';
+    if (appDialogEl.open) {
+      appDialogEl.close();
+    }
+    appDialogEl.innerHTML = '';
+    return;
+  }
+
+  if (!appDialogEl.open) {
+    appDialogEl.showModal();
   }
 }
 
+let prevRenderState: AppState | null = null;
+
 function renderAll(state: AppState): void {
-  renderTopbar(state);
-  renderSidebar(state);
-  renderToolbarAndOverlays(state);
+  const prev = prevRenderState;
+  prevRenderState = state;
+
+  if (
+    !prev ||
+    prev.capabilities !== state.capabilities ||
+    prev.isOnline !== state.isOnline ||
+    prev.swStatus !== state.swStatus
+  ) {
+    renderTopbar(state);
+  }
+
+  if (
+    !prev ||
+    prev.sites !== state.sites ||
+    prev.activeSiteId !== state.activeSiteId ||
+    prev.photos !== state.photos ||
+    prev.activePhotoId !== state.activePhotoId ||
+    prev.photoStatuses !== state.photoStatuses ||
+    prev.sessions !== state.sessions ||
+    prev.thumbUrls !== state.thumbUrls ||
+    prev.batchRunning !== state.batchRunning ||
+    prev.batchProgress !== state.batchProgress ||
+    prev.analysisParams !== state.analysisParams ||
+    prev.siteOptions.minBaxisPx !== state.siteOptions.minBaxisPx
+  ) {
+    renderSidebar(state);
+  }
+
+  if (
+    !prev ||
+    prev.activePhotoId !== state.activePhotoId ||
+    prev.activeTool !== state.activeTool ||
+    prev.overlays !== state.overlays ||
+    prev.selectedGrainIds !== state.selectedGrainIds ||
+    prev.pendingCalibrationPoints !== state.pendingCalibrationPoints ||
+    prev.pendingRectifyPoints !== state.pendingRectifyPoints ||
+    prev.sessions !== state.sessions ||
+    prev.photos !== state.photos ||
+    prev.siteReport !== state.siteReport ||
+    prev.singlePhotoStats !== state.singlePhotoStats
+  ) {
+    renderToolbarAndOverlays(state);
+  }
+
   renderViewportExtras(state);
-  renderDashboard(state);
-  renderModals(state);
+
+  if (
+    !prev ||
+    prev.siteReport !== state.siteReport ||
+    prev.singlePhotoStats !== state.singlePhotoStats ||
+    prev.dashboardScope !== state.dashboardScope ||
+    prev.dashboardTab !== state.dashboardTab ||
+    prev.psdXAxis !== state.psdXAxis ||
+    prev.histogramStepPhi !== state.histogramStepPhi ||
+    prev.siteOptions !== state.siteOptions ||
+    prev.activePhotoId !== state.activePhotoId ||
+    prev.sessions !== state.sessions ||
+    prev.photos !== state.photos
+  ) {
+    renderDashboard(state);
+  }
+
+  if (
+    !prev ||
+    prev.activeModal !== state.activeModal ||
+    (state.activeModal === 'models' &&
+      (prev.modelDownloads !== state.modelDownloads || prev.capabilities !== state.capabilities)) ||
+    (state.activeModal === 'export' &&
+      (prev.siteReport !== state.siteReport ||
+        prev.activeSiteId !== state.activeSiteId ||
+        prev.activePhotoId !== state.activePhotoId ||
+        prev.sessions !== state.sessions))
+  ) {
+    renderModals(state);
+  }
 }
 
 // ============================================================================
@@ -1059,26 +1191,27 @@ function mountShell(): void {
   app.innerHTML = `
     <header class="topbar" id="topbar"></header>
     <main class="workspace">
-      <aside class="sidebar-left" id="sidebar-left"></aside>
-      <section class="viewport-center">
+      <aside class="sidebar-left" id="sidebar-left" aria-label="Site and Photo Workspace"></aside>
+      <section class="viewport-center" aria-label="Grain Inspection Viewport">
         <div class="toolbar" id="toolbar"></div>
         <div class="sub-toolbar" id="sub-toolbar"></div>
-        <div class="canvas-stage" id="canvas-stage">
+        <div class="canvas-stage" id="canvas-stage" tabindex="0" role="region" aria-label="Grain segmentation canvas. Use arrow keys to pan, plus or minus to zoom, 0 to fit.">
           <canvas class="canvas-layer" id="base-canvas"></canvas>
           <canvas class="canvas-layer" id="mask-canvas"></canvas>
           <svg class="svg-overlay" id="svg-overlay"></svg>
           <canvas class="loupe-canvas" id="loupe-canvas"></canvas>
           <div class="viewport-empty" id="viewport-empty">
             <div>Drop or select gravel photos in the left sidebar</div>
-            <div style="font-size:11px;">Wheel = Zoom · Space/Middle-Drag = Pan · Ctrl+Z/Y = Undo/Redo</div>
+            <div style="font-size:0.75rem;">Wheel / ± = Zoom · Arrows / Space / Middle-Drag = Pan · Ctrl+Z/Y = Undo/Redo</div>
           </div>
           <div class="inspector-card" id="inspector-card" style="display:none;"></div>
         </div>
         <div class="viewport-footer" id="viewport-footer"></div>
       </section>
-      <aside class="dashboard-right" id="dashboard-right"></aside>
+      <aside class="dashboard-right" id="dashboard-right" aria-label="Scientific Dashboard"></aside>
     </main>
-    <div id="modal-root"></div>
+    <dialog id="app-dialog" class="app-dialog" closedby="any" aria-labelledby="dialog-title"></dialog>
+    <div id="sr-announcer" class="sr-only" aria-live="polite" aria-atomic="true"></div>
     <input type="file" id="photo-file-input" accept="image/*" multiple style="display:none;" />
     <input type="file" id="archive-file-input" accept=".json,.webgrainy.json" style="display:none;" />
   `;
@@ -1091,9 +1224,42 @@ function mountShell(): void {
   inspectorEl = document.getElementById('inspector-card')!;
   emptyStateEl = document.getElementById('viewport-empty')!;
   dashboardEl = document.getElementById('dashboard-right')!;
-  modalRootEl = document.getElementById('modal-root')!;
+  appDialogEl = document.getElementById('app-dialog') as HTMLDialogElement;
+  srAnnouncerEl = document.getElementById('sr-announcer')!;
   fileInputEl = document.getElementById('photo-file-input') as HTMLInputElement;
   archiveInputEl = document.getElementById('archive-file-input') as HTMLInputElement;
+
+  appDialogEl.addEventListener('close', () => {
+    if (store.getState().activeModal !== null) {
+      store.setState({ activeModal: null });
+    }
+  });
+
+  if (!('closedBy' in HTMLDialogElement.prototype)) {
+    let pointerDownOutside = false;
+    appDialogEl.addEventListener('pointerdown', (e) => {
+      if (e.target !== appDialogEl) {
+        pointerDownOutside = false;
+        return;
+      }
+      const r = appDialogEl.getBoundingClientRect();
+      pointerDownOutside =
+        e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
+    });
+    appDialogEl.addEventListener('pointerup', (e) => {
+      if (!pointerDownOutside || e.target !== appDialogEl) {
+        pointerDownOutside = false;
+        return;
+      }
+      pointerDownOutside = false;
+      const r = appDialogEl.getBoundingClientRect();
+      const stillOutside =
+        e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
+      if (stillOutside && appDialogEl.open) {
+        appDialogEl.close();
+      }
+    });
+  }
 
   viewport = new CanvasViewport(
     document.getElementById('canvas-stage')!,
@@ -1233,10 +1399,7 @@ function attachDelegatedHandlers(): void {
       return;
     }
 
-    if (
-      target.closest('[data-action="close-modal"]') ||
-      target.dataset['modalBackdrop'] === 'true'
-    ) {
+    if (target.closest('[data-action="close-modal"]')) {
       store.setState({ activeModal: null });
       return;
     }
@@ -1443,6 +1606,34 @@ function attachDelegatedHandlers(): void {
     }
   });
 
+  dashboardEl.addEventListener('keydown', (e) => {
+    const target = e.target as HTMLElement | null;
+    const tab = target?.closest<HTMLElement>('[role="tab"][data-tab]');
+    if (!tab) return;
+
+    const order: DashboardTab[] = ['psd', 'adequacy', 'shape', 'fabric'];
+    const current = tab.dataset['tab'] as DashboardTab;
+    const idx = order.indexOf(current);
+    if (idx === -1) return;
+
+    let nextIdx: number | null = null;
+    if (e.key === 'ArrowRight') {
+      nextIdx = (idx + 1) % order.length;
+    } else if (e.key === 'ArrowLeft') {
+      nextIdx = (idx - 1 + order.length) % order.length;
+    } else if (e.key === 'Home') {
+      nextIdx = 0;
+    } else if (e.key === 'End') {
+      nextIdx = order.length - 1;
+    }
+    if (nextIdx === null) return;
+
+    e.preventDefault();
+    const nextTab = order[nextIdx]!;
+    store.setState({ dashboardTab: nextTab });
+    document.getElementById(`tab-${nextTab}`)?.focus();
+  });
+
   document.addEventListener('change', (e) => {
     const target = e.target as HTMLElement | null;
     if (!target) return;
@@ -1593,6 +1784,10 @@ function attachDelegatedHandlers(): void {
     }
   });
 
+  lightSchemeQuery?.addEventListener('change', () => {
+    renderDashboard(store.getState());
+  });
+
   window.addEventListener('online', () => store.setState({ isOnline: true }));
   window.addEventListener('offline', () => store.setState({ isOnline: false }));
 }
@@ -1601,7 +1796,18 @@ async function registerServiceWorker(): Promise<void> {
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
     store.setState({ swStatus: 'registering' });
     try {
-      await navigator.serviceWorker.register('./sw.js');
+      const reg = await navigator.serviceWorker.register('./sw.js');
+      reg.addEventListener('updatefound', () => {
+        const installing = reg.installing;
+        if (!installing) return;
+        installing.addEventListener('statechange', () => {
+          if (installing.state === 'installed' && navigator.serviceWorker.controller) {
+            store.setState({
+              statusMessage: 'Offline app update ready — reload when finished to apply',
+            });
+          }
+        });
+      });
       store.setState({ swStatus: 'ready' });
     } catch {
       store.setState({ swStatus: 'error' });
@@ -1609,6 +1815,48 @@ async function registerServiceWorker(): Promise<void> {
   } else {
     store.setState({ swStatus: 'unsupported' });
   }
+}
+
+function setupLaunchQueue(): void {
+  const w = window as unknown as {
+    launchQueue?: {
+      setConsumer: (
+        cb: (launchParams: {
+          files?: ReadonlyArray<{ getFile: () => Promise<File> }>;
+        }) => void,
+      ) => void;
+    };
+  };
+  if (!w.launchQueue || typeof w.launchQueue.setConsumer !== 'function') return;
+
+  w.launchQueue.setConsumer((launchParams) => {
+    const handles = launchParams.files;
+    if (!handles || handles.length === 0) return;
+    void (async () => {
+      const files = await Promise.all(handles.map((h) => h.getFile()));
+      const archiveFiles = files.filter(
+        (f) => f.name.endsWith('.webgrainy.json') || f.name.endsWith('.json'),
+      );
+      const imageFiles = files.filter((f) => f.type.startsWith('image/'));
+
+      for (const archive of archiveFiles) {
+        try {
+          const siteId = await importSiteArchive(archive);
+          const sites = await listSites();
+          store.setState({ sites, statusMessage: `Opened ${archive.name}` });
+          await loadSiteData(siteId);
+        } catch (err) {
+          store.setState({
+            statusMessage: `Failed to open ${archive.name}: ${err instanceof Error ? err.message : String(err)}`,
+          });
+        }
+      }
+
+      if (imageFiles.length > 0) {
+        await handleFilesAdded(imageFiles);
+      }
+    })();
+  });
 }
 
 async function bootstrap(): Promise<void> {
@@ -1622,6 +1870,7 @@ async function bootstrap(): Promise<void> {
     registerServiceWorker(),
     createDefaultOrLoadSites(),
   ]);
+  setupLaunchQueue();
 }
 
 void bootstrap();
