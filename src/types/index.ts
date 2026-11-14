@@ -222,3 +222,14 @@ export interface EngineCapabilities {
   deviceMemoryGB: number | null;
   cachedModels: CachedModelInfo[];
 }
+
+export interface SerializedAnalysisSession {
+  version: 1;
+  workingMasks: Int32Array;
+  workingImage: WorkingImageResult;
+  recommendation: ModelRecommendation;
+  calibration?: CalibrationResult;
+  excludeBorder: boolean;
+  borderMargin: number;
+}
+

@@ -13,6 +13,7 @@ import type {
   PostProcessOptions,
   PostProcessResult,
   SedimentStatsReport,
+  SerializedAnalysisSession,
   WorkerRequest,
   WorkerResponse,
   WorkingImageResult,
@@ -533,6 +534,101 @@ export class AnalysisSession {
 
   getStats(): SedimentStatsReport {
     return this.stats;
+  }
+
+  getCalibration(): CalibrationResult | undefined {
+    return this.calibration;
+  }
+
+  getExcludeBorder(): boolean {
+    return this.excludeBorder;
+  }
+
+  getBorderMargin(): number {
+    return this.borderMargin;
+  }
+
+  getWorkingMasks(): Int32Array {
+    return this.workingMasks;
+  }
+
+  getWorkingGrains(): GrainMorphometrics[] {
+    return this.workingGrains.map(cloneGrain);
+  }
+
+  toSerialized(): SerializedAnalysisSession {
+    return {
+      version: 1,
+      workingMasks: this.workingMasks.slice(),
+      workingImage: {
+        ...this.workingImage,
+        data: this.workingImage.data.slice(),
+      },
+      recommendation: {
+        ...this.recommendation,
+        metrics: { ...this.recommendation.metrics },
+      },
+      ...(this.calibration !== undefined
+        ? {
+            calibration: {
+              ...this.calibration,
+              pointA: { ...this.calibration.pointA },
+              pointB: { ...this.calibration.pointB },
+            },
+          }
+        : {}),
+      excludeBorder: this.excludeBorder,
+      borderMargin: this.borderMargin,
+    };
+  }
+
+  static fromSerialized(data: SerializedAnalysisSession): AnalysisSession {
+    if (!data || data.version !== 1) {
+      throw new Error('Unsupported serialized AnalysisSession version.');
+    }
+    const { workingImage, workingMasks, recommendation, calibration, excludeBorder, borderMargin } =
+      data;
+    const expectedLen = workingImage.width * workingImage.height;
+    if (
+      workingImage.width <= 0 ||
+      workingImage.height <= 0 ||
+      workingMasks.length !== expectedLen
+    ) {
+      throw new RangeError(
+        `Serialized workingMasks length (${workingMasks.length}) does not match ${workingImage.width}x${workingImage.height}.`,
+      );
+    }
+
+    const masksCopy =
+      workingMasks instanceof Int32Array
+        ? workingMasks.slice()
+        : new Int32Array(workingMasks);
+    const workingImageCopy: WorkingImageResult = {
+      ...workingImage,
+      data:
+        workingImage.data instanceof Uint8ClampedArray
+          ? workingImage.data.slice()
+          : new Uint8ClampedArray(workingImage.data),
+    };
+    const workingGrains = computeAllGrainMorphometrics(
+      masksCopy,
+      workingImageCopy.width,
+      workingImageCopy.height,
+      borderMargin,
+    );
+
+    return new AnalysisSession({
+      workingImage: workingImageCopy,
+      recommendation: {
+        ...recommendation,
+        metrics: { ...recommendation.metrics },
+      },
+      masks: masksCopy,
+      workingGrains,
+      calibration,
+      excludeBorder,
+      borderMargin,
+    });
   }
 
   subscribe(listener: (session: AnalysisSession) => void): () => void {
