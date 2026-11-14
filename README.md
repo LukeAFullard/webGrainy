@@ -1,10 +1,10 @@
 # webGrainy — ImageGrains 2.0 Web
 
-A **100% browser-native, privacy-first, offline-first** gravel and sediment grain-sizing engine in TypeScript, built on the validated **ImageGrains 2.0** ONNX segmentation pipeline.
+A **100% browser-native, privacy-first, offline-first** gravel and sediment grain-sizing engine in TypeScript, built to run the pretrained **ImageGrains 2.0** segmentation models directly in the browser via ONNX Runtime Web.
 
 All image preprocessing, neural inference (`onnxruntime-web` via WebGPU or SIMD WASM), gradient flow integration, multigrid PDE post-processing, interactive mask editing, and sedimentological statistics execute **entirely on the user's device**. No imagery or measurements are ever uploaded to a server, and no external CDNs are referenced at runtime.
 
-> **Upstream Project:** This library is a client-side WebGPU/WASM port and extension of [**dmair1989/imagegrains**](https://github.com/dmair1989/imagegrains) (*A software library for segmenting and measuring sediment particles in images*). See [Citations & Acknowledgments](#citations--acknowledgments) below.
+> **Disclaimer & Attribution:** This is an **independent, unofficial** browser implementation and is **not affiliated with, endorsed by, or maintained by** the original ImageGrains or Cellpose authors. It is an independent effort to convert and package the pretrained weights into ONNX ([`inYourOwnBrowser/imagegrains-2.0-onnx`](https://huggingface.co/inYourOwnBrowser/imagegrains-2.0-onnx)) and build a browser-native processing pipeline around them. The architecture, post-processing, and workflows differ from the official Python library at [**dmair1989/imagegrains**](https://github.com/dmair1989/imagegrains). Please cite the original authors' work below if you use these models or methods.
 
 ---
 
