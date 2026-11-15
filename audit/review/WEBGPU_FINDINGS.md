@@ -37,7 +37,7 @@ that.
 
 **Easiest: no installation.** Open <https://lukeafullard.github.io/webGrainy/gpucheck.html> in
 Chrome or Edge, choose *Cellpose-SAM*, press **Run GPU check**, then *Download report*.
-The page runs the same four cases as the script below, using the app's own code.
+The page runs the script's four cases plus a photo with a large black area, using the app's own code.
 
 **Alternative: the command-line script**
 On a computer with a modern GPU and Chrome/Edge (WebGPU with `shader-f16`):
@@ -65,3 +65,27 @@ the largest flow and cell-probability differences, sign agreement, grain counts,
 
 Please send back `audit/review/webgpu_vs_wasm_cpsam.json` with the GPU model and browser
 version.
+
+## Real-GPU result 1: Intel Xe-LPG (integrated), Edge 156 on Windows, Cellpose-SAM, 2026-11-15
+
+Measured with the GPU check page (`shader-f16` available, so WebGPU ran in float16):
+
+| Case | Grains GPU / CPU | Mask PQ | Cellprob sign agreement | GPU / CPU seconds |
+|---|---|---|---|---|
+| Photo 512×384 | 193 / 193 | 0.996 | 99.98% | 13.1 / 47.4 |
+| One tile 240×240 | 59 / 59 | 0.999 | 99.97% | 1.0 / 6.6 |
+| Small padded 100×80 | 7 / 6 | 0.922 | 99.97% | 1.0 / 3.7 |
+| All-black 256×256 | 0 / 0 | 1 | **0%** | 3.8 / 14.4 |
+
+- **Real images: WebGPU matches the CPU**, and is about 3.6× faster. The zero-border tiles
+  (one-tile, small-padded) are fine: the small-padded "difference" is one borderline grain
+  out of 6–7, with 99.97% per-pixel agreement. (The page's verdict rules were updated so a
+  single-grain difference on a tiny image no longer counts as a failure.)
+- **Featureless input: float16 numeric fault.** On an all-zero tile the CPU outputs
+  cellprob ≈ −5.2 everywhere (confident background; re-measured here with ORT WASM). The GPU
+  output had the opposite sign on every pixel (mean |difference| 5.9, so roughly +0.7). No
+  grains formed only because the predicted flows there are near zero. The plausibility
+  guard does not catch this: the values are finite and small.
+- **Open question:** whether large black areas *inside* real photos produce false grains.
+  The page now has a fifth case (768×384 photo whose right half is pure black, containing a
+  whole 256 px tile) and reports grain pixels and sign agreement inside the black area.
