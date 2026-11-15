@@ -93,7 +93,7 @@ describe('Tier 3: Cross-Feature Combinations — ImageGrains 2.0 Web', () => {
     });
     await engine.initialize();
 
-    const session = await engine.analyzeImage(img, {
+    const session = await engine.analyzeImage(img, { inferencePipeline: 'legacy',
       model: 'unet',
       scaleMode: '0.5x',
       calibration: cal,
@@ -360,7 +360,7 @@ describe('Tier 3: Cross-Feature Combinations — ImageGrains 2.0 Web', () => {
     expect(status.cachedModels.some((m: CachedModelInfo) => m.modelId === 'ig2_unet_fp32')).toBe(true);
 
     const img = createUniformGravelImage(128, 128);
-    const session = await engine.analyzeImage(img, { model: 'unet' });
+    const session = await engine.analyzeImage(img, { inferencePipeline: 'legacy', model: 'unet' });
     expect(session.getResult().grainCount).toBeGreaterThanOrEqual(1);
   });
 });

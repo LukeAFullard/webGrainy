@@ -222,8 +222,15 @@ export interface SedimentStatsReport {
   warnings?: string[];
 }
 
+/**
+ * 'cellpose' (default): upstream-exact Cellpose tiling, which reproduces PyTorch ImageGrains.
+ * 'legacy': the v1.1 webGrainy tiling (whole-image U-Net, reflect padding, Hanning blend).
+ */
+export type InferencePipeline = 'cellpose' | 'legacy';
+
 export interface AnalysisConfig {
   model?: ModelKind | 'auto';
+  inferencePipeline?: InferencePipeline;
   scaleMode?: ScaleMode;
   applyClahe?: boolean;
   claheClipLimit?: number;
@@ -252,6 +259,7 @@ export interface AnalysisProvenance {
   modelRevision: string;
   modelSha256: string;
   executionProvider?: string;
+  inferencePipeline?: string;
   scaleMode?: string;
   effectiveScaleFactor?: number;
   applyClahe?: boolean;

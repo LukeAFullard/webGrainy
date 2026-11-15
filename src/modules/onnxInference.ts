@@ -1,4 +1,10 @@
 import * as ort from 'onnxruntime-web';
+import {
+  cpNormalizeRgbPerChannel,
+  cpPercentile1And99,
+  cpResizeBilinear,
+  runCellposeTiled,
+} from './cellposeTiling.js';
 import type {
   CpsamInferenceOptions,
   ExecutionProvider,
@@ -683,4 +689,141 @@ export async function runCpsamTiledInference(
   }
 
   return { flowY, flowX, cellprob, width, height };
+}
+
+// ---------------------------------------------------------------------------
+// Upstream-exact (Cellpose) inference pipelines. Running our ONNX exports through
+// these reproduces PyTorch Cellpose: PQ vs PyTorch 0.97 (U-Net) / 0.995 (Cellpose-SAM),
+// against 0.58 / 0.79 for the legacy webGrainy tiling (audit/parity/).
+// ---------------------------------------------------------------------------
+
+/** Settings for the upstream-exact U-Net pipeline (Cellpose 3.1, IG2 U-Net). */
+export interface UnetCellposeOptions {
+  /** Model's training diameter (stored in the IG2 U-Net weights). */
+  diamMean?: number;
+  /**
+   * Diameter passed to Cellpose eval; the image is resized by diamMean/diameter.
+   * 30 matches the benchmark's PyTorch reference (ImageGrains' own default, None,
+   * uses the training label diameter 29.26 instead).
+   */
+  diameter?: number;
+  signal?: AbortSignal;
+  onProgress?: (progress: { completedTiles: number; totalTiles: number; percent: number }) => void;
+}
+
+/**
+ * U-Net inference exactly as Cellpose 3 runs it for `channels=[0,0]`: grayscale =
+ * mean(R,G,B); 1-99 % normalisation; resize by diamMean/diameter; 224 px tiles with
+ * 10 % overlap, 8 px zero border and sigmoid-taper blending; outputs resized back.
+ */
+export async function runUnetCellposeInference(
+  session: ort.InferenceSession,
+  rgba: Uint8ClampedArray,
+  width: number,
+  height: number,
+  options?: UnetCellposeOptions,
+): Promise<InferenceOutput> {
+  const n = width * height;
+  if (rgba.length !== n * 4) {
+    throw new RangeError(`rgba length (${rgba.length}) does not match ${width}x${height}x4.`);
+  }
+  const gray = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    gray[i] = (rgba[i * 4]! + rgba[i * 4 + 1]! + rgba[i * 4 + 2]!) / 3;
+  }
+  const [p1, p99] = cpPercentile1And99(gray);
+  const denom = p99 - p1;
+  for (let i = 0; i < n; i++) gray[i] = denom > 1e-3 ? (gray[i]! - p1) / denom : 0;
+
+  const rescale = (options?.diamMean ?? 17) / (options?.diameter ?? 30);
+  const H2 = Math.max(1, Math.trunc(height * rescale));
+  const W2 = Math.max(1, Math.trunc(width * rescale));
+  const small = rescale === 1 ? gray : cpResizeBilinear(gray, 1, height, width, H2, W2);
+  const input2 = new Float32Array(2 * H2 * W2); // channel 1 stays zero
+  input2.set(small, 0);
+
+  const yf = await runCellposeTiled(
+    input2,
+    2,
+    H2,
+    W2,
+    async (tile, th, tw) => {
+      const t = new ort.Tensor('float32', tile.slice(), [1, 2, th, tw]);
+      const out = await runSessionWithDeviceGuard(session, { image: t });
+      const o = out['flows_cellprob'];
+      if (!o) throw new Error('U-Net model output "flows_cellprob" is missing.');
+      return decodeOutputTensorData(o.data);
+    },
+    {
+      version: 'v3',
+      bsize: 224,
+      tileOverlap: 0.1,
+      ...(options?.signal ? { signal: options.signal } : {}),
+      onTile: (done, total) =>
+        options?.onProgress?.({ completedTiles: done, totalTiles: total, percent: Math.round((done / total) * 100) }),
+    },
+  );
+  const full = rescale === 1 ? yf : cpResizeBilinear(yf, 3, H2, W2, height, width);
+  return {
+    flowY: full.slice(0, n),
+    flowX: full.slice(n, 2 * n),
+    cellprob: full.slice(2 * n, 3 * n),
+    width,
+    height,
+  };
+}
+
+/** Settings for the upstream-exact Cellpose-SAM pipeline (Cellpose 4.1). */
+export interface CpsamCellposeOptions {
+  /** Tile overlap fraction (the benchmark's PyTorch reference used 0.25). */
+  tileOverlap?: number;
+  signal?: AbortSignal;
+  onProgress?: (progress: { completedTiles: number; totalTiles: number; percent: number }) => void;
+}
+
+/**
+ * Cellpose-SAM inference exactly as Cellpose 4 runs it (diameter=None): per-channel
+ * 1-99 % normalisation; 256 px tiles; 8 px zero border (images under 256 px zero-padded
+ * up to 256); sigmoid-taper blending. One tile per run (safe on WASM and WebGPU).
+ */
+export async function runCpsamCellposeInference(
+  session: ort.InferenceSession,
+  rgba: Uint8ClampedArray,
+  width: number,
+  height: number,
+  options?: CpsamCellposeOptions,
+): Promise<InferenceOutput> {
+  const n = width * height;
+  if (rgba.length !== n * 4) {
+    throw new RangeError(`rgba length (${rgba.length}) does not match ${width}x${height}x4.`);
+  }
+  const chw = cpNormalizeRgbPerChannel(rgba, width, height);
+  const yf = await runCellposeTiled(
+    chw,
+    3,
+    height,
+    width,
+    async (tile, th, tw) => {
+      const t = new ort.Tensor('float16', float32ArrayToFloat16Bits(tile), [1, 3, th, tw]);
+      const out = await runSessionWithDeviceGuard(session, { image: t });
+      const o = out['flows_cellprob'];
+      if (!o) throw new Error('Cellpose-SAM model output "flows_cellprob" is missing.');
+      return decodeOutputTensorData(o.data);
+    },
+    {
+      version: 'v4',
+      bsize: 256,
+      tileOverlap: options?.tileOverlap ?? 0.25,
+      ...(options?.signal ? { signal: options.signal } : {}),
+      onTile: (done, total) =>
+        options?.onProgress?.({ completedTiles: done, totalTiles: total, percent: Math.round((done / total) * 100) }),
+    },
+  );
+  return {
+    flowY: yf.slice(0, n),
+    flowX: yf.slice(n, 2 * n),
+    cellprob: yf.slice(2 * n, 3 * n),
+    width,
+    height,
+  };
 }

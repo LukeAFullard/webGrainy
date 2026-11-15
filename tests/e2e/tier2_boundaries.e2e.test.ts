@@ -640,7 +640,7 @@ describe('Tier 2: Boundary & Corner Cases — ImageGrains 2.0 Web', () => {
       const img = createUniformGravelImage(64, 64);
 
       await expect(
-        engine.analyzeImage(img, { model: 'unet', signal: ac.signal })
+        engine.analyzeImage(img, { inferencePipeline: 'legacy', model: 'unet', signal: ac.signal })
       ).rejects.toThrow();
     });
 
@@ -649,7 +649,7 @@ describe('Tier 2: Boundary & Corner Cases — ImageGrains 2.0 Web', () => {
         sessionFactory: async (kind: ModelKind) => createMockOnnxSession({ mode: kind }),
       });
       const img = createFlatImage(1, 1, 128);
-      const session = await engine.analyzeImage(img, { model: 'unet' });
+      const session = await engine.analyzeImage(img, { inferencePipeline: 'legacy', model: 'unet' });
 
       expect(session.getResult().grainCount).toBe(0);
       expect(session.getStats().totalGrains).toBe(0);
@@ -663,7 +663,7 @@ describe('Tier 2: Boundary & Corner Cases — ImageGrains 2.0 Web', () => {
 
       const img = createUniformGravelImage(64, 64);
       const stages: string[] = [];
-      await engine.analyzeImage(img, {
+      await engine.analyzeImage(img, { inferencePipeline: 'legacy',
         model: 'unet',
         onProgress: (stage: string) => stages.push(stage),
       });
@@ -679,7 +679,7 @@ describe('Tier 2: Boundary & Corner Cases — ImageGrains 2.0 Web', () => {
       await engine.initialize();
 
       const img = createUniformGravelImage(64, 64);
-      const session = await engine.analyzeImage(img, { model: 'unet' });
+      const session = await engine.analyzeImage(img, { inferencePipeline: 'legacy', model: 'unet' });
 
       expect(session.undo()).toBe(false);
       expect(session.redo()).toBe(false);
@@ -696,7 +696,7 @@ describe('Tier 2: Boundary & Corner Cases — ImageGrains 2.0 Web', () => {
       await engine.initialize();
 
       const img = createUniformGravelImage(128, 128);
-      const session = await engine.analyzeImage(img, {
+      const session = await engine.analyzeImage(img, { inferencePipeline: 'legacy',
         model: 'unet',
         scaleMode: '1.0x',
         excludeBorder: true,

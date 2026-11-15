@@ -107,6 +107,13 @@ export const HELP_TOPICS = {
     default: '250',
     when: 'Rarely needed. Increase (e.g. 400) if very large or elongated grains are split into several pieces. Higher values are slower. The default is the tested value.',
   },
+  inferencePipeline: {
+    title: 'Inference pipeline',
+    group: 'Advanced analysis',
+    what: 'How the photo is prepared and cut into tiles before the neural network runs. "Cellpose" reproduces the original ImageGrains / Cellpose software exactly. "Legacy" is the method used by webGrainy up to v1.1.',
+    default: 'Cellpose (matches ImageGrains)',
+    when: 'Keep "Cellpose". In tests it matched the original software exactly, and gave better outlines than Legacy (outline score 0.445 vs 0.413 for U-Net, 0.561 vs 0.485 for Cellpose-SAM on 7 test photos). Choose "Legacy" only to reproduce results made with an older version.',
+  },
   minSeedDensity: {
     title: 'Seed density',
     group: 'Advanced analysis',
