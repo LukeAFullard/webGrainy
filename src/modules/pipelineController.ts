@@ -1626,6 +1626,8 @@ export class ImageGrainsEngine {
         {
           signal,
           onProgress: (progress) => emit('inference', progress),
+          // One tile per run on CPU: a 16-tile ViT-L batch exhausts the 4 GB WASM heap.
+          ...(this.sessionExecutionProviders.get(selectedModel) === 'webgpu' ? {} : { batchSize: 1 }),
         },
       );
     };

@@ -81,6 +81,12 @@ export interface InferenceOutput {
 export interface CpsamInferenceOptions {
   tileSize?: number;
   overlap?: number;
+  /**
+   * Tiles per `session.run` call (default 16). Use 1 on the WASM backend: a 16-tile
+   * ViT-L batch exceeds the 4 GB wasm32 heap (std::bad_alloc on full-size photos), and
+   * batching gives little speed-up on CPU.
+   */
+  batchSize?: number;
   signal?: AbortSignal;
   onProgress?: (progress: InferenceProgress) => void;
 }

@@ -257,6 +257,26 @@ describe('siteAnalysis', () => {
     expect(report.validGrainCount).toBe(2);
   });
 
+  it('applies a field-count lower cutoff in mm (minSizeMm) and warns when uncalibrated', () => {
+    // Radii 5..20 px at 1 mm/px: b-axes ~10..40 mm.
+    const radii = [5, 6, 7, 8, 9, 10, 12, 14, 16, 18, 20];
+    const session = makeSyntheticSession({ width: 400, height: 400, circles: makeGridCircles(radii, 4, 90, 50), mmPerPx: 1.0 });
+    const photos: SitePhotoInput[] = [{ photoId: 'p', label: 'P', included: true, session }];
+    const base = analyzeSite(photos, { poolingMode: 'physical-area', minBaxisPx: 0, bootstrapReplicates: 20 });
+    const cut = analyzeSite(photos, { poolingMode: 'physical-area', minBaxisPx: 0, minSizeMm: 20, bootstrapReplicates: 20 });
+    expect(cut.dCutoffCommonMm).toBe(20);
+    expect(cut.validGrainCount).toBeLessThan(base.validGrainCount);
+    expect(cut.excludedTruncationCount).toBe(base.validGrainCount - cut.validGrainCount);
+    expect(cut.psd.D50).toBeGreaterThan(base.psd.D50);
+    expect(cut.psd.D16).toBeGreaterThanOrEqual(20);
+
+    const uncal = makeSyntheticSession({ width: 400, height: 400, circles: makeGridCircles(radii, 4, 90, 50) });
+    const pxReport = analyzeSite([{ photoId: 'u', label: 'U', included: true, session: uncal }], {
+      poolingMode: 'physical-area', unit: 'px', minBaxisPx: 0, minSizeMm: 20, bootstrapReplicates: 20,
+    });
+    expect(pxReport.warnings.join(' ')).toMatch(/cutoff of 20 mm ignored/);
+  });
+
   it('produces bit-identical seeded bootstrap CIs, handles single-photo fallback, and contracts CI width as N grows', () => {
     const makePhoto = (id: string, radii: number[]): SitePhotoInput => ({
       photoId: id,
