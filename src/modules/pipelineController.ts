@@ -14,6 +14,7 @@ import type {
   PostProcessResult,
   SedimentStatsReport,
   SerializedAnalysisSession,
+  SizeMetric,
   WorkerRequest,
   WorkerResponse,
   WorkingImageResult,
@@ -29,7 +30,8 @@ import {
 } from './imagePreprocess.js';
 import {
   createInferenceSession,
-  hasWebGpuAdapter,
+  isWebGpuDeviceLostError,
+  probeWebGpuCapabilities,
   runCpsamTiledInference,
   runUnetInference,
   type SessionCreateOptions,
@@ -602,8 +604,17 @@ export class AnalysisSession {
     };
   }
 
-  getStats(): SedimentStatsReport {
-    return this.stats;
+  getStats(sizeMetric: SizeMetric = 'bAxis'): SedimentStatsReport {
+    if (sizeMetric === 'bAxis') {
+      return this.stats;
+    }
+    if (sizeMetric === 'minFeret') {
+      this.ensureFeret();
+    }
+    return computeSedimentStats(this.getStatsGrains(), {
+      excludeBorder: this.excludeBorder,
+      sizeMetric,
+    });
   }
 
   getCalibration(): CalibrationResult | undefined {
@@ -1118,12 +1129,16 @@ export class AnalysisSession {
     return lines.join('\n');
   }
 
-  exportSummaryJson(): string {
-    return JSON.stringify({ metadata: this.getExportMetadata(), ...this.stats }, null, 2);
+  exportSummaryJson(sizeMetric: SizeMetric = 'bAxis'): string {
+    return JSON.stringify(
+      { metadata: this.getExportMetadata(), ...this.getStats(sizeMetric) },
+      null,
+      2,
+    );
   }
 
-  exportSummaryCsv(): string {
-    const report = this.stats;
+  exportSummaryCsv(sizeMetric: SizeMetric = 'bAxis'): string {
+    const report = this.getStats(sizeMetric);
     const lines: string[] = ['section,metric,value,unit'];
     lines.push(...metadataSummaryRows(this.getExportMetadata()));
 
@@ -1139,6 +1154,16 @@ export class AnalysisSession {
       ['number_weighted_b', report.numberWeightedB],
       ['area_weighted_d_eq', report.areaWeightedDEq],
       ['number_weighted_d_eq', report.numberWeightedDEq],
+      ...(report.areaWeightedMinFeret
+        ? ([['area_weighted_min_feret', report.areaWeightedMinFeret]] as Array<
+            [string, typeof report.areaWeightedB]
+          >)
+        : []),
+      ...(report.numberWeightedMinFeret
+        ? ([['number_weighted_min_feret', report.numberWeightedMinFeret]] as Array<
+            [string, typeof report.areaWeightedB]
+          >)
+        : []),
     ];
 
     for (const [section, psd] of distributions) {
@@ -1485,8 +1510,8 @@ export class ImageGrainsEngine {
       | { gpu?: unknown; deviceMemory?: number }
       | undefined;
 
-    // navigator.gpu may exist without a usable adapter (headless, blocklisted GPU).
-    const hasWebGPU = await hasWebGpuAdapter();
+    // navigator.gpu may exist without a usable adapter (headless, blocklisted GPU) or shader-f16.
+    const { hasAdapter: hasWebGPU, hasShaderF16 } = await probeWebGpuCapabilities();
     const hasWasmSimd = probeWasmSimd();
     const deviceMemoryGB =
       typeof nav?.deviceMemory === 'number' && Number.isFinite(nav.deviceMemory)
@@ -1497,6 +1522,7 @@ export class ImageGrainsEngine {
 
     this.capabilities = {
       hasWebGPU,
+      ...(hasShaderF16 !== undefined ? { hasShaderF16 } : {}),
       hasWasmSimd,
       deviceMemoryGB,
       cachedModels,
@@ -1537,6 +1563,9 @@ export class ImageGrainsEngine {
       preImg.height,
       {
         hasWebGPU: this.capabilities?.hasWebGPU ?? false,
+        ...(this.capabilities?.hasShaderF16 !== undefined
+          ? { hasShaderF16: this.capabilities.hasShaderF16 }
+          : {}),
         deviceMemoryGB: this.capabilities?.deviceMemoryGB ?? null,
       },
     );
@@ -1562,38 +1591,61 @@ export class ImageGrainsEngine {
       scaleFactor: workingImage.effectiveScaleFactor,
     });
 
-    const session = await this.acquireSession(selectedModel, signal);
+    const session = await this.acquireSession(selectedModel, signal, emit);
     throwIfAborted(signal);
 
     let inferenceOut: InferenceOutput;
-    if (selectedModel === 'unet') {
-      const gray = normalizeGray(
-        workingImage.data,
-        workingImage.width,
-        workingImage.height,
-      );
-      inferenceOut = await runUnetInference(
-        session as ort.InferenceSession,
-        gray,
-        workingImage.width,
-        workingImage.height,
-      );
-    } else {
-      const rgb = normalizeRgbJoint99(
-        workingImage.data,
-        workingImage.width,
-        workingImage.height,
-      );
-      inferenceOut = await runCpsamTiledInference(
-        session as ort.InferenceSession,
-        rgb,
-        workingImage.width,
-        workingImage.height,
-        {
-          signal,
-          onProgress: (progress) => emit('inference', progress),
-        },
-      );
+    try {
+      if (selectedModel === 'unet') {
+        const gray = normalizeGray(
+          workingImage.data,
+          workingImage.width,
+          workingImage.height,
+        );
+        inferenceOut = await runUnetInference(
+          session as ort.InferenceSession,
+          gray,
+          workingImage.width,
+          workingImage.height,
+        );
+      } else {
+        const rgb = normalizeRgbJoint99(
+          workingImage.data,
+          workingImage.width,
+          workingImage.height,
+        );
+        inferenceOut = await runCpsamTiledInference(
+          session as ort.InferenceSession,
+          rgb,
+          workingImage.width,
+          workingImage.height,
+          {
+            signal,
+            onProgress: (progress) => emit('inference', progress),
+          },
+        );
+      }
+    } catch (err) {
+      if (isWebGpuDeviceLostError(err)) {
+        const lostSession = this.sessionCache.get(selectedModel);
+        this.sessionCache.delete(selectedModel);
+        this.sessionExecutionProviders.delete(selectedModel);
+        if (lostSession && this.ownedSessions.has(lostSession)) {
+          this.ownedSessions.delete(lostSession);
+          if (typeof lostSession.release === 'function') {
+            await lostSession.release().catch(() => undefined);
+          }
+        }
+        emit('warning', {
+          code: 'webgpu-device-lost',
+          model: selectedModel,
+          message:
+            err instanceof Error
+              ? err.message
+              : 'WebGPU device lost during inference. Switch to U-Net or reload to recover.',
+        });
+      }
+      throw err;
     }
     throwIfAborted(signal);
 
@@ -1674,6 +1726,7 @@ export class ImageGrainsEngine {
   private async acquireSession(
     modelKind: ModelKind,
     signal?: AbortSignal,
+    emit?: (stage: string, detail?: unknown) => void,
   ): Promise<ort.InferenceSession | InferenceSessionLike> {
     if (this.disposed) {
       throw new Error('ImageGrainsEngine has been disposed.');
@@ -1709,13 +1762,25 @@ export class ImageGrainsEngine {
         const modelBytes = await getModel(modelId, dlOpts);
         throwIfAborted(signal);
 
-        const created = await createInferenceSession(
-          modelBytes,
-          this.options.sessionCreateOptions,
-        );
+        const created = await createInferenceSession(modelBytes, {
+          ...this.options.sessionCreateOptions,
+          requireShaderF16:
+            this.options.sessionCreateOptions?.requireShaderF16 ??
+            modelKind === 'cpsam',
+        });
         session = created.session;
         this.sessionExecutionProviders.set(modelKind, created.executionProvider);
         isOwned = true;
+
+        if (modelKind === 'cpsam' && created.executionProvider === 'wasm') {
+          emit?.('warning', {
+            code: 'cpsam-wasm-fallback',
+            model: modelKind,
+            executionProvider: 'wasm',
+            message:
+              'CP-SAM FP16 is running on CPU WASM because WebGPU shader-f16 was unavailable; expect significantly slower inference.',
+          });
+        }
       }
 
       if (this.disposed) {

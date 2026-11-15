@@ -344,8 +344,9 @@ export function computeSedimentStats(
   const numberWeightedDEq = computePsdPercentiles(dEqVals, numberWeights);
 
   const hasFeret = n > 0 && included.every((g) => g.minFeretPx !== undefined);
-  let fwPsd = sizeMetric === 'dEq' ? areaWeightedDEq : areaWeightedB;
-  if (sizeMetric === 'minFeret' && hasFeret) {
+  let areaWeightedMinFeret: PsdPercentiles | undefined;
+  let numberWeightedMinFeret: PsdPercentiles | undefined;
+  if (hasFeret) {
     const feretVals = new Float64Array(n);
     for (let i = 0; i < n; i++) {
       const g = included[i];
@@ -355,8 +356,15 @@ export function computeSedimentStats(
           ? (g.minFeretMm ?? g.minFeretPx ?? g.bAxisPx)
           : (g.minFeretPx ?? g.bAxisPx);
     }
-    fwPsd = computePsdPercentiles(feretVals, areaWeights);
+    areaWeightedMinFeret = computePsdPercentiles(feretVals, areaWeights);
+    numberWeightedMinFeret = computePsdPercentiles(feretVals, numberWeights);
   }
+  const fwPsd =
+    sizeMetric === 'minFeret' && areaWeightedMinFeret
+      ? areaWeightedMinFeret
+      : sizeMetric === 'dEq'
+        ? areaWeightedDEq
+        : areaWeightedB;
 
   const warnings: string[] = [];
   if (n === 0) {
@@ -381,10 +389,12 @@ export function computeSedimentStats(
     warnings.push('Uncalibrated: all sizes are in original-image pixels, not mm. Calibrate scale for physical units.');
   }
 
+  const effectiveMetric: SizeMetric =
+    sizeMetric === 'minFeret' && !hasFeret ? 'bAxis' : sizeMetric;
   const folkWard =
     unit === 'mm' && n >= 2 ? computeFolkWardStats(fwPsd) : null;
   const wentworth =
-    unit === 'mm' ? computeWentworthProportions(included, sizeMetric) : null;
+    unit === 'mm' ? computeWentworthProportions(included, effectiveMetric) : null;
 
   return {
     totalGrains: grains.length,
@@ -395,6 +405,8 @@ export function computeSedimentStats(
     numberWeightedB,
     areaWeightedDEq,
     numberWeightedDEq,
+    ...(areaWeightedMinFeret ? { areaWeightedMinFeret } : {}),
+    ...(numberWeightedMinFeret ? { numberWeightedMinFeret } : {}),
     folkWard,
     wentworth,
     warnings,
@@ -467,6 +479,12 @@ export function exportSummaryCsv(report: SedimentStatsReport): Blob {
     ['number_weighted_b', report.numberWeightedB],
     ['area_weighted_d_eq', report.areaWeightedDEq],
     ['number_weighted_d_eq', report.numberWeightedDEq],
+    ...(report.areaWeightedMinFeret
+      ? ([['area_weighted_min_feret', report.areaWeightedMinFeret]] as Array<[string, PsdPercentiles]>)
+      : []),
+    ...(report.numberWeightedMinFeret
+      ? ([['number_weighted_min_feret', report.numberWeightedMinFeret]] as Array<[string, PsdPercentiles]>)
+      : []),
   ];
 
   for (const [section, psd] of distributions) {

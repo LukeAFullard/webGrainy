@@ -1,15 +1,15 @@
 {
-  "timestamp": "2026-11-15T01:03:02.958Z",
+  "timestamp": "2026-11-15T04:00:36.131Z",
   "chromiumVersion": "153.0.8010.12",
   "coldInstall": {
-    "scope": "http://127.0.0.1:37273/",
+    "scope": "http://127.0.0.1:33195/",
     "activeState": "activated",
     "hasController": true,
     "cacheKeys": [
-      "webgrainy-shell-3664717648ec5a3a",
+      "webgrainy-shell-dc3bd60d9d9fed1a",
       "webgrainy-ort-1.31.1"
     ],
-    "elapsedMs": 11519,
+    "elapsedMs": 6285,
     "footer": "Batch complete: 1 done, 0 failed",
     "grainCount": 19,
     "passed": true
@@ -17,15 +17,15 @@
   "offlineReloadAndAnalysis": {
     "onLine": false,
     "hasController": true,
-    "elapsedMs": 12034,
+    "elapsedMs": 4935,
     "footer": "Batch complete: 1 done, 0 failed",
     "grainCount": 19,
     "exportedModelSha256": "5e692c5593ac15e614b77602e1d4f8c2f84dd939f4386b1f7e5641dbcd62053c",
     "passed": true
   },
   "swUpdate": {
-    "oldBuildHash": "3664717648ec5a3a",
-    "newBuildHash": "b20903d19bb97b3c",
+    "oldBuildHash": "dc3bd60d9d9fed1a",
+    "newBuildHash": "d01dcc91b6a364b2",
     "controllerChanged": true,
     "reloadPrompt": "A new version of webGrainy was installed. Save your work and reload the page to use it.",
     "passed": true

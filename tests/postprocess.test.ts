@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import parityFixture from './fixtures/regionprops_parity.json' with { type: 'json' };
 import {
+  DEFAULT_POSTPROCESS_OPTIONS,
   computeGrainMorphometrics,
   evaluateGrainFlowQcV4,
   flowsToMasksBrowser,
@@ -423,5 +424,36 @@ describe('grainPostprocess.worker.ts — Web Worker message handler', () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+
+  it('defaults maxGrainAreaFraction to 0.40 (preserving ~25% cobbles while rejecting >40% blobs)', () => {
+    expect(DEFAULT_POSTPROCESS_OPTIONS.maxGrainAreaFraction).toBe(0.4);
+
+    const width = 100;
+    const height = 100;
+
+    // ~24.6% area circle (r = 28 -> pi*28^2 = 2463 px out of 10000): accepted under default 0.40
+    const cobble = makeSyntheticRadialField(width, height, [{ cx: 50, cy: 50, r: 28 }]);
+    const resCobble = flowsToMasksBrowser(
+      cobble.flowY,
+      cobble.flowX,
+      cobble.cellprob,
+      width,
+      height,
+      { minSize: 30 },
+    );
+    expect(resCobble.grainCount).toBe(1);
+
+    // ~45.4% area circle (r = 38 -> pi*38^2 = 4536 px out of 10000): still rejected under 0.40
+    const sheet = makeSyntheticRadialField(width, height, [{ cx: 50, cy: 50, r: 38 }]);
+    const resSheet = flowsToMasksBrowser(
+      sheet.flowY,
+      sheet.flowX,
+      sheet.cellprob,
+      width,
+      height,
+      { minSize: 30 },
+    );
+    expect(resSheet.grainCount).toBe(0);
   });
 });

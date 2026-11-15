@@ -9,11 +9,68 @@ export interface SessionCreateOptions {
   wasmPaths?: string;
   simd?: boolean;
   numThreads?: number;
+  /** When true, require WebGPU `shader-f16` support before selecting WebGPU EP. */
+  requireShaderF16?: boolean;
+}
+
+export interface WebGpuCapabilities {
+  hasAdapter: boolean;
+  hasShaderF16: boolean | undefined;
 }
 
 export interface InferenceSessionResult {
   session: ort.InferenceSession;
   executionProvider: ExecutionProvider;
+}
+
+export class WebGpuDeviceLostError extends Error {
+  constructor(message = 'WebGPU device was lost during inference. Try U-Net (WASM) or reload the page.') {
+    super(message);
+    this.name = 'WebGpuDeviceLostError';
+  }
+}
+
+export function isWebGpuDeviceLostError(err: unknown): boolean {
+  if (err instanceof WebGpuDeviceLostError) {
+    return true;
+  }
+  const msg = err instanceof Error ? err.message : typeof err === 'string' ? err : '';
+  return /device\s*(was\s*|is\s*)?lost|context\s*lost|gpubuffer.*invalid|webgpu.*lost/i.test(msg);
+}
+
+async function runSessionWithDeviceGuard(
+  session: ort.InferenceSession,
+  feeds: Record<string, ort.Tensor>,
+): Promise<ort.InferenceSession.OnnxValueMapType> {
+  const webgpuEnv = (ort.env as {
+    webgpu?: { device?: { lost?: Promise<{ reason?: string; message?: string }> } };
+  }).webgpu;
+  const lostPromise = webgpuEnv?.device?.lost;
+  try {
+    if (lostPromise && typeof lostPromise.then === 'function') {
+      return await Promise.race([
+        session.run(feeds),
+        lostPromise.then((info) => {
+          const detail = info?.message || info?.reason || 'GPU device reset';
+          throw new WebGpuDeviceLostError(
+            `WebGPU device lost during inference (${detail}). Switch to U-Net or reload to recover.`,
+          );
+        }),
+      ]);
+    }
+    return await session.run(feeds);
+  } catch (err) {
+    if (err instanceof WebGpuDeviceLostError) {
+      throw err;
+    }
+    if (isWebGpuDeviceLostError(err)) {
+      const detail = err instanceof Error ? err.message : String(err);
+      throw new WebGpuDeviceLostError(
+        `WebGPU device lost during inference (${detail}). Switch to U-Net or reload to recover.`,
+      );
+    }
+    throw err;
+  }
 }
 
 const f32Buf = new ArrayBuffer(4);
@@ -276,10 +333,12 @@ export async function createInferenceSession(
   const bytes =
     modelBytes instanceof Uint8Array ? modelBytes : new Uint8Array(modelBytes);
 
-  // Only request WebGPU when a real adapter exists: `navigator.gpu` can be present with
-  // no usable adapter, in which case ORT silently drops the EP and we would mislabel it.
-  const gpuAvailable = await hasWebGpuAdapter();
-  if (gpuAvailable) {
+  // Only request WebGPU when a real adapter exists (and supports shader-f16 when required):
+  // `navigator.gpu` can be present with no usable adapter or without FP16 shader support.
+  const gpuCaps = await probeWebGpuCapabilities();
+  const canUseWebGpu =
+    gpuCaps.hasAdapter && (!options?.requireShaderF16 || gpuCaps.hasShaderF16 !== false);
+  if (canUseWebGpu) {
     try {
       const session = await ort.InferenceSession.create(bytes, {
         executionProviders: ['webgpu'],
@@ -295,17 +354,40 @@ export async function createInferenceSession(
   return { session, executionProvider: 'wasm' };
 }
 
-/** Resolves `true` only if `navigator.gpu.requestAdapter()` yields an adapter. */
-export async function hasWebGpuAdapter(): Promise<boolean> {
-  const gpu = (globalThis.navigator as { gpu?: { requestAdapter?: () => Promise<unknown> } } | undefined)?.gpu;
+/** Probes whether a WebGPU adapter exists and whether it supports `shader-f16`. */
+export async function probeWebGpuCapabilities(): Promise<WebGpuCapabilities> {
+  const gpu = (
+    globalThis.navigator as
+      | {
+          gpu?: {
+            requestAdapter?: () => Promise<{
+              features?: { has?: (feature: string) => boolean };
+            } | null>;
+          };
+        }
+      | undefined
+  )?.gpu;
   if (!gpu || typeof gpu.requestAdapter !== 'function') {
-    return false;
+    return { hasAdapter: false, hasShaderF16: false };
   }
   try {
-    return (await gpu.requestAdapter()) != null;
+    const adapter = await gpu.requestAdapter();
+    if (!adapter) {
+      return { hasAdapter: false, hasShaderF16: false };
+    }
+    const hasShaderF16 =
+      typeof adapter.features?.has === 'function'
+        ? Boolean(adapter.features.has('shader-f16'))
+        : undefined;
+    return { hasAdapter: true, hasShaderF16 };
   } catch {
-    return false;
+    return { hasAdapter: false, hasShaderF16: false };
   }
+}
+
+/** Resolves `true` only if `navigator.gpu.requestAdapter()` yields an adapter. */
+export async function hasWebGpuAdapter(): Promise<boolean> {
+  return (await probeWebGpuCapabilities()).hasAdapter;
 }
 
 /**
@@ -347,7 +429,7 @@ export async function runUnetInference(
   }
 
   const inputTensor = new ort.Tensor('float32', inputData, [1, 2, hPad, wPad]);
-  const outputs = await session.run({ image: inputTensor });
+  const outputs = await runSessionWithDeviceGuard(session, { image: inputTensor });
   const outTensor = outputs['flows_cellprob'];
   if (!outTensor) {
     throw new Error('U-Net model output "flows_cellprob" is missing.');
@@ -431,7 +513,7 @@ export async function runCpsamTiledInference(
     }
     const u16 = float32ArrayToFloat16Bits(nchw);
     const inputTensor = new ort.Tensor('float16', u16, [1, 3, tileSize, tileSize]);
-    const outputs = await session.run({ image: inputTensor });
+    const outputs = await runSessionWithDeviceGuard(session, { image: inputTensor });
     if (signal?.aborted) {
       throw createAbortError(signal.reason);
     }
@@ -511,7 +593,7 @@ export async function runCpsamTiledInference(
       tileSize,
       tileSize,
     ]);
-    const outputs = await session.run({ image: inputTensor });
+    const outputs = await runSessionWithDeviceGuard(session, { image: inputTensor });
     if (signal?.aborted) {
       throw createAbortError(signal.reason);
     }

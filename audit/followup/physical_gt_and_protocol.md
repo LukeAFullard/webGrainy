@@ -7,10 +7,14 @@
    - All `IG2_data.zip` ground-truth masks are **hand-digitised 2D outlines in pixels**, not physical sieve or caliper measurements.
    - Furthermore, all 13 sites (`APF_2, AR, CT, DV_4, FH_2, HP, JF, NB2, NZ1, NZ2, PP, PR, S1_2`) contributed `train/` images to the IG2 models (`IG2_full_set.200525` and `IG2_full_set_cp_SAM`), so **zero completely unseen sites** exist inside `IG2_data.zip`. True cross-site generalisation requires either external unseen-site datasets or leave-one-site-out cross-validation.
 
-2. **`dmair1989/imagegrains` `demo_data/K1_field_measurement.csv` (`n = 39` field b-axes):**
-   - `demo_data/K1_field_measurement.csv` contains 39 manual field b-axis measurements in centimetres (1.3–22.5 cm, i.e. 13–225 mm) paired with `demo_data/K1/K1_C2_385.jpg` and `demo_data/K1/K1_C3_0449.jpg` at `0.39 mm/px` (per `notebooks/Complete_grain_size_and_shape_analysis_colab.ipynb` cell 21).
+2. **`dmair1989/imagegrains` `demo_data/K1_field_measurement.csv` (`field_n = 251` field b-axes):**
+   - `demo_data/K1_field_measurement.csv` contains `251` manual field b-axis measurements (`field_D16 = 19.0 mm`, `field_D50 = 27.0 mm`, `field_D84 = 48.0 mm`) paired with `demo_data/K1/K1_C2_385.jpg` and `demo_data/K1/K1_C3_0449.jpg` at `0.39 mm/px` (per `notebooks/Complete_grain_size_and_shape_analysis_colab.ipynb` cell 21).
+   - **Measured photo vs field comparison (`audit/followup/heldout_summary.json`):** Pooling `K1_C2_385.jpg` + `K1_C3_0449.jpg` through the shipped TS v4.1 engine (`guard = 0.15`, `0.39 mm/px`):
+     - **U-Net (`n = 3,579` interior grains):** `bAxis` D16/D50/D84 = `6.56 / 15.67 / 38.18 mm`; `minFeret` = `7.02 / 16.51 / 41.48 mm`; `dEq` = `8.10 / 18.69 / 46.90 mm`.
+     - **Cellpose-SAM (`n = 3,700` interior grains):** `bAxis` D16/D50/D84 = `6.57 / 15.70 / 37.63 mm`; `minFeret` = `7.09 / 16.71 / 39.36 mm`; `dEq` = `8.03 / 18.99 / 47.43 mm`.
+     - On these frames, pooled photo `D50` underpredicts manual field caliper `D50` (`27.0 mm`) by `-41.9%` (`bAxis`) and `-38.1%` (`minFeret`), whereas `dEq` D84 (`46.9–47.4 mm`) is close to field D84 (`48.0 mm`). This reflects fine-pebble detection below ~15 mm (truncated/under-sampled in hand counts) plus 2D burial/imbrication projection effects.
    - **Critical overlap caveat:** Crops from those exact K1 photographs (`K1_2_C1_DJI_0385_1.jpg`, `K1_2_C1_DJI_0385_clipped_0..6`, `K1_2_C1_DJI_0449_1.jpg`) appear in `IG2_data.zip` under **`APF_2/train` (8 pairs) and `APF_2/test` (1 pair: `K1_2_C1_DJI_0385_clipped_4.jpg`)**, flagged as `is_k1_overlap = true` (`9` rows total) in `audit/followup/heldout_manifest.csv`.
-   - Therefore, K1 is useful as a **metric-comparison sanity check** (`bAxis` ellipse minor axis vs `minFeret` caliper width vs `dEq` vs `n = 39` field caliper b-axes at `0.39 mm/px`), **not** as an independent held-out site validation. (Colab execution of `K1_C2_385.jpg` & `K1_C3_0449.jpg` is included in `audit/followup/imagegrains_heldout_followup_colab.ipynb`.)
+   - Therefore, K1 is useful as a **metric-comparison sanity check** (`bAxis` ellipse minor axis vs `minFeret` caliper width vs `dEq` vs `n = 251` field caliper b-axes at `0.39 mm/px`), **not** as an independent held-out site validation.
    - `demo_data/FH_resolutions.csv` provides `0.39 mm/px` scale metadata for `FH` imagery, but no physical Wolman/sieve measurements.
 
 ---
