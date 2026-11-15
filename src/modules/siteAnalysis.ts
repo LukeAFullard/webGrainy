@@ -2,6 +2,7 @@ import type {
   FolkWardStats,
   GrainMorphometrics,
   PsdPercentiles,
+  SizeMetric,
   WentworthProportions,
 } from '../types/index.js';
 import {
@@ -60,7 +61,7 @@ export interface SiteAnalysisOptions {
   poolingMode: PoolingMode;
   unit?: 'mm' | 'px';
   allowEqualPhotoFallback?: boolean;
-  sizeMetric?: 'bAxis' | 'dEq';
+  sizeMetric?: SizeMetric;
   minBaxisPx?: number;
   harmonizeCutoff?: boolean;
   harmonizePhysicalCutoff?: boolean;
@@ -183,7 +184,7 @@ export interface SiteAnalysisReport {
   poolingMode: PoolingMode;
   statisticalBasisLabel: string;
   unit: 'mm' | 'px';
-  sizeMetric: 'bAxis' | 'dEq';
+  sizeMetric: SizeMetric;
   includedPhotoCount: number;
   totalGrainCount: number;
   validGrainCount: number;
@@ -958,9 +959,34 @@ function runBootstrap(
   };
 }
 
+function getGrainSize(
+  grain: GrainMorphometrics,
+  sizeMetric: SizeMetric,
+  unit: 'mm' | 'px',
+): number {
+  if (sizeMetric === 'dEq') {
+    return unit === 'mm' ? (grain.dEqMm ?? grain.dEqPx) : grain.dEqPx;
+  }
+  if (sizeMetric === 'minFeret') {
+    const px = grain.minFeretPx ?? grain.bAxisPx;
+    return unit === 'mm' ? (grain.minFeretMm ?? px) : px;
+  }
+  return unit === 'mm' ? (grain.bAxisMm ?? grain.bAxisPx) : grain.bAxisPx;
+}
+
+function getGrainMmSize(
+  grain: GrainMorphometrics,
+  sizeMetric: SizeMetric,
+): number | undefined {
+  if (sizeMetric === 'dEq') return grain.dEqMm;
+  if (sizeMetric === 'minFeret') return grain.minFeretMm;
+  return grain.bAxisMm;
+}
+
 function computeSiteWentworth(
   photos: readonly PreparedPhoto[],
   poolingMode: PoolingMode,
+  sizeMetric: SizeMetric = 'bAxis',
 ): WentworthProportions | null {
   const { grains, weights } = buildPooledArrays(photos, poolingMode);
   if (grains.length === 0) return null;
@@ -976,7 +1002,7 @@ function computeSiteWentworth(
     const w = weights[i] ?? 0;
     if (grain === undefined || !Number.isFinite(w) || w <= 0) continue;
 
-    const d = grain.bAxisMm;
+    const d = getGrainMmSize(grain, sizeMetric);
     if (typeof d !== 'number' || !Number.isFinite(d)) {
       return null;
     }
@@ -1011,7 +1037,7 @@ export function analyzeSite(
   }
 
   const unit: 'mm' | 'px' = validation.unit === 'mm' ? 'mm' : 'px';
-  const sizeMetric = options.sizeMetric ?? 'bAxis';
+  const sizeMetric: SizeMetric = options.sizeMetric ?? 'bAxis';
   const minBaxisPx = Math.max(0, options.minBaxisPx ?? 15);
   const harmonize =
     unit === 'mm' &&
@@ -1047,6 +1073,9 @@ export function analyzeSite(
   let gridSubCutoffHitsTotal = 0;
 
   for (const input of includedInputs) {
+    if (sizeMetric === 'minFeret') {
+      input.session.ensureFeret();
+    }
     const res = input.session.getResult();
     const excludeBorder = input.session.getExcludeBorder();
     const cal = input.session.getCalibration();
@@ -1108,11 +1137,13 @@ export function analyzeSite(
     let photoTruncAreaMm2 = 0;
 
     for (const g of preCutoffGrains) {
-      const failsPx = minBaxisPx > 0 && g.bAxisPx < minBaxisPx;
+      const pxSize = getGrainSize(g, sizeMetric, 'px');
+      const mmSize = getGrainMmSize(g, sizeMetric);
+      const failsPx = minBaxisPx > 0 && pxSize < minBaxisPx;
       const failsCommonMm =
         dCutoffCommonMm !== null &&
-        g.bAxisMm !== undefined &&
-        g.bAxisMm < dCutoffCommonMm;
+        mmSize !== undefined &&
+        mmSize < dCutoffCommonMm;
 
       if (failsPx || failsCommonMm) {
         photoTruncCount++;
@@ -1153,14 +1184,7 @@ export function analyzeSite(
     }
 
     const validGrains: PreparedGrain[] = postCutoffGrains.map((g) => {
-      const sizeVal =
-        unit === 'mm'
-          ? sizeMetric === 'dEq'
-            ? (g.dEqMm ?? g.dEqPx)
-            : (g.bAxisMm ?? g.bAxisPx)
-          : sizeMetric === 'dEq'
-            ? g.dEqPx
-            : g.bAxisPx;
+      const sizeVal = getGrainSize(g, sizeMetric, unit);
       const areaVal = unit === 'mm' ? (g.areaMm2 ?? g.areaPx) : g.areaPx;
       return {
         grain: g,
@@ -1198,7 +1222,9 @@ export function analyzeSite(
   const psd = computePsdPercentiles(values, weights);
   const folkWard = unit === 'mm' ? computeFolkWardStats(psd) : null;
   const wentworth =
-    unit === 'mm' ? computeSiteWentworth(preparedPhotos, options.poolingMode) : null;
+    unit === 'mm'
+      ? computeSiteWentworth(preparedPhotos, options.poolingMode, sizeMetric)
+      : null;
 
   const wentworthHistogram05Phi =
     unit === 'mm'
@@ -1206,6 +1232,7 @@ export function analyzeSite(
           stepPhi: 0.5,
           weighted: options.poolingMode !== 'number-weighted',
           weights,
+          sizeMetric,
         })
       : [];
   const wentworthHistogram10Phi =
@@ -1214,6 +1241,7 @@ export function analyzeSite(
           stepPhi: 1.0,
           weighted: options.poolingMode !== 'number-weighted',
           weights,
+          sizeMetric,
         })
       : [];
   const fabricRose = computeFabricRoseStats(pooledGrains, {
@@ -1757,6 +1785,7 @@ export function exportPooledGrainsCsv(
       res.height,
       sWork,
       mmPerPx,
+      entry.session.getHullCache(),
     );
 
     for (const g of extGrains) {

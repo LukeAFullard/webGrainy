@@ -1212,6 +1212,8 @@ export class ScaleCalibrator {
       aAxisMm: grain.aAxisPx * mmPerPx,
       bAxisMm: grain.bAxisPx * mmPerPx,
       dEqMm: grain.dEqPx * mmPerPx,
+      ...(grain.minFeretPx !== undefined ? { minFeretMm: grain.minFeretPx * mmPerPx } : {}),
+      ...(grain.maxFeretPx !== undefined ? { maxFeretMm: grain.maxFeretPx * mmPerPx } : {}),
     };
   }
 

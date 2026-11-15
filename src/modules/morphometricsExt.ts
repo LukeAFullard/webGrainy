@@ -1,4 +1,13 @@
-import type { GrainMorphometrics, Point2D } from '../types/index.js';
+import type { GrainMorphometrics, Point2D, SizeMetric } from '../types/index.js';
+
+export interface CachedGrainGeometry {
+  perimeterWorking: number;
+  convexAreaWorking: number;
+  minFeretWorking: number;
+  maxFeretWorking: number;
+}
+
+export type GrainHullCache = Map<number, CachedGrainGeometry>;
 
 export interface ExtendedGrainMorphometrics extends GrainMorphometrics {
   perimeterPx: number;
@@ -267,6 +276,7 @@ export function computeExtendedMorphometrics(
   workingHeight: number,
   effectiveScaleFactor = 1,
   mmPerPx?: number,
+  cache?: GrainHullCache,
 ): ExtendedGrainMorphometrics[] {
   if (
     !Number.isInteger(workingWidth) ||
@@ -294,81 +304,103 @@ export function computeExtendedMorphometrics(
   const scaleSq = effectiveScaleFactor * effectiveScaleFactor;
 
   return grains.map((grain) => {
-    const minX = Math.max(
-      0,
-      Math.floor(grain.bbox[0] * effectiveScaleFactor) - 1,
-    );
-    const minY = Math.max(
-      0,
-      Math.floor(grain.bbox[1] * effectiveScaleFactor) - 1,
-    );
-    const maxX = Math.min(
-      workingWidth - 1,
-      Math.ceil(grain.bbox[2] * effectiveScaleFactor) + 1,
-    );
-    const maxY = Math.min(
-      workingHeight - 1,
-      Math.ceil(grain.bbox[3] * effectiveScaleFactor) + 1,
-    );
+    const cached = cache?.get(grain.id);
+    let perimeterWorking: number;
+    let convexAreaWorking: number;
+    let minFeretWorking: number;
+    let maxFeretWorking: number;
 
-    const workingBbox: [number, number, number, number] = [
-      minX,
-      minY,
-      maxX,
-      maxY,
-    ];
-    const perimeterWorking = computeCroftonPerimeterPx(
-      masks,
-      workingWidth,
-      workingHeight,
-      grain.id,
-      workingBbox,
-    );
-    const perimeterPx = perimeterWorking / effectiveScaleFactor;
+    if (cached !== undefined) {
+      perimeterWorking = cached.perimeterWorking;
+      convexAreaWorking = cached.convexAreaWorking;
+      minFeretWorking = cached.minFeretWorking;
+      maxFeretWorking = cached.maxFeretWorking;
+    } else {
+      const minX = Math.max(
+        0,
+        Math.floor(grain.bbox[0] * effectiveScaleFactor) - 1,
+      );
+      const minY = Math.max(
+        0,
+        Math.floor(grain.bbox[1] * effectiveScaleFactor) - 1,
+      );
+      const maxX = Math.min(
+        workingWidth - 1,
+        Math.ceil(grain.bbox[2] * effectiveScaleFactor) + 1,
+      );
+      const maxY = Math.min(
+        workingHeight - 1,
+        Math.ceil(grain.bbox[3] * effectiveScaleFactor) + 1,
+      );
 
-    const boundaryPoints: Point2D[] = [];
-    for (let y = minY; y <= maxY; y++) {
-      const rowOff = y * workingWidth;
-      for (let x = minX; x <= maxX; x++) {
-        if (masks[rowOff + x] !== grain.id) continue;
-        const isBoundary =
-          x === 0 ||
-          x === workingWidth - 1 ||
-          y === 0 ||
-          y === workingHeight - 1 ||
-          masks[rowOff + x - 1] !== grain.id ||
-          masks[rowOff + x + 1] !== grain.id ||
-          masks[(y - 1) * workingWidth + x] !== grain.id ||
-          masks[(y + 1) * workingWidth + x] !== grain.id;
-        if (isBoundary) {
-          boundaryPoints.push({ x, y });
+      const workingBbox: [number, number, number, number] = [
+        minX,
+        minY,
+        maxX,
+        maxY,
+      ];
+      perimeterWorking = computeCroftonPerimeterPx(
+        masks,
+        workingWidth,
+        workingHeight,
+        grain.id,
+        workingBbox,
+      );
+
+      const boundaryPoints: Point2D[] = [];
+      for (let y = minY; y <= maxY; y++) {
+        const rowOff = y * workingWidth;
+        for (let x = minX; x <= maxX; x++) {
+          if (masks[rowOff + x] !== grain.id) continue;
+          const isBoundary =
+            x === 0 ||
+            x === workingWidth - 1 ||
+            y === 0 ||
+            y === workingHeight - 1 ||
+            masks[rowOff + x - 1] !== grain.id ||
+            masks[rowOff + x + 1] !== grain.id ||
+            masks[(y - 1) * workingWidth + x] !== grain.id ||
+            masks[(y + 1) * workingWidth + x] !== grain.id;
+          if (isBoundary) {
+            boundaryPoints.push({ x, y });
+          }
         }
       }
-    }
 
-    let convexAreaWorking = grain.areaPx * scaleSq;
-    let minFeretWorking = 0;
-    let maxFeretWorking = 0;
-    if (boundaryPoints.length > 0) {
-      const hull = computeConvexHull(boundaryPoints);
-      const { area, perimeter } = computePolygonAreaAndPerimeter(hull);
-      // Pixel-center Minkowski correction (+ 0.5 * hullPerimeter + 1) ensures convexArea >= areaPx
-      convexAreaWorking = Math.max(1, area + 0.5 * perimeter + 1);
+      convexAreaWorking = grain.areaPx * scaleSq;
+      minFeretWorking = 0;
+      maxFeretWorking = 0;
+      if (boundaryPoints.length > 0) {
+        const hull = computeConvexHull(boundaryPoints);
+        const { area, perimeter } = computePolygonAreaAndPerimeter(hull);
+        // Pixel-center Minkowski correction (+ 0.5 * hullPerimeter + 1) ensures convexArea >= areaPx
+        convexAreaWorking = Math.max(1, area + 0.5 * perimeter + 1);
 
-      // Feret diameters on the pixel-EDGE hull (each boundary pixel is a unit square).
-      const corners: Point2D[] = [];
-      for (const p of boundaryPoints) {
-        corners.push(
-          { x: p.x - 0.5, y: p.y - 0.5 },
-          { x: p.x + 0.5, y: p.y - 0.5 },
-          { x: p.x + 0.5, y: p.y + 0.5 },
-          { x: p.x - 0.5, y: p.y + 0.5 },
-        );
+        // Feret diameters on the pixel-EDGE hull (each hull vertex is a unit square;
+        // conv(corners(hull)) === conv(corners(boundaryPoints)) with ~10-50x fewer points).
+        const corners: Point2D[] = [];
+        for (const p of hull) {
+          corners.push(
+            { x: p.x - 0.5, y: p.y - 0.5 },
+            { x: p.x + 0.5, y: p.y - 0.5 },
+            { x: p.x + 0.5, y: p.y + 0.5 },
+            { x: p.x - 0.5, y: p.y + 0.5 },
+          );
+        }
+        const feret = computeFeretDiameters(computeConvexHull(corners));
+        minFeretWorking = feret.minFeret;
+        maxFeretWorking = feret.maxFeret;
       }
-      const feret = computeFeretDiameters(computeConvexHull(corners));
-      minFeretWorking = feret.minFeret;
-      maxFeretWorking = feret.maxFeret;
+
+      cache?.set(grain.id, {
+        perimeterWorking,
+        convexAreaWorking,
+        minFeretWorking,
+        maxFeretWorking,
+      });
     }
+
+    const perimeterPx = perimeterWorking / effectiveScaleFactor;
     const minFeretPx = minFeretWorking / effectiveScaleFactor;
     const maxFeretPx = maxFeretWorking / effectiveScaleFactor;
 
@@ -543,11 +575,13 @@ export function computeWentworthHistogram(
     weighted?: boolean;
     autoTrim?: boolean;
     weights?: readonly number[];
+    sizeMetric?: SizeMetric;
   },
 ): WentworthBin[] {
   const stepPhi = options?.stepPhi ?? 1.0;
   const weighted = options?.weighted ?? true;
   const autoTrim = options?.autoTrim ?? true;
+  const sizeMetric = options?.sizeMetric ?? 'bAxis';
   const customWeights =
     options?.weights !== undefined && options.weights.length === grains.length
       ? options.weights
@@ -582,7 +616,12 @@ export function computeWentworthHistogram(
   for (let i = 0; i < grains.length; i++) {
     const grain = grains[i];
     if (grain === undefined) continue;
-    const dMm = grain.bAxisMm;
+    const dMm =
+      sizeMetric === 'dEq'
+        ? grain.dEqMm
+        : sizeMetric === 'minFeret'
+          ? grain.minFeretMm
+          : grain.bAxisMm;
     if (typeof dMm !== 'number' || !Number.isFinite(dMm) || dMm <= 0) {
       continue;
     }

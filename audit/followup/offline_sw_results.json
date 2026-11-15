@@ -1,0 +1,39 @@
+{
+  "timestamp": "2026-11-15T01:03:02.958Z",
+  "chromiumVersion": "153.0.8010.12",
+  "coldInstall": {
+    "scope": "http://127.0.0.1:37273/",
+    "activeState": "activated",
+    "hasController": true,
+    "cacheKeys": [
+      "webgrainy-shell-3664717648ec5a3a",
+      "webgrainy-ort-1.31.1"
+    ],
+    "elapsedMs": 11519,
+    "footer": "Batch complete: 1 done, 0 failed",
+    "grainCount": 19,
+    "passed": true
+  },
+  "offlineReloadAndAnalysis": {
+    "onLine": false,
+    "hasController": true,
+    "elapsedMs": 12034,
+    "footer": "Batch complete: 1 done, 0 failed",
+    "grainCount": 19,
+    "exportedModelSha256": "5e692c5593ac15e614b77602e1d4f8c2f84dd939f4386b1f7e5641dbcd62053c",
+    "passed": true
+  },
+  "swUpdate": {
+    "oldBuildHash": "3664717648ec5a3a",
+    "newBuildHash": "b20903d19bb97b3c",
+    "controllerChanged": true,
+    "reloadPrompt": "A new version of webGrainy was installed. Save your work and reload the page to use it.",
+    "passed": true
+  },
+  "safariIosManualChecklist": [
+    "Verify IndexedDB persistence across 7-day ITP eviction window when not installed to Home Screen on iOS/iPadOS Safari.",
+    "Verify iOS Safari memory ceiling with U-Net (26 MB) on large camera photos (CP-SAM 617 MB is unsupported on mobile per DEPLOYMENT.md).",
+    "Verify standalone PWA Home Screen launch, offline cold-open, and `launchQueue` / file-picker behavior on iOS Safari >= 17.4.",
+    "Verify SW update banner visibility and reload recovery in Safari standalone mode."
+  ]
+}

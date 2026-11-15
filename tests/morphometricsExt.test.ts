@@ -202,5 +202,42 @@ describe('morphometricsExt', () => {
       const sumHalf = binsHalf.reduce((s, b) => s + b.weightPct, 0);
       expect(sumHalf).toBeCloseTo(100, 6);
     });
+
+    it('supports sizeMetric: minFeret and dEq in computeWentworthHistogram', () => {
+      const grains = [
+        makeGrain(1, { bAxisMm: 5.0, minFeretMm: 0.5, dEqMm: 5.0, areaPx: 100 }),
+      ];
+      const byB = computeWentworthHistogram(grains, { stepPhi: 1.0, sizeMetric: 'bAxis' });
+      const byF = computeWentworthHistogram(grains, { stepPhi: 1.0, sizeMetric: 'minFeret' });
+      expect(byB[0]?.wentworthClass).toBe('Medium Gravel');
+      expect(byF[0]?.wentworthClass).toBe('Sand');
+    });
+  });
+
+  describe('GrainHullCache', () => {
+    it('reuses cached hull & Feret values identically on repeated calls', () => {
+      const W = 40;
+      const H = 30;
+      const masks = new Int32Array(W * H);
+      for (let y = 5; y < 15; y++) {
+        for (let x = 5; x < 35; x++) {
+          masks[y * W + x] = 1;
+        }
+      }
+      const grain = makeGrain(1, {
+        areaPx: 300,
+        bbox: [5, 5, 34, 14],
+      });
+      const cache = new Map();
+      const first = computeExtendedMorphometrics(masks, [grain], W, H, 1, 0.5, cache)[0]!;
+      expect(cache.size).toBe(1);
+      // Zero out masks to prove second call reads from cache without scanning masks
+      masks.fill(0);
+      const second = computeExtendedMorphometrics(masks, [grain], W, H, 1, 0.5, cache)[0]!;
+      expect(second.minFeretPx).toBe(first.minFeretPx);
+      expect(second.maxFeretPx).toBe(first.maxFeretPx);
+      expect(second.perimeterPx).toBe(first.perimeterPx);
+      expect(second.convexAreaPx).toBe(first.convexAreaPx);
+    });
   });
 });

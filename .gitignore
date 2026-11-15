@@ -6,3 +6,10 @@ coverage/
 *.tsbuildinfo
 /tmp/
 .cache/
+audit/followup/data/
+audit/followup/weights/
+*.onnx
+*.zip
+__pycache__/
+*.pyc
+
