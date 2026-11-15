@@ -1,0 +1,4 @@
+threads=1 {"unet_1024x768_s":19.46922942,"postprocess_1024x768_s":0.007126030999999785,"grains":0,"cpsam_tile_s":32.297221107}
+threads=2 {"unet_1024x768_s":11.803591076,"postprocess_1024x768_s":0.011514003000000229,"grains":0,"cpsam_tile_s":16.815080158999997}
+threads=4 {"unet_1024x768_s":6.219711482000001,"postprocess_1024x768_s":0.020885355000000345,"grains":0,"cpsam_tile_s":9.517994105}
+threads=8 {"unet_1024x768_s":7.391911664,"postprocess_1024x768_s":0.018160138999999617,"grains":0,"cpsam_tile_s":12.121635871}

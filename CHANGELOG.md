@@ -4,6 +4,26 @@ All notable changes to webGrainy are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- **Recovery after WebGPU device loss.** After a loss, WebGPU is disabled for the page,
+  GPU sessions are evicted, the capability is reported unavailable, and the image is
+  retried once on WASM instead of failing. Previously the next WebGPU session reused the
+  lost device. The UI shows "GPU reset · CPU mode (reload for GPU)".
+
+### Changed
+- **CPU inference uses all cores (capped at 8) when the page is cross-origin isolated**
+  (U-Net on a 1024×768 photo: 18.4 s → 6.7 s on 4 cores). See `DEPLOYMENT.md`.
+
+### Documentation
+- **Withdrew "outperforms upstream PyTorch".** The paired comparison is not significant
+  (`audit/followup/paired_comparison.py`).
+- **Flagged that the 0.40 area-guard default is unbenchmarked.**
+- **Presented the K1 field discrepancy (~40% finer D50) as unexplained**, with testable
+  hypotheses.
+- **Corrected the audit's CPU timing.**
+
 ## [1.1.0] — 2026-11-15
 
 This release fixes the findings of the pre-release audit (`AUDIT_REPORT.md`, section
