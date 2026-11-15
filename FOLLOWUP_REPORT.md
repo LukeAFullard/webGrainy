@@ -194,12 +194,14 @@ Three corrections and one fix were made:
    - PQ is lower than PyTorch for both models.
    - The only significant effect is the area guard for CP-SAM (1.00 vs 0.15: −12.41 pp, 95% CI [−20.64, −5.33], p = 0.002).
 2. **The 0.40 default was previously unbenchmarked.** At the time of commit `63fc6f1`, only 0.15 and 1.00 had been run, and 0.40 was chosen after inspecting the test images. A run at 0.40 has now been completed (see §7.1 below).
-3. **The K1 gap is unexplained.** Photo D50 is about 40% finer than caliper D50. This was previously attributed to fine pebbles and burial, but that explanation is untested. It is now presented as an open discrepancy, with testable hypotheses listed in `physical_gt_and_protocol.md`.
+3. **The K1 gap: first marked unexplained, then resolved as truncation** (`audit/k1/README.md`). The field count records nothing below 13 mm, and grains below 13 mm cover about 43% of the photographed bed. With the same 13 mm cutoff, photo D50 matches the field within +3% (U-Net) / +4% (CP-SAM), and D84 within −6%. Area weighting equals a true grid-by-number count on the same masks, so weighting and scale are not the cause. The result is sensitive to the assumed cutoff (−8% at 10 mm to +14% at 16 mm), and this is one site that is in the training set. A `Field-count cutoff (mm)` site option (`minSizeMm`) was added so users can match their field protocol.
 4. **Fix: recovery after WebGPU device loss.** ORT keeps one `GPUDevice` per page, so after a loss every new WebGPU session would fail again, including the suggested switch to U-Net. The engine now disables WebGPU for the page, evicts GPU sessions, reports the capability as unavailable, and retries the image once on WASM. The UI shows "GPU reset · CPU mode (reload for GPU)". Tests are in `tests/pipelineController.test.ts` and `tests/onnxInference.test.ts`.
 
 **CPU findings:**
 - CP-SAM's FP16 graph does run on the WASM backend, at 33 s per 256 px tile single-threaded (`audit/review/cpsam_wasm_fp16.mjs`).
 - WASM threads scale nearly linearly to the physical core count (`audit/perf/`). When the page is cross-origin isolated, the app now uses all cores, capped at 8. In headless Chromium, U-Net inference on a 1024×768 photo falls from 18.4 s to 6.7 s. See `DEPLOYMENT.md`.
+
+5. **Fix: Cellpose-SAM on CPU crashed on full-size photos** (`std::bad_alloc`). The tiler sent 16 tiles per run, which exceeds the 4 GB WASM heap. The engine now sends 1 tile per run on WASM (`batchSize` option). Tested: output is identical to batch 16. K1 photos ran in 8–13 min each on 4 threads.
 
 ### 7.1 Benchmark of shipped `guard = 0.40` (`ts_v41_guard040`)
 

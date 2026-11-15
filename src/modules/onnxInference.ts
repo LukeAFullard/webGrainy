@@ -497,7 +497,7 @@ export async function runUnetInference(
  * Runs Cellpose-SAM FP16 tiled inference (`ig2_cpsam_fp16.onnx`):
  * - `256x256` exact fast path (no Hanning taper / tiling).
  * - Reflection-pads only if `height < tileSize || width < tileSize`.
- * - Tiles with `tileSize = 256`, `overlap = 64` (`stride = 192`), `batchSize = 16`.
+ * - Tiles with `tileSize = 256`, `overlap = 64` (`stride = 192`), `batchSize = 16` (use 1 on WASM).
  * - Accumulates with `makeBlendWindow(tileSize)`, supports `AbortSignal` & `onProgress`.
  */
 export async function runCpsamTiledInference(
@@ -529,7 +529,7 @@ export async function runCpsamTiledInference(
       `Invalid tileSize (${tileSize}) and overlap (${overlap}): stride must be positive.`,
     );
   }
-  const batchSize = 16;
+  const batchSize = Math.max(1, Math.floor(options?.batchSize ?? 16));
   const tilePixels = tileSize * tileSize;
 
   // Fast path: exact tileSize x tileSize image

@@ -63,6 +63,13 @@ export interface SiteAnalysisOptions {
   allowEqualPhotoFallback?: boolean;
   sizeMetric?: SizeMetric;
   minBaxisPx?: number;
+  /**
+   * Lower size cutoff in mm (calibrated sites only), e.g. the smallest clast a field
+   * Wolman/pebble count records. Grains below it are excluded before pooling, so photo
+   * and field distributions describe the same size range. At the K1 site, matching the
+   * field count's 13 mm minimum turned a -42% D50 gap into +3% (audit/k1/).
+   */
+  minSizeMm?: number;
   harmonizeCutoff?: boolean;
   harmonizePhysicalCutoff?: boolean;
   wolmanGridSpacingMm?: number;
@@ -1063,6 +1070,14 @@ export function analyzeSite(
       if (c > maxCutoff) maxCutoff = c;
     }
     dCutoffCommonMm = maxCutoff;
+  }
+  const minSizeMm = options.minSizeMm;
+  if (unit === 'mm' && minSizeMm !== undefined && Number.isFinite(minSizeMm) && minSizeMm > 0) {
+    dCutoffCommonMm = Math.max(dCutoffCommonMm ?? 0, minSizeMm);
+  } else if (unit !== 'mm' && minSizeMm !== undefined && minSizeMm > 0) {
+    warnings.push(
+      `Lower size cutoff of ${minSizeMm} mm ignored: photos are not all calibrated in mm.`,
+    );
   }
 
   const preparedPhotos: PreparedPhoto[] = [];

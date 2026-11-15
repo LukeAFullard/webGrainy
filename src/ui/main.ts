@@ -772,6 +772,10 @@ function renderSidebar(state: AppState): void {
             Min b-axis (px)
             <input class="input" type="number" step="1" min="0" max="50" value="${state.siteOptions.minBaxisPx ?? 15}" data-site-opt="minBaxisPx" />
           </label>
+          <label class="field-label" title="Smallest clast your field Wolman/pebble count records (e.g. 8–16 mm). Grains below it are excluded from site statistics so photo and field results cover the same size range. 0 = off.">
+            Field-count cutoff (mm)
+            <input class="input" type="number" step="0.5" min="0" max="256" value="${state.siteOptions.minSizeMm ?? 0}" data-site-opt="minSizeMm" />
+          </label>
           <label class="field-label">
             CLAHE Clip
             <input class="input" type="number" step="0.5" min="1" max="8" value="${p.claheClipLimit}" data-param="claheClipLimit" />
@@ -1205,7 +1209,8 @@ function renderAll(state: AppState): void {
     prev.batchRunning !== state.batchRunning ||
     prev.batchProgress !== state.batchProgress ||
     prev.analysisParams !== state.analysisParams ||
-    prev.siteOptions.minBaxisPx !== state.siteOptions.minBaxisPx
+    prev.siteOptions.minBaxisPx !== state.siteOptions.minBaxisPx ||
+    prev.siteOptions.minSizeMm !== state.siteOptions.minSizeMm
   ) {
     renderSidebar(state);
   }

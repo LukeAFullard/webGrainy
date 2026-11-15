@@ -463,6 +463,35 @@ describe('onnxInference', () => {
       expect(runMock).toHaveBeenCalledTimes(1);
     });
 
+    it('honours batchSize (1 tile per run on WASM) and gives identical output to batch 16', async () => {
+      const width = 600;
+      const height = 500; // 3 x 3 = 9 tiles
+      const rgb = new Float32Array(width * height * 3);
+      for (let i = 0; i < rgb.length; i++) rgb[i] = Math.sin(i * 0.37);
+      const makeSession = () => {
+        const batches: number[] = [];
+        const run = vi.fn(async (feeds: Record<string, ort.Tensor>) => {
+          const t = feeds['image']!;
+          const b = t.dims[0]!;
+          batches.push(b);
+          // Deterministic per-tile output derived from the tile input.
+          const inp = float16BitsToFloat32Array(t.data as Uint16Array);
+          return {
+            flows_cellprob: new ort.Tensor('float16', float32ArrayToFloat16Bits(inp.map((v) => v * 0.5)), [b, 3, 256, 256]),
+          };
+        });
+        return { session: { run } as unknown as ort.InferenceSession, batches };
+      };
+      const one = makeSession();
+      const outOne = await runCpsamTiledInference(one.session, rgb, width, height, { batchSize: 1 });
+      expect(one.batches).toEqual([1, 1, 1, 1, 1, 1, 1, 1, 1]);
+      const sixteen = makeSession();
+      const outSixteen = await runCpsamTiledInference(sixteen.session, rgb, width, height);
+      expect(sixteen.batches).toEqual([9]);
+      expect(Array.from(outOne.flowY)).toEqual(Array.from(outSixteen.flowY));
+      expect(Array.from(outOne.cellprob)).toEqual(Array.from(outSixteen.cellprob));
+    });
+
     it('reflection-pads sub-256x256 images (100x120 -> 256x256) and crops back', async () => {
       const width = 100;
       const height = 120;
