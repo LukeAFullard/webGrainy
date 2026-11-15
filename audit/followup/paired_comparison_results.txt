@@ -1,6 +1,12 @@
 unet  A=ts_v41_guard100  B=pytorch_ref      n=40  mean dAPE= +0.01 pp  95% CI [ -7.76,  +7.41]  A better on 22/40 (ties 0)  sign-test p=0.636  PQ A=0.485 B=0.528  -> NOT distinguishable
 unet  A=ts_v41_guard015  B=pytorch_ref      n=40  mean dAPE= +3.55 pp  95% CI [ -6.42, +13.37]  A better on 20/40 (ties 0)  sign-test p=1.000  PQ A=0.480 B=0.528  -> NOT distinguishable
 unet  A=ts_v41_guard100  B=ts_v41_guard015  n=40  mean dAPE= -3.54 pp  95% CI [ -9.50,  +1.47]  A better on 5/40 (ties 34)  sign-test p=0.219  PQ A=0.485 B=0.480  -> NOT distinguishable
-cpsam A=ts_v41_guard100  B=pytorch_ref      n=40  mean dAPE= -4.88 pp  95% CI [-11.50,  +0.68]  A better on 19/40 (ties 0)  sign-test p=0.875  PQ A=0.571 B=0.642  -> NOT distinguishable
-cpsam A=ts_v41_guard015  B=pytorch_ref      n=40  mean dAPE= +7.53 pp  95% CI [ +1.13, +14.64]  A better on 14/40 (ties 0)  sign-test p=0.081  PQ A=0.562 B=0.642  -> B better
-cpsam A=ts_v41_guard100  B=ts_v41_guard015  n=40  mean dAPE=-12.41 pp  95% CI [-20.64,  -5.33]  A better on 10/40 (ties 30)  sign-test p=0.002  PQ A=0.571 B=0.562  -> A better
+unet  A=ts_v41_guard040  B=pytorch_ref      n=40  mean dAPE= +0.01 pp  95% CI [ -8.04,  +7.30]  A better on 22/40 (ties 0)  sign-test p=0.636  PQ A=0.485 B=0.528  -> NOT distinguishable
+unet  A=ts_v41_guard040  B=ts_v41_guard100  n=40  mean dAPE= +0.00 pp  95% CI [ +0.00,  +0.00]  A better on 0/40 (ties 40)  sign-test p=1.000  PQ A=0.485 B=0.485  -> NOT distinguishable
+unet  A=ts_v41_guard040  B=ts_v41_guard015  n=40  mean dAPE= -3.54 pp  95% CI [ -9.36,  +1.53]  A better on 5/40 (ties 34)  sign-test p=0.219  PQ A=0.485 B=0.480  -> NOT distinguishable
+cpsam A=ts_v41_guard100  B=pytorch_ref      n=40  mean dAPE= -4.88 pp  95% CI [-11.36,  +0.63]  A better on 19/40 (ties 0)  sign-test p=0.875  PQ A=0.571 B=0.642  -> NOT distinguishable
+cpsam A=ts_v41_guard015  B=pytorch_ref      n=40  mean dAPE= +7.53 pp  95% CI [ +0.96, +14.65]  A better on 14/40 (ties 0)  sign-test p=0.081  PQ A=0.562 B=0.642  -> B better
+cpsam A=ts_v41_guard100  B=ts_v41_guard015  n=40  mean dAPE=-12.41 pp  95% CI [-20.72,  -5.28]  A better on 10/40 (ties 30)  sign-test p=0.002  PQ A=0.571 B=0.562  -> A better
+cpsam A=ts_v41_guard040  B=pytorch_ref      n=40  mean dAPE= -2.81 pp  95% CI [ -7.86,  +1.49]  A better on 19/40 (ties 0)  sign-test p=0.875  PQ A=0.571 B=0.642  -> NOT distinguishable
+cpsam A=ts_v41_guard040  B=ts_v41_guard100  n=40  mean dAPE= +2.08 pp  95% CI [ +0.00,  +6.23]  A better on 0/40 (ties 39)  sign-test p=1.000  PQ A=0.571 B=0.571  -> NOT distinguishable
+cpsam A=ts_v41_guard040  B=ts_v41_guard015  n=40  mean dAPE=-10.34 pp  95% CI [-17.84,  -4.12]  A better on 9/40 (ties 31)  sign-test p=0.004  PQ A=0.571 B=0.562  -> A better

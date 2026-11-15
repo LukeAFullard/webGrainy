@@ -26,7 +26,14 @@ def sign_test(wins, losses):
 
 rng = np.random.default_rng(0)
 for model in ('unet', 'cpsam'):
-    for a, b in (('ts_v41_guard100', 'pytorch_ref'), ('ts_v41_guard015', 'pytorch_ref'), ('ts_v41_guard100', 'ts_v41_guard015')):
+    for a, b in (
+        ('ts_v41_guard100', 'pytorch_ref'),
+        ('ts_v41_guard015', 'pytorch_ref'),
+        ('ts_v41_guard100', 'ts_v41_guard015'),
+        ('ts_v41_guard040', 'pytorch_ref'),
+        ('ts_v41_guard040', 'ts_v41_guard100'),
+        ('ts_v41_guard040', 'ts_v41_guard015'),
+    ):
         ua, xa, pa = series(model, a); ub, xb, pb = series(model, b)
         assert ua == ub, 'image sets differ'
         d = xa - xb
