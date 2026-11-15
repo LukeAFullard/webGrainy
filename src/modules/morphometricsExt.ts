@@ -18,6 +18,16 @@ export interface ExtendedGrainMorphometrics extends GrainMorphometrics {
    * Note: Vertical c-axis is unobserved in 2D nadir imagery.
    */
   sphericity2D: number;
+  /**
+   * Minimum Feret (caliper) width of the exposed outline in original-image pixels:
+   * the smallest distance between two parallel lines enclosing the grain (pixel-edge
+   * hull, rotating calipers). This is the closest 2D analogue of a caliper b-axis.
+   */
+  minFeretPx: number;
+  minFeretMm?: number;
+  /** Maximum Feret diameter (largest caliper length) in original-image pixels. */
+  maxFeretPx: number;
+  maxFeretMm?: number;
 }
 
 export interface FabricRoseBin {
@@ -172,6 +182,49 @@ export function computeConvexHull(points: readonly Point2D[]): Point2D[] {
 /**
  * Computes Shoelace polygon area and Euclidean perimeter of a closed convex hull.
  */
+/**
+ * Minimum and maximum Feret diameters of a convex polygon (counter-clockwise or
+ * clockwise hull) via rotating calipers. Returns zeros for degenerate input.
+ */
+export function computeFeretDiameters(hull: readonly Point2D[]): {
+  minFeret: number;
+  maxFeret: number;
+} {
+  const n = hull.length;
+  if (n === 0) return { minFeret: 0, maxFeret: 0 };
+  if (n === 1) return { minFeret: 0, maxFeret: 0 };
+  let maxFeret = 0;
+  for (let i = 0; i < n; i++) {
+    const a = hull[i]!;
+    for (let j = i + 1; j < n; j++) {
+      const b = hull[j]!;
+      const d = Math.hypot(a.x - b.x, a.y - b.y);
+      if (d > maxFeret) maxFeret = d;
+    }
+  }
+  if (n === 2) return { minFeret: 0, maxFeret };
+  let minFeret = Infinity;
+  for (let i = 0; i < n; i++) {
+    const a = hull[i]!;
+    const b = hull[(i + 1) % n]!;
+    const ex = b.x - a.x;
+    const ey = b.y - a.y;
+    const len = Math.hypot(ex, ey);
+    if (len < 1e-12) continue;
+    const nx = -ey / len;
+    const ny = ex / len;
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (const p of hull) {
+      const proj = p.x * nx + p.y * ny;
+      if (proj < lo) lo = proj;
+      if (proj > hi) hi = proj;
+    }
+    if (hi - lo < minFeret) minFeret = hi - lo;
+  }
+  return { minFeret: Number.isFinite(minFeret) ? minFeret : 0, maxFeret };
+}
+
 export function computePolygonAreaAndPerimeter(hull: readonly Point2D[]): {
   area: number;
   perimeter: number;
@@ -294,12 +347,30 @@ export function computeExtendedMorphometrics(
     }
 
     let convexAreaWorking = grain.areaPx * scaleSq;
+    let minFeretWorking = 0;
+    let maxFeretWorking = 0;
     if (boundaryPoints.length > 0) {
       const hull = computeConvexHull(boundaryPoints);
       const { area, perimeter } = computePolygonAreaAndPerimeter(hull);
       // Pixel-center Minkowski correction (+ 0.5 * hullPerimeter + 1) ensures convexArea >= areaPx
       convexAreaWorking = Math.max(1, area + 0.5 * perimeter + 1);
+
+      // Feret diameters on the pixel-EDGE hull (each boundary pixel is a unit square).
+      const corners: Point2D[] = [];
+      for (const p of boundaryPoints) {
+        corners.push(
+          { x: p.x - 0.5, y: p.y - 0.5 },
+          { x: p.x + 0.5, y: p.y - 0.5 },
+          { x: p.x + 0.5, y: p.y + 0.5 },
+          { x: p.x - 0.5, y: p.y + 0.5 },
+        );
+      }
+      const feret = computeFeretDiameters(computeConvexHull(corners));
+      minFeretWorking = feret.minFeret;
+      maxFeretWorking = feret.maxFeret;
     }
+    const minFeretPx = minFeretWorking / effectiveScaleFactor;
+    const maxFeretPx = maxFeretWorking / effectiveScaleFactor;
 
     const convexAreaPx = convexAreaWorking / scaleSq;
     const solidity =
@@ -344,6 +415,9 @@ export function computeExtendedMorphometrics(
       ...(convexAreaMm2 !== undefined ? { convexAreaMm2 } : {}),
       solidity,
       sphericity2D,
+      minFeretPx,
+      maxFeretPx,
+      ...(hasCalib ? { minFeretMm: minFeretPx * mmPerPx, maxFeretMm: maxFeretPx * mmPerPx } : {}),
     };
   });
 }

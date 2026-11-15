@@ -414,6 +414,14 @@ input:not([type="range"]):user-invalid {
   background: var(--bg-elevated);
 }
 
+.photo-error {
+  grid-column: 1 / -1;
+  font-size: 0.7rem;
+  line-height: 1.35;
+  color: var(--danger);
+  overflow-wrap: anywhere;
+}
+
 .photo-item.active {
   border-color: var(--accent);
   background: var(--accent-dim);
@@ -829,4 +837,11 @@ details summary {
   .tab-btn[aria-selected="true"]::after {
     border-block-end-color: Highlight;
   }
+}
+
+.metric-note {
+  margin: 6px 0 0;
+  font-size: 0.68rem;
+  line-height: 1.4;
+  color: var(--text-secondary);
 }

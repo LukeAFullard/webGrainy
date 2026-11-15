@@ -2,6 +2,8 @@ import * as ort from 'onnxruntime-web';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   createInferenceSession,
+  hasWebGpuAdapter,
+  resolveWasmPaths,
   float16BitsToFloat32Array,
   float16ToFloat32,
   float32ArrayToFloat16Bits,
@@ -124,7 +126,17 @@ describe('onnxInference', () => {
   });
 
   describe('createInferenceSession', () => {
-    it('configures local ./ort/ wasmPaths and falls back from webgpu to wasm', async () => {
+    const originalNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+    const setNavigator = (value: unknown): void => {
+      Object.defineProperty(globalThis, 'navigator', { value, configurable: true, writable: true });
+    };
+    afterEach(() => {
+      if (originalNavigator) Object.defineProperty(globalThis, 'navigator', originalNavigator);
+      vi.restoreAllMocks();
+    });
+
+    it('configures local ./ort/ wasmPaths and falls back from webgpu to wasm when the GPU EP fails', async () => {
+      setNavigator({ gpu: { requestAdapter: async () => ({}) } });
       const mockSession = { run: vi.fn() } as unknown as ort.InferenceSession;
       const createSpy = vi
         .spyOn(ort.InferenceSession, 'create')
@@ -141,14 +153,47 @@ describe('onnxInference', () => {
       expect(ort.env.wasm.simd).toBe(true);
       expect(ort.env.wasm.numThreads).toBe(2);
       expect(createSpy).toHaveBeenCalledTimes(2);
-      expect(createSpy.mock.calls[0]?.[1]).toEqual({
-        executionProviders: ['webgpu', 'wasm'],
-      });
-      expect(createSpy.mock.calls[1]?.[1]).toEqual({
-        executionProviders: ['wasm'],
-      });
+      expect(createSpy.mock.calls[0]?.[1]).toEqual({ executionProviders: ['webgpu'] });
+      expect(createSpy.mock.calls[1]?.[1]).toEqual({ executionProviders: ['wasm'] });
       expect(result.session).toBe(mockSession);
       expect(result.executionProvider).toBe('wasm');
+    });
+
+    it('reports webgpu only when an adapter exists and session creation succeeds', async () => {
+      setNavigator({ gpu: { requestAdapter: async () => ({}) } });
+      const mockSession = { run: vi.fn() } as unknown as ort.InferenceSession;
+      vi.spyOn(ort.InferenceSession, 'create').mockResolvedValueOnce(mockSession);
+      const result = await createInferenceSession(new Uint8Array([1]));
+      expect(result.executionProvider).toBe('webgpu');
+    });
+
+    it('skips WebGPU entirely when navigator.gpu has no adapter (headless / blocklisted GPU)', async () => {
+      setNavigator({ gpu: { requestAdapter: async () => null } });
+      expect(await hasWebGpuAdapter()).toBe(false);
+      const mockSession = { run: vi.fn() } as unknown as ort.InferenceSession;
+      const createSpy = vi.spyOn(ort.InferenceSession, 'create').mockResolvedValueOnce(mockSession);
+      const result = await createInferenceSession(new Uint8Array([1]));
+      expect(createSpy).toHaveBeenCalledTimes(1);
+      expect(createSpy.mock.calls[0]?.[1]).toEqual({ executionProviders: ['wasm'] });
+      expect(result.executionProvider).toBe('wasm');
+    });
+  });
+
+  describe('resolveWasmPaths', () => {
+    afterEach(() => {
+      delete (globalThis as { document?: unknown }).document;
+    });
+
+    it('resolves relative to the document (page), not the importing module', () => {
+      (globalThis as { document?: unknown }).document = { baseURI: 'https://example.org/app/index.html' };
+      // Regression: dist/ui/main.js previously resolved './ort/' to /app/ui/ort/ (404).
+      expect(resolveWasmPaths('./ort/')).toBe('https://example.org/app/ort/');
+    });
+
+    it('leaves absolute URLs and non-browser environments unchanged', () => {
+      expect(resolveWasmPaths('https://cdn.example/ort/')).toBe('https://cdn.example/ort/');
+      expect(resolveWasmPaths('/ort/')).toBe('/ort/');
+      expect(resolveWasmPaths('./ort/')).toBe('./ort/');
     });
   });
 

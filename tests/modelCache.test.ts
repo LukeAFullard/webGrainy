@@ -5,6 +5,10 @@ import {
   DB_NAME,
   DB_VERSION,
   DEFAULT_HF_BASE_URL,
+  MODEL_REVISION,
+  MODEL_INTEGRITY,
+  setModelIntegrityEnforcement,
+  sha256Hex,
   deleteCachedModel,
   downloadModel,
   getCachedModels,
@@ -249,8 +253,10 @@ describe('modelCache', () => {
     expect(DB_VERSION).toBe(1);
     expect(STORE_NAME).toBe('models');
     expect(DEFAULT_HF_BASE_URL).toBe(
-      'https://huggingface.co/inYourOwnBrowser/imagegrains-2.0-onnx/resolve/main/',
+      `https://huggingface.co/inYourOwnBrowser/imagegrains-2.0-onnx/resolve/${MODEL_REVISION}/`,
     );
+    expect(MODEL_REVISION).toMatch(/^[0-9a-f]{40}$/);
+    expect(DEFAULT_HF_BASE_URL).not.toContain('/resolve/main/');
     expect(MODEL_FILES.ig2_unet_fp32).toBe('ig2_unet_fp32.onnx');
     expect(MODEL_FILES.ig2_cpsam_fp16).toBe('ig2_cpsam_fp16.onnx');
   });
@@ -581,6 +587,72 @@ describe('modelCache', () => {
       usageBytes: 0,
       quotaBytes: 0,
       availableBytes: 0,
+    });
+  });
+
+  describe('integrity pinning (SHA-256 + size)', () => {
+    const original = { ...MODEL_INTEGRITY.ig2_unet_fp32 };
+    afterEach(() => {
+      MODEL_INTEGRITY.ig2_unet_fp32 = { ...original };
+      setModelIntegrityEnforcement(false);
+    });
+
+    it('sha256Hex matches the known digest of "abc"', async () => {
+      expect(await sha256Hex(new TextEncoder().encode('abc'))).toBe(
+        'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad',
+      );
+    });
+
+    it('accepts a payload whose SHA-256 and size match, and records the hash', async () => {
+      const payload = new Uint8Array([1, 2, 3, 4, 5]);
+      MODEL_INTEGRITY.ig2_unet_fp32 = { sha256: await sha256Hex(payload), sizeBytes: payload.byteLength };
+      setModelIntegrityEnforcement(true);
+      globalThis.fetch = vi.fn().mockResolvedValue(
+        createChunkedResponse([payload], { contentLength: payload.byteLength }),
+      ) as unknown as typeof fetch;
+      const buf = await downloadModel('ig2_unet_fp32');
+      expect(new Uint8Array(buf)).toEqual(payload);
+      const meta = (await getCachedModels()).find((m) => m.modelId === 'ig2_unet_fp32');
+      expect(meta?.sha256).toBe(MODEL_INTEGRITY.ig2_unet_fp32.sha256);
+    });
+
+    it('rejects a tampered payload of the right size and does not cache it', async () => {
+      const payload = new Uint8Array([1, 2, 3, 4, 5]);
+      MODEL_INTEGRITY.ig2_unet_fp32 = { sha256: await sha256Hex(payload), sizeBytes: 5 };
+      setModelIntegrityEnforcement(true);
+      globalThis.fetch = vi.fn().mockResolvedValue(
+        createChunkedResponse([new Uint8Array([9, 9, 9, 9, 9])], { contentLength: 5 }),
+      ) as unknown as typeof fetch;
+      await expect(downloadModel('ig2_unet_fp32')).rejects.toThrow(/Integrity check failed.*SHA-256/);
+      expect((await getCachedModels()).some((m) => m.modelId === 'ig2_unet_fp32')).toBe(false);
+    });
+
+    it('rejects a payload with the wrong size', async () => {
+      MODEL_INTEGRITY.ig2_unet_fp32 = { sha256: '0'.repeat(64), sizeBytes: 999 };
+      setModelIntegrityEnforcement(true);
+      globalThis.fetch = vi.fn().mockResolvedValue(
+        createChunkedResponse([new Uint8Array([1, 2])], { contentLength: 2 }),
+      ) as unknown as typeof fetch;
+      await expect(downloadModel('ig2_unet_fp32')).rejects.toThrow(/expected 999 bytes/);
+    });
+
+    it('treats a legacy unverified cache record as stale and re-downloads', async () => {
+      const payload = new Uint8Array([7, 7, 7]);
+      setModelIntegrityEnforcement(false);
+      globalThis.fetch = vi.fn().mockResolvedValue(
+        createChunkedResponse([payload], { contentLength: 3 }),
+      ) as unknown as typeof fetch;
+      await downloadModel('ig2_unet_fp32'); // cached without sha256
+      MODEL_INTEGRITY.ig2_unet_fp32 = { sha256: await sha256Hex(payload), sizeBytes: 3 };
+      setModelIntegrityEnforcement(true);
+      const fetchMock = vi.fn().mockResolvedValue(
+        createChunkedResponse([payload], { contentLength: 3 }),
+      );
+      globalThis.fetch = fetchMock as unknown as typeof fetch;
+      await getModel('ig2_unet_fp32');
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      await getModel('ig2_unet_fp32'); // now verified record -> cache hit
+      expect(fetchMock).toHaveBeenCalledTimes(1);
     });
   });
 });

@@ -3,6 +3,14 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!--
+    Content Security Policy. The only network egress is the pinned model download
+    (huggingface.co, which redirects to *.hf.co CDNs). 'wasm-unsafe-eval' is required
+    to compile the onnxruntime-web WebAssembly module. Inline style attributes are used
+    by the UI templates. Prefer sending this (plus frame-ancestors) as an HTTP header;
+    see DEPLOYMENT.md.
+  -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; connect-src 'self' https://huggingface.co https://*.huggingface.co https://*.hf.co; img-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; font-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'" />
   <meta name="color-scheme" content="dark light" />
   <meta name="text-scale" content="scale" />
   <meta name="theme-color" content="#0f1419" media="(prefers-color-scheme: dark)" />

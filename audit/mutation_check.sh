@@ -10,7 +10,7 @@ muts=(
  "src/modules/pipelineController.ts|areaPx: grain.areaPx \* invSq,|areaPx: grain.areaPx * inv,|area rescaled linearly instead of squared"
  "src/modules/postprocessCore.ts|const bAxisPx = 4.0 \* Math.sqrt(l2);|const bAxisPx = 4.2 * Math.sqrt(l2);|b-axis +5% scale error"
  "src/modules/siteAnalysis.ts|? (sumW \* sumW) / Math.max(1e-12, sumW2)|? sumW|Kish n_eff replaced by raw weight sum"
- "src/modules/siteAnalysis.ts|if (cum <= alpha / 2) {|if (cum <= alpha) {|binomial CI lower tail alpha instead of alpha/2"
+ "src/modules/siteAnalysis.ts|const lowTarget = alpha / 2;|const lowTarget = alpha;|binomial CI lower tail alpha instead of alpha/2"
  "src/modules/sedimentStats.ts|} else if (d < 64) {|} else if (d < 32) {|Wentworth gravel/cobble edge 64->32 mm"
  "src/modules/sedimentStats.ts|if (sortingPhi < 0.5) return 'Well Sorted';|if (sortingPhi < 0.6) return 'Well Sorted';|F&W sorting threshold"
  "src/modules/postprocessCore.ts|const wMag = Math.min(1.0, rawMag / 1.5);|const wMag = 1.0;|flow-QC magnitude weighting removed"

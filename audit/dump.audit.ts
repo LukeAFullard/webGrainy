@@ -83,3 +83,17 @@ it('homography', () => {
 });
 
 it('write', () => { writeFileSync('audit/out/ts_dump.json', JSON.stringify(out)); });
+
+it('feret', async () => {
+  const { computeExtendedMorphometrics } = await import('../src/modules/morphometricsExt');
+  const morph = out.morph as { W: number; H: number; res: Record<string, { mask: number[] }> };
+  const r: Record<string, unknown> = {};
+  for (const [name, v] of Object.entries(morph.res)) {
+    const m = Int32Array.from(v.mask);
+    const g = computeGrainMorphometrics(m, morph.W, morph.H, 0)[0]!;
+    const e = computeExtendedMorphometrics(m, [g], morph.W, morph.H, 1)[0]!;
+    r[name] = { minFeret: e.minFeretPx, maxFeret: e.maxFeretPx };
+  }
+  out.feret = r;
+  writeFileSync('audit/out/ts_dump.json', JSON.stringify(out));
+});

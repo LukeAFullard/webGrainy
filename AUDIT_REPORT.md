@@ -178,3 +178,42 @@ Ordered by severity. Confidence: **V** = verified (with a reproduction), **L** =
 3. Inspect every mask overlay. Delete false positives such as rulers, boots and vegetation, and split merged clasts.
 4. Report n, the pooling mode, the weighting, the model id and hash, the settings, and the statement that the size metric is the ellipse minor axis.
 5. Treat D16 and finer as truncated unless validated.
+
+---
+
+## 8. Remediation status (v1.1.0, 2026-11-15)
+
+The fixes below were made after the audit. Each one is backed by a test or by a re-run of
+the reproduction that originally exposed the finding.
+
+| ID | Status | Fix | Verification |
+|---|---|---|---|
+| F-01 | **Fixed** | `resolveWasmPaths()` resolves ORT paths against `document.baseURI` (`src/modules/onnxInference.ts`) | `npm run test:e2e:browser` on `dist/`: "1 done, 0 failed", n = 19 grains. The same script on the original build fails ("0 done, 1 failed"). Unit tests added in `tests/onnxInference.test.ts`. |
+| F-02 | **Documented (not fixable in code)** | README table split by reference, with a held-out caveat. Caveat block added to the validation report. | Numbers from `audit/recompute_validation.py`. A genuinely held-out re-validation (Section 7) is still required. |
+| F-03 | **Fixed** | Pinned revision `7773328a…`; size and SHA-256 verified via WebCrypto before caching and on every cache hit; legacy records re-downloaded | 5 new tests in `tests/modelCache.test.ts` (tamper, wrong size, legacy record). The E2E run used the pinned URL. |
+| F-04 | **Fixed** | Build stamps `sw.js` with a content hash and generated precache lists, plus a separate ORT cache; auto-activation with a reload prompt | Smoke test checks every precache asset returns 200 and that no placeholder is left. |
+| F-05 | **Fixed** | Per-photo error text and the batch failure reason are shown; WebGPU is reported only when a real adapter exists | E2E screenshot shows "WASM SIMD" on a headless browser with no adapter. New engine and inference tests. |
+| F-06 | **Fixed (labelling plus new metric)** | UI, README and export metadata define the size metric. Min/max Feret added (`computeFeretDiameters`, pooled CSV `min_feret_*`). | Matches the Python oracle exactly on 6 shapes (`audit/oracle.py` section 7). Unit test on a 20×80 rectangle. |
+| F-07 | **Fixed** | `AnalysisSession.setRoiConfig()`: stats and exports exclude ROI-excluded grains; CSV `in_roi` column; UI wired | `tests/auditRegressions.test.ts` (n and D50 change, CSV flags) |
+| F-08 | **Fixed** | UI defaults read from `DEFAULT_POSTPROCESS_OPTIONS` (0.45 / 30 = the benchmarked v4 configuration) | E2E screenshot shows 0.45 / 30 |
+| F-09 | **Documented** | README states that the QC is custom and is not Cellpose `flow_error` | Magnitude-weighting regression test added (the mutant now dies) |
+| F-10 | **Fixed** | `provenance.ts`: metadata in summary CSV/JSON, GeoJSON, SVG, printable PSD SVG, and `#` headers in grain CSVs; site exports list per-photo model hashes | `tests/auditRegressions.test.ts` (F-10 block) |
+| F-11 | **Fixed** | `csvCell()` applies OWASP neutralisation to every CSV string cell | Unit tests, including the pooled CSV with an `=HYPERLINK` label |
+| F-12 | **Fixed** | README table rewritten | — |
+| F-13 | **Fixed** | Validate-then-write import, size and dimension caps, prototype-key stripping, MIME whitelist, id remap on collision | 3 new tests (mismatch causes no write, collision keeps the existing site, `__proto__` stripped) |
+| F-14 / F-15 | **Fixed** | `warnings[]` on stats (n < 30, n < 100, mixed calibration, uncalibrated); Folk & Ward null for n < 2; shown in the dashboard | Unit tests |
+| F-16 | **Fixed** | Real-model `dist/` smoke test, plus regression tests for all 4 surviving mutants | Mutation check: **9/9 killed** (`audit/out/mutation_results_after_fixes.txt`) |
+| F-17 | **Fixed** | `perfBudget()` uses a 50× budget by default; `npm run test:perf` enforces the nominal budget | 3 consecutive full-suite runs green |
+| F-18 | **Fixed** | Streaming into a preallocated buffer when `Content-Length` is known | Existing streaming tests, plus the E2E run |
+| F-19 | **Fixed** | Linear interpolation of binomial ranks | Matches an independent scipy computation for 6 (n, p, α) cases to 1e-3 |
+| F-20 | **Fixed** | CI label uses `bootstrapCi.confidenceLevel` | — |
+| F-21 | **Fixed** | `db.onversionchange = () => db.close()` in both databases | — |
+| F-22 | **Fixed (meta CSP; COOP/COEP documented)** | CSP `<meta>` in `index.html`; header guidance in `DEPLOYMENT.md` | E2E run on the CSP build: no violations, inference completes |
+| F-23 | **Fixed** | PROJECT.md path and milestone, figure path, README counts removed in favour of CI | — |
+| F-24 | **Fixed (one item still open for maintainers)** | CI, CHANGELOG, CITATION.cff, THIRD_PARTY_NOTICES.md, DEPLOYMENT.md (with browser matrix); `dist/` pruned from 111 MB to 35 MB | Open: confirm with upstream that redistributing the converted weights under CC BY 4.0 is compatible with the upstream terms (unverifiable from here) |
+
+**Still open, and needed before scientific use:** a genuinely held-out validation against
+physical measurements (Section 7), and a decision on whether to offer min-Feret as a
+selectable pooling size metric (it is currently exported but not pooled). The revised
+verdict for public release is **Conditional-Go**, subject to a green CI run on the target
+host and the post-deployment checklist in `DEPLOYMENT.md`.

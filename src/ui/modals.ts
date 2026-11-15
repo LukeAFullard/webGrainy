@@ -3,14 +3,11 @@ import type { AnalysisSession } from '../modules/pipelineController.js';
 import type { PhotoRecord, SiteRecord } from '../modules/projectStorage.js';
 import type { SiteAnalysisReport, SitePhotoInput } from '../modules/siteAnalysis.js';
 import {
+  buildSiteExportMetadata,
   exportSiteGrainsCsv,
   exportSiteSummaryCsv,
   exportSiteSummaryJson,
 } from '../modules/siteAnalysis.js';
-import {
-  exportGeoJsonContours,
-  exportSvgContours,
-} from '../modules/sedimentStats.js';
 import { exportSiteArchive } from '../modules/projectStorage.js';
 import { renderPrintablePsdSvg } from './charts.js';
 import type { AppState } from './state.js';
@@ -322,17 +319,40 @@ export async function handleExportAction(
 
   switch (kind) {
     case 'site-summary-csv':
-      if (siteReport) triggerBlobDownload(exportSiteSummaryCsv(siteReport), `${safeSite}_summary.csv`);
+      if (siteReport) {
+        triggerBlobDownload(
+          exportSiteSummaryCsv(siteReport, buildSiteExportMetadata(siteInputs, siteReport)),
+          `${safeSite}_summary.csv`,
+        );
+      }
       break;
     case 'site-summary-json':
-      if (siteReport) triggerBlobDownload(exportSiteSummaryJson(siteReport), `${safeSite}_summary.json`);
+      if (siteReport) {
+        triggerBlobDownload(
+          exportSiteSummaryJson(siteReport, buildSiteExportMetadata(siteInputs, siteReport)),
+          `${safeSite}_summary.json`,
+        );
+      }
       break;
     case 'site-grains-csv':
-      if (siteReport) triggerBlobDownload(exportSiteGrainsCsv(siteInputs, siteReport), `${safeSite}_pooled_grains.csv`);
+      if (siteReport) {
+        triggerBlobDownload(
+          exportSiteGrainsCsv(siteInputs, siteReport, {
+            metadata: buildSiteExportMetadata(siteInputs, siteReport),
+          }),
+          `${safeSite}_pooled_grains.csv`,
+        );
+      }
       break;
     case 'site-psd-svg':
       if (siteReport) {
-        const svg = renderPrintablePsdSvg(siteReport, site?.name ?? 'Site', psdXAxis);
+        const rawSvg = renderPrintablePsdSvg(siteReport, site?.name ?? 'Site', psdXAxis);
+        const metaXml = JSON.stringify(buildSiteExportMetadata(siteInputs, siteReport))
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;');
+        const openEnd = rawSvg.indexOf('>') + 1;
+        const svg = `${rawSvg.slice(0, openEnd)}<metadata id="webgrainy-provenance">${metaXml}</metadata>${rawSvg.slice(openEnd)}`;
         triggerBlobDownload(new Blob([svg], { type: 'image/svg+xml' }), `${safeSite}_psd.svg`);
       }
       break;
@@ -344,7 +364,10 @@ export async function handleExportAction(
       break;
     case 'photo-grains-csv':
       if (session) {
-        triggerBlobDownload(new Blob([session.exportCsv()], { type: 'text/csv' }), `${safePhoto}_grains.csv`);
+        triggerBlobDownload(
+          new Blob([session.exportCsv({ includeMetadata: true })], { type: 'text/csv' }),
+          `${safePhoto}_grains.csv`,
+        );
       }
       break;
     case 'photo-summary-csv':
@@ -371,26 +394,19 @@ export async function handleExportAction(
       break;
     case 'photo-geojson':
       if (session) {
-        const wi = session.workingImage;
-        const blob = exportGeoJsonContours(
-          session.getWorkingMasks(),
-          session.getWorkingGrains(),
-          wi.width,
-          wi.height,
+        // Session exporter: original-image coordinates + provenance metadata.
+        triggerBlobDownload(
+          new Blob([session.exportGeoJson()], { type: 'application/geo+json' }),
+          `${safePhoto}_contours.geojson`,
         );
-        triggerBlobDownload(blob, `${safePhoto}_contours.geojson`);
       }
       break;
     case 'photo-svg':
       if (session) {
-        const wi = session.workingImage;
-        const blob = exportSvgContours(
-          session.getWorkingMasks(),
-          session.getWorkingGrains(),
-          wi.width,
-          wi.height,
+        triggerBlobDownload(
+          new Blob([session.exportSvg()], { type: 'image/svg+xml' }),
+          `${safePhoto}_contours.svg`,
         );
-        triggerBlobDownload(blob, `${safePhoto}_contours.svg`);
       }
       break;
   }

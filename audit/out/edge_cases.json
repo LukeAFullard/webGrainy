@@ -8,16 +8,7 @@
     "D16": 5,
     "D50": 5,
     "D84": 5,
-    "fw": {
-      "meanPhi": -2.321928094887362,
-      "sortingPhi": 0,
-      "skewnessPhi": 0,
-      "kurtosisPhi": 1,
-      "meanMm": 4.999999999999999,
-      "sortingLabel": "Very Well Sorted",
-      "skewnessLabel": "Near Symmetrical",
-      "kurtosisLabel": "Mesokurtic"
-    }
+    "fw": null
   },
   "allBorder": {
     "included": 0,
@@ -34,7 +25,7 @@
   },
   "csvLabelSample": "",
   "csvLines": [
-    "p1,=1+2.jpg,",
-    "p2,@SUM(1).jpg,"
+    "p1,'=1+2.jpg,",
+    "p2,'@SUM(1).jpg,"
   ]
 }

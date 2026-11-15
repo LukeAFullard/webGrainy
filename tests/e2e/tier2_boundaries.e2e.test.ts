@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { perfBudget } from '../perfBudget.js';
 import * as ort from 'onnxruntime-web';
 import {
   downloadModel,
@@ -198,7 +199,7 @@ describe('Tier 2: Boundary & Corner Cases — ImageGrains 2.0 Web', () => {
       const img = createUniformGravelImage(512, 512);
       await recommendModel(img.data, 512, 512); // warm-up JIT
       const rec = await recommendModel(img.data, 512, 512);
-      expect(rec.metrics.elapsedMs).toBeLessThan(15);
+      expect(rec.metrics.elapsedMs).toBeLessThan(perfBudget(15));
     });
   });
 
@@ -483,7 +484,7 @@ describe('Tier 2: Boundary & Corner Cases — ImageGrains 2.0 Web', () => {
       const t0 = performance.now();
       expect(history.undo(masks)).not.toBeNull();
       const elapsed = performance.now() - t0;
-      expect(elapsed).toBeLessThan(1.0);
+      expect(elapsed).toBeLessThan(perfBudget(1.0));
     });
 
     it('ScaleCalibrator throws on zero, negative, NaN, Infinity physical length or coincident points', () => {

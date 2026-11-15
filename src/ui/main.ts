@@ -164,15 +164,17 @@ function recomputeReports(): void {
 
   const siteInputs = buildSiteInputs(state);
   let siteReport = null;
+  let siteReportError: string | null = null;
   if (siteInputs.some((p) => p.included)) {
     try {
       siteReport = analyzeSite(siteInputs, state.siteOptions);
-    } catch {
+    } catch (err) {
       siteReport = null;
+      siteReportError = err instanceof Error ? err.message : String(err);
     }
   }
 
-  store.setState({ singlePhotoStats, siteReport });
+  store.setState({ singlePhotoStats, siteReport, siteReportError });
 }
 
 async function refreshCapabilities(): Promise<void> {
@@ -209,6 +211,7 @@ async function loadSiteData(siteId: string): Promise<void> {
         try {
           const sess = AnalysisSession.fromSerialized(res.serializedSession);
           if (p.calibration) sess.setCalibration(p.calibration);
+          if (p.roiConfig) sess.setRoiConfig(p.roiConfig);
           sessions.set(p.photoId, sess);
         } catch {
           photoStatuses.set(p.photoId, 'pending');
@@ -373,13 +376,18 @@ async function runBatch(photoIds?: string[]): Promise<void> {
       },
       onPhotoComplete: (photo, session) => {
         const prev = store.getState();
+        const roi = prev.photos.find((p) => p.photoId === photo.photoId)?.roiConfig ?? photo.roiConfig;
+        if (roi) session.setRoiConfig(roi);
         const nextSessions = new Map(prev.sessions);
         nextSessions.set(photo.photoId, session);
         const nextStatuses = new Map(prev.photoStatuses);
         nextStatuses.set(photo.photoId, 'done');
+        const nextErrors = new Map(prev.photoErrors);
+        nextErrors.delete(photo.photoId);
         store.setState({
           sessions: nextSessions,
           photoStatuses: nextStatuses,
+          photoErrors: nextErrors,
         });
         recomputeReports();
         if (store.getState().activePhotoId === photo.photoId) {
@@ -399,10 +407,15 @@ async function runBatch(photoIds?: string[]): Promise<void> {
       },
     });
 
+    const errs = store.getState().photoErrors;
+    const firstFailure = result.failedPhotoIds
+      .map((id) => errs.get(id))
+      .find((m): m is string => typeof m === 'string' && m.length > 0);
     store.setState({
       statusMessage: result.aborted
         ? `Batch cancelled (${result.completed}/${result.total} completed)`
-        : `Batch complete: ${result.completed} done, ${result.failed} failed`,
+        : `Batch complete: ${result.completed} done, ${result.failed} failed` +
+          (firstFailure ? ` — ${firstFailure}` : ''),
     });
   } catch (err) {
     store.setState({
@@ -669,6 +682,7 @@ function renderSidebar(state: AppState): void {
                   const recModel = sess?.recommendation.model;
                   const thumb = state.thumbUrls.get(ph.photoId) ?? '';
                   const isActive = ph.photoId === state.activePhotoId;
+                  const errMsg = status === 'error' ? state.photoErrors.get(ph.photoId) ?? 'Analysis failed (no details reported).' : '';
                   return `
                     <div class="photo-item ${isActive ? 'active' : ''}">
                       <input type="checkbox" data-toggle-include="${esc(ph.photoId)}" ${ph.included ? 'checked' : ''} aria-label="Include ${esc(ph.label)} in site aggregate" title="Include in site aggregate" />
@@ -681,8 +695,9 @@ function renderSidebar(state: AppState): void {
                             ${recModel ? ` · ${recModel}` : ''}
                           </span>
                         </span>
-                        <span class="badge ${status}">${status}</span>
+                        <span class="badge ${status}"${errMsg ? ` title="${esc(errMsg)}"` : ''}>${status}</span>
                       </button>
+                      ${errMsg ? `<div class="photo-error" role="alert">${esc(errMsg)}</div>` : ''}
                     </div>
                   `;
                 })
@@ -861,8 +876,8 @@ function renderViewportExtras(state: AppState): void {
           <button type="button" class="btn btn-sm" data-action="close-inspector" aria-label="Close grain inspector">×</button>
         </div>
         <div style="font-family:var(--font-mono);line-height:1.5;">
-          <div>b-axis: ${grain.bAxisMm !== undefined ? `${grain.bAxisMm.toFixed(2)} mm` : `${grain.bAxisPx.toFixed(1)} px`}</div>
-          <div>a-axis: ${grain.aAxisMm !== undefined ? `${grain.aAxisMm.toFixed(2)} mm` : `${grain.aAxisPx.toFixed(1)} px`}</div>
+          <div title="Minor axis of the moment-equivalent ellipse (not a caliper b-axis)">b (ellipse minor): ${grain.bAxisMm !== undefined ? `${grain.bAxisMm.toFixed(2)} mm` : `${grain.bAxisPx.toFixed(1)} px`}</div>
+          <div title="Major axis of the moment-equivalent ellipse">a (ellipse major): ${grain.aAxisMm !== undefined ? `${grain.aAxisMm.toFixed(2)} mm` : `${grain.aAxisPx.toFixed(1)} px`}</div>
           <div>d_eq: ${grain.dEqMm !== undefined ? `${grain.dEqMm.toFixed(2)} mm` : `${grain.dEqPx.toFixed(1)} px`}</div>
           <div>Area: ${grain.areaMm2 !== undefined ? `${grain.areaMm2.toFixed(1)} mm²` : `${grain.areaPx.toFixed(0)} px²`}</div>
           ${
@@ -892,7 +907,10 @@ function renderDashboard(state: AppState): void {
   const unit = isSite ? (report?.unit ?? 'px') : (single?.unit ?? 'px');
   const fw = isSite ? report?.folkWard : single?.folkWard;
   const basisLabel = isSite
-    ? report?.statisticalBasisLabel ?? 'Add & analyze photos to compute site statistics'
+    ? report?.statisticalBasisLabel ??
+      (state.siteReportError
+        ? `Site statistics unavailable: ${state.siteReportError}`
+        : 'Add & analyze photos to compute site statistics')
     : 'Single-Photo Area-Weighted (Grid-by-Number Equivalent)';
 
   let tabContent = '';
@@ -919,7 +937,7 @@ function renderDashboard(state: AppState): void {
         </div>
         ${
           report
-            ? `<span style="font-size:0.65rem;color:var(--text-secondary);">95% CI: [${report.bootstrapCi.lower.D50.toFixed(1)}, ${report.bootstrapCi.upper.D50.toFixed(1)}] ${unit}</span>`
+            ? `<span style="font-size:0.65rem;color:var(--text-secondary);">${Math.round(report.bootstrapCi.confidenceLevel * 100)}% CI: [${report.bootstrapCi.lower.D50.toFixed(1)}, ${report.bootstrapCi.upper.D50.toFixed(1)}] ${unit}</span>`
             : ''
         }
       </div>
@@ -1040,17 +1058,23 @@ function renderDashboard(state: AppState): void {
           </span>
         </label>
       </div>
-      <div class="basis-banner">${esc(basisLabel)}</div>
-      ${
-        report && report.warnings.length > 0
-          ? `<div class="warning-banner" role="alert">${report.warnings.map(esc).join('<br/>')}</div>`
+      <div class="basis-banner">${esc(basisLabel)}${
+        !isSite && single
+          ? ` · n = ${single.includedGrains}${activeSession && activeSession.getRoiExcludedGrainCount() > 0 ? ` (${activeSession.getRoiExcludedGrainCount()} excluded by ROI)` : ''}`
           : ''
-      }
+      }</div>
+      ${(() => {
+        const warns = isSite ? report?.warnings ?? [] : single?.warnings ?? [];
+        return warns.length > 0
+          ? `<div class="warning-banner" role="alert">${warns.map(esc).join('<br/>')}</div>`
+          : '';
+      })()}
       <div class="stat-grid" style="margin-top:8px;">
         <div class="stat-card"><div class="stat-label">D₁₆</div><div class="stat-value">${psd ? psd.D16.toFixed(1) : '—'}</div><div class="stat-sub">${unit}</div></div>
         <div class="stat-card"><div class="stat-label">D₅₀ (Median)</div><div class="stat-value">${psd ? psd.D50.toFixed(1) : '—'}</div><div class="stat-sub">${unit}</div></div>
         <div class="stat-card"><div class="stat-label">D₈₄</div><div class="stat-value">${psd ? psd.D84.toFixed(1) : '—'}</div><div class="stat-sub">${unit}</div></div>
       </div>
+      <p class="metric-note">Size metric: minor axis of the moment-equivalent ellipse of each grain's visible outline — not a sieve or caliper b-axis (see min Feret in the pooled grains CSV).</p>
     </div>
 
     <div class="tabs" role="tablist" aria-label="Dashboard analyses">
@@ -1142,6 +1166,7 @@ function renderAll(state: AppState): void {
     prev.sessions !== state.sessions ||
     prev.photos !== state.photos ||
     prev.siteReport !== state.siteReport ||
+    prev.siteReportError !== state.siteReportError ||
     prev.singlePhotoStats !== state.singlePhotoStats
   ) {
     renderToolbarAndOverlays(state);
@@ -1152,6 +1177,7 @@ function renderAll(state: AppState): void {
   if (
     !prev ||
     prev.siteReport !== state.siteReport ||
+    prev.siteReportError !== state.siteReportError ||
     prev.singlePhotoStats !== state.singlePhotoStats ||
     prev.dashboardScope !== state.dashboardScope ||
     prev.dashboardTab !== state.dashboardTab ||
@@ -1325,6 +1351,7 @@ function mountShell(): void {
             exclusionPolygons: [...prev.exclusionPolygons, points],
           },
         };
+        if (updated.roiConfig) state.sessions.get(photo.photoId)?.setRoiConfig(updated.roiConfig);
         void savePhoto(updated);
         store.setState({
           photos: state.photos.map((p) => (p.photoId === photo.photoId ? updated : p)),
@@ -1344,6 +1371,7 @@ function mountShell(): void {
             exclusionStrokes: [...prev.exclusionStrokes, { points, radiusPx }],
           },
         };
+        if (updated.roiConfig) state.sessions.get(photo.photoId)?.setRoiConfig(updated.roiConfig);
         void savePhoto(updated);
         store.setState({
           photos: state.photos.map((p) => (p.photoId === photo.photoId ? updated : p)),
@@ -1796,17 +1824,30 @@ async function registerServiceWorker(): Promise<void> {
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
     store.setState({ swStatus: 'registering' });
     try {
-      const reg = await navigator.serviceWorker.register('./sw.js');
+      const hadController = Boolean(navigator.serviceWorker.controller);
+      const reg = await navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' });
+      // A waiting worker never activates on a plain reload, so activate it explicitly and
+      // ask the user to reload once the new version controls the page.
+      const activateWaiting = (worker: ServiceWorker | null): void => {
+        worker?.postMessage({ type: 'SKIP_WAITING' });
+      };
+      if (reg.waiting && hadController) activateWaiting(reg.waiting);
       reg.addEventListener('updatefound', () => {
         const installing = reg.installing;
         if (!installing) return;
         installing.addEventListener('statechange', () => {
           if (installing.state === 'installed' && navigator.serviceWorker.controller) {
-            store.setState({
-              statusMessage: 'Offline app update ready — reload when finished to apply',
-            });
+            activateWaiting(installing);
           }
         });
+      });
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (hadController) {
+          store.setState({
+            statusMessage:
+              'A new version of webGrainy was installed. Save your work and reload the page to use it.',
+          });
+        }
       });
       store.setState({ swStatus: 'ready' });
     } catch {

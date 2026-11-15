@@ -8,6 +8,11 @@ import type {
 
 const DEFAULT_PERCENTILES = [5, 10, 16, 25, 50, 75, 84, 90, 95] as const;
 
+/** Below this many grains, per-photo statistics are flagged as unreliable. */
+export const MIN_GRAINS_RELIABLE = 30;
+/** Commonly recommended minimum sample size for a stable D50 (e.g. Wolman counts). */
+export const MIN_GRAINS_ADEQUATE = 100;
+
 /**
  * Filters out border-touching grains when `excludeBorder` is `true` (default).
  */
@@ -330,8 +335,31 @@ export function computeSedimentStats(
   const areaWeightedDEq = computePsdPercentiles(dEqVals, areaWeights);
   const numberWeightedDEq = computePsdPercentiles(dEqVals, numberWeights);
 
+  const warnings: string[] = [];
+  if (n === 0) {
+    warnings.push('No grains available for statistics after border/ROI filtering.');
+  } else if (n < MIN_GRAINS_RELIABLE) {
+    warnings.push(
+      `Only ${n} grain(s) included: percentiles are highly uncertain and Folk & Ward classes are not meaningful (>= ${MIN_GRAINS_ADEQUATE} recommended).`,
+    );
+  } else if (n < MIN_GRAINS_ADEQUATE) {
+    warnings.push(
+      `${n} grains included: fewer than the ~${MIN_GRAINS_ADEQUATE} usually recommended for a stable D50; D84/D95 are especially uncertain.`,
+    );
+  }
+  const calibratedCount = included.filter(
+    (g) => typeof g.bAxisMm === 'number' && Number.isFinite(g.bAxisMm),
+  ).length;
+  if (calibratedCount > 0 && calibratedCount < n) {
+    warnings.push(
+      `Mixed calibration: ${n - calibratedCount} of ${n} grains lack a mm value, so all statistics are reported in pixels.`,
+    );
+  } else if (n > 0 && unit === 'px') {
+    warnings.push('Uncalibrated: all sizes are in original-image pixels, not mm. Calibrate scale for physical units.');
+  }
+
   const folkWard =
-    unit === 'mm' ? computeFolkWardStats(areaWeightedB) : null;
+    unit === 'mm' && n >= 2 ? computeFolkWardStats(areaWeightedB) : null;
   const wentworth =
     unit === 'mm' ? computeWentworthProportions(included) : null;
 
@@ -346,6 +374,7 @@ export function computeSedimentStats(
     numberWeightedDEq,
     folkWard,
     wentworth,
+    warnings,
   };
 }
 

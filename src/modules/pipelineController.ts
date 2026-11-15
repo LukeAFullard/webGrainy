@@ -29,11 +29,12 @@ import {
 } from './imagePreprocess.js';
 import {
   createInferenceSession,
+  hasWebGpuAdapter,
   runCpsamTiledInference,
   runUnetInference,
   type SessionCreateOptions,
 } from './onnxInference.js';
-import { flowsToMasksBrowser } from './postprocessCore.js';
+import { DEFAULT_POSTPROCESS_OPTIONS, flowsToMasksBrowser } from './postprocessCore.js';
 import {
   addPolygonGrain as editorAddPolygonGrain,
   computeAllGrainMorphometrics,
@@ -44,6 +45,17 @@ import {
   splitGrainAtLine as editorSplitGrainAtLine,
 } from './interactiveEditor.js';
 import { computeSedimentStats } from './sedimentStats.js';
+import {
+  type AnalysisProvenance,
+  baseExportMetadata,
+  buildAnalysisProvenance,
+  metadataCommentLines,
+  metadataSummaryRows,
+} from './provenance.js';
+import {
+  filterGrainsByRoiAndExclusion,
+  type RoiExclusionConfig,
+} from './roiAndRectify.js';
 
 export interface InferenceSessionLike {
   run(
@@ -442,6 +454,15 @@ function extractImageBuffer(
   );
 }
 
+function stripUndefined<T extends object>(obj: T | undefined): Partial<T> {
+  const out: Partial<T> = {};
+  if (obj === undefined) return out;
+  for (const [k, v] of Object.entries(obj)) {
+    if (v !== undefined) (out as Record<string, unknown>)[k] = v;
+  }
+  return out;
+}
+
 function cloneGrain(grain: GrainMorphometrics): GrainMorphometrics {
   return {
     ...grain,
@@ -490,6 +511,9 @@ export class AnalysisSession {
   private calibration: CalibrationResult | undefined;
   private excludeBorder: boolean;
   private readonly borderMargin: number;
+  private roiConfig: RoiExclusionConfig | undefined;
+  private readonly provenance: AnalysisProvenance | undefined;
+  private roiExcludedGrainCount = 0;
   private readonly history = new MaskEditHistory();
   private readonly listeners = new Set<(session: AnalysisSession) => void>();
 
@@ -501,8 +525,12 @@ export class AnalysisSession {
     calibration?: CalibrationResult;
     excludeBorder?: boolean;
     borderMargin?: number;
+    roiConfig?: RoiExclusionConfig;
+    provenance?: AnalysisProvenance;
   }) {
     this.workingImage = params.workingImage;
+    this.roiConfig = params.roiConfig;
+    this.provenance = params.provenance;
     this.recommendation = params.recommendation;
     this.workingMasks = params.masks;
     this.workingGrains = params.workingGrains.map(cloneGrain);
@@ -548,6 +576,60 @@ export class AnalysisSession {
     return this.borderMargin;
   }
 
+  /** Reproducibility record (model hash, parameters, versions) for this analysis. */
+  getProvenance(): AnalysisProvenance | undefined {
+    return this.provenance;
+  }
+
+  getRoiConfig(): RoiExclusionConfig | undefined {
+    return this.roiConfig;
+  }
+
+  /** Number of grains removed from statistics by the ROI / exclusion masks. */
+  getRoiExcludedGrainCount(): number {
+    return this.roiExcludedGrainCount;
+  }
+
+  /**
+   * Sets the analysis ROI / exclusion configuration (original-image coordinates).
+   * Statistics and tabular exports only include grains inside the valid bed area,
+   * consistent with site-level pooling.
+   */
+  setRoiConfig(config: RoiExclusionConfig | undefined): void {
+    this.roiConfig = config;
+    this.recomputeDerivedState(true);
+  }
+
+  /** Metadata block attached to every export of this session. */
+  getExportMetadata(): Record<string, unknown> {
+    const wi = this.workingImage;
+    return {
+      ...baseExportMetadata(),
+      ...(this.provenance !== undefined ? { analysis: this.provenance } : {}),
+      image: {
+        originalWidth: wi.originalWidth,
+        originalHeight: wi.originalHeight,
+        workingWidth: wi.width,
+        workingHeight: wi.height,
+        effectiveScaleFactor: wi.effectiveScaleFactor,
+        coordinateSystem: 'original-image pixels (x right, y down)',
+      },
+      calibration:
+        this.calibration !== undefined
+          ? {
+              mmPerPx: this.calibration.mmPerPx,
+              method: 'two-point',
+              referenceLengthMm: this.calibration.physicalLengthMm,
+              referencePixelDistance: this.calibration.pixelDistance,
+            }
+          : 'uncalibrated (all sizes in original-image pixels)',
+      excludeBorder: this.excludeBorder,
+      borderMarginWorkingPx: this.borderMargin,
+      roiApplied: this.roiConfig !== undefined,
+      roiExcludedGrains: this.roiExcludedGrainCount,
+    };
+  }
+
   getWorkingMasks(): Int32Array {
     return this.workingMasks;
   }
@@ -579,6 +661,7 @@ export class AnalysisSession {
         : {}),
       excludeBorder: this.excludeBorder,
       borderMargin: this.borderMargin,
+      ...(this.provenance !== undefined ? { provenance: { ...this.provenance } } : {}),
     };
   }
 
@@ -588,6 +671,7 @@ export class AnalysisSession {
     }
     const { workingImage, workingMasks, recommendation, calibration, excludeBorder, borderMargin } =
       data;
+    const provenance = data.provenance;
     const expectedLen = workingImage.width * workingImage.height;
     if (
       workingImage.width <= 0 ||
@@ -628,6 +712,7 @@ export class AnalysisSession {
       calibration,
       excludeBorder,
       borderMargin,
+      ...(provenance !== undefined ? { provenance } : {}),
     });
   }
 
@@ -928,10 +1013,22 @@ export class AnalysisSession {
     this.recomputeDerivedState(true);
   }
 
-  exportCsv(): string {
+  /**
+   * Per-grain table in original-image coordinates. Grains excluded by the ROI are
+   * flagged in `in_roi`. With `includeMetadata`, `# key: value` provenance lines are
+   * prepended (read with e.g. `pandas.read_csv(path, comment='#')`).
+   */
+  exportCsv(options?: { includeMetadata?: boolean }): string {
     const header =
-      'grain_id,centroid_x,centroid_y,area_px,a_axis_px,b_axis_px,d_eq_px,a_axis_mm,b_axis_mm,d_eq_mm,touches_border';
-    const lines: string[] = [header];
+      'grain_id,centroid_x,centroid_y,area_px,a_axis_px,b_axis_px,d_eq_px,a_axis_mm,b_axis_mm,d_eq_mm,touches_border' +
+      (this.roiConfig !== undefined ? ',in_roi' : '');
+    const lines: string[] = options?.includeMetadata
+      ? [...metadataCommentLines(this.getExportMetadata()), header]
+      : [header];
+    const inRoi =
+      this.roiConfig !== undefined
+        ? new Set(this.getStatsGrains().map((g) => g.id))
+        : null;
 
     for (const g of this.grains) {
       const row = [
@@ -946,6 +1043,7 @@ export class AnalysisSession {
         g.bAxisMm !== undefined ? g.bAxisMm : '',
         g.dEqMm !== undefined ? g.dEqMm : '',
         g.touchesBorder,
+        ...(inRoi !== null ? [inRoi.has(g.id)] : []),
       ].join(',');
       lines.push(row);
     }
@@ -954,12 +1052,13 @@ export class AnalysisSession {
   }
 
   exportSummaryJson(): string {
-    return JSON.stringify(this.stats, null, 2);
+    return JSON.stringify({ metadata: this.getExportMetadata(), ...this.stats }, null, 2);
   }
 
   exportSummaryCsv(): string {
     const report = this.stats;
     const lines: string[] = ['section,metric,value,unit'];
+    lines.push(...metadataSummaryRows(this.getExportMetadata()));
 
     lines.push(`summary,total_grains,${report.totalGrains},count`);
     lines.push(`summary,included_grains,${report.includedGrains},count`);
@@ -1163,6 +1262,8 @@ export class AnalysisSession {
 
     return JSON.stringify({
       type: 'FeatureCollection',
+      // RFC 7946 §6.1 foreign member: provenance & coordinate system.
+      metadata: this.getExportMetadata(),
       features,
     });
   }
@@ -1213,11 +1314,35 @@ export class AnalysisSession {
       }
     }
 
+    const metaJson = JSON.stringify(this.getExportMetadata())
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
     return [
       `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${origWidth} ${origHeight}" width="${origWidth}" height="${origHeight}">`,
+      `  <metadata id="webgrainy-provenance">${metaJson}</metadata>`,
       ...paths,
       '</svg>',
     ].join('\n');
+  }
+
+  /** Grains eligible for statistics: all grains, minus those excluded by the ROI config. */
+  private getStatsGrains(): GrainMorphometrics[] {
+    this.roiExcludedGrainCount = 0;
+    if (this.roiConfig === undefined || this.grains.length === 0) {
+      return this.grains;
+    }
+    const res = filterGrainsByRoiAndExclusion(
+      this.workingMasks,
+      this.grains,
+      this.workingImage.width,
+      this.workingImage.height,
+      this.workingImage.effectiveScaleFactor,
+      this.roiConfig,
+      this.calibration?.mmPerPx,
+    );
+    this.roiExcludedGrainCount = this.grains.length - res.includedGrains.length;
+    return res.includedGrains;
   }
 
   private recomputeDerivedState(notify: boolean): void {
@@ -1230,7 +1355,7 @@ export class AnalysisSession {
       );
     }
     this.grains = derived;
-    this.stats = computeSedimentStats(this.grains, {
+    this.stats = computeSedimentStats(this.getStatsGrains(), {
       excludeBorder: this.excludeBorder,
     });
     if (notify) {
@@ -1260,6 +1385,7 @@ export class ImageGrainsEngine {
   private requestSeq = 0;
   private disposed = false;
   private readonly pendingWorkerRejects = new Set<(err: Error) => void>();
+  private readonly sessionExecutionProviders = new Map<ModelKind, string>();
   private readonly inFlightSessions = new Map<
     ModelKind,
     Promise<ort.InferenceSession | InferenceSessionLike>
@@ -1288,7 +1414,8 @@ export class ImageGrainsEngine {
       | { gpu?: unknown; deviceMemory?: number }
       | undefined;
 
-    const hasWebGPU = Boolean(nav?.gpu);
+    // navigator.gpu may exist without a usable adapter (headless, blocklisted GPU).
+    const hasWebGPU = await hasWebGpuAdapter();
     const hasWasmSimd = probeWasmSimd();
     const deviceMemoryGB =
       typeof nav?.deviceMemory === 'number' && Number.isFinite(nav.deviceMemory)
@@ -1421,7 +1548,20 @@ export class ImageGrainsEngine {
       workingGrains: ppResult.grains,
       calibration: config?.calibration,
       excludeBorder: config?.excludeBorder ?? true,
-      borderMargin: config?.postProcess?.excludeBorderMargin ?? 2,
+      borderMargin:
+        config?.postProcess?.excludeBorderMargin ??
+        DEFAULT_POSTPROCESS_OPTIONS.excludeBorderMargin,
+      provenance: buildAnalysisProvenance({
+        modelId: MODEL_ID_BY_KIND[selectedModel],
+        ...(this.sessionExecutionProviders.has(selectedModel)
+          ? { executionProvider: this.sessionExecutionProviders.get(selectedModel)! }
+          : {}),
+        scaleMode: config?.scaleMode ?? 'auto',
+        effectiveScaleFactor: workingImage.effectiveScaleFactor,
+        applyClahe: config?.applyClahe ?? false,
+        ...(config?.applyClahe ? { claheClipLimit: config.claheClipLimit ?? 2 } : {}),
+        postProcess: { ...DEFAULT_POSTPROCESS_OPTIONS, ...stripUndefined(config?.postProcess) },
+      }),
     });
 
     emit('done', {
@@ -1503,6 +1643,7 @@ export class ImageGrainsEngine {
           this.options.sessionCreateOptions,
         );
         session = created.session;
+        this.sessionExecutionProviders.set(modelKind, created.executionProvider);
         isOwned = true;
       }
 

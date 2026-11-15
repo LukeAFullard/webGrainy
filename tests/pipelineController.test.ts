@@ -148,7 +148,7 @@ describe('pipelineController (ImageGrainsEngine & AnalysisSession)', () => {
   it('initialize() probes WebGPU, WASM SIMD, deviceMemory, and cached models', async () => {
     Object.defineProperty(globalThis, 'navigator', {
       value: {
-        gpu: {},
+        gpu: { requestAdapter: async () => ({}) },
         deviceMemory: 8,
       },
       configurable: true,
@@ -163,6 +163,15 @@ describe('pipelineController (ImageGrainsEngine & AnalysisSession)', () => {
     expect(Array.isArray(caps.cachedModels)).toBe(true);
 
     await engine.dispose();
+
+    // navigator.gpu without an adapter must NOT be reported as WebGPU-capable.
+    Object.defineProperty(globalThis, 'navigator', {
+      value: { gpu: { requestAdapter: async () => null }, deviceMemory: 8 },
+      configurable: true,
+    });
+    const engine2 = new ImageGrainsEngine();
+    expect((await engine2.initialize()).hasWebGPU).toBe(false);
+    await engine2.dispose();
   });
 
   it('analyzeImage() runs U-Net pipeline, emits ordered progress, and returns AnalysisSession', async () => {
@@ -204,7 +213,7 @@ describe('pipelineController (ImageGrainsEngine & AnalysisSession)', () => {
   it('analyzeImage() supports CP-SAM tiled inference and auto model routing', async () => {
     Object.defineProperty(globalThis, 'navigator', {
       value: {
-        gpu: {},
+        gpu: { requestAdapter: async () => ({}) },
         deviceMemory: 16,
       },
       configurable: true,

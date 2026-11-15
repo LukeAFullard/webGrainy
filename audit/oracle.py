@@ -69,3 +69,9 @@ for c in d['homography']:
         A += [[X, Y, 1, 0, 0, 0, -u * X, -u * Y, -u], [0, 0, 0, X, Y, 1, -v * X, -v * Y, -v]]
     h = la.svd(np.array(A))[2][-1]; h = h / h[-1]
     print(f'[homography] max reprojection err = {err:.2e} px; |H_ts - H_svd|max = {np.abs(np.array(c["h"]) - h).max():.2e}; collinear input -> {c["degenerate"][:80]}')
+# 7. Feret (added after F-06 fix): TS rotating calipers vs oracle
+if 'feret' in d:
+    print('[feret] shape | ts minFeret | oracle | ts maxFeret | oracle')
+    for name, r in d['morph']['res'].items():
+        m = np.array(r['mask']).reshape(H, W); mf, Mf = min_feret(m); f = d['feret'][name]
+        print(f'  {name:20s} {f["minFeret"]:8.3f} {mf:8.3f} {f["maxFeret"]:8.3f} {Mf:8.3f}')

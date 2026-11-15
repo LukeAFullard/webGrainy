@@ -240,11 +240,34 @@ function decodeOutputTensorData(data: unknown): Float32Array {
  * Creates an `onnxruntime-web` InferenceSession using local `./ort/` WASM assets
  * (zero external CDNs). Tries `['webgpu', 'wasm']` and gracefully falls back to `['wasm']`.
  */
+/**
+ * Resolves a relative `wasmPaths` prefix against the *document* base URL.
+ * ORT loads its `.mjs`/`.wasm` via dynamic `import()`, which resolves relative
+ * specifiers against the importing module (e.g. `dist/ui/main.js` -> `/ui/ort/`),
+ * not the page. Absolute URLs and non-browser environments are returned unchanged.
+ */
+export function resolveWasmPaths(prefix: string): string {
+  if (/^[a-z][a-z0-9+.-]*:/i.test(prefix) || prefix.startsWith('/')) {
+    return prefix;
+  }
+  const base =
+    (globalThis as { document?: { baseURI?: string } }).document?.baseURI ??
+    (globalThis as { location?: { href?: string } }).location?.href;
+  if (typeof base !== 'string' || base.length === 0) {
+    return prefix;
+  }
+  try {
+    return new URL(prefix, base).href;
+  } catch {
+    return prefix;
+  }
+}
+
 export async function createInferenceSession(
   modelBytes: ArrayBuffer | Uint8Array,
   options?: SessionCreateOptions,
 ): Promise<InferenceSessionResult> {
-  ort.env.wasm.wasmPaths = options?.wasmPaths ?? './ort/';
+  ort.env.wasm.wasmPaths = resolveWasmPaths(options?.wasmPaths ?? './ort/');
   ort.env.wasm.simd = options?.simd ?? true;
   if (options?.numThreads !== undefined) {
     ort.env.wasm.numThreads = options.numThreads;
@@ -253,25 +276,35 @@ export async function createInferenceSession(
   const bytes =
     modelBytes instanceof Uint8Array ? modelBytes : new Uint8Array(modelBytes);
 
+  // Only request WebGPU when a real adapter exists: `navigator.gpu` can be present with
+  // no usable adapter, in which case ORT silently drops the EP and we would mislabel it.
+  const gpuAvailable = await hasWebGpuAdapter();
+  if (gpuAvailable) {
+    try {
+      const session = await ort.InferenceSession.create(bytes, {
+        executionProviders: ['webgpu'],
+      });
+      return { session, executionProvider: 'webgpu' };
+    } catch {
+      // fall through to WASM
+    }
+  }
+  const session = await ort.InferenceSession.create(bytes, {
+    executionProviders: ['wasm'],
+  });
+  return { session, executionProvider: 'wasm' };
+}
+
+/** Resolves `true` only if `navigator.gpu.requestAdapter()` yields an adapter. */
+export async function hasWebGpuAdapter(): Promise<boolean> {
+  const gpu = (globalThis.navigator as { gpu?: { requestAdapter?: () => Promise<unknown> } } | undefined)?.gpu;
+  if (!gpu || typeof gpu.requestAdapter !== 'function') {
+    return false;
+  }
   try {
-    const session = await ort.InferenceSession.create(bytes, {
-      executionProviders: ['webgpu', 'wasm'],
-    });
-    const hasGpu = Boolean(
-      (globalThis.navigator as { gpu?: unknown } | undefined)?.gpu,
-    );
-    return {
-      session,
-      executionProvider: hasGpu ? 'webgpu' : 'wasm',
-    };
+    return (await gpu.requestAdapter()) != null;
   } catch {
-    const session = await ort.InferenceSession.create(bytes, {
-      executionProviders: ['wasm'],
-    });
-    return {
-      session,
-      executionProvider: 'wasm',
-    };
+    return false;
   }
 }
 

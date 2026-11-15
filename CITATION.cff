@@ -1,0 +1,71 @@
+cff-version: 1.2.0
+message: >-
+  If you use webGrainy, please cite the ImageGrains and Cellpose publications listed
+  under "references" (the scientific methods and model weights), and optionally this
+  software. webGrainy is an independent, unofficial browser port and is not endorsed
+  by the ImageGrains or Cellpose authors.
+title: "webGrainy (ImageGrains 2.0 Web): browser-native grain segmentation and grain-size statistics"
+type: software
+version: 1.1.0
+date-released: "2026-11-15"
+license: BSD-3-Clause
+repository-code: "https://github.com/LukeAFullard/webGrainy"
+authors:
+  - name: "webGrainy / ImageGrains 2.0 Web Contributors"
+keywords:
+  - grain size
+  - sedimentology
+  - fluvial geomorphology
+  - photo-sieving
+  - instance segmentation
+  - onnxruntime-web
+references:
+  - type: article
+    title: "ImageGrains 2.0: Improved precision and generalization for grain segmentation"
+    authors:
+      - family-names: Mair
+        given-names: David
+      - name: "et al."
+    journal: "Earth Surface Dynamics"
+    volume: 14
+    start: 527
+    end: 551
+    year: 2026
+    doi: "10.5194/esurf-14-527-2026"
+  - type: data
+    title: "ImageGrains 2.0 pretrained model weights"
+    doi: "10.5281/zenodo.15728186"
+  - type: article
+    title: "Automated detecting, segmenting and measuring of grains in images of fluvial sediments"
+    authors:
+      - family-names: Mair
+        given-names: David
+      - name: "et al."
+    journal: "Earth Surface Processes and Landforms"
+    year: 2023
+    doi: "10.1002/esp.5755"
+  - type: article
+    title: "Cellpose: a generalist algorithm for cellular segmentation"
+    authors:
+      - family-names: Stringer
+        given-names: Carsen
+      - family-names: Pachitariu
+        given-names: Marius
+    journal: "Nature Methods"
+    volume: 18
+    start: 100
+    end: 106
+    year: 2021
+    doi: "10.1038/s41592-020-01018-x"
+  - type: article
+    title: "Cellpose-SAM: superhuman generalization for cellular segmentation"
+    authors:
+      - family-names: Pachitariu
+        given-names: Marius
+      - family-names: Rariden
+        given-names: Michael
+      - family-names: Stringer
+        given-names: Carsen
+    journal: "bioRxiv"
+    year: 2025
+    doi: "10.1101/2025.04.28.651001"
