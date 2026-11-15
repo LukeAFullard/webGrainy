@@ -58,6 +58,7 @@ export interface ModelRecommendation {
     multiScaleContrastVar: number;
     shadowGlareRange: number;
     hasWebGPU: boolean;
+    hasShaderF16?: boolean;
     deviceMemoryGB: number | null;
     elapsedMs: number;
   };
@@ -207,6 +208,8 @@ export interface SedimentStatsReport {
   numberWeightedB: PsdPercentiles;
   areaWeightedDEq: PsdPercentiles;
   numberWeightedDEq: PsdPercentiles;
+  areaWeightedMinFeret?: PsdPercentiles;
+  numberWeightedMinFeret?: PsdPercentiles;
   folkWard: FolkWardStats | null;
   wentworth: WentworthProportions | null;
   /** Human-readable caveats (small n, uncalibrated, mixed calibration). */
@@ -227,6 +230,7 @@ export interface AnalysisConfig {
 
 export interface EngineCapabilities {
   hasWebGPU: boolean;
+  hasShaderF16?: boolean;
   hasWasmSimd: boolean;
   deviceMemoryGB: number | null;
   cachedModels: CachedModelInfo[];

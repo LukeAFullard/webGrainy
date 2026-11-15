@@ -1,4 +1,4 @@
-import type { ModelId, StorageQuotaInfo } from '../types/index.js';
+import type { ModelId, SizeMetric, StorageQuotaInfo } from '../types/index.js';
 import type { AnalysisSession } from '../modules/pipelineController.js';
 import type { PhotoRecord, SiteRecord } from '../modules/projectStorage.js';
 import type { SiteAnalysisReport, SitePhotoInput } from '../modules/siteAnalysis.js';
@@ -146,8 +146,8 @@ export function renderModelsModalHtml(
     {
       id: 'ig2_cpsam_fp16',
       title: 'Cellpose-SAM (High Accuracy) — ig2_cpsam_fp16.onnx',
-      sizeLabel: '~588 MB (Native FP16)',
-      desc: 'Recommended for desktop WebGPU & complex cobble/shadowed scenes. 256×256 Hanning-tapered tiles.',
+      sizeLabel: '588.8 MiB / 617.4 MB (Native FP16)',
+      desc: 'Recommended for desktop WebGPU (requires shader-f16) & complex cobble/shadowed scenes. 256×256 Hanning-tapered tiles.',
     },
   ];
 
@@ -313,6 +313,7 @@ export async function handleExportAction(
   siteReport: SiteAnalysisReport | null,
   siteInputs: SitePhotoInput[],
   psdXAxis: 'mm' | 'phi',
+  sizeMetric: SizeMetric = 'bAxis',
 ): Promise<void> {
   const safeSite = (site?.name ?? 'site').replace(/[^a-zA-Z0-9_-]+/g, '_');
   const safePhoto = (photo?.label ?? 'photo').replace(/[^a-zA-Z0-9_-]+/g, '_');
@@ -372,12 +373,18 @@ export async function handleExportAction(
       break;
     case 'photo-summary-csv':
       if (session) {
-        triggerBlobDownload(new Blob([session.exportSummaryCsv()], { type: 'text/csv' }), `${safePhoto}_summary.csv`);
+        triggerBlobDownload(
+          new Blob([session.exportSummaryCsv(sizeMetric)], { type: 'text/csv' }),
+          `${safePhoto}_summary.csv`,
+        );
       }
       break;
     case 'photo-summary-json':
       if (session) {
-        triggerBlobDownload(new Blob([session.exportSummaryJson()], { type: 'application/json' }), `${safePhoto}_summary.json`);
+        triggerBlobDownload(
+          new Blob([session.exportSummaryJson(sizeMetric)], { type: 'application/json' }),
+          `${safePhoto}_summary.json`,
+        );
       }
       break;
     case 'photo-mask-16':

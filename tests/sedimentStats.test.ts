@@ -511,4 +511,60 @@ describe('sedimentStats', () => {
       }
     });
   });
+
+  describe('computeSedimentStats with minFeret', () => {
+    it('populates areaWeightedMinFeret, numberWeightedMinFeret, and min-Feret Folk & Ward stats + CSV rows', async () => {
+      const grains: GrainMorphometrics[] = [
+        {
+          id: 1,
+          centroidX: 10,
+          centroidY: 10,
+          areaPx: 100,
+          aAxisPx: 20,
+          bAxisPx: 10,
+          dEqPx: 11.28,
+          minFeretPx: 12,
+          maxFeretPx: 22,
+          bAxisMm: 10,
+          dEqMm: 11.28,
+          aAxisMm: 20,
+          minFeretMm: 12,
+          maxFeretMm: 22,
+          areaMm2: 100,
+          orientationRad: 0,
+          bbox: [0, 0, 20, 10],
+          touchesBorder: false,
+        },
+        {
+          id: 2,
+          centroidX: 40,
+          centroidY: 10,
+          areaPx: 300,
+          aAxisPx: 40,
+          bAxisPx: 20,
+          dEqPx: 19.54,
+          minFeretPx: 24,
+          maxFeretPx: 44,
+          bAxisMm: 20,
+          dEqMm: 19.54,
+          aAxisMm: 40,
+          minFeretMm: 24,
+          maxFeretMm: 44,
+          areaMm2: 300,
+          orientationRad: 0,
+          bbox: [20, 0, 60, 20],
+          touchesBorder: false,
+        },
+      ];
+
+      const report = computeSedimentStats(grains, { sizeMetric: 'minFeret' });
+      expect(report.areaWeightedMinFeret).toBeDefined();
+      expect(report.numberWeightedMinFeret).toBeDefined();
+      expect(report.areaWeightedMinFeret!.D50).toBeGreaterThan(report.areaWeightedB.D50);
+
+      const csvText = await exportSummaryCsv(report).text();
+      expect(csvText).toContain('area_weighted_min_feret,D50');
+      expect(csvText).toContain('number_weighted_min_feret,D50');
+    });
+  });
 });

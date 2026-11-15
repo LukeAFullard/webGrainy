@@ -501,4 +501,61 @@ describe('pipelineController (ImageGrainsEngine & AnalysisSession)', () => {
     await engine.dispose();
     expect(terminateMock).toHaveBeenCalledTimes(1);
   });
+
+  it('records hasShaderF16, supports AnalysisSession.getStats(sizeMetric), and evicts session on WebGPU device loss', async () => {
+    Object.defineProperty(globalThis, 'navigator', {
+      value: {
+        gpu: {
+          requestAdapter: async () => ({
+            features: { has: (f: string) => f === 'shader-f16' },
+          }),
+        },
+        deviceMemory: 8,
+      },
+      configurable: true,
+    });
+
+    let callCount = 0;
+    const mockRelease = vi.fn(async () => undefined);
+    const engine = new ImageGrainsEngine({
+      sessionFactory: async (kind) => {
+        callCount += 1;
+        if (callCount === 1) {
+          return {
+            async run() {
+              throw new Error('WebGPU device was lost');
+            },
+            release: mockRelease,
+          };
+        }
+        return createMockSession(kind, [{ cx: 32, cy: 32, rx: 14, ry: 8 }]);
+      },
+    });
+
+    const caps = await engine.initialize();
+    expect(caps.hasShaderF16).toBe(true);
+
+    const warnings: Array<{ code?: string }> = [];
+    engine.onProgress((stage, detail) => {
+      if (stage === 'warning' && detail && typeof detail === 'object') {
+        warnings.push(detail as { code?: string });
+      }
+    });
+
+    const img = makeRgbaImage(64, 64, 'uniform');
+    await expect(
+      engine.analyzeImage(img, { model: 'unet', scaleMode: '1.0x' }),
+    ).rejects.toThrow(/device lost/i);
+    expect(warnings.some((w) => w.code === 'webgpu-device-lost')).toBe(true);
+
+    // Next analyzeImage must re-acquire a fresh session (callCount === 2)
+    const session = await engine.analyzeImage(img, { model: 'unet', scaleMode: '1.0x' });
+    expect(callCount).toBe(2);
+
+    const statsFeret = session.getStats('minFeret');
+    expect(statsFeret.areaWeightedMinFeret).toBeDefined();
+    expect(session.exportSummaryCsv('minFeret')).toContain('area_weighted_min_feret,D50');
+
+    await engine.dispose();
+  });
 });

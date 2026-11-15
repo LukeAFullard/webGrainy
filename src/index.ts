@@ -37,11 +37,15 @@ export {
   tileStarts,
   makeBlendWindow,
   createInferenceSession,
+  probeWebGpuCapabilities,
   hasWebGpuAdapter,
+  WebGpuDeviceLostError,
+  isWebGpuDeviceLostError,
   resolveWasmPaths,
   runUnetInference,
   runCpsamTiledInference,
   type SessionCreateOptions,
+  type WebGpuCapabilities,
   type InferenceSessionResult,
 } from './modules/onnxInference.js';
 

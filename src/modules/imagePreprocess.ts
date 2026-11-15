@@ -13,6 +13,7 @@ export interface ImageBufferLike {
 
 export interface HardwareCapabilities {
   hasWebGPU?: boolean;
+  hasShaderF16?: boolean;
   deviceMemoryGB?: number | null;
 }
 
@@ -720,6 +721,7 @@ export function recommendModel(
     | { gpu?: unknown; deviceMemory?: number }
     | undefined;
   const hasWebGPU = capabilities?.hasWebGPU ?? Boolean(nav?.gpu);
+  const hasShaderF16 = capabilities?.hasShaderF16;
   const deviceMemoryGB =
     capabilities?.deviceMemoryGB !== undefined
       ? capabilities.deviceMemoryGB
@@ -732,15 +734,20 @@ export function recommendModel(
     0.45 * normEntropy + 0.35 * normContrastVar + 0.2 * shadowGlareRange;
 
   const lowMemory = deviceMemoryGB !== null && deviceMemoryGB < 4;
+  const missingF16 = hasWebGPU && hasShaderF16 === false;
   let model: ModelKind;
   let confidence: number;
   let rationale: string;
 
-  if (!hasWebGPU || lowMemory) {
+  if (!hasWebGPU || missingF16 || lowMemory) {
     model = 'unet';
-    const hwReason = !hasWebGPU ? 'No WebGPU detected' : `Low device memory (${deviceMemoryGB} GB)`;
+    const hwReason = !hasWebGPU
+      ? 'No WebGPU detected'
+      : missingF16
+        ? 'WebGPU adapter lacks shader-f16 support for FP16 CP-SAM'
+        : `Low device memory (${deviceMemoryGB} GB)`;
     confidence = Math.min(1, Math.max(0.65, 0.9 - 0.2 * complexityScore));
-    rationale = `${hwReason} -> U-Net 25 MB recommended for fast local WASM execution.`;
+    rationale = `${hwReason} -> U-Net 25 MB recommended for fast local execution.`;
   } else if (complexityScore >= 0.45) {
     model = 'cpsam';
     confidence = Math.min(1, Math.max(0.55, 0.5 + 0.5 * complexityScore));
@@ -764,6 +771,7 @@ export function recommendModel(
       multiScaleContrastVar,
       shadowGlareRange,
       hasWebGPU,
+      ...(hasShaderF16 !== undefined ? { hasShaderF16 } : {}),
       deviceMemoryGB,
       elapsedMs,
     },

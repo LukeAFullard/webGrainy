@@ -11,7 +11,9 @@ export const DEFAULT_POSTPROCESS_OPTIONS: Required<PostProcessOptions> = {
   minSize: 30,
   minSeedDensity: 2,
   excludeBorderMargin: 2,
-  maxGrainAreaFraction: 0.15,
+  // Matches upstream Cellpose max_size_fraction=0.4; held-out IG2 ablation showed 0.15
+  // deleted real cobbles on 10/40 CP-SAM test images (+12.4% mean D50 error).
+  maxGrainAreaFraction: 0.4,
 };
 
 export interface FlowQcResult {

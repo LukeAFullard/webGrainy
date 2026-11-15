@@ -102,6 +102,18 @@ const engine = new ImageGrainsEngine({
   sessionCreateOptions: { wasmPaths: './ort/' },
 });
 
+engine.onProgress((stage, detail) => {
+  if (
+    stage === 'warning' &&
+    detail &&
+    typeof detail === 'object' &&
+    'message' in detail &&
+    typeof (detail as { message?: unknown }).message === 'string'
+  ) {
+    store.setState({ statusMessage: (detail as { message: string }).message });
+  }
+});
+
 let viewport: CanvasViewport | null = null;
 let batchAbortController: AbortController | null = null;
 const modelAbortControllers = new Map<ModelId, AbortController>();
@@ -160,7 +172,8 @@ function recomputeReports(): void {
   const activeSession = activePhoto
     ? state.sessions.get(activePhoto.photoId) ?? null
     : null;
-  const singlePhotoStats = activeSession ? activeSession.getStats() : null;
+  const activeMetric = state.siteOptions.sizeMetric ?? 'bAxis';
+  const singlePhotoStats = activeSession ? activeSession.getStats(activeMetric) : null;
 
   const siteInputs = buildSiteInputs(state);
   let siteReport = null;
@@ -574,7 +587,11 @@ function renderTopbar(state: AppState): void {
   const caps = state.capabilities;
   const gpuLabel = caps
     ? caps.hasWebGPU
-      ? 'WebGPU Ready'
+      ? caps.hasShaderF16 === true
+        ? 'WebGPU FP16'
+        : caps.hasShaderF16 === false
+          ? 'WebGPU (No FP16)'
+          : 'WebGPU Ready'
       : caps.hasWasmSimd
         ? 'WASM SIMD'
         : 'WASM Basic'
@@ -714,8 +731,8 @@ function renderSidebar(state: AppState): void {
             Model
             <select class="select" data-param="model">
               <option value="auto" ${p.model === 'auto' ? 'selected' : ''}>Auto (Router)</option>
-              <option value="unet" ${p.model === 'unet' ? 'selected' : ''}>U-Net (25MB)</option>
-              <option value="cpsam" ${p.model === 'cpsam' ? 'selected' : ''}>CP-SAM (588MB)</option>
+              <option value="unet" ${p.model === 'unet' ? 'selected' : ''}>U-Net (25 MB)</option>
+              <option value="cpsam" ${p.model === 'cpsam' ? 'selected' : ''}>CP-SAM (617 MB)</option>
             </select>
           </label>
           <label class="field-label">
@@ -741,7 +758,7 @@ function renderSidebar(state: AppState): void {
           </label>
           <label class="field-label">
             Max Area Frac
-            <input class="input" type="number" step="0.01" min="0.01" max="0.9" value="${p.maxGrainAreaFraction}" data-param="maxGrainAreaFraction" />
+            <input class="input" type="number" step="0.01" min="0.01" max="1" value="${p.maxGrainAreaFraction}" data-param="maxGrainAreaFraction" />
           </label>
           <label class="field-label">
             Min b-axis (px)
@@ -910,7 +927,14 @@ function renderDashboard(state: AppState): void {
   const isSite = state.dashboardScope === 'site';
   const lightTheme = isLightColorScheme();
 
-  const psd = isSite ? report?.psd : single?.areaWeightedB;
+  const activeMetric = state.siteOptions.sizeMetric ?? 'bAxis';
+  const psd = isSite
+    ? report?.psd
+    : activeMetric === 'minFeret'
+      ? single?.areaWeightedMinFeret ?? single?.areaWeightedB
+      : activeMetric === 'dEq'
+        ? single?.areaWeightedDEq
+        : single?.areaWeightedB;
   const unit = isSite ? (report?.unit ?? 'px') : (single?.unit ?? 'px');
   const fw = isSite ? report?.folkWard : single?.folkWard;
   const basisLabel = isSite
@@ -943,7 +967,7 @@ function renderDashboard(state: AppState): void {
           <button type="button" class="btn btn-sm ${state.psdXAxis === 'phi' ? 'active' : ''}" aria-pressed="${state.psdXAxis === 'phi' ? 'true' : 'false'}" data-psd-x="phi">phi (φ)</button>
         </div>
         ${
-          report
+          isSite && report
             ? `<span style="font-size:0.65rem;color:var(--text-secondary);">${Math.round(report.bootstrapCi.confidenceLevel * 100)}% CI: [${report.bootstrapCi.lower.D50.toFixed(1)}, ${report.bootstrapCi.upper.D50.toFixed(1)}] ${unit}</span>`
             : ''
         }
@@ -1040,7 +1064,6 @@ function renderDashboard(state: AppState): void {
 
   const prevDashScroll = dashboardEl.scrollTop;
 
-  const activeMetric = state.siteOptions.sizeMetric ?? 'bAxis';
   const metricNoteText =
     activeMetric === 'minFeret'
       ? 'Size metric: minimum Feret (rotating-calipers) width of the pixel-edge convex hull — closest 2D analogue of a caliper b-axis.'
@@ -1596,6 +1619,7 @@ function attachDelegatedHandlers(): void {
           st.siteReport,
           buildSiteInputs(st),
           st.psdXAxis,
+          st.siteOptions.sizeMetric ?? 'bAxis',
         );
       }
       return;

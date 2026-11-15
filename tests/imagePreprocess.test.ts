@@ -378,5 +378,40 @@ describe('imagePreprocess', () => {
       expect(() => normalizeRgbJoint99(smallBuf, 4, 0)).toThrow(RangeError);
       expect(() => normalizeRgbJoint99(smallBuf, 4, 4)).toThrow(RangeError);
     });
+
+    it('recommends unet when WebGPU adapter lacks shader-f16 even on heterogeneous imagery', () => {
+      const width = 96;
+      const height = 96;
+      const hetero = new Uint8ClampedArray(width * height * 4);
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          const v =
+            ((x * 37 + y * 53) % 256) * ((x >> 3) % 2 === 0 ? 1 : 0.25);
+          const iv = Math.max(0, Math.min(255, Math.round(v)));
+          const o = (y * width + x) * 4;
+          hetero[o] = iv;
+          hetero[o + 1] = iv;
+          hetero[o + 2] = iv;
+          hetero[o + 3] = 255;
+        }
+      }
+
+      const withF16 = recommendModel(hetero, width, height, {
+        hasWebGPU: true,
+        hasShaderF16: true,
+        deviceMemoryGB: 16,
+      });
+      const withoutF16 = recommendModel(hetero, width, height, {
+        hasWebGPU: true,
+        hasShaderF16: false,
+        deviceMemoryGB: 16,
+      });
+
+      expect(withF16.model).toBe('cpsam');
+      expect(withF16.metrics.hasShaderF16).toBe(true);
+      expect(withoutF16.model).toBe('unet');
+      expect(withoutF16.metrics.hasShaderF16).toBe(false);
+      expect(withoutF16.rationale).toContain('shader-f16');
+    });
   });
 });

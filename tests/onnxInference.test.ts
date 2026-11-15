@@ -2,7 +2,10 @@ import * as ort from 'onnxruntime-web';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   createInferenceSession,
+  probeWebGpuCapabilities,
   hasWebGpuAdapter,
+  WebGpuDeviceLostError,
+  isWebGpuDeviceLostError,
   resolveWasmPaths,
   float16BitsToFloat32Array,
   float16ToFloat32,
@@ -518,6 +521,87 @@ describe('onnxInference', () => {
       await expect(
         runCpsamTiledInference(mockSession, new Float32Array(12), 2, 2.5),
       ).rejects.toThrow(RangeError);
+    });
+  });
+
+  describe('WebGPU shader-f16 & device.lost hardening', () => {
+    const originalNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+    const setNavigator = (value: unknown): void => {
+      Object.defineProperty(globalThis, 'navigator', { value, configurable: true, writable: true });
+    };
+
+    afterEach(() => {
+      if (originalNavigator) Object.defineProperty(globalThis, 'navigator', originalNavigator);
+      const envAny = ort.env as { webgpu?: unknown };
+      delete envAny.webgpu;
+      vi.restoreAllMocks();
+    });
+
+    it('probes shader-f16 capability and skips WebGPU when requireShaderF16 is true and unsupported', async () => {
+      setNavigator({
+        gpu: {
+          requestAdapter: async () => ({
+            features: { has: (f: string) => f === 'shader-f16' },
+          }),
+        },
+      });
+      expect(await probeWebGpuCapabilities()).toEqual({ hasAdapter: true, hasShaderF16: true });
+
+      const mockGpuSession = { run: vi.fn() } as unknown as ort.InferenceSession;
+      const createSpy1 = vi
+        .spyOn(ort.InferenceSession, 'create')
+        .mockResolvedValueOnce(mockGpuSession);
+      const resOk = await createInferenceSession(new Uint8Array([1]), {
+        requireShaderF16: true,
+      });
+      expect(resOk.executionProvider).toBe('webgpu');
+      expect(createSpy1.mock.calls[0]?.[1]).toEqual({ executionProviders: ['webgpu'] });
+
+      vi.restoreAllMocks();
+      setNavigator({
+        gpu: {
+          requestAdapter: async () => ({
+            features: { has: () => false },
+          }),
+        },
+      });
+      expect(await probeWebGpuCapabilities()).toEqual({ hasAdapter: true, hasShaderF16: false });
+
+      const mockWasmSession = { run: vi.fn() } as unknown as ort.InferenceSession;
+      const createSpy2 = vi
+        .spyOn(ort.InferenceSession, 'create')
+        .mockResolvedValueOnce(mockWasmSession);
+      const resFallback = await createInferenceSession(new Uint8Array([1]), {
+        requireShaderF16: true,
+      });
+      expect(resFallback.executionProvider).toBe('wasm');
+      expect(createSpy2).toHaveBeenCalledTimes(1);
+      expect(createSpy2.mock.calls[0]?.[1]).toEqual({ executionProviders: ['wasm'] });
+    });
+
+    it('converts WebGPU device-lost errors and ort.env.webgpu.device.lost rejections into WebGpuDeviceLostError', async () => {
+      const gray = new Float32Array(16 * 16).fill(0.5);
+      const mockErrSession = {
+        run: vi.fn().mockRejectedValueOnce(new Error('GPUDevice was lost during compute pass')),
+      } as unknown as ort.InferenceSession;
+
+      const caught = await runUnetInference(mockErrSession, gray, 16, 16).catch((e) => e);
+      expect(caught).toBeInstanceOf(WebGpuDeviceLostError);
+      expect(isWebGpuDeviceLostError(caught)).toBe(true);
+
+      // Also verify Promise.race against ort.env.webgpu.device.lost
+      const envAny = ort.env as { webgpu?: { device?: { lost?: Promise<unknown> } } };
+      envAny.webgpu = {
+        device: {
+          lost: Promise.resolve({ reason: 'destroyed', message: 'Adapter reset' }),
+        },
+      };
+      const hangingSession = {
+        run: vi.fn(() => new Promise(() => undefined)),
+      } as unknown as ort.InferenceSession;
+      await expect(runUnetInference(hangingSession, gray, 16, 16)).rejects.toThrow(
+        WebGpuDeviceLostError,
+      );
     });
   });
 });
