@@ -3,7 +3,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   createInferenceSession,
   probeWebGpuCapabilities,
+  assertPlausibleOutput,
   defaultWasmThreads,
+  NumericInstabilityError,
   hasWebGpuAdapter,
   WebGpuDeviceLostError,
   isWebGpuDeviceLostError,
@@ -15,6 +17,7 @@ import {
   makeBlendWindow,
   reflectIndex,
   runCpsamTiledInference,
+  runCpsamCellposeInference,
   runUnetInference,
   tileStarts,
 } from '../src/modules/onnxInference.js';
@@ -216,6 +219,49 @@ describe('onnxInference', () => {
       expect(defaultWasmThreads()).toBe(8);
       setEnv(true, undefined);
       expect(defaultWasmThreads()).toBeUndefined();
+    });
+  });
+
+  describe('assertPlausibleOutput (float16 GPU guard)', () => {
+    it('accepts normal Cellpose-range outputs', () => {
+      expect(() => assertPlausibleOutput(Float32Array.from([-9.5, 0, 4.2, -30, 25]), 't')).not.toThrow();
+    });
+    it('rejects NaN, Infinity and implausibly large values', () => {
+      for (const bad of [NaN, Infinity, -Infinity, 65504]) {
+        expect(() => assertPlausibleOutput(Float32Array.from([0, 1, bad]), 't')).toThrow(NumericInstabilityError);
+      }
+      expect(() => assertPlausibleOutput(Float32Array.from([0, NaN, NaN]), 'Cellpose-SAM tile')).toThrow(/2 non-finite/);
+    });
+  });
+
+  describe('WebGPU validation-error watch', () => {
+    it('turns an uncaptured WebGPU error during a run into NumericInstabilityError', async () => {
+      const listeners: Array<(ev: { error?: { message?: string } }) => void> = [];
+      const fakeDevice = { addEventListener: (_t: string, cb: (ev: { error?: { message?: string } }) => void) => listeners.push(cb) };
+      const desc = Object.getOwnPropertyDescriptor(ort.env.webgpu, 'device');
+      Object.defineProperty(ort.env.webgpu, 'device', { value: fakeDevice, configurable: true });
+      try {
+        const run = vi.fn(async (feeds: Record<string, ort.Tensor>) => {
+          // a shader fails to compile mid-run: WebGPU reports it only as an event
+          listeners.forEach((cb) => cb({ error: { message: 'Error while parsing WGSL: f16 not enabled' } }));
+          const d = feeds['image']!.dims;
+          const n = d[2]! * d[3]!;
+          return { flows_cellprob: new ort.Tensor('float32', new Float32Array(3 * n).fill(0.5), [1, 3, d[2]!, d[3]!]) };
+        });
+        const rgba = new Uint8ClampedArray(4 * 100 * 80).fill(128);
+        await expect(
+          runCpsamCellposeInference({ run } as unknown as ort.InferenceSession, rgba, 100, 80),
+        ).rejects.toThrow(/WebGPU reported 1 error/);
+        // healthy run afterwards: no new errors, no throw
+        const quiet = vi.fn(async (feeds: Record<string, ort.Tensor>) => {
+          const d = feeds['image']!.dims;
+          return { flows_cellprob: new ort.Tensor('float32', new Float32Array(3 * d[2]! * d[3]!), [1, 3, d[2]!, d[3]!]) };
+        });
+        await expect(runCpsamCellposeInference({ run: quiet } as unknown as ort.InferenceSession, rgba, 100, 80)).resolves.toBeDefined();
+      } finally {
+        if (desc) Object.defineProperty(ort.env.webgpu, 'device', desc);
+        else delete (ort.env.webgpu as { device?: unknown }).device;
+      }
     });
   });
 

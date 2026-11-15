@@ -31,6 +31,7 @@ import {
 import {
   createInferenceSession,
   isWebGpuDeviceLostError,
+  NumericInstabilityError,
   probeWebGpuCapabilities,
   runCpsamCellposeInference,
   runCpsamTiledInference,
@@ -1484,6 +1485,8 @@ export class ImageGrainsEngine {
   private disposed = false;
   private readonly pendingWorkerRejects = new Set<(err: Error) => void>();
   private readonly sessionExecutionProviders = new Map<ModelKind, string>();
+  /** Models forced onto WASM after the GPU produced numerically invalid output. */
+  private readonly wasmOnlyModels = new Set<ModelKind>();
   /** Set after a WebGPU device loss; GPU inference stays off until the page reloads. */
   private webgpuDisabledReason: string | null = null;
   private readonly inFlightSessions = new Map<
@@ -1661,23 +1664,45 @@ export class ImageGrainsEngine {
     try {
       inferenceOut = await runInference(session);
     } catch (err) {
-      if (!isWebGpuDeviceLostError(err) || this.webgpuDisabledReason !== null) {
+      if (
+        err instanceof NumericInstabilityError &&
+        this.sessionExecutionProviders.get(selectedModel) === 'webgpu' &&
+        !this.wasmOnlyModels.has(selectedModel)
+      ) {
+        // Float16 GPU arithmetic produced invalid values: run this model on the CPU
+        // (WASM) for the rest of the page and redo the image once.
+        this.wasmOnlyModels.add(selectedModel);
+        await this.evictSession(selectedModel);
+        emit('warning', {
+          code: 'webgpu-numeric-instability',
+          model: selectedModel,
+          message:
+            `The GPU produced invalid results for ${selectedModel === 'cpsam' ? 'Cellpose-SAM' : 'U-Net'} ` +
+            '(float16 precision). This model now runs on the CPU for this page (slower). ' +
+            'Please report your GPU and browser so this can be investigated.',
+        });
+        throwIfAborted(signal);
+        session = await this.acquireSession(selectedModel, signal, emit);
+        throwIfAborted(signal);
+        inferenceOut = await runInference(session);
+      } else if (!isWebGpuDeviceLostError(err) || this.webgpuDisabledReason !== null) {
         throw err;
+      } else {
+        // The page's GPUDevice is gone for good: disable WebGPU for this page, drop every
+        // GPU-backed session, and retry this image once on the WASM (CPU) backend.
+        await this.disableWebGpu(err instanceof Error ? err.message : String(err));
+        emit('warning', {
+          code: 'webgpu-device-lost',
+          model: selectedModel,
+          message:
+            'The GPU was reset during analysis. GPU acceleration is now off for this page ' +
+            'and analysis continues on the CPU (slower). Reload the page to use the GPU again.',
+        });
+        throwIfAborted(signal);
+        session = await this.acquireSession(selectedModel, signal, emit);
+        throwIfAborted(signal);
+        inferenceOut = await runInference(session);
       }
-      // The page's GPUDevice is gone for good: disable WebGPU for this page, drop every
-      // GPU-backed session, and retry this image once on the WASM (CPU) backend.
-      await this.disableWebGpu(err instanceof Error ? err.message : String(err));
-      emit('warning', {
-        code: 'webgpu-device-lost',
-        model: selectedModel,
-        message:
-          'The GPU was reset during analysis. GPU acceleration is now off for this page ' +
-          'and analysis continues on the CPU (slower). Reload the page to use the GPU again.',
-      });
-      throwIfAborted(signal);
-      session = await this.acquireSession(selectedModel, signal, emit);
-      throwIfAborted(signal);
-      inferenceOut = await runInference(session);
     }
     throwIfAborted(signal);
 
@@ -1738,6 +1763,17 @@ export class ImageGrainsEngine {
    * GPU-backed session so the next `acquireSession` creates WASM sessions, and marks
    * the capability as unavailable so the model router stops choosing GPU models.
    */
+  /** Drops a model's cached session (releasing it if the engine owns it). */
+  private async evictSession(kind: ModelKind): Promise<void> {
+    const sess = this.sessionCache.get(kind);
+    this.sessionCache.delete(kind);
+    this.sessionExecutionProviders.delete(kind);
+    if (sess && this.ownedSessions.has(sess)) {
+      this.ownedSessions.delete(sess);
+      if (typeof sess.release === 'function') await sess.release().catch(() => undefined);
+    }
+  }
+
   private async disableWebGpu(reason: string): Promise<void> {
     this.webgpuDisabledReason = reason;
     // Evict every session not known to be WASM-backed (custom factories don't report an EP).
@@ -1827,7 +1863,9 @@ export class ImageGrainsEngine {
 
         const created = await createInferenceSession(modelBytes, {
           ...this.options.sessionCreateOptions,
-          ...(this.webgpuDisabledReason !== null ? { forceWasm: true } : {}),
+          ...(this.webgpuDisabledReason !== null || this.wasmOnlyModels.has(modelKind)
+            ? { forceWasm: true }
+            : {}),
           requireShaderF16:
             this.options.sessionCreateOptions?.requireShaderF16 ??
             modelKind === 'cpsam',

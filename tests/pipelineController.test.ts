@@ -1,4 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import * as ort from 'onnxruntime-web';
+
+// Serve model bytes without IndexedDB/network for tests that use real session creation.
+vi.mock('../src/modules/modelCache.js', async (importOriginal) => {
+  const mod = await importOriginal<typeof import('../src/modules/modelCache.js')>();
+  return { ...mod, getModel: async () => new ArrayBuffer(8) };
+});
 import {
   ImageGrainsEngine,
   AnalysisSession,
@@ -534,6 +541,40 @@ describe('pipelineController (ImageGrainsEngine & AnalysisSession)', () => {
     const legacy = await engine.analyzeImage(makeRgbaImage(64, 64, 'uniform'), { model: 'unet', scaleMode: '1.0x', inferencePipeline: 'legacy' });
     expect(legacy.getProvenance()?.inferencePipeline).toBe('legacy');
     expect(calls).toEqual([{ dims: [1, 2, 64, 64], type: 'float32' }]);
+    await engine.dispose();
+  });
+
+  it('falls back to WASM for a model whose WebGPU output is numerically invalid', async () => {
+    Object.defineProperty(globalThis, 'navigator', {
+      value: { gpu: { requestAdapter: async () => ({ features: { has: () => true } }) } },
+      configurable: true,
+    });
+    const created: string[] = [];
+    const createSpy = vi.spyOn(ort.InferenceSession, 'create').mockImplementation((async (_b: unknown, opts?: ort.InferenceSession.SessionOptions) => {
+      const ep = String(opts?.executionProviders?.[0] ?? 'wasm');
+      created.push(ep);
+      return {
+        async run(feeds: Record<string, { dims: readonly number[] }>) {
+          const d = feeds['image']!.dims; const n = d[2]! * d[3]!;
+          const data = new Float32Array(3 * n).fill(-5);
+          if (ep === 'webgpu') data[0] = Number.NaN; // simulated float16 overflow
+          return { flows_cellprob: { data, dims: [1, 3, d[2], d[3]] } };
+        },
+        release: async () => undefined,
+      } as unknown as ort.InferenceSession;
+    }) as unknown as typeof ort.InferenceSession.create);
+    const engine = new ImageGrainsEngine({ modelDownloadOptions: {} });
+    const warnings: Array<{ code?: string }> = [];
+    engine.onProgress((stage, detail) => { if (stage === 'warning') warnings.push(detail as { code?: string }); });
+    await engine.initialize();
+    const session = await engine.analyzeImage(makeRgbaImage(64, 64, 'uniform'), { model: 'unet', scaleMode: '1.0x' });
+    expect(session).toBeDefined();
+    expect(created).toEqual(['webgpu', 'wasm']);
+    expect(warnings.some((w) => w.code === 'webgpu-numeric-instability')).toBe(true);
+    // the model stays on WASM afterwards
+    await engine.analyzeImage(makeRgbaImage(64, 64, 'uniform'), { model: 'unet', scaleMode: '1.0x' });
+    expect(created).toEqual(['webgpu', 'wasm']);
+    createSpy.mockRestore();
     await engine.dispose();
   });
 
