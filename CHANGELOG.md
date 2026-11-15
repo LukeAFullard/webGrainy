@@ -7,10 +7,14 @@ All notable changes to webGrainy are recorded here. The format follows
 ## [Unreleased]
 
 ### Fixed
+- **Cellpose-SAM on the CPU (WASM) crashed** with `std::bad_alloc` on full-size photos. It now runs one tile per call.
 - **Recovery after WebGPU device loss.** After a loss, WebGPU is disabled for the page,
   GPU sessions are evicted, the capability is reported unavailable, and the image is
   retried once on WASM instead of failing. Previously the next WebGPU session reused the
   lost device. The UI shows "GPU reset · CPU mode (reload for GPU)".
+
+### Added
+- **Site option `minSizeMm` ("Field-count cutoff (mm)")** to match a pebble count's minimum size.
 
 ### Changed
 - **CPU inference uses all cores (capped at 8) when the page is cross-origin isolated**
@@ -20,8 +24,8 @@ All notable changes to webGrainy are recorded here. The format follows
 - **Withdrew "outperforms upstream PyTorch".** The paired comparison is not significant
   (`audit/followup/paired_comparison.py`).
 - **Flagged that the 0.40 area-guard default is unbenchmarked.**
-- **Presented the K1 field discrepancy (~40% finer D50) as unexplained**, with testable
-  hypotheses.
+- **K1 field discrepancy (~40% finer D50) traced to truncation:** the field count's 13 mm
+  minimum. With a matching cutoff, D50 is within +3/+4% (`audit/k1/`).
 - **Corrected the audit's CPU timing.**
 
 ## [1.1.0] — 2026-11-15
