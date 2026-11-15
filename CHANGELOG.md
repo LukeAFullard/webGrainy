@@ -23,7 +23,7 @@ All notable changes to webGrainy are recorded here. The format follows
 ### Documentation
 - **Withdrew "outperforms upstream PyTorch".** The paired comparison is not significant
   (`audit/followup/paired_comparison.py`).
-- **Flagged that the 0.40 area-guard default is unbenchmarked.**
+- **Benchmarked the 0.40 area-guard default** (PR #12): U-Net identical to 1.00; CP-SAM differs on 1 of 40 images (a cobble covering 50% of the frame is dropped). Not distinguishable from PyTorch.
 - **K1 field discrepancy (~40% finer D50) traced to truncation:** the field count's 13 mm
   minimum. With a matching cutoff, D50 is within +3/+4% (`audit/k1/`).
 - **Corrected the audit's CPU timing.**
