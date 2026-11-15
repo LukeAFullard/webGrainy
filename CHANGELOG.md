@@ -37,6 +37,18 @@ All notable changes to webGrainy are recorded here. The format follows
 - **Site option `minSizeMm` ("Field-count cutoff (mm)")** to match a pebble count's minimum size.
 
 ### Changed
+- **New default inference pipeline that reproduces PyTorch ImageGrains exactly.** The
+  ONNX models were always exact; the outline gap came from webGrainy's tiling.
+  - The new "Cellpose" pipeline replicates Cellpose's preparation and tiling:
+    - U-Net: resize by 17/30, 224 px tiles;
+    - Cellpose-SAM: 8 px zero border;
+    - both: sigmoid-taper blending.
+  - Results on 7 held-out IG2 images:
+    - masks identical to PyTorch (U-Net) or 99.5 % identical (Cellpose-SAM);
+    - app outline quality: U-Net 0.427 → 0.451, Cellpose-SAM 0.504 → 0.559;
+    - median D50 error: U-Net 15.5 → 9.1 %, Cellpose-SAM 8.6 → 3.3 %.
+  - The previous pipeline stays available as "Legacy" (Advanced) and is recorded in
+    provenance. See `audit/parity/README.md`.
 - **CPU inference uses all cores (capped at 8) when the page is cross-origin isolated**
   (U-Net on a 1024×768 photo: 18.4 s → 6.7 s on 4 cores). See `DEPLOYMENT.md`.
 

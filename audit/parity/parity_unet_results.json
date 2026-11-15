@@ -1,0 +1,569 @@
+[
+ {
+  "uid": "APF_2__test__DS8-S2_3",
+  "shape": [
+   512,
+   512
+  ],
+  "n_gt": 115,
+  "variants": {
+   "PT": {
+    "pq_vs_gt": 0.4805,
+    "pq_vs_pt": 1.0,
+    "n_masks": 55,
+    "cellprob_corr_vs_pt": 1.0,
+    "flow_cos_fg_vs_pt": 1.0
+   },
+   "ONNX@CP (our model in Cellpose pipeline)": {
+    "pq_vs_gt": 0.4805,
+    "pq_vs_pt": 1.0,
+    "n_masks": 55,
+    "cellprob_corr_vs_pt": 1.0,
+    "flow_cos_fg_vs_pt": 1.0
+   },
+   "OURS (webGrainy dist, real)": {
+    "pq_vs_gt": 0.4867,
+    "pq_vs_pt": 0.6044,
+    "n_masks": 62,
+    "cellprob_corr_vs_pt": 0.864,
+    "flow_cos_fg_vs_pt": 0.8529
+   },
+   "V0_ours_numpy (luma, full size, whole image)": {
+    "pq_vs_gt": 0.4867,
+    "pq_vs_pt": 0.6044,
+    "n_masks": 62,
+    "cellprob_corr_vs_pt": 0.864,
+    "flow_cos_fg_vs_pt": 0.8529
+   },
+   "V1 mean gray": {
+    "pq_vs_gt": 0.4804,
+    "pq_vs_pt": 0.6121,
+    "n_masks": 62,
+    "cellprob_corr_vs_pt": 0.864,
+    "flow_cos_fg_vs_pt": 0.8492
+   },
+   "V2 resize x0.567": {
+    "pq_vs_gt": 0.3869,
+    "pq_vs_pt": 0.7619,
+    "n_masks": 41,
+    "cellprob_corr_vs_pt": 0.9277,
+    "flow_cos_fg_vs_pt": 0.861
+   },
+   "V3 mean gray + resize x0.567": {
+    "pq_vs_gt": 0.3872,
+    "pq_vs_pt": 0.7609,
+    "n_masks": 41,
+    "cellprob_corr_vs_pt": 0.9292,
+    "flow_cos_fg_vs_pt": 0.8621
+   },
+   "V4 Cellpose tiling (full size)": {
+    "pq_vs_gt": 0.56,
+    "pq_vs_pt": 0.6774,
+    "n_masks": 80,
+    "cellprob_corr_vs_pt": 0.8622,
+    "flow_cos_fg_vs_pt": 0.9245
+   },
+   "V5 resize x0.567 + Cellpose tiling": {
+    "pq_vs_gt": 0.4753,
+    "pq_vs_pt": 0.9806,
+    "n_masks": 54,
+    "cellprob_corr_vs_pt": 0.9991,
+    "flow_cos_fg_vs_pt": 0.999
+   },
+   "V6 mean gray + resize + Cellpose tiling (= upstream)": {
+    "pq_vs_gt": 0.4805,
+    "pq_vs_pt": 1.0,
+    "n_masks": 55,
+    "cellprob_corr_vs_pt": 1.0,
+    "flow_cos_fg_vs_pt": 1.0
+   }
+  },
+  "pt_seconds": 9.7
+ },
+ {
+  "uid": "APF_2__test__GU_bar7_0",
+  "shape": [
+   512,
+   512
+  ],
+  "n_gt": 128,
+  "variants": {
+   "PT": {
+    "pq_vs_gt": 0.4084,
+    "pq_vs_pt": 1.0,
+    "n_masks": 42,
+    "cellprob_corr_vs_pt": 1.0,
+    "flow_cos_fg_vs_pt": 1.0
+   },
+   "ONNX@CP (our model in Cellpose pipeline)": {
+    "pq_vs_gt": 0.4084,
+    "pq_vs_pt": 1.0,
+    "n_masks": 42,
+    "cellprob_corr_vs_pt": 1.0,
+    "flow_cos_fg_vs_pt": 1.0
+   },
+   "OURS (webGrainy dist, real)": {
+    "pq_vs_gt": 0.421,
+    "pq_vs_pt": 0.6291,
+    "n_masks": 47,
+    "cellprob_corr_vs_pt": 0.9606,
+    "flow_cos_fg_vs_pt": 0.8741
+   },
+   "V0_ours_numpy (luma, full size, whole image)": {
+    "pq_vs_gt": 0.421,
+    "pq_vs_pt": 0.6291,
+    "n_masks": 47,
+    "cellprob_corr_vs_pt": 0.9606,
+    "flow_cos_fg_vs_pt": 0.8741
+   },
+   "V1 mean gray": {
+    "pq_vs_gt": 0.4298,
+    "pq_vs_pt": 0.6456,
+    "n_masks": 47,
+    "cellprob_corr_vs_pt": 0.9609,
+    "flow_cos_fg_vs_pt": 0.8725
+   },
+   "V2 resize x0.567": {
+    "pq_vs_gt": 0.3265,
+    "pq_vs_pt": 0.8025,
+    "n_masks": 33,
+    "cellprob_corr_vs_pt": 0.982,
+    "flow_cos_fg_vs_pt": 0.9042
+   },
+   "V3 mean gray + resize x0.567": {
+    "pq_vs_gt": 0.3259,
+    "pq_vs_pt": 0.8053,
+    "n_masks": 33,
+    "cellprob_corr_vs_pt": 0.9828,
+    "flow_cos_fg_vs_pt": 0.9055
+   },
+   "V4 Cellpose tiling (full size)": {
+    "pq_vs_gt": 0.4992,
+    "pq_vs_pt": 0.7107,
+    "n_masks": 58,
+    "cellprob_corr_vs_pt": 0.9634,
+    "flow_cos_fg_vs_pt": 0.9674
+   },
+   "V5 resize x0.567 + Cellpose tiling": {
+    "pq_vs_gt": 0.408,
+    "pq_vs_pt": 0.9867,
+    "n_masks": 42,
+    "cellprob_corr_vs_pt": 0.9998,
+    "flow_cos_fg_vs_pt": 0.9996
+   },
+   "V6 mean gray + resize + Cellpose tiling (= upstream)": {
+    "pq_vs_gt": 0.4084,
+    "pq_vs_pt": 1.0,
+    "n_masks": 42,
+    "cellprob_corr_vs_pt": 1.0,
+    "flow_cos_fg_vs_pt": 1.0
+   }
+  },
+  "pt_seconds": 4.4
+ },
+ {
+  "uid": "APF_2__test__K1_2_C1_DJI_0385_clipped_4",
+  "shape": [
+   512,
+   512
+  ],
+  "n_gt": 71,
+  "variants": {
+   "PT": {
+    "pq_vs_gt": 0.6559,
+    "pq_vs_pt": 1.0,
+    "n_masks": 55,
+    "cellprob_corr_vs_pt": 1.0,
+    "flow_cos_fg_vs_pt": 1.0
+   },
+   "ONNX@CP (our model in Cellpose pipeline)": {
+    "pq_vs_gt": 0.6559,
+    "pq_vs_pt": 1.0,
+    "n_masks": 55,
+    "cellprob_corr_vs_pt": 1.0,
+    "flow_cos_fg_vs_pt": 1.0
+   },
+   "OURS (webGrainy dist, real)": {
+    "pq_vs_gt": 0.439,
+    "pq_vs_pt": 0.5929,
+    "n_masks": 34,
+    "cellprob_corr_vs_pt": 0.6344,
+    "flow_cos_fg_vs_pt": 0.7615
+   },
+   "V0_ours_numpy (luma, full size, whole image)": {
+    "pq_vs_gt": 0.439,
+    "pq_vs_pt": 0.5929,
+    "n_masks": 34,
+    "cellprob_corr_vs_pt": 0.6344,
+    "flow_cos_fg_vs_pt": 0.7615
+   },
+   "V1 mean gray": {
+    "pq_vs_gt": 0.4521,
+    "pq_vs_pt": 0.5961,
+    "n_masks": 34,
+    "cellprob_corr_vs_pt": 0.6361,
+    "flow_cos_fg_vs_pt": 0.761
+   },
+   "V2 resize x0.567": {
+    "pq_vs_gt": 0.541,
+    "pq_vs_pt": 0.7465,
+    "n_masks": 39,
+    "cellprob_corr_vs_pt": 0.9497,
+    "flow_cos_fg_vs_pt": 0.8442
+   },
+   "V3 mean gray + resize x0.567": {
+    "pq_vs_gt": 0.5411,
+    "pq_vs_pt": 0.7463,
+    "n_masks": 39,
+    "cellprob_corr_vs_pt": 0.9509,
+    "flow_cos_fg_vs_pt": 0.8437
+   },
+   "V4 Cellpose tiling (full size)": {
+    "pq_vs_gt": 0.5327,
+    "pq_vs_pt": 0.6788,
+    "n_masks": 42,
+    "cellprob_corr_vs_pt": 0.6364,
+    "flow_cos_fg_vs_pt": 0.8581
+   },
+   "V5 resize x0.567 + Cellpose tiling": {
+    "pq_vs_gt": 0.6664,
+    "pq_vs_pt": 0.985,
+    "n_masks": 56,
+    "cellprob_corr_vs_pt": 0.9997,
+    "flow_cos_fg_vs_pt": 0.9994
+   },
+   "V6 mean gray + resize + Cellpose tiling (= upstream)": {
+    "pq_vs_gt": 0.6559,
+    "pq_vs_pt": 1.0,
+    "n_masks": 55,
+    "cellprob_corr_vs_pt": 1.0,
+    "flow_cos_fg_vs_pt": 1.0
+   }
+  },
+  "pt_seconds": 5.9
+ },
+ {
+  "uid": "DV_4__test__CTsample_008_5068_1_C_076_1_bc_8bit_cr-1",
+  "shape": [
+   269,
+   400
+  ],
+  "n_gt": 14,
+  "variants": {
+   "PT": {
+    "pq_vs_gt": 0.324,
+    "pq_vs_pt": 1.0,
+    "n_masks": 3,
+    "cellprob_corr_vs_pt": 1.0,
+    "flow_cos_fg_vs_pt": 1.0
+   },
+   "ONNX@CP (our model in Cellpose pipeline)": {
+    "pq_vs_gt": 0.324,
+    "pq_vs_pt": 1.0,
+    "n_masks": 3,
+    "cellprob_corr_vs_pt": 1.0,
+    "flow_cos_fg_vs_pt": 1.0
+   },
+   "OURS (webGrainy dist, real)": {
+    "pq_vs_gt": 0.5328,
+    "pq_vs_pt": 0.6358,
+    "n_masks": 6,
+    "cellprob_corr_vs_pt": 0.949,
+    "flow_cos_fg_vs_pt": 0.9945
+   },
+   "V0_ours_numpy (luma, full size, whole image)": {
+    "pq_vs_gt": 0.5328,
+    "pq_vs_pt": 0.6358,
+    "n_masks": 6,
+    "cellprob_corr_vs_pt": 0.949,
+    "flow_cos_fg_vs_pt": 0.9945
+   },
+   "V1 mean gray": {
+    "pq_vs_gt": 0.5328,
+    "pq_vs_pt": 0.6358,
+    "n_masks": 6,
+    "cellprob_corr_vs_pt": 0.949,
+    "flow_cos_fg_vs_pt": 0.9945
+   },
+   "V2 resize x0.567": {
+    "pq_vs_gt": 0.3235,
+    "pq_vs_pt": 0.9888,
+    "n_masks": 3,
+    "cellprob_corr_vs_pt": 0.9874,
+    "flow_cos_fg_vs_pt": 0.9995
+   },
+   "V3 mean gray + resize x0.567": {
+    "pq_vs_gt": 0.3235,
+    "pq_vs_pt": 0.9888,
+    "n_masks": 3,
+    "cellprob_corr_vs_pt": 0.9874,
+    "flow_cos_fg_vs_pt": 0.9995
+   },
+   "V4 Cellpose tiling (full size)": {
+    "pq_vs_gt": 0.5338,
+    "pq_vs_pt": 0.636,
+    "n_masks": 6,
+    "cellprob_corr_vs_pt": 0.9448,
+    "flow_cos_fg_vs_pt": 0.9905
+   },
+   "V5 resize x0.567 + Cellpose tiling": {
+    "pq_vs_gt": 0.324,
+    "pq_vs_pt": 0.9858,
+    "n_masks": 3,
+    "cellprob_corr_vs_pt": 0.999,
+    "flow_cos_fg_vs_pt": 0.9996
+   },
+   "V6 mean gray + resize + Cellpose tiling (= upstream)": {
+    "pq_vs_gt": 0.324,
+    "pq_vs_pt": 0.9858,
+    "n_masks": 3,
+    "cellprob_corr_vs_pt": 0.999,
+    "flow_cos_fg_vs_pt": 0.9996
+   }
+  },
+  "pt_seconds": 2.6
+ },
+ {
+  "uid": "JF__test__T1_Q2_0__2",
+  "shape": [
+   256,
+   256
+  ],
+  "n_gt": 41,
+  "variants": {
+   "PT": {
+    "pq_vs_gt": 0.5483,
+    "pq_vs_pt": 1.0,
+    "n_masks": 21,
+    "cellprob_corr_vs_pt": 1.0,
+    "flow_cos_fg_vs_pt": 1.0
+   },
+   "ONNX@CP (our model in Cellpose pipeline)": {
+    "pq_vs_gt": 0.5483,
+    "pq_vs_pt": 1.0,
+    "n_masks": 21,
+    "cellprob_corr_vs_pt": 1.0,
+    "flow_cos_fg_vs_pt": 1.0
+   },
+   "OURS (webGrainy dist, real)": {
+    "pq_vs_gt": 0.4676,
+    "pq_vs_pt": 0.6467,
+    "n_masks": 18,
+    "cellprob_corr_vs_pt": 0.8768,
+    "flow_cos_fg_vs_pt": 0.8908
+   },
+   "V0_ours_numpy (luma, full size, whole image)": {
+    "pq_vs_gt": 0.4676,
+    "pq_vs_pt": 0.6467,
+    "n_masks": 18,
+    "cellprob_corr_vs_pt": 0.8768,
+    "flow_cos_fg_vs_pt": 0.8908
+   },
+   "V1 mean gray": {
+    "pq_vs_gt": 0.4626,
+    "pq_vs_pt": 0.6335,
+    "n_masks": 19,
+    "cellprob_corr_vs_pt": 0.87,
+    "flow_cos_fg_vs_pt": 0.8879
+   },
+   "V2 resize x0.567": {
+    "pq_vs_gt": 0.3145,
+    "pq_vs_pt": 0.5979,
+    "n_masks": 12,
+    "cellprob_corr_vs_pt": 0.9343,
+    "flow_cos_fg_vs_pt": 0.8628
+   },
+   "V3 mean gray + resize x0.567": {
+    "pq_vs_gt": 0.322,
+    "pq_vs_pt": 0.5747,
+    "n_masks": 11,
+    "cellprob_corr_vs_pt": 0.9385,
+    "flow_cos_fg_vs_pt": 0.8652
+   },
+   "V4 Cellpose tiling (full size)": {
+    "pq_vs_gt": 0.5424,
+    "pq_vs_pt": 0.7407,
+    "n_masks": 25,
+    "cellprob_corr_vs_pt": 0.8657,
+    "flow_cos_fg_vs_pt": 0.944
+   },
+   "V5 resize x0.567 + Cellpose tiling": {
+    "pq_vs_gt": 0.5481,
+    "pq_vs_pt": 0.9914,
+    "n_masks": 21,
+    "cellprob_corr_vs_pt": 0.9994,
+    "flow_cos_fg_vs_pt": 0.9993
+   },
+   "V6 mean gray + resize + Cellpose tiling (= upstream)": {
+    "pq_vs_gt": 0.5483,
+    "pq_vs_pt": 1.0,
+    "n_masks": 21,
+    "cellprob_corr_vs_pt": 1.0,
+    "flow_cos_fg_vs_pt": 1.0
+   }
+  },
+  "pt_seconds": 3.3
+ },
+ {
+  "uid": "NB2__test__P5220768_2_cut",
+  "shape": [
+   156,
+   231
+  ],
+  "n_gt": 203,
+  "variants": {
+   "PT": {
+    "pq_vs_gt": 0.114,
+    "pq_vs_pt": 1.0,
+    "n_masks": 20,
+    "cellprob_corr_vs_pt": 1.0,
+    "flow_cos_fg_vs_pt": 1.0
+   },
+   "ONNX@CP (our model in Cellpose pipeline)": {
+    "pq_vs_gt": 0.114,
+    "pq_vs_pt": 1.0,
+    "n_masks": 20,
+    "cellprob_corr_vs_pt": 1.0,
+    "flow_cos_fg_vs_pt": 1.0
+   },
+   "OURS (webGrainy dist, real)": {
+    "pq_vs_gt": 0.1147,
+    "pq_vs_pt": 0.401,
+    "n_masks": 17,
+    "cellprob_corr_vs_pt": 0.8018,
+    "flow_cos_fg_vs_pt": 0.6648
+   },
+   "V0_ours_numpy (luma, full size, whole image)": {
+    "pq_vs_gt": 0.1147,
+    "pq_vs_pt": 0.401,
+    "n_masks": 17,
+    "cellprob_corr_vs_pt": 0.8018,
+    "flow_cos_fg_vs_pt": 0.6648
+   },
+   "V1 mean gray": {
+    "pq_vs_gt": 0.1212,
+    "pq_vs_pt": 0.3909,
+    "n_masks": 18,
+    "cellprob_corr_vs_pt": 0.8063,
+    "flow_cos_fg_vs_pt": 0.6633
+   },
+   "V2 resize x0.567": {
+    "pq_vs_gt": 0.0543,
+    "pq_vs_pt": 0.4491,
+    "n_masks": 9,
+    "cellprob_corr_vs_pt": 0.8915,
+    "flow_cos_fg_vs_pt": 0.7666
+   },
+   "V3 mean gray + resize x0.567": {
+    "pq_vs_gt": 0.0544,
+    "pq_vs_pt": 0.4504,
+    "n_masks": 9,
+    "cellprob_corr_vs_pt": 0.8893,
+    "flow_cos_fg_vs_pt": 0.7654
+   },
+   "V4 Cellpose tiling (full size)": {
+    "pq_vs_gt": 0.2434,
+    "pq_vs_pt": 0.4483,
+    "n_masks": 37,
+    "cellprob_corr_vs_pt": 0.8275,
+    "flow_cos_fg_vs_pt": 0.7762
+   },
+   "V5 resize x0.567 + Cellpose tiling": {
+    "pq_vs_gt": 0.1053,
+    "pq_vs_pt": 0.8661,
+    "n_masks": 20,
+    "cellprob_corr_vs_pt": 0.9916,
+    "flow_cos_fg_vs_pt": 0.9859
+   },
+   "V6 mean gray + resize + Cellpose tiling (= upstream)": {
+    "pq_vs_gt": 0.1109,
+    "pq_vs_pt": 0.8813,
+    "n_masks": 21,
+    "cellprob_corr_vs_pt": 0.9921,
+    "flow_cos_fg_vs_pt": 0.9848
+   }
+  },
+  "pt_seconds": 2.9
+ },
+ {
+  "uid": "NZ1__test__Outcrop_KRS_22_37_0_48_IMG_6617_cropped_5",
+  "shape": [
+   400,
+   600
+  ],
+  "n_gt": 29,
+  "variants": {
+   "PT": {
+    "pq_vs_gt": 0.581,
+    "pq_vs_pt": 1.0,
+    "n_masks": 31,
+    "cellprob_corr_vs_pt": 1.0,
+    "flow_cos_fg_vs_pt": 1.0
+   },
+   "ONNX@CP (our model in Cellpose pipeline)": {
+    "pq_vs_gt": 0.581,
+    "pq_vs_pt": 1.0,
+    "n_masks": 31,
+    "cellprob_corr_vs_pt": 1.0,
+    "flow_cos_fg_vs_pt": 1.0
+   },
+   "OURS (webGrainy dist, real)": {
+    "pq_vs_gt": 0.4305,
+    "pq_vs_pt": 0.5116,
+    "n_masks": 31,
+    "cellprob_corr_vs_pt": 0.9201,
+    "flow_cos_fg_vs_pt": 0.9071
+   },
+   "V0_ours_numpy (luma, full size, whole image)": {
+    "pq_vs_gt": 0.4305,
+    "pq_vs_pt": 0.5116,
+    "n_masks": 31,
+    "cellprob_corr_vs_pt": 0.9201,
+    "flow_cos_fg_vs_pt": 0.9071
+   },
+   "V1 mean gray": {
+    "pq_vs_gt": 0.4374,
+    "pq_vs_pt": 0.4889,
+    "n_masks": 30,
+    "cellprob_corr_vs_pt": 0.9181,
+    "flow_cos_fg_vs_pt": 0.9043
+   },
+   "V2 resize x0.567": {
+    "pq_vs_gt": 0.5467,
+    "pq_vs_pt": 0.7055,
+    "n_masks": 21,
+    "cellprob_corr_vs_pt": 0.9804,
+    "flow_cos_fg_vs_pt": 0.9431
+   },
+   "V3 mean gray + resize x0.567": {
+    "pq_vs_gt": 0.5585,
+    "pq_vs_pt": 0.6879,
+    "n_masks": 20,
+    "cellprob_corr_vs_pt": 0.9806,
+    "flow_cos_fg_vs_pt": 0.9431
+   },
+   "V4 Cellpose tiling (full size)": {
+    "pq_vs_gt": 0.3908,
+    "pq_vs_pt": 0.509,
+    "n_masks": 44,
+    "cellprob_corr_vs_pt": 0.8259,
+    "flow_cos_fg_vs_pt": 0.9268
+   },
+   "V5 resize x0.567 + Cellpose tiling": {
+    "pq_vs_gt": 0.5754,
+    "pq_vs_pt": 0.9201,
+    "n_masks": 34,
+    "cellprob_corr_vs_pt": 0.9985,
+    "flow_cos_fg_vs_pt": 0.9976
+   },
+   "V6 mean gray + resize + Cellpose tiling (= upstream)": {
+    "pq_vs_gt": 0.5612,
+    "pq_vs_pt": 0.9356,
+    "n_masks": 33,
+    "cellprob_corr_vs_pt": 0.9987,
+    "flow_cos_fg_vs_pt": 0.9979
+   }
+  },
+  "pt_seconds": 6.9
+ }
+]

@@ -179,6 +179,17 @@ accuracy testing.
 - **Increase the margin** (5–10 px) if the photo edges are blurred, vignetted or
   distorted. The margin applies the next time photos are analysed.
 
+### Advanced: Inference pipeline
+| | |
+|---|---|
+| **Options** | `Cellpose (matches ImageGrains)` · `Legacy (webGrainy ≤ v1.1)` |
+| **Default** | **Cellpose** |
+| **What it does** | How the photo is prepared and cut into tiles before the neural network runs. "Cellpose" reproduces the original ImageGrains/Cellpose software exactly: identical grain outlines to the original in tests. |
+
+**When to change it:** keep **Cellpose**. In tests on 7 photos it gave clearly better
+outlines and D50 than Legacy (median D50 error 3.3 % vs 8.6 % for Cellpose-SAM). Choose
+**Legacy** only to reproduce results made with webGrainy v1.1 or earlier.
+
 ### Advanced (rarely needed): Flow steps, Seed density
 | | |
 |---|---|

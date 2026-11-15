@@ -1,0 +1,147 @@
+{
+ "rows": [
+  {
+   "uid": "APF_2__test__DS8-S2_3",
+   "PT": {
+    "pq_vs_gt": 0.4805
+   },
+   "legacy": {
+    "pq_vs_gt": 0.4867,
+    "pq_vs_pt": 0.6044,
+    "flow_cos_fg_vs_pt": 0.8529,
+    "cellprob_max_abs_vs_pt": 7.2859
+   },
+   "cellpose": {
+    "pq_vs_gt": 0.4805,
+    "pq_vs_pt": 1.0,
+    "flow_cos_fg_vs_pt": 1.0,
+    "cellprob_max_abs_vs_pt": 0.0001
+   }
+  },
+  {
+   "uid": "APF_2__test__GU_bar7_0",
+   "PT": {
+    "pq_vs_gt": 0.4084
+   },
+   "legacy": {
+    "pq_vs_gt": 0.421,
+    "pq_vs_pt": 0.6291,
+    "flow_cos_fg_vs_pt": 0.8741,
+    "cellprob_max_abs_vs_pt": 6.8702
+   },
+   "cellpose": {
+    "pq_vs_gt": 0.4084,
+    "pq_vs_pt": 1.0,
+    "flow_cos_fg_vs_pt": 1.0,
+    "cellprob_max_abs_vs_pt": 0.0
+   }
+  },
+  {
+   "uid": "APF_2__test__K1_2_C1_DJI_0385_clipped_4",
+   "PT": {
+    "pq_vs_gt": 0.6559
+   },
+   "legacy": {
+    "pq_vs_gt": 0.439,
+    "pq_vs_pt": 0.5929,
+    "flow_cos_fg_vs_pt": 0.7615,
+    "cellprob_max_abs_vs_pt": 9.4085
+   },
+   "cellpose": {
+    "pq_vs_gt": 0.6559,
+    "pq_vs_pt": 1.0,
+    "flow_cos_fg_vs_pt": 1.0,
+    "cellprob_max_abs_vs_pt": 0.0001
+   }
+  },
+  {
+   "uid": "DV_4__test__CTsample_008_5068_1_C_076_1_bc_8bit_cr-1",
+   "PT": {
+    "pq_vs_gt": 0.324
+   },
+   "legacy": {
+    "pq_vs_gt": 0.5328,
+    "pq_vs_pt": 0.6358,
+    "flow_cos_fg_vs_pt": 0.9945,
+    "cellprob_max_abs_vs_pt": 5.5545
+   },
+   "cellpose": {
+    "pq_vs_gt": 0.324,
+    "pq_vs_pt": 1.0,
+    "flow_cos_fg_vs_pt": 1.0,
+    "cellprob_max_abs_vs_pt": 0.0
+   }
+  },
+  {
+   "uid": "JF__test__T1_Q2_0__2",
+   "PT": {
+    "pq_vs_gt": 0.5483
+   },
+   "legacy": {
+    "pq_vs_gt": 0.4676,
+    "pq_vs_pt": 0.6467,
+    "flow_cos_fg_vs_pt": 0.8908,
+    "cellprob_max_abs_vs_pt": 6.7924
+   },
+   "cellpose": {
+    "pq_vs_gt": 0.5483,
+    "pq_vs_pt": 1.0,
+    "flow_cos_fg_vs_pt": 1.0,
+    "cellprob_max_abs_vs_pt": 0.0
+   }
+  },
+  {
+   "uid": "NB2__test__P5220768_2_cut",
+   "PT": {
+    "pq_vs_gt": 0.114
+   },
+   "legacy": {
+    "pq_vs_gt": 0.1147,
+    "pq_vs_pt": 0.401,
+    "flow_cos_fg_vs_pt": 0.6648,
+    "cellprob_max_abs_vs_pt": 8.0719
+   },
+   "cellpose": {
+    "pq_vs_gt": 0.114,
+    "pq_vs_pt": 1.0,
+    "flow_cos_fg_vs_pt": 1.0,
+    "cellprob_max_abs_vs_pt": 0.0
+   }
+  },
+  {
+   "uid": "NZ1__test__Outcrop_KRS_22_37_0_48_IMG_6617_cropped_5",
+   "PT": {
+    "pq_vs_gt": 0.581
+   },
+   "legacy": {
+    "pq_vs_gt": 0.4305,
+    "pq_vs_pt": 0.5116,
+    "flow_cos_fg_vs_pt": 0.9071,
+    "cellprob_max_abs_vs_pt": 5.8929
+   },
+   "cellpose": {
+    "pq_vs_gt": 0.581,
+    "pq_vs_pt": 1.0,
+    "flow_cos_fg_vs_pt": 1.0,
+    "cellprob_max_abs_vs_pt": 0.0001
+   }
+  }
+ ],
+ "summary": {
+  "PT": {
+   "pq_vs_gt": 0.4446
+  },
+  "legacy": {
+   "pq_vs_gt": 0.4132,
+   "pq_vs_pt": 0.5745,
+   "flow_cos_fg_vs_pt": 0.8494,
+   "cellprob_max_abs_vs_pt": 7.1252
+  },
+  "cellpose": {
+   "pq_vs_gt": 0.4446,
+   "pq_vs_pt": 1.0,
+   "flow_cos_fg_vs_pt": 1.0,
+   "cellprob_max_abs_vs_pt": 0.0
+  }
+ }
+}
