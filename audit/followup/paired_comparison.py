@@ -18,7 +18,12 @@ def ape(r, k='D50'):
 
 def series(model, engine):
     s = sorted((r for r in rows if r['model'] == model and r['engine'] == engine), key=lambda r: r['uid'])
-    return [r['uid'] for r in s], np.array([ape(r) for r in s]), np.array([float(r['pq_vs_gt']) for r in s])
+    return (
+        [r['uid'] for r in s],
+        np.array([ape(r) for r in s]),
+        np.array([float(r['pq_vs_gt']) for r in s]),
+        np.array([float(r['pq_vs_pt']) for r in s]),
+    )
 
 def sign_test(wins, losses):
     n = wins + losses; k = min(wins, losses)
@@ -33,14 +38,18 @@ for model in ('unet', 'cpsam'):
         ('ts_v41_guard040', 'pytorch_ref'),
         ('ts_v41_guard040', 'ts_v41_guard100'),
         ('ts_v41_guard040', 'ts_v41_guard015'),
+        ('ts_cellpose_guard040', 'pytorch_ref'),
+        ('ts_cellpose_guard040', 'ts_v41_guard040'),
     ):
-        ua, xa, pa = series(model, a); ub, xb, pb = series(model, b)
+        ua, xa, pa, pta = series(model, a); ub, xb, pb, ptb = series(model, b)
+        if not ua or not ub:
+            continue
         assert ua == ub, 'image sets differ'
         d = xa - xb
         boots = np.array([rng.choice(d, d.size).mean() for _ in range(10000)])
         lo, hi = np.percentile(boots, [2.5, 97.5])
         wins, losses = int((d < 0).sum()), int((d > 0).sum())
         verdict = 'NOT distinguishable' if lo <= 0 <= hi else ('A better' if hi < 0 else 'B better')
-        print(f'{model:5s} A={a:16s} B={b:16s} n={d.size}  mean dAPE={d.mean():+6.2f} pp  95% CI [{lo:+6.2f}, {hi:+6.2f}]  '
+        print(f'{model:5s} A={a:20s} B={b:20s} n={d.size}  mean dAPE={d.mean():+6.2f} pp  95% CI [{lo:+6.2f}, {hi:+6.2f}]  '
               f'A better on {wins}/{d.size} (ties {d.size - wins - losses})  sign-test p={sign_test(wins, losses):.3f}  '
-              f'PQ A={pa.mean():.3f} B={pb.mean():.3f}  -> {verdict}')
+              f'PQ_GT A={pa.mean():.3f} B={pb.mean():.3f}  PQ_PT A={pta.mean():.3f} B={ptb.mean():.3f}  -> {verdict}')
