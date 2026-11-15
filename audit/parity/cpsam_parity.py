@@ -88,11 +88,40 @@ def run_tiled(nimg, win, starts):
             acc[:, y0:y0+256, x0:x0+256] += y * win; wsum[y0:y0+256, x0:x0+256] += win
     out = acc / wsum[None]; return out[:, :H, :W]
 
+def cp_pad_yx(Ly, Lx, div=16, extra=1, min_size=(256, 256)):
+    """Replica of cellpose.transforms.get_pad_yx (Cellpose 4): 8 px zero border + pad
+    to a multiple of 16 (or up to 256 px for small images), centred."""
+    def one(L, m):
+        Lpad = int(div * np.ceil(L / div) - L) if L >= m else max(0, m - L - extra * div)
+        return extra * div // 2 + Lpad // 2, extra * div // 2 + Lpad - Lpad // 2
+    return (*one(Ly, min_size[0]), *one(Lx, min_size[1]))
+
+def run_cp_exact(nimg, overlap=0.25, t=256, win_fn=None, starts_fn=None):
+    """Numpy replica of Cellpose 4 core.run_net + make_tiles + average_tiles."""
+    H, W, _ = nimg.shape
+    y1, y2, x1, x2 = cp_pad_yx(H, W)
+    x = np.pad(nimg.transpose(2, 0, 1), ((0, 0), (y1, y2), (x1, x2)), mode='constant')
+    Ly, Lx = x.shape[1:]
+    win = (win_fn or cp_taper)()
+    st = starts_fn or (lambda L: [0] if L <= t else list(np.linspace(0, L - t, int(np.ceil((1 + 2 * overlap) * L / t))).astype(int)))
+    acc = np.zeros((3, Ly, Lx), np.float32); wsum = np.zeros((Ly, Lx), np.float32)
+    for y0 in st(Ly):
+        for x0 in st(Lx):
+            y = onnx_run(x[None, :, y0:y0 + t, x0:x0 + t])[0]
+            acc[:, y0:y0 + t, x0:x0 + t] += y * win; wsum[y0:y0 + t, x0:x0 + t] += win
+    return (acc / wsum[None])[:, y1:y1 + H, x1:x1 + W]
+
 VARIANTS = {
     'V0_ours_numpy (joint norm, hann, stride)': (norm_joint, hann_win, starts_ours),
     'V1 per-channel norm':                       (norm_perchannel, hann_win, starts_ours),
     'V2 per-channel + cp taper':                 (norm_perchannel, cp_taper, starts_ours),
     'V3 per-channel + cp taper + cp starts':     (norm_perchannel, cp_taper, starts_cp),
+}
+EXACT_VARIANTS = {
+    'V4 exact Cellpose replica (zero border, linspace, taper, per-channel)':
+        lambda img: run_cp_exact(norm_perchannel(img)),
+    'V5 ours + 8 px zero border only (joint norm, hann, stride)':
+        lambda img: run_cp_exact(norm_joint(img), win_fn=hann_win, starts_fn=starts_ours),
 }
 
 model = models.CellposeModel(gpu=False, pretrained_model=weights)
@@ -119,6 +148,8 @@ for jpg in sorted(glob.glob(os.path.join(imgdir, '*.jpg'))):
         outs['OURS (webGrainy dist, real)'] = (a[:2], a[2])
     for name, (nf, win, st) in VARIANTS.items():
         y = run_tiled(nf(img), win(), st); outs[name] = (y[:2], y[2])
+    for name, fn in EXACT_VARIANTS.items():
+        y = fn(img); outs[name] = (y[:2], y[2])
     dP0, cp0 = outs['PT']
     for name, (dP, cp) in outs.items():
         mk = m_pt if name == 'PT' else masks_from(dP, cp)

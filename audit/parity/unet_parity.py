@@ -58,16 +58,27 @@ def resized(fn, g, scale):  # run at a smaller size, resize outputs back (as Cel
     y = fn(gs)
     return transforms.resize_image(y.transpose(1, 2, 0), Ly=H, Lx=W).transpose(2, 0, 1)
 
+from cellpose import core as cp_core  # noqa: E402
+_onnx_net = None
+def run_cp_tiles(g):  # Cellpose 3 tiling: 224 px tiles, 10% overlap, sigmoid taper, per-tile style
+    x = np.stack([g, np.zeros_like(g)], -1)[None].astype(np.float32)
+    y, _ = cp_core.run_net(_onnx_net, x, batch_size=8, augment=False, tile_overlap=0.1, bsize=224)
+    return y[0].transpose(2, 0, 1)
+
 SCALE = 17.0 / DIAMETER
 VARIANTS = {
     'V0_ours_numpy (luma, full size, whole image)': lambda img: run_full(norm99(gray_luma(img))),
     'V1 mean gray': lambda img: run_full(norm99(gray_mean(img))),
     'V2 resize x0.567': lambda img: resized(run_full, norm99(gray_luma(img)), SCALE),
     'V3 mean gray + resize x0.567': lambda img: resized(run_full, norm99(gray_mean(img)), SCALE),
+    'V4 Cellpose tiling (full size)': lambda img: run_cp_tiles(norm99(gray_luma(img))),
+    'V5 resize x0.567 + Cellpose tiling': lambda img: resized(run_cp_tiles, norm99(gray_luma(img)), SCALE),
+    'V6 mean gray + resize + Cellpose tiling (= upstream)': lambda img: resized(run_cp_tiles, norm99(gray_mean(img)), SCALE),
 }
 
 model = models.CellposeModel(gpu=False, pretrained_model=weights)
 pt_net = model.net
+_onnx_net = OnnxNet(pt_net)
 niter = int(200 / SCALE)
 def masks_from(dP, cp):
     m = dynamics.compute_masks(dP, cp, niter=niter, cellprob_threshold=0.0, flow_threshold=0.4,
