@@ -81,6 +81,12 @@ Evaluated using the **actual shipped TypeScript engine** (`src/modules/postproce
 
 ---
 
+## User Guide
+
+New users: see **[docs/SETTINGS_GUIDE.md](docs/SETTINGS_GUIDE.md)** for a plain-language walkthrough of every setting, its default, and when to change it.
+
+---
+
 ## Limitations & Scientific Validity
 
 webGrainy is an unofficial browser port of ImageGrains 2.0 and is not endorsed by its authors. Its post-processing (`F5_MagWeightedQC` + `F3_SplitOnFailure`) differs from Cellpose/ImageGrains `flow_error`.

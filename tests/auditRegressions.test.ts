@@ -275,7 +275,8 @@ describe('F-10 provenance in exports', () => {
     const entries = [
       { photoId: 'p1', label: '=HYPERLINK("x").jpg', included: true, session: makeSession() },
     ];
-    const meta = buildSiteExportMetadata(entries);
+    const meta = buildSiteExportMetadata(entries, undefined, { minSizeMm: 13, bootstrapReplicates: 2000, bootstrapTwoStage: true });
+    expect(meta['siteSettings']).toMatchObject({ minSizeMm: 13, bootstrapReplicates: 2000, bootstrapTwoStage: true, bootstrapSeed: 42 });
     expect((meta['photos'] as Array<Record<string, unknown>>)[0]!['modelSha256']).toBe('abc123');
     const csv = await exportPooledGrainsCsv(entries, undefined, { metadata: meta }).text();
     const rows = csv.split('\n').filter((l) => !l.startsWith('#'));

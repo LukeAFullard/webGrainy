@@ -1577,6 +1577,7 @@ function csvEscape(val: string | number | boolean): string {
 export function buildSiteExportMetadata(
   entries: readonly SitePhotoInput[],
   report?: SiteAnalysisReport,
+  options?: Partial<SiteAnalysisOptions>,
 ): Record<string, unknown> {
   const photos = entries
     .filter((e) => e.included)
@@ -1610,6 +1611,20 @@ export function buildSiteExportMetadata(
           sizeMetric: report.sizeMetric,
           unit: report.unit,
           bootstrapConfidenceLevel: report.bootstrapCi.confidenceLevel,
+          dCutoffCommonMm: report.dCutoffCommonMm,
+        }
+      : {}),
+    ...(options !== undefined
+      ? {
+          siteSettings: {
+            minBaxisPx: options.minBaxisPx ?? 15,
+            minSizeMm: options.minSizeMm ?? 0,
+            harmonizePhysicalCutoff: options.harmonizePhysicalCutoff ?? options.harmonizeCutoff ?? true,
+            bootstrapReplicates: options.bootstrapReplicates ?? 1000,
+            bootstrapSeed: options.bootstrapSeed ?? 42,
+            bootstrapTwoStage: options.bootstrapTwoStage ?? false,
+            wolmanPointsPerPhoto: options.wolmanPointsPerPhoto ?? 100,
+          },
         }
       : {}),
     photos,

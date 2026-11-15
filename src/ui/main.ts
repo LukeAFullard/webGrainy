@@ -45,6 +45,7 @@ import {
 } from './charts.js';
 import { CanvasViewport } from './canvasViewport.js';
 import { parseJpegExifMetadata } from './exif.js';
+import { helpButton, isHelpKey, renderHelpModalHtml } from './help.js';
 import {
   handleExportAction,
   renderAboutModalHtml,
@@ -54,10 +55,26 @@ import {
 import {
   AppStore,
   toAnalysisConfig,
+  defaultAnalysisParams,
   type AppState,
   type DashboardTab,
   type EditorToolMode,
 } from './state.js';
+
+/** Remembers which `details[data-keep-open]` blocks are open across innerHTML re-renders. */
+function captureOpenDetails(root: HTMLElement): Set<string> {
+  const open = new Set<string>();
+  root.querySelectorAll<HTMLDetailsElement>('details[data-keep-open]').forEach((d) => {
+    if (d.open) open.add(d.dataset['keepOpen'] ?? '');
+  });
+  return open;
+}
+
+function restoreOpenDetails(root: HTMLElement, open: Set<string>): void {
+  root.querySelectorAll<HTMLDetailsElement>('details[data-keep-open]').forEach((d) => {
+    if (open.has(d.dataset['keepOpen'] ?? '')) d.open = true;
+  });
+}
 
 function esc(s: string): string {
   return s
@@ -633,6 +650,7 @@ function renderTopbar(state: AppState): void {
     <div class="topbar-right">
       <button type="button" class="btn btn-sm" data-open-modal="models">Models (${caps?.cachedModels.length ?? 0}/2)</button>
       <button type="button" class="btn btn-sm" data-open-modal="export">Export</button>
+      <button type="button" class="btn btn-sm" data-open-help="">Help</button>
       <button type="button" class="btn btn-sm" data-open-modal="about">About &amp; Citations</button>
     </div>
   `;
@@ -648,6 +666,7 @@ function renderSidebar(state: AppState): void {
   const prevDetailsOpen = sidebarEl.querySelector('details')?.open ?? true;
   const prevPhotoScroll = sidebarEl.querySelector('.photo-list')?.scrollTop ?? 0;
 
+  const keptOpenSidebar = captureOpenDetails(sidebarEl);
   sidebarEl.innerHTML = `
     <div class="panel-section">
       <div class="panel-header">
@@ -723,6 +742,13 @@ function renderSidebar(state: AppState): void {
                         <span class="badge ${status}"${errMsg ? ` title="${esc(errMsg)}"` : ''}>${status}</span>
                       </button>
                       ${errMsg ? `<div class="photo-error" role="alert">${esc(errMsg)}</div>` : ''}
+                      ${
+                        state.siteOptions.poolingMode === 'facies-weighted'
+                          ? `<label class="photo-facies">Facies weight ${helpButton('faciesWeight')}
+                              <input class="input" type="number" step="0.05" min="0" max="100" value="${ph.faciesWeight ?? 1}" data-photo-facies="${esc(ph.photoId)}" aria-label="Facies weight for ${esc(ph.label)}" />
+                            </label>`
+                          : ''
+                      }
                     </div>
                   `;
                 })
@@ -734,9 +760,13 @@ function renderSidebar(state: AppState): void {
     <div class="panel-section">
       <details ${prevDetailsOpen ? 'open' : ''}>
         <summary>Inference &amp; Post-Processing Controls</summary>
+        <div class="row-between" style="margin-top:6px;">
+          <span class="field-hint">Defaults are the tested settings.</span>
+          <button type="button" class="btn btn-sm" data-open-help="">Settings help</button>
+        </div>
         <div class="grid-2" style="margin-top:8px;">
           <label class="field-label">
-            Model
+            <span class="label-row">Model ${helpButton('model')}</span>
             <select class="select" data-param="model">
               <option value="auto" ${p.model === 'auto' ? 'selected' : ''}>Auto (Router)</option>
               <option value="unet" ${p.model === 'unet' ? 'selected' : ''}>U-Net (25 MB)</option>
@@ -744,7 +774,7 @@ function renderSidebar(state: AppState): void {
             </select>
           </label>
           <label class="field-label">
-            Scale Mode
+            <span class="label-row">Scale Mode ${helpButton('scaleMode')}</span>
             <select class="select" data-param="scaleMode">
               <option value="auto" ${p.scaleMode === 'auto' ? 'selected' : ''}>Auto (≤1024px)</option>
               <option value="1.0x" ${p.scaleMode === '1.0x' ? 'selected' : ''}>1.0x Full</option>
@@ -753,43 +783,60 @@ function renderSidebar(state: AppState): void {
             </select>
           </label>
           <label class="field-label">
-            Flow Threshold
+            <span class="label-row">Flow Threshold ${helpButton('flowThreshold')}</span>
             <input class="input" type="number" step="0.05" min="0.05" max="1" value="${p.flowThreshold}" data-param="flowThreshold" />
           </label>
           <label class="field-label">
-            Cellprob Thresh
+            <span class="label-row">Cellprob Thresh ${helpButton('cellprobThreshold')}</span>
             <input class="input" type="number" step="0.1" min="-4" max="4" value="${p.cellprobThreshold}" data-param="cellprobThreshold" />
           </label>
           <label class="field-label">
-            Min Size (px²)
+            <span class="label-row">Min Size (px²) ${helpButton('minSize')}</span>
             <input class="input" type="number" step="1" min="4" max="500" value="${p.minSize}" data-param="minSize" />
           </label>
           <label class="field-label">
-            Max Area Frac
+            <span class="label-row">Max Area Frac ${helpButton('maxGrainAreaFraction')}</span>
             <input class="input" type="number" step="0.01" min="0.01" max="1" value="${p.maxGrainAreaFraction}" data-param="maxGrainAreaFraction" />
           </label>
           <label class="field-label">
-            Min b-axis (px)
-            <input class="input" type="number" step="1" min="0" max="50" value="${state.siteOptions.minBaxisPx ?? 15}" data-site-opt="minBaxisPx" />
-          </label>
-          <label class="field-label" title="Smallest clast your field Wolman/pebble count records (e.g. 8–16 mm). Grains below it are excluded from site statistics so photo and field results cover the same size range. 0 = off.">
-            Field-count cutoff (mm)
-            <input class="input" type="number" step="0.5" min="0" max="256" value="${state.siteOptions.minSizeMm ?? 0}" data-site-opt="minSizeMm" />
+            <span class="label-row">Border margin (px) ${helpButton('excludeBorderMargin')}</span>
+            <input class="input" type="number" step="1" min="0" max="100" value="${p.excludeBorderMargin}" data-param="excludeBorderMargin" />
           </label>
           <label class="field-label">
-            CLAHE Clip
+            <span class="label-row">CLAHE Clip ${helpButton('claheClipLimit')}</span>
             <input class="input" type="number" step="0.5" min="1" max="8" value="${p.claheClipLimit}" data-param="claheClipLimit" />
           </label>
         </div>
-        <div class="row-between" style="margin-top:8px;">
+        <div class="row" style="margin-top:8px;gap:12px;flex-wrap:wrap;">
           <label class="checkbox-label">
-            <input type="checkbox" data-param="applyClahe" ${p.applyClahe ? 'checked' : ''} /> Apply CLAHE
+            <input type="checkbox" data-param="applyClahe" ${p.applyClahe ? 'checked' : ''} /> Apply CLAHE ${helpButton('applyClahe')}
           </label>
+          <label class="checkbox-label">
+            <input type="checkbox" data-param="excludeBorder" ${p.excludeBorder ? 'checked' : ''} /> Exclude border grains ${helpButton('excludeBorder')}
+          </label>
+        </div>
+        <details class="advanced-block" style="margin-top:8px;" data-keep-open="advanced-analysis">
+          <summary>Advanced (rarely needed)</summary>
+          <div class="grid-2" style="margin-top:6px;">
+            <label class="field-label">
+              <span class="label-row">Flow steps ${helpButton('niter')}</span>
+              <input class="input" type="number" step="10" min="50" max="1000" value="${p.niter}" data-param="niter" />
+            </label>
+            <label class="field-label">
+              <span class="label-row">Seed density ${helpButton('minSeedDensity')}</span>
+              <input class="input" type="number" step="1" min="1" max="20" value="${p.minSeedDensity}" data-param="minSeedDensity" />
+            </label>
+          </div>
+          <button type="button" class="btn btn-sm" data-action="reset-analysis-params" style="margin-top:6px;">Reset analysis settings to defaults</button>
+        </details>
+        <div class="row-between" style="margin-top:8px;">
+          <span class="field-hint">Changes apply to the next analysis.</span>
           <button type="button" class="btn btn-sm" data-action="run-active" ${!state.activePhotoId || state.batchRunning ? 'disabled' : ''}>Analyze Active Photo</button>
         </div>
       </details>
     </div>
   `;
+  restoreOpenDetails(sidebarEl, keptOpenSidebar);
 
   const photoListEl = sidebarEl.querySelector('.photo-list');
   if (photoListEl && prevPhotoScroll > 0) {
@@ -820,6 +867,7 @@ function renderToolbarAndOverlays(state: AppState): void {
           `<button type="button" class="btn btn-sm ${state.activeTool === t.id ? 'active' : ''}" aria-pressed="${state.activeTool === t.id ? 'true' : 'false'}" data-tool="${t.id}">${t.label}</button>`,
       )
       .join('')}
+    ${helpButton('editing')}
     ${
       state.activeTool === 'merge' && state.selectedGrainIds.size >= 2
         ? `<button type="button" class="btn btn-sm btn-primary" data-action="commit-merge">Merge (${state.selectedGrainIds.size})</button>`
@@ -1083,6 +1131,7 @@ function renderDashboard(state: AppState): void {
         ? "Size metric: equal-area circle diameter (d_eq = sqrt(4*Area/pi)) of each grain's visible 2D outline."
         : "Size metric: minor axis of the moment-equivalent ellipse of each grain's visible outline — not a sieve or caliper b-axis.";
 
+  const keptOpenDashboard = captureOpenDetails(dashboardEl);
   dashboardEl.innerHTML = `
     <div class="panel-section">
       <div class="row-between" style="margin-bottom:6px;">
@@ -1094,7 +1143,7 @@ function renderDashboard(state: AppState): void {
       </div>
       <div class="grid-2">
         <label class="field-label">
-          Pooling Mode
+          <span class="label-row">Pooling Mode ${helpButton('poolingMode')}</span>
           <select class="select" data-site-opt="poolingMode">
             <option value="physical-area" ${state.siteOptions.poolingMode === 'physical-area' ? 'selected' : ''}>Physical Area-Weighted</option>
             <option value="equal-photo" ${state.siteOptions.poolingMode === 'equal-photo' ? 'selected' : ''}>Equal-Photo Weighted</option>
@@ -1104,19 +1153,54 @@ function renderDashboard(state: AppState): void {
           </select>
         </label>
         <label class="field-label">
-          Size Metric
+          <span class="label-row">Size Metric ${helpButton('sizeMetric')}</span>
           <select class="select" data-site-opt="sizeMetric">
             <option value="bAxis" ${activeMetric === 'bAxis' ? 'selected' : ''}>b-axis (ellipse minor)</option>
             <option value="minFeret" ${activeMetric === 'minFeret' ? 'selected' : ''}>min-Feret (caliper width)</option>
             <option value="dEq" ${activeMetric === 'dEq' ? 'selected' : ''}>d_eq (equal-area circle)</option>
           </select>
         </label>
+        <label class="field-label">
+          <span class="label-row">Field-count cutoff (mm) ${helpButton('minSizeMm')}</span>
+          <input class="input" type="number" step="0.5" min="0" max="256" value="${state.siteOptions.minSizeMm ?? 0}" data-site-opt="minSizeMm" />
+        </label>
+        <label class="field-label">
+          <span class="label-row">Min b-axis (px) ${helpButton('minBaxisPx')}</span>
+          <input class="input" type="number" step="1" min="0" max="50" value="${state.siteOptions.minBaxisPx ?? 15}" data-site-opt="minBaxisPx" />
+        </label>
       </div>
       <div style="margin-top:6px;">
         <label class="checkbox-label">
-          <input type="checkbox" data-site-opt="harmonizePhysicalCutoff" ${state.siteOptions.harmonizePhysicalCutoff !== false ? 'checked' : ''} /> Harmonize Cutoff
+          <input type="checkbox" data-site-opt="harmonizePhysicalCutoff" ${state.siteOptions.harmonizePhysicalCutoff !== false ? 'checked' : ''} /> Harmonize Cutoff ${helpButton('harmonizePhysicalCutoff')}
         </label>
       </div>
+      <details class="advanced-block" style="margin-top:6px;" data-keep-open="uncertainty">
+        <summary>Uncertainty &amp; sampling</summary>
+        <div class="grid-2" style="margin-top:6px;">
+          <label class="field-label">
+            <span class="label-row">Confidence level ${helpButton('confidenceLevel')}</span>
+            <select class="select" data-site-opt="confidenceLevel" data-numeric="true">
+              <option value="0.95" ${(state.siteOptions.confidenceLevel ?? 0.95) === 0.95 ? 'selected' : ''}>95%</option>
+              <option value="0.9" ${state.siteOptions.confidenceLevel === 0.9 ? 'selected' : ''}>90%</option>
+            </select>
+          </label>
+          <label class="field-label">
+            <span class="label-row">Bootstrap repeats ${helpButton('bootstrapReplicates')}</span>
+            <input class="input" type="number" step="50" min="50" max="5000" value="${state.siteOptions.bootstrapReplicates ?? 500}" data-site-opt="bootstrapReplicates" />
+          </label>
+          <label class="field-label">
+            <span class="label-row">Bootstrap seed ${helpButton('bootstrapSeed')}</span>
+            <input class="input" type="number" step="1" min="0" max="2147483647" value="${state.siteOptions.bootstrapSeed ?? 42}" data-site-opt="bootstrapSeed" />
+          </label>
+          <label class="field-label">
+            <span class="label-row">Virtual Wolman points ${helpButton('wolmanPointsPerPhoto')}</span>
+            <input class="input" type="number" step="10" min="10" max="2000" value="${state.siteOptions.wolmanPointsPerPhoto ?? 100}" data-site-opt="wolmanPointsPerPhoto" />
+          </label>
+        </div>
+        <label class="checkbox-label" style="margin-top:6px;">
+          <input type="checkbox" data-site-opt="bootstrapTwoStage" ${state.siteOptions.bootstrapTwoStage ? 'checked' : ''} /> Two-stage bootstrap ${helpButton('bootstrapTwoStage')}
+        </label>
+      </details>
       <div class="basis-banner">${esc(basisLabel)}${
         !isSite && single
           ? ` · n = ${single.includedGrains}${activeSession && activeSession.getRoiExcludedGrainCount() > 0 ? ` (${activeSession.getRoiExcludedGrainCount()} excluded by ROI)` : ''}`
@@ -1157,6 +1241,7 @@ function renderDashboard(state: AppState): void {
       ${tabContent}
     </div>
   `;
+  restoreOpenDetails(dashboardEl, keptOpenDashboard);
 
   dashboardEl.scrollTop = prevDashScroll;
 }
@@ -1169,6 +1254,8 @@ function renderModals(state: AppState): void {
     appDialogEl.innerHTML = renderExportModalHtml(state);
   } else if (state.activeModal === 'about') {
     appDialogEl.innerHTML = renderAboutModalHtml();
+  } else if (state.activeModal === 'help') {
+    appDialogEl.innerHTML = renderHelpModalHtml(state.helpTopic);
   } else {
     if (appDialogEl.open) {
       appDialogEl.close();
@@ -1209,8 +1296,8 @@ function renderAll(state: AppState): void {
     prev.batchRunning !== state.batchRunning ||
     prev.batchProgress !== state.batchProgress ||
     prev.analysisParams !== state.analysisParams ||
-    prev.siteOptions.minBaxisPx !== state.siteOptions.minBaxisPx ||
-    prev.siteOptions.minSizeMm !== state.siteOptions.minSizeMm
+    prev.photoErrors !== state.photoErrors ||
+    prev.siteOptions.poolingMode !== state.siteOptions.poolingMode
   ) {
     renderSidebar(state);
   }
@@ -1254,6 +1341,7 @@ function renderAll(state: AppState): void {
   if (
     !prev ||
     prev.activeModal !== state.activeModal ||
+    prev.helpTopic !== state.helpTopic ||
     (state.activeModal === 'models' &&
       (prev.modelDownloads !== state.modelDownloads || prev.capabilities !== state.capabilities)) ||
     (state.activeModal === 'export' &&
@@ -1480,6 +1568,15 @@ function attachDelegatedHandlers(): void {
     const target = e.target as HTMLElement | null;
     if (!target) return;
 
+    const helpBtn = target.closest<HTMLElement>('[data-help], [data-open-help]');
+    if (helpBtn) {
+      // Help buttons sit inside <label>s: don't let the click toggle the control.
+      e.preventDefault();
+      const key = helpBtn.dataset['help'];
+      store.setState({ activeModal: 'help', helpTopic: key && isHelpKey(key) ? key : null });
+      return;
+    }
+
     const modalBtn = target.closest<HTMLElement>('[data-open-modal]');
     if (modalBtn) {
       const m = modalBtn.dataset['openModal'] as AppState['activeModal'];
@@ -1496,6 +1593,10 @@ function attachDelegatedHandlers(): void {
     if (actionEl) {
       const act = actionEl.dataset['action'];
       const state = store.getState();
+      if (act === 'reset-analysis-params') {
+        store.setState({ analysisParams: defaultAnalysisParams(), statusMessage: 'Analysis settings reset to the tested defaults.' });
+        return;
+      }
       if (act === 'new-site') {
         const newSite: SiteRecord = {
           siteId: makeId('site'),
@@ -1633,6 +1734,7 @@ function attachDelegatedHandlers(): void {
           buildSiteInputs(st),
           st.psdXAxis,
           st.siteOptions.sizeMetric ?? 'bAxis',
+          st.siteOptions,
         );
       }
       return;
@@ -1745,6 +1847,20 @@ function attachDelegatedHandlers(): void {
       return;
     }
 
+    if (target instanceof HTMLInputElement && target.dataset['photoFacies']) {
+      const pid = target.dataset['photoFacies'];
+      const st = store.getState();
+      const ph = st.photos.find((p) => p.photoId === pid);
+      const w = Number(target.value);
+      if (ph && Number.isFinite(w) && w >= 0) {
+        const updated: PhotoRecord = { ...ph, faciesWeight: w };
+        void savePhoto(updated);
+        store.setState({ photos: st.photos.map((p) => (p.photoId === pid ? updated : p)) });
+        recomputeReports();
+      }
+      return;
+    }
+
     if (target instanceof HTMLInputElement && target.dataset['toggleInclude']) {
       const pid = target.dataset['toggleInclude'];
       const st = store.getState();
@@ -1786,6 +1902,12 @@ function attachDelegatedHandlers(): void {
         (next as Record<string, unknown>)[paramKey] = target.value;
       }
       store.setState({ analysisParams: next });
+      if (paramKey === 'excludeBorder' && target instanceof HTMLInputElement) {
+        // Border exclusion only filters statistics, so apply it to analysed photos now.
+        for (const sess of st.sessions.values()) sess.setExcludeBorder(target.checked);
+        recomputeReports();
+        void syncViewport(false);
+      }
       return;
     }
 
@@ -1798,7 +1920,8 @@ function attachDelegatedHandlers(): void {
       } else if (target instanceof HTMLInputElement && target.type === 'number') {
         (nextOpts as Record<string, unknown>)[siteOptKey] = Number(target.value);
       } else if (target instanceof HTMLSelectElement) {
-        (nextOpts as Record<string, unknown>)[siteOptKey] = target.value;
+        (nextOpts as Record<string, unknown>)[siteOptKey] =
+          target.dataset['numeric'] === 'true' ? Number(target.value) : target.value;
       }
       const activeSite = getActiveSite(st);
       if (activeSite) {

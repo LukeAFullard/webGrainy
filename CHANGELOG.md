@@ -14,6 +14,19 @@ All notable changes to webGrainy are recorded here. The format follows
   lost device. The UI shows "GPU reset · CPU mode (reload for GPU)".
 
 ### Added
+- **In-app help for every setting:** a "?" button opens a plain-language explanation
+  (what it does, default, when to change it). *Help* and *Settings help* buttons list all
+  settings. Content mirrors `docs/SETTINGS_GUIDE.md`; tests check that every setting
+  control has a help topic and that the documented defaults match the engine.
+- **Previously fixed settings are now configurable:**
+  - *Exclude border grains* (applies immediately) and *Border margin*;
+  - *Advanced:* *Flow steps* and *Seed density*, with *Reset to defaults*;
+  - site *Confidence level*, *Bootstrap repeats / seed*, *Two-stage bootstrap* and
+    *Virtual Wolman points*;
+  - per-photo *Facies weight* (Facies-weighted pooling).
+- **Site settings recorded in exports:** site export metadata now includes the
+  cutoffs, bootstrap settings and Wolman points.
+- **Plain-language user guide:** `docs/SETTINGS_GUIDE.md`.
 - **Site option `minSizeMm` ("Field-count cutoff (mm)")** to match a pebble count's minimum size.
 
 ### Changed

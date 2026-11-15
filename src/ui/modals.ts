@@ -1,7 +1,7 @@
 import type { ModelId, SizeMetric, StorageQuotaInfo } from '../types/index.js';
 import type { AnalysisSession } from '../modules/pipelineController.js';
 import type { PhotoRecord, SiteRecord } from '../modules/projectStorage.js';
-import type { SiteAnalysisReport, SitePhotoInput } from '../modules/siteAnalysis.js';
+import type { SiteAnalysisOptions, SiteAnalysisReport, SitePhotoInput } from '../modules/siteAnalysis.js';
 import {
   buildSiteExportMetadata,
   exportSiteGrainsCsv,
@@ -314,6 +314,7 @@ export async function handleExportAction(
   siteInputs: SitePhotoInput[],
   psdXAxis: 'mm' | 'phi',
   sizeMetric: SizeMetric = 'bAxis',
+  siteOptions?: Partial<SiteAnalysisOptions>,
 ): Promise<void> {
   const safeSite = (site?.name ?? 'site').replace(/[^a-zA-Z0-9_-]+/g, '_');
   const safePhoto = (photo?.label ?? 'photo').replace(/[^a-zA-Z0-9_-]+/g, '_');
@@ -322,7 +323,7 @@ export async function handleExportAction(
     case 'site-summary-csv':
       if (siteReport) {
         triggerBlobDownload(
-          exportSiteSummaryCsv(siteReport, buildSiteExportMetadata(siteInputs, siteReport)),
+          exportSiteSummaryCsv(siteReport, buildSiteExportMetadata(siteInputs, siteReport, siteOptions)),
           `${safeSite}_summary.csv`,
         );
       }
@@ -330,7 +331,7 @@ export async function handleExportAction(
     case 'site-summary-json':
       if (siteReport) {
         triggerBlobDownload(
-          exportSiteSummaryJson(siteReport, buildSiteExportMetadata(siteInputs, siteReport)),
+          exportSiteSummaryJson(siteReport, buildSiteExportMetadata(siteInputs, siteReport, siteOptions)),
           `${safeSite}_summary.json`,
         );
       }
@@ -339,7 +340,7 @@ export async function handleExportAction(
       if (siteReport) {
         triggerBlobDownload(
           exportSiteGrainsCsv(siteInputs, siteReport, {
-            metadata: buildSiteExportMetadata(siteInputs, siteReport),
+            metadata: buildSiteExportMetadata(siteInputs, siteReport, siteOptions),
           }),
           `${safeSite}_pooled_grains.csv`,
         );
@@ -348,7 +349,7 @@ export async function handleExportAction(
     case 'site-psd-svg':
       if (siteReport) {
         const rawSvg = renderPrintablePsdSvg(siteReport, site?.name ?? 'Site', psdXAxis);
-        const metaXml = JSON.stringify(buildSiteExportMetadata(siteInputs, siteReport))
+        const metaXml = JSON.stringify(buildSiteExportMetadata(siteInputs, siteReport, siteOptions))
           .replace(/&/g, '&amp;')
           .replace(/</g, '&lt;')
           .replace(/>/g, '&gt;');
