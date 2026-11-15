@@ -1,0 +1,201 @@
+{
+  "model": "Brown-Conrady radial (k1, k2) + tangential (p1, p2) Jacobian area-scale",
+  "recommendation": "Documentation-only for standard OEM-corrected smartphone/drone JPEGs (< 1-4% mean D50 error); warn users against uncorrected wide-FOV action cams / raw drone feeds (> 10-30% error, especially with edge scale bars) and recommend pre-undistorting wide-angle imagery or enabling camera ISP correction rather than adding a full Brown-Conrady UI in v1.x.",
+  "cameras": [
+    {
+      "camera": "smartphone_oem_corrected",
+      "description": "Modern smartphone (iPhone/Pixel main 24 mm eq., JPEG/HEIC with OEM ISP lens correction)",
+      "f_35mm_eq": 24.0,
+      "aspect_ratio": 1.3333333333333333,
+      "coefficients": {
+        "k1": -0.015,
+        "k2": 0.005,
+        "p1": 0.0005,
+        "p2": -0.0005
+      },
+      "max_normalized_radius": 0.9375,
+      "calibration_modes": {
+        "center_scale_bar": {
+          "cal_scale_factor": 1.0,
+          "mean_d50_bias_pct": -0.71,
+          "median_d50_bias_pct": -0.702,
+          "mean_abs_error_pct": 0.71,
+          "p95_abs_error_pct": 1.382,
+          "max_abs_error_pct": 1.743
+        },
+        "edge_scale_bar": {
+          "cal_scale_factor": 0.99488,
+          "mean_d50_bias_pct": -0.199,
+          "median_d50_bias_pct": -0.191,
+          "mean_abs_error_pct": 0.374,
+          "p95_abs_error_pct": 0.875,
+          "max_abs_error_pct": 1.237
+        },
+        "four_corner_homography": {
+          "cal_scale_factor": 0.99225,
+          "mean_d50_bias_pct": 0.066,
+          "median_d50_bias_pct": 0.073,
+          "mean_abs_error_pct": 0.349,
+          "p95_abs_error_pct": 0.734,
+          "max_abs_error_pct": 0.976
+        }
+      }
+    },
+    {
+      "camera": "smartphone_uncorrected_wide",
+      "description": "Smartphone uncorrected RAW/DNG wide-angle (24 mm eq., no ISP distortion profile)",
+      "f_35mm_eq": 24.0,
+      "aspect_ratio": 1.3333333333333333,
+      "coefficients": {
+        "k1": -0.14,
+        "k2": 0.03,
+        "p1": 0.001,
+        "p2": -0.001
+      },
+      "max_normalized_radius": 0.9375,
+      "calibration_modes": {
+        "center_scale_bar": {
+          "cal_scale_factor": 1.0,
+          "mean_d50_bias_pct": -7.353,
+          "median_d50_bias_pct": -7.1,
+          "mean_abs_error_pct": 7.353,
+          "p95_abs_error_pct": 14.833,
+          "max_abs_error_pct": 18.568
+        },
+        "edge_scale_bar": {
+          "cal_scale_factor": 0.94219,
+          "mean_d50_bias_pct": -1.669,
+          "median_d50_bias_pct": -1.4,
+          "mean_abs_error_pct": 4.064,
+          "p95_abs_error_pct": 9.608,
+          "max_abs_error_pct": 13.571
+        },
+        "four_corner_homography": {
+          "cal_scale_factor": 0.92272,
+          "mean_d50_bias_pct": 0.406,
+          "median_d50_bias_pct": 0.681,
+          "mean_abs_error_pct": 4.035,
+          "p95_abs_error_pct": 8.172,
+          "max_abs_error_pct": 11.747
+        }
+      }
+    },
+    {
+      "camera": "dji_mavic_phantom_pro",
+      "description": "DJI Mavic 2 Pro / Phantom 4 Pro (24-28 mm eq., moderate residual barrel distortion)",
+      "f_35mm_eq": 26.0,
+      "aspect_ratio": 1.5,
+      "coefficients": {
+        "k1": -0.08,
+        "k2": 0.02,
+        "p1": 0.0005,
+        "p2": 0.0005
+      },
+      "max_normalized_radius": 0.8321,
+      "calibration_modes": {
+        "center_scale_bar": {
+          "cal_scale_factor": 1.0,
+          "mean_d50_bias_pct": -3.32,
+          "median_d50_bias_pct": -3.101,
+          "mean_abs_error_pct": 3.32,
+          "p95_abs_error_pct": 6.843,
+          "max_abs_error_pct": 8.508
+        },
+        "edge_scale_bar": {
+          "cal_scale_factor": 0.97752,
+          "mean_d50_bias_pct": -1.096,
+          "median_d50_bias_pct": -0.872,
+          "mean_abs_error_pct": 1.897,
+          "p95_abs_error_pct": 4.7,
+          "max_abs_error_pct": 6.404
+        },
+        "four_corner_homography": {
+          "cal_scale_factor": 0.96646,
+          "mean_d50_bias_pct": 0.035,
+          "median_d50_bias_pct": 0.262,
+          "mean_abs_error_pct": 1.802,
+          "p95_abs_error_pct": 3.61,
+          "max_abs_error_pct": 5.333
+        }
+      }
+    },
+    {
+      "camera": "dji_phantom3_wide_uncorrected",
+      "description": "DJI Phantom 3 / Mini wide FOV (20 mm eq., uncorrected barrel distortion)",
+      "f_35mm_eq": 20.0,
+      "aspect_ratio": 1.3333333333333333,
+      "coefficients": {
+        "k1": -0.18,
+        "k2": 0.05,
+        "p1": 0.001,
+        "p2": -0.001
+      },
+      "max_normalized_radius": 1.125,
+      "calibration_modes": {
+        "center_scale_bar": {
+          "cal_scale_factor": 1.0,
+          "mean_d50_bias_pct": -11.769,
+          "median_d50_bias_pct": -12.115,
+          "mean_abs_error_pct": 11.769,
+          "p95_abs_error_pct": 21.06,
+          "max_abs_error_pct": 22.58
+        },
+        "edge_scale_bar": {
+          "cal_scale_factor": 0.8988,
+          "mean_d50_bias_pct": -1.834,
+          "median_d50_bias_pct": -2.22,
+          "mean_abs_error_pct": 6.154,
+          "p95_abs_error_pct": 12.171,
+          "max_abs_error_pct": 13.863
+        },
+        "four_corner_homography": {
+          "cal_scale_factor": 0.87664,
+          "mean_d50_bias_pct": 0.647,
+          "median_d50_bias_pct": 0.252,
+          "mean_abs_error_pct": 6.086,
+          "p95_abs_error_pct": 12.467,
+          "max_abs_error_pct": 14.072
+        }
+      }
+    },
+    {
+      "camera": "action_cam_gopro_wide",
+      "description": "Action cam / GoPro Wide FOV (16 mm eq., strong barrel distortion)",
+      "f_35mm_eq": 16.0,
+      "aspect_ratio": 1.3333333333333333,
+      "coefficients": {
+        "k1": -0.32,
+        "k2": 0.11,
+        "p1": 0.002,
+        "p2": -0.002
+      },
+      "max_normalized_radius": 1.4062,
+      "calibration_modes": {
+        "center_scale_bar": {
+          "cal_scale_factor": 1.0,
+          "mean_d50_bias_pct": -22.214,
+          "median_d50_bias_pct": -25.303,
+          "mean_abs_error_pct": 22.214,
+          "p95_abs_error_pct": 32.156,
+          "max_abs_error_pct": 33.033
+        },
+        "edge_scale_bar": {
+          "cal_scale_factor": 0.7568,
+          "mean_d50_bias_pct": 2.783,
+          "median_d50_bias_pct": -1.299,
+          "mean_abs_error_pct": 9.896,
+          "p95_abs_error_pct": 27.225,
+          "max_abs_error_pct": 33.941
+        },
+        "four_corner_homography": {
+          "cal_scale_factor": 0.76592,
+          "mean_d50_bias_pct": 1.559,
+          "median_d50_bias_pct": -2.474,
+          "mean_abs_error_pct": 9.898,
+          "p95_abs_error_pct": 25.711,
+          "max_abs_error_pct": 32.346
+        }
+      }
+    }
+  ]
+}

@@ -516,7 +516,7 @@ export function renderPrintablePsdSvg(
     unit: report.unit,
     xAxis,
     title: `${siteName} — Cumulative PSD (${report.poolingMode})`,
-    subtitle: `${report.includedPhotoCount} photos, n=${report.validGrainCount}, ${report.statisticalBasisLabel}`,
+    subtitle: `${report.includedPhotoCount} photos, n=${report.validGrainCount}, metric=${report.sizeMetric}, ${report.statisticalBasisLabel}`,
     ciLower: report.bootstrapCi.lower,
     ciUpper: report.bootstrapCi.upper,
     perPhotoCurves,

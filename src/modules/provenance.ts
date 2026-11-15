@@ -18,7 +18,7 @@ export const CITATION_NOTICE =
 
 /** Definition of the reported "b-axis" size metric (see AUDIT_REPORT.md F-06). */
 export const SIZE_METRIC_DEFINITION =
-  'b_axis = minor axis (4*sqrt(lambda2)) of the second-moment-equivalent ellipse of the exposed 2D grain outline; it is NOT a sieve or caliper b-axis and can differ from the minimum Feret width by roughly +/-15% depending on grain shape. d_eq = diameter of the equal-area circle.';
+  'b_axis = minor axis (4*sqrt(lambda2)) of the second-moment-equivalent ellipse of the exposed 2D grain outline (NOT a sieve or caliper b-axis; can differ from min-Feret by roughly +/-15% depending on grain shape). min_feret = minimum Feret (rotating-calipers) width of the pixel-edge convex hull (closest 2D analogue of a caliper b-axis). d_eq = diameter of the equal-area circle.';
 
 export type { AnalysisProvenance };
 

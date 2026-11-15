@@ -94,6 +94,8 @@ export interface PostProcessOptions {
   maxGrainAreaFraction?: number;
 }
 
+export type SizeMetric = 'bAxis' | 'dEq' | 'minFeret';
+
 export interface GrainMorphometrics {
   id: number;
   areaPx: number;
@@ -110,6 +112,10 @@ export interface GrainMorphometrics {
   aAxisMm?: number;
   bAxisMm?: number;
   dEqMm?: number;
+  minFeretPx?: number;
+  minFeretMm?: number;
+  maxFeretPx?: number;
+  maxFeretMm?: number;
 }
 
 export interface PostProcessResult {

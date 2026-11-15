@@ -3,6 +3,7 @@ import type {
   GrainMorphometrics,
   PsdPercentiles,
   SedimentStatsReport,
+  SizeMetric,
   WentworthProportions,
 } from '../types/index.js';
 
@@ -242,6 +243,7 @@ export function computeFolkWardStats(
  */
 export function computeWentworthProportions(
   grains: readonly GrainMorphometrics[],
+  sizeMetric: SizeMetric = 'bAxis',
 ): WentworthProportions | null {
   if (grains.length === 0) {
     return null;
@@ -254,13 +256,18 @@ export function computeWentworthProportions(
   let totalArea = 0;
 
   for (const g of grains) {
-    if (typeof g.bAxisMm !== 'number' || !Number.isFinite(g.bAxisMm)) {
+    const d =
+      sizeMetric === 'dEq'
+        ? g.dEqMm
+        : sizeMetric === 'minFeret'
+          ? g.minFeretMm
+          : g.bAxisMm;
+    if (typeof d !== 'number' || !Number.isFinite(d)) {
       return null;
     }
     if (!Number.isFinite(g.areaPx) || g.areaPx <= 0) {
       continue;
     }
-    const d = g.bAxisMm;
     const area = g.areaPx;
     totalArea += area;
 
@@ -293,10 +300,11 @@ export function computeWentworthProportions(
  */
 export function computeSedimentStats(
   grains: readonly GrainMorphometrics[],
-  options?: { excludeBorder?: boolean; minAreaPx?: number },
+  options?: { excludeBorder?: boolean; minAreaPx?: number; sizeMetric?: SizeMetric },
 ): SedimentStatsReport {
   const excludeBorder = options?.excludeBorder ?? true;
   const minAreaPx = options?.minAreaPx ?? 0;
+  const sizeMetric = options?.sizeMetric ?? 'bAxis';
 
   const areaFiltered =
     minAreaPx > 0 ? grains.filter((g) => g.areaPx >= minAreaPx) : grains;
@@ -335,6 +343,21 @@ export function computeSedimentStats(
   const areaWeightedDEq = computePsdPercentiles(dEqVals, areaWeights);
   const numberWeightedDEq = computePsdPercentiles(dEqVals, numberWeights);
 
+  const hasFeret = n > 0 && included.every((g) => g.minFeretPx !== undefined);
+  let fwPsd = sizeMetric === 'dEq' ? areaWeightedDEq : areaWeightedB;
+  if (sizeMetric === 'minFeret' && hasFeret) {
+    const feretVals = new Float64Array(n);
+    for (let i = 0; i < n; i++) {
+      const g = included[i];
+      if (g === undefined) continue;
+      feretVals[i] =
+        unit === 'mm'
+          ? (g.minFeretMm ?? g.minFeretPx ?? g.bAxisPx)
+          : (g.minFeretPx ?? g.bAxisPx);
+    }
+    fwPsd = computePsdPercentiles(feretVals, areaWeights);
+  }
+
   const warnings: string[] = [];
   if (n === 0) {
     warnings.push('No grains available for statistics after border/ROI filtering.');
@@ -359,9 +382,9 @@ export function computeSedimentStats(
   }
 
   const folkWard =
-    unit === 'mm' && n >= 2 ? computeFolkWardStats(areaWeightedB) : null;
+    unit === 'mm' && n >= 2 ? computeFolkWardStats(fwPsd) : null;
   const wentworth =
-    unit === 'mm' ? computeWentworthProportions(included) : null;
+    unit === 'mm' ? computeWentworthProportions(included, sizeMetric) : null;
 
   return {
     totalGrains: grains.length,
@@ -382,8 +405,11 @@ export function computeSedimentStats(
  * Exports per-grain morphometrics as a CSV Blob.
  */
 export function exportGrainsCsv(grains: readonly GrainMorphometrics[]): Blob {
+  const hasFeret = grains.some((g) => g.minFeretPx !== undefined);
   const header =
-    'grain_id,centroid_x,centroid_y,area_px,a_axis_px,b_axis_px,d_eq_px,a_axis_mm,b_axis_mm,d_eq_mm,touches_border';
+    'grain_id,centroid_x,centroid_y,area_px,a_axis_px,b_axis_px,d_eq_px,a_axis_mm,b_axis_mm,d_eq_mm' +
+    (hasFeret ? ',min_feret_px,max_feret_px,min_feret_mm,max_feret_mm' : '') +
+    ',touches_border';
   const lines: string[] = [header];
 
   for (const g of grains) {
@@ -398,6 +424,14 @@ export function exportGrainsCsv(grains: readonly GrainMorphometrics[]): Blob {
       g.aAxisMm !== undefined ? g.aAxisMm : '',
       g.bAxisMm !== undefined ? g.bAxisMm : '',
       g.dEqMm !== undefined ? g.dEqMm : '',
+      ...(hasFeret
+        ? [
+            g.minFeretPx !== undefined ? g.minFeretPx : '',
+            g.maxFeretPx !== undefined ? g.maxFeretPx : '',
+            g.minFeretMm !== undefined ? g.minFeretMm : '',
+            g.maxFeretMm !== undefined ? g.maxFeretMm : '',
+          ]
+        : []),
       g.touchesBorder,
     ].join(',');
     lines.push(row);
@@ -909,6 +943,10 @@ export function exportGeoJsonContours(
     if (g.aAxisMm !== undefined) properties['aAxisMm'] = g.aAxisMm;
     if (g.bAxisMm !== undefined) properties['bAxisMm'] = g.bAxisMm;
     if (g.dEqMm !== undefined) properties['dEqMm'] = g.dEqMm;
+    if (g.minFeretPx !== undefined) properties['minFeretPx'] = g.minFeretPx;
+    if (g.maxFeretPx !== undefined) properties['maxFeretPx'] = g.maxFeretPx;
+    if (g.minFeretMm !== undefined) properties['minFeretMm'] = g.minFeretMm;
+    if (g.maxFeretMm !== undefined) properties['maxFeretMm'] = g.maxFeretMm;
 
     features.push({
       type: 'Feature',

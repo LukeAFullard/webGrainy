@@ -538,4 +538,185 @@ describe('siteAnalysis', () => {
   });
 });
 
+describe('minFeret size metric', () => {
+  function makeRectSession(params: {
+    width: number;
+    height: number;
+    rects: ReadonlyArray<{ x0: number; y0: number; w: number; h: number }>;
+    mmPerPx?: number;
+    effectiveScaleFactor?: number;
+  }): AnalysisSession {
+    const { width, height, rects, mmPerPx, effectiveScaleFactor = 1 } = params;
+    const masks = new Int32Array(width * height);
+    let id = 1;
+    for (const r of rects) {
+      for (let y = r.y0; y < r.y0 + r.h; y++) {
+        for (let x = r.x0; x < r.x0 + r.w; x++) {
+          masks[y * width + x] = id;
+        }
+      }
+      id++;
+    }
+    const workingImage: WorkingImageResult = {
+      data: new Uint8ClampedArray(width * height * 4),
+      width,
+      height,
+      originalWidth: Math.round(width / effectiveScaleFactor),
+      originalHeight: Math.round(height / effectiveScaleFactor),
+      effectiveScaleFactor,
+      scaleModeApplied: effectiveScaleFactor === 1 ? '1.0x' : '0.5x',
+    };
+    const workingGrains = computeAllGrainMorphometrics(masks, width, height, 2);
+    return new AnalysisSession({
+      workingImage,
+      recommendation: makeDummyRecommendation(),
+      masks,
+      workingGrains,
+      calibration: mmPerPx !== undefined ? makeCalibration(mmPerPx) : undefined,
+      excludeBorder: true,
+      borderMargin: 2,
+    });
+  }
+
+  it('computes PSD, Folk & Ward, Wentworth, CIs, and exports using minFeret', async () => {
+    // 20x80 rectangles: minFeret = 20px (10mm at 0.5mm/px), bAxis ≈ 23.09px (11.55mm), dEq ≈ 45.14px (22.57mm)
+    const s1 = makeRectSession({
+      width: 240,
+      height: 200,
+      rects: [
+        { x0: 20, y0: 20, w: 80, h: 20 },
+        { x0: 20, y0: 60, w: 80, h: 20 },
+        { x0: 120, y0: 20, w: 80, h: 20 },
+      ],
+      mmPerPx: 0.5,
+    });
+    const s2 = makeRectSession({
+      width: 240,
+      height: 200,
+      rects: [
+        { x0: 20, y0: 20, w: 80, h: 20 },
+        { x0: 20, y0: 60, w: 80, h: 20 },
+      ],
+      mmPerPx: 0.5,
+    });
+
+    const photos: SitePhotoInput[] = [
+      { photoId: 'p1', label: 'P1', included: true, session: s1 },
+      { photoId: 'p2', label: 'P2', included: true, session: s2 },
+    ];
+
+    const repFeret = analyzeSite(photos, {
+      poolingMode: 'physical-area',
+      sizeMetric: 'minFeret',
+      minBaxisPx: 0,
+      bootstrapReplicates: 50,
+    });
+    const repBAxis = analyzeSite(photos, {
+      poolingMode: 'physical-area',
+      sizeMetric: 'bAxis',
+      minBaxisPx: 0,
+      bootstrapReplicates: 50,
+    });
+    const repDEq = analyzeSite(photos, {
+      poolingMode: 'physical-area',
+      sizeMetric: 'dEq',
+      minBaxisPx: 0,
+      bootstrapReplicates: 50,
+    });
+
+    expect(repFeret.sizeMetric).toBe('minFeret');
+    expect(repFeret.psd.D50).toBeCloseTo(10.0, 4);
+    expect(repBAxis.psd.D50).toBeGreaterThan(11.0);
+    expect(repDEq.psd.D50).toBeGreaterThan(22.0);
+
+    // Folk & Ward, Wentworth, CIs, and perPhoto reflect minFeret
+    expect(repFeret.folkWard).not.toBeNull();
+    expect(repFeret.folkWard!.meanMm).toBeCloseTo(10.0, 2);
+    expect(repFeret.wentworth!.gravelPct).toBeCloseTo(100, 4);
+    expect(repFeret.wentworthHistogram10Phi.reduce((s, b) => s + b.weightPct, 0)).toBeCloseTo(100, 4);
+    expect(repFeret.bootstrapCi.lower.D50).toBeCloseTo(10.0, 4);
+    expect(repFeret.binomialCi.lower.D50).toBeCloseTo(10.0, 4);
+    expect(repFeret.perPhoto[0]?.D50).toBeCloseTo(10.0, 4);
+
+    // Exports include sizeMetric: 'minFeret' and updated sizeMetricDefinition
+    const summaryCsv = await exportSiteSummaryCsv(repFeret).text();
+    expect(summaryCsv).toContain('metadata,size_metric,minFeret,metric');
+    const summaryJson = JSON.parse(await exportSiteSummaryJson(repFeret).text()) as {
+      sizeMetric: string;
+      metadata: { sizeMetricDefinition: string };
+    };
+    expect(summaryJson.sizeMetric).toBe('minFeret');
+    expect(summaryJson.metadata.sizeMetricDefinition).toContain('min_feret');
+  });
+
+  it('applies truncation cutoff to minFeret when sizeMetric is minFeret', () => {
+    // 20x80 rectangle: minFeretPx = 20, bAxisPx ≈ 23.09
+    const s = makeRectSession({
+      width: 150,
+      height: 100,
+      rects: [{ x0: 20, y0: 20, w: 80, h: 20 }],
+      mmPerPx: 1.0,
+    });
+    const photos: SitePhotoInput[] = [
+      { photoId: 'p1', label: 'P1', included: true, session: s },
+    ];
+
+    const repB = analyzeSite(photos, {
+      poolingMode: 'physical-area',
+      sizeMetric: 'bAxis',
+      minBaxisPx: 22,
+      bootstrapReplicates: 10,
+    });
+    expect(repB.validGrainCount).toBe(1);
+    expect(repB.excludedTruncationCount).toBe(0);
+
+    const repF = analyzeSite(photos, {
+      poolingMode: 'physical-area',
+      sizeMetric: 'minFeret',
+      minBaxisPx: 22,
+      bootstrapReplicates: 10,
+    });
+    expect(repF.validGrainCount).toBe(0);
+    expect(repF.excludedTruncationCount).toBe(1);
+  });
+
+  it('rescales minFeretPx across effectiveScaleFactor and invalidates hull cache on mask edits', () => {
+    // Working 20x80 rect with effectiveScaleFactor = 0.5 => original 40x160 rect => minFeretPx = 40
+    const s = makeRectSession({
+      width: 150,
+      height: 100,
+      rects: [{ x0: 20, y0: 20, w: 80, h: 20 }],
+      mmPerPx: 0.25,
+      effectiveScaleFactor: 0.5,
+    });
+
+    s.ensureFeret();
+    expect(s.getHullCache().size).toBe(1);
+    const g0 = s.getResult().grains[0]!;
+    expect(g0.minFeretPx).toBeCloseTo(40, 4);
+    expect(g0.minFeretMm).toBeCloseTo(10, 4);
+
+    // Session CSV and GeoJSON include minFeret columns
+    const csv = s.exportCsv();
+    expect(csv.split('\n')[0]).toContain('min_feret_px,max_feret_px,min_feret_mm,max_feret_mm');
+    const gj = JSON.parse(s.exportGeoJson()) as { features: Array<{ properties: Record<string, unknown> }> };
+    expect(gj.features[0]?.properties['minFeretPx']).toBeCloseTo(40, 4);
+
+    // Splitting the grain in original-image coordinates invalidates hullCache for that grain
+    const splitOk = s.splitGrain(g0.id, [{ x: 120, y: 30 }, { x: 120, y: 90 }]);
+    expect(splitOk).toBe(true);
+    expect(s.getHullCache().has(g0.id)).toBe(false);
+    s.ensureFeret();
+    const splitGrains = s.getResult().grains;
+    expect(splitGrains).toHaveLength(2);
+    expect(splitGrains[0]?.minFeretPx).toBeCloseTo(40, 2);
+
+    // Undo clears hullCache and restores original grain
+    expect(s.undo()).toBe(true);
+    expect(s.getHullCache().size).toBe(0);
+    expect(s.getResult().grains).toHaveLength(1);
+  });
+});
+
+
 

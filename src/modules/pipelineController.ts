@@ -44,6 +44,10 @@ import {
   ScaleCalibrator,
   splitGrainAtLine as editorSplitGrainAtLine,
 } from './interactiveEditor.js';
+import {
+  computeExtendedMorphometrics,
+  type GrainHullCache,
+} from './morphometricsExt.js';
 import { computeSedimentStats } from './sedimentStats.js';
 import {
   type AnalysisProvenance,
@@ -486,6 +490,8 @@ function rescaleGrainToOriginal(
     aAxisPx: grain.aAxisPx * inv,
     bAxisPx: grain.bAxisPx * inv,
     dEqPx: grain.dEqPx * inv,
+    ...(grain.minFeretPx !== undefined ? { minFeretPx: grain.minFeretPx * inv } : {}),
+    ...(grain.maxFeretPx !== undefined ? { maxFeretPx: grain.maxFeretPx * inv } : {}),
     areaPx: grain.areaPx * invSq,
     bbox: [
       grain.bbox[0] * inv,
@@ -515,6 +521,7 @@ export class AnalysisSession {
   private readonly provenance: AnalysisProvenance | undefined;
   private roiExcludedGrainCount = 0;
   private readonly history = new MaskEditHistory();
+  private readonly hullCache: GrainHullCache = new Map();
   private readonly listeners = new Set<(session: AnalysisSession) => void>();
 
   constructor(params: {
@@ -548,6 +555,41 @@ export class AnalysisSession {
 
   get canRedo(): boolean {
     return this.history.canRedo;
+  }
+
+  getHullCache(): GrainHullCache {
+    return this.hullCache;
+  }
+
+  /**
+   * Lazily computes and caches `minFeretPx` / `maxFeretPx` (and `minFeretMm` / `maxFeretMm`
+   * when calibrated) on all grains in this session, reusing `this.hullCache`.
+   */
+  ensureFeret(): void {
+    const missing = this.workingGrains.filter((g) => g.minFeretPx === undefined);
+    if (missing.length === 0) return;
+
+    const ext = computeExtendedMorphometrics(
+      this.workingMasks,
+      missing,
+      this.workingImage.width,
+      this.workingImage.height,
+      1,
+      undefined,
+      this.hullCache,
+    );
+    const byId = new Map<number, { minFeretPx: number; maxFeretPx: number }>();
+    for (const e of ext) {
+      byId.set(e.id, { minFeretPx: e.minFeretPx, maxFeretPx: e.maxFeretPx });
+    }
+    for (const wg of this.workingGrains) {
+      const f = byId.get(wg.id);
+      if (f !== undefined) {
+        wg.minFeretPx = f.minFeretPx;
+        wg.maxFeretPx = f.maxFeretPx;
+      }
+    }
+    this.recomputeDerivedState(false);
   }
 
   getResult(): PostProcessResult {
@@ -781,6 +823,10 @@ export class AnalysisSession {
       label: 'split',
     });
 
+    this.hullCache.delete(grainId);
+    for (const id of res.newGrainIds) {
+      this.hullCache.delete(id);
+    }
     this.workingGrains = nextGrains;
     this.recomputeDerivedState(true);
     return true;
@@ -840,6 +886,12 @@ export class AnalysisSession {
       label: 'merge',
     });
 
+    for (const id of grainIds) {
+      this.hullCache.delete(id);
+    }
+    for (const id of res.newGrainIds) {
+      this.hullCache.delete(id);
+    }
     this.workingGrains = nextGrains;
     this.recomputeDerivedState(true);
     return true;
@@ -891,6 +943,7 @@ export class AnalysisSession {
       label: 'delete',
     });
 
+    this.hullCache.delete(grainId);
     this.workingGrains = nextGrains;
     this.recomputeDerivedState(true);
     return true;
@@ -953,6 +1006,7 @@ export class AnalysisSession {
       label: 'addPolygon',
     });
 
+    this.hullCache.delete(newGrainId);
     this.workingGrains = nextGrains;
     this.recomputeDerivedState(true);
     return newGrainId;
@@ -963,6 +1017,7 @@ export class AnalysisSession {
     if (!entry) {
       return false;
     }
+    this.hullCache.clear();
     this.workingGrains = entry.grainsBefore
       ? entry.grainsBefore.map(cloneGrain)
       : computeAllGrainMorphometrics(
@@ -980,6 +1035,7 @@ export class AnalysisSession {
     if (!entry) {
       return false;
     }
+    this.hullCache.clear();
     this.workingGrains = entry.grainsAfter
       ? entry.grainsAfter.map(cloneGrain)
       : computeAllGrainMorphometrics(
@@ -1019,8 +1075,11 @@ export class AnalysisSession {
    * prepended (read with e.g. `pandas.read_csv(path, comment='#')`).
    */
   exportCsv(options?: { includeMetadata?: boolean }): string {
+    const hasFeret = this.grains.some((g) => g.minFeretPx !== undefined);
     const header =
-      'grain_id,centroid_x,centroid_y,area_px,a_axis_px,b_axis_px,d_eq_px,a_axis_mm,b_axis_mm,d_eq_mm,touches_border' +
+      'grain_id,centroid_x,centroid_y,area_px,a_axis_px,b_axis_px,d_eq_px,a_axis_mm,b_axis_mm,d_eq_mm' +
+      (hasFeret ? ',min_feret_px,max_feret_px,min_feret_mm,max_feret_mm' : '') +
+      ',touches_border' +
       (this.roiConfig !== undefined ? ',in_roi' : '');
     const lines: string[] = options?.includeMetadata
       ? [...metadataCommentLines(this.getExportMetadata()), header]
@@ -1042,6 +1101,14 @@ export class AnalysisSession {
         g.aAxisMm !== undefined ? g.aAxisMm : '',
         g.bAxisMm !== undefined ? g.bAxisMm : '',
         g.dEqMm !== undefined ? g.dEqMm : '',
+        ...(hasFeret
+          ? [
+              g.minFeretPx !== undefined ? g.minFeretPx : '',
+              g.maxFeretPx !== undefined ? g.maxFeretPx : '',
+              g.minFeretMm !== undefined ? g.minFeretMm : '',
+              g.maxFeretMm !== undefined ? g.maxFeretMm : '',
+            ]
+          : []),
         g.touchesBorder,
         ...(inRoi !== null ? [inRoi.has(g.id)] : []),
       ].join(',');
@@ -1252,6 +1319,10 @@ export class AnalysisSession {
       if (g.aAxisMm !== undefined) properties['aAxisMm'] = g.aAxisMm;
       if (g.bAxisMm !== undefined) properties['bAxisMm'] = g.bAxisMm;
       if (g.dEqMm !== undefined) properties['dEqMm'] = g.dEqMm;
+      if (g.minFeretPx !== undefined) properties['minFeretPx'] = g.minFeretPx;
+      if (g.maxFeretPx !== undefined) properties['maxFeretPx'] = g.maxFeretPx;
+      if (g.minFeretMm !== undefined) properties['minFeretMm'] = g.minFeretMm;
+      if (g.maxFeretMm !== undefined) properties['maxFeretMm'] = g.maxFeretMm;
 
       features.push({
         type: 'Feature',

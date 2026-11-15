@@ -868,6 +868,7 @@ function renderViewportExtras(state: AppState): void {
         session.workingImage.height,
         session.workingImage.effectiveScaleFactor,
         session.getCalibration()?.mmPerPx,
+        session.getHullCache(),
       )[0];
       inspectorEl.style.display = 'block';
       inspectorEl.innerHTML = `
@@ -879,6 +880,12 @@ function renderViewportExtras(state: AppState): void {
           <div title="Minor axis of the moment-equivalent ellipse (not a caliper b-axis)">b (ellipse minor): ${grain.bAxisMm !== undefined ? `${grain.bAxisMm.toFixed(2)} mm` : `${grain.bAxisPx.toFixed(1)} px`}</div>
           <div title="Major axis of the moment-equivalent ellipse">a (ellipse major): ${grain.aAxisMm !== undefined ? `${grain.aAxisMm.toFixed(2)} mm` : `${grain.aAxisPx.toFixed(1)} px`}</div>
           <div>d_eq: ${grain.dEqMm !== undefined ? `${grain.dEqMm.toFixed(2)} mm` : `${grain.dEqPx.toFixed(1)} px`}</div>
+          ${
+            ext
+              ? `<div title="Minimum Feret (rotating-calipers) width of the pixel-edge convex hull">min-Feret: ${ext.minFeretMm !== undefined ? `${ext.minFeretMm.toFixed(2)} mm` : `${ext.minFeretPx.toFixed(1)} px`}</div>
+                 <div title="Maximum Feret diameter of the pixel-edge convex hull">max-Feret: ${ext.maxFeretMm !== undefined ? `${ext.maxFeretMm.toFixed(2)} mm` : `${ext.maxFeretPx.toFixed(1)} px`}</div>`
+              : ''
+          }
           <div>Area: ${grain.areaMm2 !== undefined ? `${grain.areaMm2.toFixed(1)} mm²` : `${grain.areaPx.toFixed(0)} px²`}</div>
           ${
             ext
@@ -984,6 +991,7 @@ function renderDashboard(state: AppState): void {
             activeSession.workingImage.height,
             activeSession.workingImage.effectiveScaleFactor,
             activeSession.getCalibration()?.mmPerPx,
+            activeSession.getHullCache(),
           )
         : [];
     const packingInfo =
@@ -1032,6 +1040,14 @@ function renderDashboard(state: AppState): void {
 
   const prevDashScroll = dashboardEl.scrollTop;
 
+  const activeMetric = state.siteOptions.sizeMetric ?? 'bAxis';
+  const metricNoteText =
+    activeMetric === 'minFeret'
+      ? 'Size metric: minimum Feret (rotating-calipers) width of the pixel-edge convex hull — closest 2D analogue of a caliper b-axis.'
+      : activeMetric === 'dEq'
+        ? "Size metric: equal-area circle diameter (d_eq = sqrt(4*Area/pi)) of each grain's visible 2D outline."
+        : "Size metric: minor axis of the moment-equivalent ellipse of each grain's visible outline — not a sieve or caliper b-axis.";
+
   dashboardEl.innerHTML = `
     <div class="panel-section">
       <div class="row-between" style="margin-bottom:6px;">
@@ -1052,10 +1068,18 @@ function renderDashboard(state: AppState): void {
             <option value="facies-weighted" ${state.siteOptions.poolingMode === 'facies-weighted' ? 'selected' : ''}>Facies-Weighted</option>
           </select>
         </label>
-        <label class="field-label" style="justify-content:flex-end;">
-          <span class="checkbox-label" style="margin-top:16px;">
-            <input type="checkbox" data-site-opt="harmonizePhysicalCutoff" ${state.siteOptions.harmonizePhysicalCutoff !== false ? 'checked' : ''} /> Harmonize Cutoff
-          </span>
+        <label class="field-label">
+          Size Metric
+          <select class="select" data-site-opt="sizeMetric">
+            <option value="bAxis" ${activeMetric === 'bAxis' ? 'selected' : ''}>b-axis (ellipse minor)</option>
+            <option value="minFeret" ${activeMetric === 'minFeret' ? 'selected' : ''}>min-Feret (caliper width)</option>
+            <option value="dEq" ${activeMetric === 'dEq' ? 'selected' : ''}>d_eq (equal-area circle)</option>
+          </select>
+        </label>
+      </div>
+      <div style="margin-top:6px;">
+        <label class="checkbox-label">
+          <input type="checkbox" data-site-opt="harmonizePhysicalCutoff" ${state.siteOptions.harmonizePhysicalCutoff !== false ? 'checked' : ''} /> Harmonize Cutoff
         </label>
       </div>
       <div class="basis-banner">${esc(basisLabel)}${
@@ -1074,7 +1098,7 @@ function renderDashboard(state: AppState): void {
         <div class="stat-card"><div class="stat-label">D₅₀ (Median)</div><div class="stat-value">${psd ? psd.D50.toFixed(1) : '—'}</div><div class="stat-sub">${unit}</div></div>
         <div class="stat-card"><div class="stat-label">D₈₄</div><div class="stat-value">${psd ? psd.D84.toFixed(1) : '—'}</div><div class="stat-sub">${unit}</div></div>
       </div>
-      <p class="metric-note">Size metric: minor axis of the moment-equivalent ellipse of each grain's visible outline — not a sieve or caliper b-axis (see min Feret in the pooled grains CSV).</p>
+      <p class="metric-note">${esc(metricNoteText)}</p>
     </div>
 
     <div class="tabs" role="tablist" aria-label="Dashboard analyses">

@@ -119,6 +119,8 @@ export {
   computeExtendedMorphometrics,
   computeFabricRoseStats,
   computeWentworthHistogram,
+  type CachedGrainGeometry,
+  type GrainHullCache,
   type ExtendedGrainMorphometrics,
   type FabricRoseBin,
   type FabricRoseStats,
