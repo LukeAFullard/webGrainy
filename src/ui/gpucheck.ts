@@ -17,17 +17,28 @@ import {
 } from '../modules/onnxInference.js';
 import { flowsToMasksBrowser } from '../modules/postprocessCore.js';
 import { APP_VERSION, ORT_VERSION } from '../modules/provenance.js';
+import { classifyCase, overallVerdict, type CaseVerdict } from '../modules/gpuCheckVerdict.js';
 import type { InferenceOutput, ModelId } from '../types/index.js';
 
 type Kind = 'cpsam' | 'unet';
-const CASES = ['photo', 'one-tile', 'small-padded', 'all-black'] as const;
+const CASES = ['photo', 'one-tile', 'small-padded', 'all-black', 'photo-black'] as const;
 type CaseName = (typeof CASES)[number];
 const CASE_LABEL: Record<CaseName, string> = {
   photo: 'Gravel photo (512×384)',
   'one-tile': 'Single tile with zero border (240×240)',
   'small-padded': 'Small image, mostly padding (100×80)',
   'all-black': 'All-black image (256×256)',
+  'photo-black': 'Gravel photo with a large black area (768×384)',
 };
+/** Width of the black area on the right of the 'photo-black' case (contains a whole 256 px tile). */
+const PHOTO_BLACK_COLS = 384;
+function blankRegion(kind: CaseName, W: number, H: number): Uint8Array | null {
+  if (kind !== 'all-black' && kind !== 'photo-black') return null;
+  const m = new Uint8Array(W * H);
+  const x0 = kind === 'all-black' ? 0 : W - PHOTO_BLACK_COLS;
+  for (let y = 0; y < H; y++) for (let x = x0; x < W; x++) m[y * W + x] = 1;
+  return m;
+}
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 const logEl = (): HTMLElement => $('log');
@@ -42,7 +53,7 @@ function setStatus(msg: string): void {
 }
 
 function makeImage(kind: CaseName): ImageData {
-  const [W, H] = kind === 'photo' ? [512, 384] : kind === 'one-tile' ? [240, 240] : kind === 'small-padded' ? [100, 80] : [256, 256];
+  const [W, H] = kind === 'photo-black' ? [768, 384] : kind === 'photo' ? [512, 384] : kind === 'one-tile' ? [240, 240] : kind === 'small-padded' ? [100, 80] : [256, 256];
   const c = new OffscreenCanvas(W, H);
   const g = c.getContext('2d')!;
   g.fillStyle = '#000';
@@ -66,12 +77,17 @@ function makeImage(kind: CaseName): ImageData {
       g.ellipse(x, y, rad, rad * (0.6 + r() * 0.35), r() * 3.14, 0, 6.29);
       g.fill();
     }
+    if (kind === 'photo-black') {
+      // Pure black, like a masked-out area, a black frame or padding.
+      g.fillStyle = '#000';
+      g.fillRect(W - PHOTO_BLACK_COLS, 0, PHOTO_BLACK_COLS, H);
+    }
   }
   return g.getImageData(0, 0, W, H);
 }
 
 /** Panoptic quality between two label images (IoU > 0.5 matching); 1.0 = identical. */
-function pq(a: Int32Array, b: Int32Array): number {
+function pq(a: Int32Array, b: Int32Array): { pq: number; unmatched: number } {
   const areaA = new Map<number, number>();
   const areaB = new Map<number, number>();
   const inter = new Map<string, number>();
@@ -94,7 +110,7 @@ function pq(a: Int32Array, b: Int32Array): number {
   }
   const fp = areaB.size - tp;
   const fn = areaA.size - tp;
-  return tp + fp + fn === 0 ? 1 : sum / (tp + 0.5 * fp + 0.5 * fn);
+  return { pq: tp + fp + fn === 0 ? 1 : sum / (tp + 0.5 * fp + 0.5 * fn), unmatched: fp + fn };
 }
 
 interface CaseResult {
@@ -112,7 +128,9 @@ interface CaseResult {
   grainsWebgpu?: number;
   grainsWasm?: number;
   maskPQ?: number;
-  verdict?: 'ok' | 'differs' | 'error';
+  unmatchedGrains?: number;
+  blankArea?: { pixels: number; signAgreementPct: number; gpuGrainPixels: number; cpuGrainPixels: number; cpuMeanCellprob: number; gpuMeanCellprob: number };
+  verdict?: CaseVerdict;
 }
 
 async function runAll(kind: Kind): Promise<void> {
@@ -234,8 +252,37 @@ async function runAll(kind: Kind): Promise<void> {
       rec.cellprobSignAgreementPct = +((100 * agree) / n).toFixed(2);
       rec.grainsWebgpu = mg.grainCount;
       rec.grainsWasm = mw.grainCount;
-      rec.maskPQ = +pq(mw.masks, mg.masks).toFixed(3);
-      rec.verdict = nonFinite === 0 && rec.maskPQ >= 0.95 ? 'ok' : 'differs';
+      const q = pq(mw.masks, mg.masks);
+      rec.maskPQ = +q.pq.toFixed(3);
+      rec.unmatchedGrains = q.unmatched;
+      const blank = blankRegion(c, img.width, img.height);
+      if (blank) {
+        let px = 0, agreeB = 0, gpx = 0, cpx = 0, sg = 0, sc = 0;
+        for (let k = 0; k < n; k++) {
+          if (!blank[k]) continue;
+          px++;
+          if ((g.cellprob[k]! > 0) === (w.cellprob[k]! > 0)) agreeB++;
+          if (mg.masks[k]) gpx++;
+          if (mw.masks[k]) cpx++;
+          sg += g.cellprob[k]!;
+          sc += w.cellprob[k]!;
+        }
+        rec.blankArea = {
+          pixels: px,
+          signAgreementPct: +((100 * agreeB) / px).toFixed(2),
+          gpuGrainPixels: gpx,
+          cpuGrainPixels: cpx,
+          cpuMeanCellprob: +(sc / px).toFixed(3),
+          gpuMeanCellprob: +(sg / px).toFixed(3),
+        };
+      }
+      rec.verdict = classifyCase({
+        nonFiniteWebgpu: nonFinite,
+        maskPQ: rec.maskPQ,
+        unmatchedGrains: q.unmatched,
+        cellprobSignAgreementPct: rec.cellprobSignAgreementPct,
+        ...(rec.blankArea ? { blank: { signAgreementPct: rec.blankArea.signAgreementPct, gpuGrainPixels: rec.blankArea.gpuGrainPixels, cpuGrainPixels: rec.blankArea.cpuGrainPixels, pixels: rec.blankArea.pixels } } : {}),
+      });
     }
     report['cases'] = results;
     renderResults(results, kind, report);
@@ -255,14 +302,20 @@ function renderResults(results: CaseResult[], kind: Kind, report: Record<string,
   const rows = results
     .map((r) => {
       const badge =
-        r.verdict === 'ok' ? '<span class="ok">✓ matches CPU</span>' : r.verdict === 'differs' ? '<span class="bad">✗ differs</span>' : '<span class="bad">error</span>';
+        r.verdict === 'ok'
+          ? '<span class="ok">✓ matches CPU</span>'
+          : r.verdict === 'numeric'
+            ? '<span class="warn">⚠ same grains; wrong numbers on black area</span>'
+            : r.verdict === 'differs'
+              ? '<span class="bad">✗ differs</span>'
+              : '<span class="bad">error</span>';
       const err = r.webgpuError ?? r.wasmError;
       return `<tr>
         <td>${CASE_LABEL[r.case]}</td>
         <td>${badge}</td>
         <td>${r.maskPQ ?? '–'}</td>
         <td>${r.grainsWebgpu ?? '–'} / ${r.grainsWasm ?? '–'}</td>
-        <td>${r.cellprobSignAgreementPct ?? '–'}%</td>
+        <td>${r.cellprobSignAgreementPct ?? '–'}%${r.blankArea ? ` (black area: ${r.blankArea.signAgreementPct}%)` : ''}</td>
         <td>${r.nonFiniteWebgpu ?? '–'}</td>
         <td>${r.webgpuSeconds ?? '–'} / ${r.wasmSeconds ?? '–'}</td>
         <td class="err">${err ? escapeHtml(err.slice(0, 160)) : ''}</td>
@@ -272,13 +325,10 @@ function renderResults(results: CaseResult[], kind: Kind, report: Record<string,
   $('results').innerHTML = `<table>
     <thead><tr><th>Case</th><th>Result</th><th>Mask agreement (1.0 = identical)</th><th>Grains GPU / CPU</th><th>Cell-probability sign agreement</th><th>Invalid GPU values</th><th>Seconds GPU / CPU</th><th></th></tr></thead>
     <tbody>${rows}</tbody></table>`;
-  const allOk = results.every((r) => r.verdict === 'ok');
-  const edgeBad = results.some((r) => (r.case === 'one-tile' || r.case === 'small-padded') && r.verdict !== 'ok');
-  const verdict = allOk
-    ? `✓ Your GPU gives the same ${kind === 'cpsam' ? 'Cellpose-SAM' : 'U-Net'} results as the CPU. WebGPU is safe to use on this computer.`
-    : edgeBad
-      ? '✗ Your GPU differs from the CPU on the zero-border cases: the float16 problem seen with CUDA also affects WebGPU here. Please send the report.'
-      : '✗ Your GPU differs from the CPU. Please send the report.';
+  const verdict = overallVerdict(
+    results.map((r) => ({ case: r.case, verdict: r.verdict, hasBlankArea: r.case === 'all-black' || r.case === 'photo-black' })),
+    kind === 'cpsam' ? 'Cellpose-SAM' : 'U-Net',
+  );
   report['verdict'] = verdict;
   setStatus(verdict);
 }
