@@ -29,9 +29,11 @@ import {
 import {
   rectifyPerspective,
   filterGrainsByRoiAndExclusion,
+  type RoiExclusionConfig,
 } from '../modules/roiAndRectify.js';
 import {
   analyzeSite,
+  withExclusionTolerance,
   type SitePhotoInput,
 } from '../modules/siteAnalysis.js';
 import { ScaleCalibrator } from '../modules/interactiveEditor.js';
@@ -46,6 +48,7 @@ import {
 import { CanvasViewport } from './canvasViewport.js';
 import { parseJpegExifMetadata } from './exif.js';
 import { helpButton, isHelpKey, renderHelpModalHtml } from './help.js';
+import { defaultWasmThreads } from '../modules/onnxInference.js';
 import {
   handleExportAction,
   renderAboutModalHtml,
@@ -168,6 +171,16 @@ function getActivePhoto(state: AppState): PhotoRecord | null {
   return state.photos.find((p) => p.photoId === state.activePhotoId) ?? null;
 }
 
+/** A photo's ROI config with the site-wide exclusion overlap tolerance applied. */
+function effectiveRoi(
+  photo: Pick<PhotoRecord, 'roiConfig'> | undefined,
+  siteOptions: AppState['siteOptions'],
+): RoiExclusionConfig | undefined {
+  return photo?.roiConfig !== undefined
+    ? withExclusionTolerance(photo.roiConfig, siteOptions.maxExcludedFraction)
+    : undefined;
+}
+
 function buildSiteInputs(state: AppState): SitePhotoInput[] {
   const inputs: SitePhotoInput[] = [];
   for (const photo of state.photos) {
@@ -178,7 +191,7 @@ function buildSiteInputs(state: AppState): SitePhotoInput[] {
       label: photo.label,
       included: photo.included,
       session,
-      ...(photo.roiConfig !== undefined ? { roiConfig: photo.roiConfig } : {}),
+      ...(photo.roiConfig !== undefined ? { roiConfig: effectiveRoi(photo, state.siteOptions)! } : {}),
       ...(photo.faciesWeight !== undefined ? { faciesWeight: photo.faciesWeight } : {}),
       ...(photo.metadata !== undefined ? { metadata: photo.metadata } : {}),
     });
@@ -224,9 +237,10 @@ async function refreshCapabilities(): Promise<void> {
 
 async function loadSiteData(siteId: string): Promise<void> {
   const state = store.getState();
-  for (const url of state.thumbUrls.values()) {
-    URL.revokeObjectURL(url);
-  }
+  // Revoke the previous thumbnails only after the new ones are in state: revoking them
+  // up front left <img> elements pointing at dead blob: URLs if anything re-rendered the
+  // sidebar during the awaits below (net::ERR_FILE_NOT_FOUND).
+  const staleThumbUrls = [...state.thumbUrls.values()];
 
   const photos = await listSitePhotos(siteId);
   const sessions = new Map<string, AnalysisSession>();
@@ -244,7 +258,7 @@ async function loadSiteData(siteId: string): Promise<void> {
         try {
           const sess = AnalysisSession.fromSerialized(res.serializedSession);
           if (p.calibration) sess.setCalibration(p.calibration);
-          if (p.roiConfig) sess.setRoiConfig(p.roiConfig);
+          if (p.roiConfig) sess.setRoiConfig(effectiveRoi(p, store.getState().siteOptions));
           sessions.set(p.photoId, sess);
         } catch {
           photoStatuses.set(p.photoId, 'pending');
@@ -268,6 +282,7 @@ async function loadSiteData(siteId: string): Promise<void> {
     selectedGrainIds: new Set(),
     inspectedGrainId: null,
   });
+  for (const url of staleThumbUrls) URL.revokeObjectURL(url);
 
   recomputeReports();
   await syncViewport(true);
@@ -409,7 +424,7 @@ async function runBatch(photoIds?: string[]): Promise<void> {
       },
       onPhotoComplete: (photo, session) => {
         const prev = store.getState();
-        const roi = prev.photos.find((p) => p.photoId === photo.photoId)?.roiConfig ?? photo.roiConfig;
+        const roi = effectiveRoi(prev.photos.find((p) => p.photoId === photo.photoId) ?? photo, prev.siteOptions);
         if (roi) session.setRoiConfig(roi);
         const nextSessions = new Map(prev.sessions);
         nextSessions.set(photo.photoId, session);
@@ -617,9 +632,9 @@ function renderTopbar(state: AppState): void {
         : caps.hasShaderF16 === false
           ? 'WebGPU (No FP16)'
           : 'WebGPU Ready'
-      : caps.hasWasmSimd
-        ? 'WASM SIMD'
-        : 'WASM Basic'
+      : `${caps.hasWasmSimd ? 'WASM SIMD' : 'WASM Basic'} · ${
+          defaultWasmThreads() ?? 1
+        } CPU thread${(defaultWasmThreads() ?? 1) === 1 ? '' : 's'}`
     : 'Initializing…';
   const swLabel =
     state.swStatus === 'ready'
@@ -1086,7 +1101,7 @@ function renderDashboard(state: AppState): void {
             activeSession.workingImage.width,
             activeSession.workingImage.height,
             activeSession.workingImage.effectiveScaleFactor,
-            activePhoto.roiConfig,
+            effectiveRoi(activePhoto, state.siteOptions)!,
             activeSession.getCalibration()?.mmPerPx,
           )
         : null;
@@ -1167,6 +1182,10 @@ function renderDashboard(state: AppState): void {
         <label class="field-label">
           <span class="label-row">Min b-axis (px) ${helpButton('minBaxisPx')}</span>
           <input class="input" type="number" step="1" min="0" max="50" value="${state.siteOptions.minBaxisPx ?? 15}" data-site-opt="minBaxisPx" />
+        </label>
+        <label class="field-label">
+          <span class="label-row">Exclusion overlap ${helpButton('maxExcludedFraction')}</span>
+          <input class="input" type="number" step="0.05" min="0" max="1" value="${state.siteOptions.maxExcludedFraction ?? 0.1}" data-site-opt="maxExcludedFraction" />
         </label>
       </div>
       <div style="margin-top:6px;">
@@ -1499,7 +1518,7 @@ function mountShell(): void {
             exclusionPolygons: [...prev.exclusionPolygons, points],
           },
         };
-        if (updated.roiConfig) state.sessions.get(photo.photoId)?.setRoiConfig(updated.roiConfig);
+        if (updated.roiConfig) state.sessions.get(photo.photoId)?.setRoiConfig(effectiveRoi(updated, state.siteOptions));
         void savePhoto(updated);
         store.setState({
           photos: state.photos.map((p) => (p.photoId === photo.photoId ? updated : p)),
@@ -1519,7 +1538,7 @@ function mountShell(): void {
             exclusionStrokes: [...prev.exclusionStrokes, { points, radiusPx }],
           },
         };
-        if (updated.roiConfig) state.sessions.get(photo.photoId)?.setRoiConfig(updated.roiConfig);
+        if (updated.roiConfig) state.sessions.get(photo.photoId)?.setRoiConfig(effectiveRoi(updated, state.siteOptions));
         void savePhoto(updated);
         store.setState({
           photos: state.photos.map((p) => (p.photoId === photo.photoId ? updated : p)),
@@ -1928,6 +1947,11 @@ function attachDelegatedHandlers(): void {
         void saveSite({ ...activeSite, options: nextOpts, updatedAt: Date.now() });
       }
       store.setState({ siteOptions: nextOpts });
+      if (siteOptKey === 'maxExcludedFraction') {
+        for (const ph of st.photos) {
+          if (ph.roiConfig) st.sessions.get(ph.photoId)?.setRoiConfig(effectiveRoi(ph, nextOpts));
+        }
+      }
       recomputeReports();
       void syncViewport(false);
     }
@@ -2025,7 +2049,27 @@ async function registerServiceWorker(): Promise<void> {
           }
         });
       });
+      // The service worker adds COOP/COEP headers, but a page is only cross-origin
+      // isolated if its own navigation response carried them. On the first visit (or
+      // after an update from a version without the headers) reload once so WASM threads
+      // can be used. Guarded per tab session so it can never loop.
+      const reloadForIsolation = (): void => {
+        if ((self as { crossOriginIsolated?: boolean }).crossOriginIsolated === true) return;
+        if (!navigator.serviceWorker.controller || store.getState().batchRunning) return;
+        try {
+          if (sessionStorage.getItem('webgrainy-coi-reload') === '1') return;
+          sessionStorage.setItem('webgrainy-coi-reload', '1');
+        } catch {
+          return; // storage unavailable: don't risk a reload loop
+        }
+        location.reload();
+      };
+      if (hadController) reloadForIsolation();
       navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (!hadController) {
+          reloadForIsolation();
+          return;
+        }
         if (hadController) {
           store.setState({
             statusMessage:

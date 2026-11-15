@@ -149,6 +149,13 @@ export const HELP_TOPICS = {
     default: '0 (off)',
     when: 'Set it to the smallest stone your field method records (typically 8–16 mm) whenever you compare with a pebble count. Without it the photo D50 can look much finer (about 40% at the K1 test site; with a matching 13 mm cutoff the photo and field D50 agreed within about 3–4%).',
   },
+  maxExcludedFraction: {
+    title: 'Exclusion overlap',
+    group: 'Site statistics',
+    what: 'How much of a grain may overlap an excluded area (ruler, boot, vegetation…) before the grain is left out. 0.10 means a grain is dropped if more than 10% of it is inside an excluded region.',
+    default: '0.10',
+    when: 'Lower it (e.g. 0) to drop any grain touching an excluded area, e.g. when an exclusion marks a disturbed patch. Raise it (e.g. 0.5) if exclusions are rough and clip the edges of real grains you want to keep. Applies immediately.',
+  },
   confidenceLevel: {
     title: 'Confidence level',
     group: 'Site statistics',

@@ -239,7 +239,7 @@ redone, and statistics update immediately.
 | **Excl Poly** | You want to remove a region: a ruler, boot, quadrat frame, vegetation, water or deep shadow. Draw around it. |
 | **Excl Brush** | You want to paint over smaller or irregular areas to remove them. |
 
-Grains with more than 10% of their area inside an excluded region are left out of the statistics (exports flag them). The
+Grains with more than 10% of their area inside an excluded region are left out of the statistics (exports flag them). The 10% can be changed with **Exclusion overlap** in the dashboard. The
 dashboard shows how many were excluded. Excluding is better than deleting for objects
 like rulers, because it also stops the area from counting as "bed".
 
@@ -308,6 +308,21 @@ cutoff, the photo D50 agreed with the field D50 within about 3–4%.
 
 Leave it at **0** if you want to describe everything visible down to the detection limit.
 
+### Exclusion overlap
+| | |
+|---|---|
+| **Range** | 0 – 1 |
+| **Default** | **0.10** |
+| **What it does** | How much of a grain may overlap an excluded area (ruler, boot, vegetation…) before the grain is left out. At 0.10, a grain is dropped if more than 10% of it is inside an excluded region. |
+
+**When to change it:**
+- **Lower it to 0** to drop any grain that touches an exclusion, e.g. when the exclusion
+  marks a disturbed patch.
+- **Raise it (e.g. 0.5)** if your exclusions are rough and clip the edges of real grains
+  you want to keep.
+
+Changes apply immediately.
+
 ### Uncertainty & sampling (expandable section)
 | Setting | Default | What it does | When to change it |
 |---|---|---|---|
@@ -342,7 +357,7 @@ These only change what you see, never the results.
 | **Left sidebar → Inference & Post-Processing Controls** | Model, Scale mode, Flow threshold, Cellprob threshold, Min size, Max area fraction, Border margin, CLAHE, Exclude border grains, *Advanced:* Flow steps, Seed density |
 | **Left sidebar → photo list** | Include/exclude photo from the site; Facies weight (Facies-weighted mode only) |
 | **Toolbar (above the photo)** | Calibrate, 4-Pt Rectify, Split, Merge, Delete, + Polygon, Excl Poly, Excl Brush |
-| **Right-hand dashboard** | Pooling mode, Size metric, Field-count cutoff, Min b-axis, Harmonize cutoff, *Uncertainty & sampling:* Confidence level, Bootstrap repeats, Bootstrap seed, Two-stage bootstrap, Virtual Wolman points |
+| **Right-hand dashboard** | Pooling mode, Size metric, Field-count cutoff, Min b-axis, Exclusion overlap, Harmonize cutoff, *Uncertainty & sampling:* Confidence level, Bootstrap repeats, Bootstrap seed, Two-stage bootstrap, Virtual Wolman points |
 
 All settings are recorded in every export.
 

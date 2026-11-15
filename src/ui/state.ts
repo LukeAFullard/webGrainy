@@ -176,6 +176,7 @@ export function createInitialState(): AppState {
       bootstrapTwoStage: false,
       confidenceLevel: 0.95,
       minSizeMm: 0,
+      maxExcludedFraction: 0.1,
     },
 
     batchRunning: false,

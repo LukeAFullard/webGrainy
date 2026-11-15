@@ -15,6 +15,32 @@ const SHELL_CACHE = `webgrainy-shell-${BUILD_HASH}`;
 const ORT_CACHE = `webgrainy-ort-${ORT_VERSION}`;
 const KEEP = new Set([SHELL_CACHE, ORT_CACHE]);
 
+// Cross-origin isolation (COOP/COEP) lets onnxruntime-web use WASM threads (about 2-3x
+// faster CPU inference; see DEPLOYMENT.md). Many static hosts (e.g. GitHub Pages) cannot
+// set these headers, so the service worker adds them to every same-origin response it
+// serves. Headers the server already sends are kept. Cross-origin requests (the model
+// download) are fetched in CORS mode by the page, which COEP require-corp allows.
+const ISOLATION_HEADERS = {
+  'Cross-Origin-Opener-Policy': 'same-origin',
+  'Cross-Origin-Embedder-Policy': 'require-corp',
+  'Cross-Origin-Resource-Policy': 'same-origin',
+};
+
+function withIsolationHeaders(response) {
+  if (!response || response.status === 0 || response.type === 'opaque' || response.type === 'opaqueredirect') {
+    return response;
+  }
+  const headers = new Headers(response.headers);
+  for (const [name, value] of Object.entries(ISOLATION_HEADERS)) {
+    if (!headers.has(name)) headers.set(name, value);
+  }
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
 self.addEventListener('install', (event) => {
   event.waitUntil(
     Promise.all([
@@ -67,11 +93,13 @@ self.addEventListener('fetch', (event) => {
   // precached shell offline.
   if (req.mode === 'navigate') {
     event.respondWith(
-      fetch(req).catch(() =>
-        caches
-          .match(req, { cacheName: SHELL_CACHE })
-          .then((cached) => cached || caches.match('./index.html', { cacheName: SHELL_CACHE })),
-      ),
+      fetch(req)
+        .catch(() =>
+          caches
+            .match(req, { cacheName: SHELL_CACHE })
+            .then((cached) => cached || caches.match('./index.html', { cacheName: SHELL_CACHE })),
+        )
+        .then(withIsolationHeaders),
     );
     return;
   }
@@ -80,6 +108,9 @@ self.addEventListener('fetch', (event) => {
   // shell it was precached with. Unknown same-origin requests go to the network and are
   // never written into the versioned caches.
   event.respondWith(
-    caches.match(req, { ignoreSearch: true }).then((cached) => cached || fetch(req)),
+    caches
+      .match(req, { ignoreSearch: true })
+      .then((cached) => cached || fetch(req))
+      .then(withIsolationHeaders),
   );
 });
