@@ -25,7 +25,11 @@ def onnx_run(x):  # (B,2,H,W) -> (B,3,H,W), H,W multiples of 16
     return np.concatenate([sess.run(None, {IN: x[i:i+1].astype(np.float32)})[0] for i in range(x.shape[0])], 0)
 
 class OnnxNet:
-    device = torch.device('cpu'); dtype = torch.float32
+    """Wraps the real Cellpose net: same attributes (nout, diam_mean, ...) but the forward
+    pass runs our ONNX model."""
+    def __init__(self, base): self._base = base
+    def __getattr__(self, name): return getattr(self._base, name)
+    dtype = torch.float32
     def eval(self): return self
     def __call__(self, X):
         y = onnx_run(X.float().numpy()); return torch.from_numpy(y), torch.zeros((X.shape[0], 256))
@@ -81,7 +85,7 @@ for jpg in sorted(glob.glob(os.path.join(imgdir, '*.jpg'))):
     m_pt, fl, _ = model.eval(img, channels=[0, 0], diameter=DIAMETER, flow_threshold=0.4,
                              cellprob_threshold=0.0, min_size=30, normalize=True)
     outs['PT'] = (fl[1].astype(np.float32), fl[2].astype(np.float32)); rec['pt_seconds'] = round(time.time() - t, 1)
-    model.net = OnnxNet()
+    model.net = OnnxNet(pt_net)
     _, fl2, _ = model.eval(img, channels=[0, 0], diameter=DIAMETER, flow_threshold=0.4,
                            cellprob_threshold=0.0, min_size=30, normalize=True)
     outs['ONNX@CP (our model in Cellpose pipeline)'] = (fl2[1].astype(np.float32), fl2[2].astype(np.float32))
