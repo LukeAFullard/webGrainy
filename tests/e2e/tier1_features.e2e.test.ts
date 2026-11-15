@@ -768,7 +768,7 @@ describe('Tier 1: Feature Coverage — ImageGrains 2.0 Web', () => {
 
       const img = createUniformGravelImage(128, 128);
       const stages: string[] = [];
-      const session = await engine.analyzeImage(img, {
+      const session = await engine.analyzeImage(img, { inferencePipeline: 'legacy',
         model: 'unet',
         scaleMode: '1.0x',
         onProgress: (stage: string) => stages.push(stage),
@@ -786,7 +786,7 @@ describe('Tier 1: Feature Coverage — ImageGrains 2.0 Web', () => {
       await engine.initialize();
 
       const img = createUniformGravelImage(128, 128);
-      const session = await engine.analyzeImage(img, { model: 'unet', scaleMode: '1.0x' });
+      const session = await engine.analyzeImage(img, { inferencePipeline: 'legacy', model: 'unet', scaleMode: '1.0x' });
       const initialCount = session.getResult().grainCount;
       expect(initialCount).toBeGreaterThanOrEqual(2);
 
@@ -805,7 +805,7 @@ describe('Tier 1: Feature Coverage — ImageGrains 2.0 Web', () => {
       await engine.initialize();
 
       const img = createUniformGravelImage(128, 128);
-      const session = await engine.analyzeImage(img, { model: 'unet' });
+      const session = await engine.analyzeImage(img, { inferencePipeline: 'legacy', model: 'unet' });
 
       session.setCalibration(
         ScaleCalibrator.calibrate({ x: 0, y: 0 }, { x: 100, y: 0 }, 50, 'mm')
@@ -823,7 +823,7 @@ describe('Tier 1: Feature Coverage — ImageGrains 2.0 Web', () => {
       await engine.initialize();
 
       const boulder = createCoarseBoulderImage(256, 256);
-      const session = await engine.analyzeImage(boulder, { model: 'auto' });
+      const session = await engine.analyzeImage(boulder, { inferencePipeline: 'legacy', model: 'auto' });
       expect(session.recommendation.model).toBe('cpsam');
     });
   });

@@ -62,6 +62,8 @@ export interface UiAnalysisParams {
   niter: number;
   /** Advanced: minimum converging pixels to seed a grain. */
   minSeedDensity: number;
+  /** Advanced: inference tiling pipeline. */
+  inferencePipeline: 'cellpose' | 'legacy';
 }
 
 export interface AppState {
@@ -176,6 +178,7 @@ export function createInitialState(): AppState {
       bootstrapTwoStage: false,
       confidenceLevel: 0.95,
       minSizeMm: 0,
+      maxExcludedFraction: 0.1,
     },
 
     batchRunning: false,
@@ -228,6 +231,7 @@ export function toAnalysisConfig(
     applyClahe: params.applyClahe,
     claheClipLimit: params.claheClipLimit,
     excludeBorder: params.excludeBorder,
+    inferencePipeline: params.inferencePipeline,
     postProcess: {
       flowThreshold: params.flowThreshold,
       cellprobThreshold: params.cellprobThreshold,
@@ -257,5 +261,6 @@ export function defaultAnalysisParams(): UiAnalysisParams {
   excludeBorderMargin: DEFAULT_POSTPROCESS_OPTIONS.excludeBorderMargin,
   niter: DEFAULT_POSTPROCESS_OPTIONS.niter,
   minSeedDensity: DEFAULT_POSTPROCESS_OPTIONS.minSeedDensity,
+    inferencePipeline: 'cellpose',
 };
 }

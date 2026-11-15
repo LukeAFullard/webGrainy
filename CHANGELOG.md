@@ -7,6 +7,7 @@ All notable changes to webGrainy are recorded here. The format follows
 ## [Unreleased]
 
 ### Fixed
+- **Intermittent broken thumbnails when loading a site.** Old thumbnail URLs were revoked before the new ones were in place (`net::ERR_FILE_NOT_FOUND`).
 - **Cellpose-SAM on the CPU (WASM) crashed** with `std::bad_alloc` on full-size photos. It now runs one tile per call.
 - **Recovery after WebGPU device loss.** After a loss, WebGPU is disabled for the page,
   GPU sessions are evicted, the capability is reported unavailable, and the image is
@@ -14,6 +15,12 @@ All notable changes to webGrainy are recorded here. The format follows
   lost device. The UI shows "GPU reset · CPU mode (reload for GPU)".
 
 ### Added
+- **Exclusion overlap tolerance is configurable** (site option `maxExcludedFraction`,
+  default 0.10). Applies immediately, and is recorded in exports.
+- **Multi-threaded CPU inference on any host.** The service worker adds COOP/COEP headers,
+  with one automatic reload on first visit, so WASM uses all cores (about 2–3× faster)
+  even where server headers can't be set. Verified with the real model download. The top
+  bar shows the CPU thread count.
 - **In-app help for every setting:** a "?" button opens a plain-language explanation
   (what it does, default, when to change it). *Help* and *Settings help* buttons list all
   settings. Content mirrors `docs/SETTINGS_GUIDE.md`; tests check that every setting
@@ -30,6 +37,18 @@ All notable changes to webGrainy are recorded here. The format follows
 - **Site option `minSizeMm` ("Field-count cutoff (mm)")** to match a pebble count's minimum size.
 
 ### Changed
+- **New default inference pipeline that reproduces PyTorch ImageGrains exactly.** The
+  ONNX models were always exact; the outline gap came from webGrainy's tiling.
+  - The new "Cellpose" pipeline replicates Cellpose's preparation and tiling:
+    - U-Net: resize by 17/30, 224 px tiles;
+    - Cellpose-SAM: 8 px zero border;
+    - both: sigmoid-taper blending.
+  - Results on 7 held-out IG2 images:
+    - masks identical to PyTorch (U-Net) or 99.5 % identical (Cellpose-SAM);
+    - app outline quality: U-Net 0.427 → 0.451, Cellpose-SAM 0.504 → 0.559;
+    - median D50 error: U-Net 15.5 → 9.1 %, Cellpose-SAM 8.6 → 3.3 %.
+  - The previous pipeline stays available as "Legacy" (Advanced) and is recorded in
+    provenance. See `audit/parity/README.md`.
 - **CPU inference uses all cores (capped at 8) when the page is cross-origin isolated**
   (U-Net on a 1024×768 photo: 18.4 s → 6.7 s on 4 cores). See `DEPLOYMENT.md`.
 

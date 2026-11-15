@@ -590,7 +590,7 @@ describe('Tier 5: Adversarial Hardening — ImageGrains 2.0 Web', () => {
 
       const imgData = createUniformGravelImage(32, 32);
 
-      const analysisPromise = engine.analyzeImage(imgData, { model: 'unet' });
+      const analysisPromise = engine.analyzeImage(imgData, { inferencePipeline: 'legacy', model: 'unet' });
 
       // Wait until worker.postMessage has been called
       await vi.waitFor(() => {
@@ -681,12 +681,12 @@ describe('Tier 5: Adversarial Hardening — ImageGrains 2.0 Web', () => {
 
       const img = createUniformGravelImage(32, 32);
 
-      await expect(engine.analyzeImage(img, { model: 'unet' })).rejects.toThrow(
+      await expect(engine.analyzeImage(img, { inferencePipeline: 'legacy', model: 'unet' })).rejects.toThrow(
         /simulated worker crash/,
       );
 
       // Second call must succeed with a fresh worker
-      const session = await engine.analyzeImage(img, { model: 'unet' });
+      const session = await engine.analyzeImage(img, { inferencePipeline: 'legacy', model: 'unet' });
       expect(session).toBeDefined();
       expect(workerNum).toBe(2);
       await engine.dispose();
@@ -705,8 +705,8 @@ describe('Tier 5: Adversarial Hardening — ImageGrains 2.0 Web', () => {
       const img = createUniformGravelImage(32, 32);
 
       const [s1, s2] = await Promise.all([
-        engine.analyzeImage(img, { model: 'unet' }),
-        engine.analyzeImage(img, { model: 'unet' }),
+        engine.analyzeImage(img, { inferencePipeline: 'legacy', model: 'unet' }),
+        engine.analyzeImage(img, { inferencePipeline: 'legacy', model: 'unet' }),
       ]);
       expect(s1).toBeDefined();
       expect(s2).toBeDefined();
@@ -723,7 +723,7 @@ describe('Tier 5: Adversarial Hardening — ImageGrains 2.0 Web', () => {
           }),
       });
 
-      const pending = engine2.analyzeImage(img, { model: 'unet' });
+      const pending = engine2.analyzeImage(img, { inferencePipeline: 'legacy', model: 'unet' });
       await vi.waitFor(() => {
         expect(resolveSession).toBeDefined();
       });
@@ -796,8 +796,7 @@ describe('Tier 5: Adversarial Hardening — ImageGrains 2.0 Web', () => {
       globalThis.indexedDB = origIdb;
 
       const session = await engine.analyzeImage(
-        createUniformGravelImage(64, 64),
-        { model: 'unet', applyClahe: true, claheClipLimit: 4.0 },
+        createUniformGravelImage(64, 64), { inferencePipeline: 'legacy', model: 'unet', applyClahe: true, claheClipLimit: 4.0 },
       );
       expect(session.getResult().width).toBe(64);
       await engine.dispose();

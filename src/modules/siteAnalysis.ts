@@ -70,6 +70,12 @@ export interface SiteAnalysisOptions {
    * field count's 13 mm minimum turned a -42% D50 gap into +3% (audit/k1/).
    */
   minSizeMm?: number;
+  /**
+   * Exclusion overlap tolerance: a grain is dropped when more than this fraction of its
+   * area lies inside ROI-excluded regions (0 = drop on any overlap, 1 = only if fully
+   * inside). Overrides the per-photo value when set. Default 0.10.
+   */
+  maxExcludedFraction?: number;
   harmonizeCutoff?: boolean;
   harmonizePhysicalCutoff?: boolean;
   wolmanGridSpacingMm?: number;
@@ -1117,7 +1123,7 @@ export function analyzeSite(
         res.width,
         res.height,
         sWork,
-        input.roiConfig,
+        withExclusionTolerance(input.roiConfig, options.maxExcludedFraction),
         mmPerPx,
       );
       preCutoffGrains = roiRes.includedGrains;
@@ -1565,6 +1571,25 @@ export function analyzeSite(
   };
 }
 
+/**
+ * Applies a site-wide exclusion overlap tolerance to a photo's ROI config (when given and
+ * valid). Returns the config unchanged otherwise.
+ */
+export function withExclusionTolerance(
+  roi: RoiExclusionConfig,
+  maxExcludedFraction: number | undefined,
+): RoiExclusionConfig {
+  if (
+    maxExcludedFraction === undefined ||
+    !Number.isFinite(maxExcludedFraction) ||
+    maxExcludedFraction < 0 ||
+    maxExcludedFraction > 1
+  ) {
+    return roi;
+  }
+  return { ...roi, maxExcludedFraction };
+}
+
 /** CSV cell with quoting and spreadsheet formula-injection neutralisation (OWASP). */
 function csvEscape(val: string | number | boolean): string {
   return csvCell(val);
@@ -1624,6 +1649,7 @@ export function buildSiteExportMetadata(
             bootstrapSeed: options.bootstrapSeed ?? 42,
             bootstrapTwoStage: options.bootstrapTwoStage ?? false,
             wolmanPointsPerPhoto: options.wolmanPointsPerPhoto ?? 100,
+            maxExcludedFraction: options.maxExcludedFraction ?? 0.1,
           },
         }
       : {}),

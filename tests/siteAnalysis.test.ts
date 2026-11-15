@@ -8,6 +8,7 @@ import {
   exportSiteSummaryCsv,
   exportSiteSummaryJson,
   validateSiteCalibration,
+  withExclusionTolerance,
   type CalibrationResult,
   type ModelRecommendation,
   type SitePhotoInput,
@@ -255,6 +256,24 @@ describe('siteAnalysis', () => {
     expect(report.excludedTruncationCount).toBe(2);
     expect(report.excludedTruncationAreaMm2).toBeGreaterThan(0);
     expect(report.validGrainCount).toBe(2);
+  });
+
+  it('exclusion overlap tolerance (maxExcludedFraction) decides whether a partly excluded grain is kept', () => {
+    // Two r=20 grains at (60,60) and (160,60), 1 mm/px. The exclusion covers x >= 172,
+    // i.e. about 30% of the right-hand grain.
+    const session = makeSyntheticSession({
+      width: 240, height: 140, mmPerPx: 1,
+      circles: [{ cx: 60, cy: 60, r: 20 }, { cx: 160, cy: 60, r: 20 }],
+    });
+    const roiConfig = { exclusionPolygons: [[{ x: 172, y: 0 }, { x: 239, y: 0 }, { x: 239, y: 139 }, { x: 172, y: 139 }]], exclusionStrokes: [] };
+    const photos: SitePhotoInput[] = [{ photoId: 'p', label: 'P', included: true, session, roiConfig }];
+    const opts = { poolingMode: 'physical-area' as const, minBaxisPx: 0, bootstrapReplicates: 20 };
+    expect(analyzeSite(photos, { ...opts }).validGrainCount).toBe(1); // default 0.10
+    expect(analyzeSite(photos, { ...opts, maxExcludedFraction: 0.1 }).validGrainCount).toBe(1);
+    expect(analyzeSite(photos, { ...opts, maxExcludedFraction: 0.5 }).validGrainCount).toBe(2);
+    expect(analyzeSite(photos, { ...opts, maxExcludedFraction: 0 }).validGrainCount).toBe(1);
+    expect(withExclusionTolerance(roiConfig, 2)).toBe(roiConfig); // invalid values ignored
+    expect(withExclusionTolerance(roiConfig, 0.3).maxExcludedFraction).toBe(0.3);
   });
 
   it('applies a field-count lower cutoff in mm (minSizeMm) and warns when uncalibrated', () => {

@@ -32,7 +32,9 @@ import {
   createInferenceSession,
   isWebGpuDeviceLostError,
   probeWebGpuCapabilities,
+  runCpsamCellposeInference,
   runCpsamTiledInference,
+  runUnetCellposeInference,
   runUnetInference,
   type SessionCreateOptions,
 } from './onnxInference.js';
@@ -1597,9 +1599,29 @@ export class ImageGrainsEngine {
       scaleFactor: workingImage.effectiveScaleFactor,
     });
 
+    const pipeline = config?.inferencePipeline ?? 'cellpose';
     const runInference = async (
       session: ort.InferenceSession | InferenceSessionLike,
     ): Promise<InferenceOutput> => {
+      const onTileProgress = (progress: unknown): void => emit('inference', progress);
+      if (pipeline === 'cellpose') {
+        // Upstream-exact Cellpose tiling (reproduces PyTorch ImageGrains; audit/parity/).
+        return selectedModel === 'unet'
+          ? runUnetCellposeInference(
+              session as ort.InferenceSession,
+              workingImage.data,
+              workingImage.width,
+              workingImage.height,
+              { ...(signal ? { signal } : {}), onProgress: onTileProgress },
+            )
+          : runCpsamCellposeInference(
+              session as ort.InferenceSession,
+              workingImage.data,
+              workingImage.width,
+              workingImage.height,
+              { ...(signal ? { signal } : {}), onProgress: onTileProgress },
+            );
+      }
       if (selectedModel === 'unet') {
         const gray = normalizeGray(
           workingImage.data,
@@ -1625,7 +1647,7 @@ export class ImageGrainsEngine {
         workingImage.height,
         {
           signal,
-          onProgress: (progress) => emit('inference', progress),
+          onProgress: onTileProgress,
           // One tile per run on CPU: a 16-tile ViT-L batch exhausts the 4 GB WASM heap.
           ...(this.sessionExecutionProviders.get(selectedModel) === 'webgpu' ? {} : { batchSize: 1 }),
         },
@@ -1689,6 +1711,7 @@ export class ImageGrainsEngine {
         ...(this.sessionExecutionProviders.has(selectedModel)
           ? { executionProvider: this.sessionExecutionProviders.get(selectedModel)! }
           : {}),
+        inferencePipeline: pipeline,
         scaleMode: config?.scaleMode ?? 'auto',
         effectiveScaleFactor: workingImage.effectiveScaleFactor,
         applyClahe: config?.applyClahe ?? false,

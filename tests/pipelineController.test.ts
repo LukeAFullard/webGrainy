@@ -188,7 +188,7 @@ describe('pipelineController (ImageGrainsEngine & AnalysisSession)', () => {
 
     const configStages: string[] = [];
     const img = makeRgbaImage(128, 128, 'uniform');
-    const session = await engine.analyzeImage(img, {
+    const session = await engine.analyzeImage(img, { inferencePipeline: 'legacy',
       model: 'unet',
       scaleMode: '1.0x',
       applyClahe: true,
@@ -229,7 +229,7 @@ describe('pipelineController (ImageGrainsEngine & AnalysisSession)', () => {
     await engine.initialize();
 
     const coarse = makeRgbaImage(256, 256, 'coarse');
-    const session = await engine.analyzeImage(coarse, {
+    const session = await engine.analyzeImage(coarse, { inferencePipeline: 'legacy',
       model: 'auto',
       scaleMode: '1.0x',
     });
@@ -254,7 +254,7 @@ describe('pipelineController (ImageGrainsEngine & AnalysisSession)', () => {
       50,
       'mm',
     ); // 0.5 mm/px
-    const session = await engine.analyzeImage(img, {
+    const session = await engine.analyzeImage(img, { inferencePipeline: 'legacy',
       model: 'unet',
       scaleMode: '0.5x',
       calibration: cal,
@@ -290,7 +290,7 @@ describe('pipelineController (ImageGrainsEngine & AnalysisSession)', () => {
     });
 
     const img = makeRgbaImage(160, 160, 'uniform');
-    const session = await engine.analyzeImage(img, {
+    const session = await engine.analyzeImage(img, { inferencePipeline: 'legacy',
       model: 'unet',
       scaleMode: '1.0x',
       excludeBorder: true,
@@ -415,7 +415,7 @@ describe('pipelineController (ImageGrainsEngine & AnalysisSession)', () => {
 
     const img = makeRgbaImage(64, 64, 'uniform');
     await expect(
-      engine.analyzeImage(img, { model: 'unet', signal: preAc.signal }),
+      engine.analyzeImage(img, { inferencePipeline: 'legacy', model: 'unet', signal: preAc.signal }),
     ).rejects.toThrow(/abort/i);
 
     // Mid-flight abort during sessionFactory
@@ -428,7 +428,7 @@ describe('pipelineController (ImageGrainsEngine & AnalysisSession)', () => {
     });
 
     await expect(
-      midEngine.analyzeImage(img, { model: 'unet', signal: midAc.signal }),
+      midEngine.analyzeImage(img, { inferencePipeline: 'legacy', model: 'unet', signal: midAc.signal }),
     ).rejects.toThrow(/abort/i);
 
     await engine.dispose();
@@ -490,7 +490,7 @@ describe('pipelineController (ImageGrainsEngine & AnalysisSession)', () => {
     });
 
     const img = makeRgbaImage(64, 64, 'uniform');
-    const session = await engine.analyzeImage(img, {
+    const session = await engine.analyzeImage(img, { inferencePipeline: 'legacy',
       model: 'unet',
       scaleMode: '1.0x',
     });
@@ -500,6 +500,41 @@ describe('pipelineController (ImageGrainsEngine & AnalysisSession)', () => {
 
     await engine.dispose();
     expect(terminateMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('defaults to the upstream-exact Cellpose pipeline (tiles, channels, provenance)', async () => {
+    Object.defineProperty(globalThis, 'navigator', { value: {}, configurable: true });
+    const calls: Array<{ dims: number[]; type: string }> = [];
+    const recorder = (): InferenceSessionLike => ({
+      async run(feeds: Record<string, unknown>) {
+        const t = feeds['image'] as { dims: readonly number[]; type?: string; data: Float32Array | Uint16Array };
+        calls.push({ dims: [...t.dims], type: t.data instanceof Uint16Array ? 'float16' : 'float32' });
+        const n = (t.dims[2] ?? 0) * (t.dims[3] ?? 0);
+        return { flows_cellprob: { data: new Float32Array(3 * n).fill(-5), dims: [1, 3, t.dims[2] ?? 0, t.dims[3] ?? 0] } };
+      },
+    });
+    const engine = new ImageGrainsEngine({ sessionFactory: async () => recorder() });
+    await engine.initialize();
+
+    // U-Net: 500x500 -> resized by 17/30 to 283x283 -> Cellpose-3 tiles of 224 px, 2 channels
+    const unet = await engine.analyzeImage(makeRgbaImage(500, 500, 'uniform'), { model: 'unet', scaleMode: '1.0x' });
+    expect(unet.getProvenance()?.inferencePipeline).toBe('cellpose');
+    expect(calls.length).toBe(4);
+    for (const c of calls) expect(c).toEqual({ dims: [1, 2, 224, 224], type: 'float32' });
+
+    // Cellpose-SAM: 300x300 -> 256 px tiles, 3 channels, float16, one tile per run
+    calls.length = 0;
+    const sam = await engine.analyzeImage(makeRgbaImage(300, 300, 'uniform'), { model: 'cpsam', scaleMode: '1.0x' });
+    expect(sam.getProvenance()?.inferencePipeline).toBe('cellpose');
+    expect(calls.length).toBeGreaterThan(1);
+    for (const c of calls) expect(c).toEqual({ dims: [1, 3, 256, 256], type: 'float16' });
+
+    // Legacy remains selectable and is recorded.
+    calls.length = 0;
+    const legacy = await engine.analyzeImage(makeRgbaImage(64, 64, 'uniform'), { model: 'unet', scaleMode: '1.0x', inferencePipeline: 'legacy' });
+    expect(legacy.getProvenance()?.inferencePipeline).toBe('legacy');
+    expect(calls).toEqual([{ dims: [1, 2, 64, 64], type: 'float32' }]);
+    await engine.dispose();
   });
 
   it('retries a device-lost analysis only once', async () => {
@@ -520,7 +555,7 @@ describe('pipelineController (ImageGrainsEngine & AnalysisSession)', () => {
     });
     await engine.initialize();
     await expect(
-      engine.analyzeImage(makeRgbaImage(64, 64, 'uniform'), { model: 'unet', scaleMode: '1.0x' }),
+      engine.analyzeImage(makeRgbaImage(64, 64, 'uniform'), { inferencePipeline: 'legacy', model: 'unet', scaleMode: '1.0x' }),
     ).rejects.toThrow(/device lost/i);
     expect(created).toBe(2);
     await engine.dispose();
@@ -569,7 +604,7 @@ describe('pipelineController (ImageGrainsEngine & AnalysisSession)', () => {
     const img = makeRgbaImage(64, 64, 'uniform');
     // Device loss: the lost session is evicted, WebGPU is disabled for the page, and the
     // same image is retried once on a fresh (WASM) session instead of failing.
-    const session = await engine.analyzeImage(img, { model: 'unet', scaleMode: '1.0x' });
+    const session = await engine.analyzeImage(img, { inferencePipeline: 'legacy', model: 'unet', scaleMode: '1.0x' });
     expect(callCount).toBe(2);
     expect(warnings.some((w) => w.code === 'webgpu-device-lost')).toBe(true);
     expect(engine.getWebGpuDisabledReason()).toMatch(/device was lost/i);
@@ -578,7 +613,7 @@ describe('pipelineController (ImageGrainsEngine & AnalysisSession)', () => {
     expect(capsAfter.hasWebGPU).toBe(false);
     expect(capsAfter.hasShaderF16).toBe(false);
     // Later analyses reuse the WASM session (no further session creation).
-    await engine.analyzeImage(img, { model: 'unet', scaleMode: '1.0x' });
+    await engine.analyzeImage(img, { inferencePipeline: 'legacy', model: 'unet', scaleMode: '1.0x' });
     expect(callCount).toBe(2);
 
     const statsFeret = session.getStats('minFeret');

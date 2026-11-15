@@ -141,6 +141,7 @@ export {
   exportSiteSummaryCsv,
   exportPooledGrainsCsv,
   buildSiteExportMetadata,
+  withExclusionTolerance,
   exportSiteGrainsCsv,
   type PoolingMode,
   type SitePhotoMetadata,

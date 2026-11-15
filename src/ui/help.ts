@@ -107,6 +107,13 @@ export const HELP_TOPICS = {
     default: '250',
     when: 'Rarely needed. Increase (e.g. 400) if very large or elongated grains are split into several pieces. Higher values are slower. The default is the tested value.',
   },
+  inferencePipeline: {
+    title: 'Inference pipeline',
+    group: 'Advanced analysis',
+    what: 'How the photo is prepared and cut into tiles before the neural network runs. "Cellpose" reproduces the original ImageGrains / Cellpose software exactly. "Legacy" is the method used by webGrainy up to v1.1.',
+    default: 'Cellpose (matches ImageGrains)',
+    when: 'Keep "Cellpose". In tests it matched the original software exactly, and gave better outlines than Legacy (outline score 0.445 vs 0.413 for U-Net, 0.561 vs 0.485 for Cellpose-SAM on 7 test photos). Choose "Legacy" only to reproduce results made with an older version.',
+  },
   minSeedDensity: {
     title: 'Seed density',
     group: 'Advanced analysis',
@@ -148,6 +155,13 @@ export const HELP_TOPICS = {
     what: 'Leaves out all grains smaller than this size (mm), so results cover the same size range as a field pebble count.',
     default: '0 (off)',
     when: 'Set it to the smallest stone your field method records (typically 8–16 mm) whenever you compare with a pebble count. Without it the photo D50 can look much finer (about 40% at the K1 test site; with a matching 13 mm cutoff the photo and field D50 agreed within about 3–4%).',
+  },
+  maxExcludedFraction: {
+    title: 'Exclusion overlap',
+    group: 'Site statistics',
+    what: 'How much of a grain may overlap an excluded area (ruler, boot, vegetation…) before the grain is left out. 0.10 means a grain is dropped if more than 10% of it is inside an excluded region.',
+    default: '0.10',
+    when: 'Lower it (e.g. 0) to drop any grain touching an excluded area, e.g. when an exclusion marks a disturbed patch. Raise it (e.g. 0.5) if exclusions are rough and clip the edges of real grains you want to keep. Applies immediately.',
   },
   confidenceLevel: {
     title: 'Confidence level',

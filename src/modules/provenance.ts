@@ -25,6 +25,7 @@ export type { AnalysisProvenance };
 export function buildAnalysisProvenance(params: {
   modelId: ModelId;
   executionProvider?: string;
+  inferencePipeline?: string;
   scaleMode?: string;
   effectiveScaleFactor?: number;
   applyClahe?: boolean;
@@ -41,6 +42,7 @@ export function buildAnalysisProvenance(params: {
     modelRevision: MODEL_REVISION,
     modelSha256: MODEL_INTEGRITY[params.modelId].sha256,
     ...(params.executionProvider !== undefined ? { executionProvider: params.executionProvider } : {}),
+    ...(params.inferencePipeline !== undefined ? { inferencePipeline: params.inferencePipeline } : {}),
     ...(params.scaleMode !== undefined ? { scaleMode: params.scaleMode } : {}),
     ...(params.effectiveScaleFactor !== undefined
       ? { effectiveScaleFactor: params.effectiveScaleFactor }
