@@ -89,3 +89,22 @@ Measured with the GPU check page (`shader-f16` available, so WebGPU ran in float
 - **Open question:** whether large black areas *inside* real photos produce false grains.
   The page now has a fifth case (768×384 photo whose right half is pure black, containing a
   whole 256 px tile) and reports grain pixels and sign agreement inside the black area.
+
+### Re-run with the black-area case (same Intel Xe-LPG laptop, 2026-11-15)
+
+| Case | Grains GPU / CPU | Mask PQ | Sign agreement in black area | Mean cellprob in black area, CPU / GPU | Grain pixels in black area, GPU / CPU |
+|---|---|---|---|---|---|
+| All-black 256×256 | 0 / 0 | 1 | 0% | −5.18 / +0.72 | 0 / 0 |
+| Photo 768×384, right half black | 159 / 159 | 0.999 | 32.7% | −5.80 / −0.93 | 0 / 0 |
+
+- The float16 fault also appears inside a real photo: in the black half, the GPU's cell
+  probability is pulled from about −5.8 to about −0.9, and two-thirds of those pixels flip to
+  "grain".
+- **It produced no false grains and did not change any grain outline** (159 / 159 grains, PQ
+  0.999, zero grain pixels in the black area). Cellpose's flow-consistency filtering removes
+  the flipped pixels, because the predicted flows there are near zero, so no grain shapes form.
+- **Conclusion for this GPU:** WebGPU is safe for grain results and about 3.3× faster than the
+  CPU (photo cases: 12.9 s vs 41.9 s, and 15.4 s vs 50.9 s). The safety margin depends on
+  the flow filtering, so raw cell-probability maps from the GPU should not be used directly
+  on black areas.
+- Still wanted: one NVIDIA or AMD result. Float16 behaviour differs between GPU vendors.
