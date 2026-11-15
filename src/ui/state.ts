@@ -1,3 +1,4 @@
+import type { HelpKey } from './help.js';
 import { DEFAULT_POSTPROCESS_OPTIONS } from '../modules/postprocessCore.js';
 import type {
   AnalysisConfig,
@@ -31,7 +32,7 @@ export type EditorToolMode =
   | 'rectify';
 
 export type DashboardTab = 'psd' | 'adequacy' | 'shape' | 'fabric';
-export type ModalKind = 'models' | 'export' | 'about' | null;
+export type ModalKind = 'models' | 'export' | 'about' | 'help' | null;
 export type SwStatus = 'unsupported' | 'registering' | 'ready' | 'error';
 
 export interface OverlaySettings {
@@ -55,6 +56,12 @@ export interface UiAnalysisParams {
   cellprobThreshold: number;
   minSize: number;
   maxGrainAreaFraction: number;
+  /** Border-touch margin in working-resolution px (next analysis). */
+  excludeBorderMargin: number;
+  /** Advanced: flow-integration steps. */
+  niter: number;
+  /** Advanced: minimum converging pixels to seed a grain. */
+  minSeedDensity: number;
 }
 
 export interface AppState {
@@ -101,6 +108,8 @@ export interface AppState {
   } | null;
 
   activeModal: ModalKind;
+  /** Topic shown first in the help dialog (null = full settings list). */
+  helpTopic: HelpKey | null;
   modelDownloads: Map<
     ModelId,
     {
@@ -155,19 +164,7 @@ export function createInitialState(): AppState {
     pendingCalibrationPoints: [],
     pendingRectifyPoints: [],
 
-    analysisParams: {
-      model: 'auto',
-      scaleMode: 'auto',
-      applyClahe: false,
-      claheClipLimit: 2.0,
-      excludeBorder: true,
-      // Single source of truth: the engine defaults, which match the configuration
-      // benchmarked in full_dataset_validation_report.md (flow 0.45, min size 30 px).
-      flowThreshold: DEFAULT_POSTPROCESS_OPTIONS.flowThreshold,
-      cellprobThreshold: DEFAULT_POSTPROCESS_OPTIONS.cellprobThreshold,
-      minSize: DEFAULT_POSTPROCESS_OPTIONS.minSize,
-      maxGrainAreaFraction: DEFAULT_POSTPROCESS_OPTIONS.maxGrainAreaFraction,
-    },
+    analysisParams: defaultAnalysisParams(),
     siteOptions: {
       poolingMode: 'physical-area',
       sizeMetric: 'bAxis',
@@ -176,13 +173,16 @@ export function createInitialState(): AppState {
       wolmanPointsPerPhoto: 100,
       bootstrapReplicates: 500,
       bootstrapSeed: 42,
+      bootstrapTwoStage: false,
       confidenceLevel: 0.95,
+      minSizeMm: 0,
     },
 
     batchRunning: false,
     batchProgress: null,
 
     activeModal: null,
+    helpTopic: null,
     modelDownloads: new Map(),
     statusMessage: 'Ready — 100% local browser workspace',
   };
@@ -233,6 +233,29 @@ export function toAnalysisConfig(
       cellprobThreshold: params.cellprobThreshold,
       minSize: params.minSize,
       maxGrainAreaFraction: params.maxGrainAreaFraction,
+      excludeBorderMargin: params.excludeBorderMargin,
+      niter: params.niter,
+      minSeedDensity: params.minSeedDensity,
     },
   };
+}
+
+/** Default analysis settings: the engine defaults, i.e. the benchmarked configuration. */
+export function defaultAnalysisParams(): UiAnalysisParams {
+  return {
+  model: 'auto',
+  scaleMode: 'auto',
+  applyClahe: false,
+  claheClipLimit: 2.0,
+  excludeBorder: true,
+  // Single source of truth: the engine defaults, which match the configuration
+  // benchmarked in full_dataset_validation_report.md (flow 0.45, min size 30 px).
+  flowThreshold: DEFAULT_POSTPROCESS_OPTIONS.flowThreshold,
+  cellprobThreshold: DEFAULT_POSTPROCESS_OPTIONS.cellprobThreshold,
+  minSize: DEFAULT_POSTPROCESS_OPTIONS.minSize,
+  maxGrainAreaFraction: DEFAULT_POSTPROCESS_OPTIONS.maxGrainAreaFraction,
+  excludeBorderMargin: DEFAULT_POSTPROCESS_OPTIONS.excludeBorderMargin,
+  niter: DEFAULT_POSTPROCESS_OPTIONS.niter,
+  minSeedDensity: DEFAULT_POSTPROCESS_OPTIONS.minSeedDensity,
+};
 }

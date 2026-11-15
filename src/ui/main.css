@@ -845,3 +845,117 @@ details summary {
   line-height: 1.4;
   color: var(--text-secondary);
 }
+
+/* ---- In-app help ------------------------------------------------------- */
+.label-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.help-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  font-size: 0.65rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: help;
+  flex: 0 0 auto;
+}
+
+.help-btn:hover,
+.help-btn:focus-visible {
+  border-color: var(--accent);
+  color: var(--accent);
+  outline: none;
+}
+
+.help-btn:focus-visible {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.field-hint {
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+}
+
+.advanced-block > summary {
+  cursor: pointer;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.photo-facies {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+}
+
+.photo-facies .input {
+  width: 5.5em;
+  padding: 2px 4px;
+}
+
+.help-intro {
+  margin: 0 0 10px;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.help-group {
+  margin: 14px 0 6px;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+}
+
+.help-topic {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  margin-bottom: 6px;
+  background: var(--bg-elevated);
+}
+
+.help-topic > summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.help-dl {
+  margin: 8px 0 2px;
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 12px;
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.help-dl dt {
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.help-dl dd {
+  margin: 0;
+}
+
+@media (max-width: 520px) {
+  .help-dl {
+    grid-template-columns: 1fr;
+  }
+}

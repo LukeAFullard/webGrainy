@@ -12,6 +12,11 @@ underlying neural networks work.
 >
 > Change other settings only for the reasons given below, and write down what you changed.
 
+> **Help inside the app:** every setting has a small **?** button next to it. Click it
+> for the same explanation as in this guide: what the setting does, its default, and when
+> to change it. The **Help** button (top bar) and **Settings help** (analysis panel) list
+> all settings in one place.
+
 ---
 
 ## 1. What webGrainy does
@@ -161,6 +166,32 @@ low-contrast lighting** where grains are missed. Increase the clip limit (3–4)
 stronger enhancement. Leave it off for normal, evenly lit photos. It was not part of the
 accuracy testing.
 
+### Exclude border grains / Border margin (px)
+| | |
+|---|---|
+| **Default** | **On**, margin **2 px** (working resolution) |
+| **What it does** | Leaves out grains touching the photo edge. They are cut off by the frame, so they look smaller than they are. The margin sets how close to the edge counts as "touching". |
+
+**When to change it:**
+- **Keep the switch on** for normal use. Turn it off only if the photo edge coincides
+  with a real boundary of your sample area. The switch applies immediately to photos
+  that are already analysed.
+- **Increase the margin** (5–10 px) if the photo edges are blurred, vignetted or
+  distorted. The margin applies the next time photos are analysed.
+
+### Advanced (rarely needed): Flow steps, Seed density
+| | |
+|---|---|
+| **Defaults** | Flow steps **250**, Seed density **2** (the tested values) |
+| **What they do** | Internal post-processing settings. *Flow steps* is how far each pixel is traced towards the centre of its grain. *Seed density* is how many pixels must meet at one point before a new grain is started. |
+
+**When to change them:**
+- **Flow steps:** increase (e.g. 400) if very large or elongated stones are split into pieces.
+- **Seed density:** increase (e.g. 4–6) if noise creates many tiny fragment grains.
+
+Leave both at the defaults otherwise. **Reset analysis settings to defaults** restores
+every analysis setting to the tested values.
+
 ---
 
 ## 4. Scale and geometry tools (toolbar)
@@ -214,7 +245,7 @@ like rulers, because it also stops the area from counting as "bed".
 
 ---
 
-## 7. Site statistics settings (dashboard)
+## 7. Site statistics settings (dashboard, right-hand panel)
 
 These settings control how measurements are turned into a grain-size distribution,
 especially when several photos are combined into one site result.
@@ -226,7 +257,7 @@ especially when several photos are combined into one site result.
 | **Equal-Photo Weighted** | Each photo contributes equally, whatever its size or number of grains. | Photos cover very different areas, and you want each location to count the same. |
 | **Virtual Wolman Grid** | Simulates a pebble count: a virtual grid is laid over each photo and the grain under each point is counted. | You want results that mimic a field pebble count as closely as possible. |
 | **Number-Weighted** | Every grain counts once, whatever its size. | **Rarely.** This gives much finer results and is **not comparable** with pebble counts or sieving. Use it only if you specifically need a by-count distribution. |
-| **Facies-Weighted** | Photos are weighted by a "facies weight" (e.g. how much of the reach each surface type covers). | Stratified sampling of a reach with distinct surface patches. In this version weights can't be edited in the app, so all photos are weighted equally. |
+| **Facies-Weighted** | Photos are weighted by a "facies weight" (e.g. how much of the reach each surface type covers). | Stratified sampling of a reach with distinct surface patches. When this mode is selected, a **Facies weight** box appears under each photo in the photo list (default 1). |
 
 ### Size Metric
 | Option | What it measures | Notes |
@@ -277,6 +308,15 @@ cutoff, the photo D50 agreed with the field D50 within about 3–4%.
 
 Leave it at **0** if you want to describe everything visible down to the detection limit.
 
+### Uncertainty & sampling (expandable section)
+| Setting | Default | What it does | When to change it |
+|---|---|---|---|
+| **Confidence level** | 95% | Width of the reported uncertainty ranges. | Use 90% only if your reporting standard requires it. |
+| **Bootstrap repeats** | 500 | How many resamples are used to estimate site uncertainty. | 1000–2000 for final reported results. Lower (e.g. 200) for faster updates while editing. |
+| **Bootstrap seed** | 42 | Fixed starting point for the random resampling, so results are repeatable. | Normally leave it. Changing it shows how much the ranges vary by chance (only slightly). |
+| **Two-stage bootstrap** | Off | Also resamples grains within each photo, giving wider, more conservative ranges. | Turn on with few photos, or few grains per photo. |
+| **Virtual Wolman points** | 100 per photo | Grid points per photo in *Virtual Wolman Grid* pooling (only that mode). | Set to about the number of stones you would count in the field per photo area. |
+
 ---
 
 ## 8. Display options (above the photo)
@@ -295,12 +335,18 @@ These only change what you see, never the results.
 
 ---
 
-## 9. Settings that are fixed in this version
+## 9. Where each setting lives
 
-You can't change these in the app, but they affect results. Exports record them.
+| Panel | Settings |
+|---|---|
+| **Left sidebar → Inference & Post-Processing Controls** | Model, Scale mode, Flow threshold, Cellprob threshold, Min size, Max area fraction, Border margin, CLAHE, Exclude border grains, *Advanced:* Flow steps, Seed density |
+| **Left sidebar → photo list** | Include/exclude photo from the site; Facies weight (Facies-weighted mode only) |
+| **Toolbar (above the photo)** | Calibrate, 4-Pt Rectify, Split, Merge, Delete, + Polygon, Excl Poly, Excl Brush |
+| **Right-hand dashboard** | Pooling mode, Size metric, Field-count cutoff, Min b-axis, Harmonize cutoff, *Uncertainty & sampling:* Confidence level, Bootstrap repeats, Bootstrap seed, Two-stage bootstrap, Virtual Wolman points |
 
-| Setting | Value | Meaning |
-|---|---|---|
+All settings are recorded in every export.
+
+---|---|---|
 | Border exclusion | On, 2 px | Grains touching the photo edge are left out, because they are cut off and would look too small. |
 | Bootstrap repeats | 500, seed 42 | Number of resamples used for the site confidence interval. The fixed seed makes results repeatable. |
 | Confidence level | 95% | Width of the reported uncertainty ranges. |
