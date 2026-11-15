@@ -95,10 +95,11 @@ function runEngine(engine, flowY, flowX, cellprob, width, height, maxGrainAreaFr
     dEqPx: g.dEqPx,
     minFeretPx: g.minFeretPx,
     maxFeretPx: g.maxFeretPx,
-    isBorder: g.isBorder,
+    isBorder: Boolean(g.touchesBorder),
+    touchesBorder: Boolean(g.touchesBorder),
   }));
 
-  const interiorCount = grains.filter((g) => !g.isBorder).length;
+  const interiorCount = grains.filter((g) => !g.touchesBorder).length;
 
   return {
     width,
@@ -167,11 +168,14 @@ async function runSelfTest() {
     throw new Error(`Expected 3 grains with 1.0 guard, got ${res100.grainCount}`);
   }
   for (const g of [...res015.grains, ...res100.grains]) {
+    if (typeof g.isBorder !== 'boolean' || typeof g.touchesBorder !== 'boolean') {
+      throw new Error(`Missing boolean border flags on grain ${g.id}: ${JSON.stringify(g)}`);
+    }
     if (!(g.bAxisPx > 0 && g.dEqPx > 0 && g.minFeretPx > 0)) {
       throw new Error(`Invalid morphometrics on grain ${g.id}: ${JSON.stringify(g)}`);
     }
   }
-  console.log('PASS: Both 0.15 and 1.0 emitted valid masks and bAxisPx, dEqPx, minFeretPx.');
+  console.log('PASS: Both 0.15 and 1.0 emitted valid masks, border flags, and bAxisPx, dEqPx, minFeretPx.');
 }
 
 async function runFromInputFile(inputPath) {
