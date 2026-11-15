@@ -1,3 +1,4 @@
+import { DEFAULT_POSTPROCESS_OPTIONS } from '../modules/postprocessCore.js';
 import type {
   AnalysisConfig,
   EngineCapabilities,
@@ -73,6 +74,8 @@ export interface AppState {
 
   siteReport: SiteAnalysisReport | null;
   singlePhotoStats: SedimentStatsReport | null;
+  /** Why site pooling failed (e.g. uncalibrated photos), shown in the dashboard. */
+  siteReportError: string | null;
   dashboardScope: 'site' | 'photo';
   dashboardTab: DashboardTab;
   psdXAxis: 'mm' | 'phi';
@@ -130,6 +133,7 @@ export function createInitialState(): AppState {
 
     siteReport: null,
     singlePhotoStats: null,
+    siteReportError: null,
     dashboardScope: 'site',
     dashboardTab: 'psd',
     psdXAxis: 'mm',
@@ -157,10 +161,12 @@ export function createInitialState(): AppState {
       applyClahe: false,
       claheClipLimit: 2.0,
       excludeBorder: true,
-      flowThreshold: 0.4,
-      cellprobThreshold: 0.0,
-      minSize: 15,
-      maxGrainAreaFraction: 0.15,
+      // Single source of truth: the engine defaults, which match the configuration
+      // benchmarked in full_dataset_validation_report.md (flow 0.45, min size 30 px).
+      flowThreshold: DEFAULT_POSTPROCESS_OPTIONS.flowThreshold,
+      cellprobThreshold: DEFAULT_POSTPROCESS_OPTIONS.cellprobThreshold,
+      minSize: DEFAULT_POSTPROCESS_OPTIONS.minSize,
+      maxGrainAreaFraction: DEFAULT_POSTPROCESS_OPTIONS.maxGrainAreaFraction,
     },
     siteOptions: {
       poolingMode: 'physical-area',

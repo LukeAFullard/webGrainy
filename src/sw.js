@@ -1,18 +1,33 @@
-const CACHE_NAME = 'webgrainy-static-v2';
+// webGrainy service worker.
+//
+// The placeholders below are replaced by esbuild.config.mjs at build time:
+//   - BUILD_HASH:  SHA-256 over every shell asset, so ANY code change yields a new
+//                  cache name and therefore a new service worker (no hand-bumping).
+//   - SHELL_ASSETS / ORT_ASSETS: generated precache lists.
+//   - ORT_VERSION: onnxruntime-web version; the ~30 MB runtime lives in its own cache
+//                  so UI-only releases do not re-download it.
+const BUILD_HASH = '__WEBGRAINY_BUILD_HASH__';
+const ORT_VERSION = '__WEBGRAINY_ORT_VERSION__';
+const SHELL_ASSETS = __WEBGRAINY_SHELL_ASSETS__;
+const ORT_ASSETS = __WEBGRAINY_ORT_ASSETS__;
 
-const CORE_ASSETS = [
-  './',
-  './index.html',
-  './manifest.webmanifest',
-  './icon.svg',
-  './ui/main.js',
-  './ui/main.css',
-  './workers/grainPostprocess.worker.js',
-];
+const SHELL_CACHE = `webgrainy-shell-${BUILD_HASH}`;
+const ORT_CACHE = `webgrainy-ort-${ORT_VERSION}`;
+const KEEP = new Set([SHELL_CACHE, ORT_CACHE]);
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(CORE_ASSETS)),
+    Promise.all([
+      caches.open(SHELL_CACHE).then((cache) => cache.addAll(SHELL_ASSETS)),
+      caches.open(ORT_CACHE).then(async (cache) => {
+        // Only fetch runtime files that are not already cached for this ORT version.
+        const missing = [];
+        for (const url of ORT_ASSETS) {
+          if (!(await cache.match(url))) missing.push(url);
+        }
+        await cache.addAll(missing);
+      }),
+    ]),
   );
 });
 
@@ -29,7 +44,7 @@ self.addEventListener('activate', (event) => {
       .then((keys) =>
         Promise.all(
           keys
-            .filter((key) => key !== CACHE_NAME)
+            .filter((key) => key.startsWith('webgrainy-') && !KEEP.has(key))
             .map((key) => caches.delete(key)),
         ),
       )
@@ -42,40 +57,29 @@ self.addEventListener('fetch', (event) => {
   if (req.method !== 'GET') return;
 
   const url = new URL(req.url);
-  // Pass through cross-origin requests (e.g. Hugging Face .onnx weights, cached in IndexedDB by modelCache.ts)
+  // Cross-origin requests (Hugging Face model weights) are not intercepted: weights are
+  // integrity-verified and cached in IndexedDB by modelCache.ts.
   if (url.origin !== self.location.origin) {
     return;
   }
 
-  // Network-first for document navigations so app updates propagate cleanly while staying offline-capable
+  // Navigations: network-first so a new deployment is discovered, falling back to the
+  // precached shell offline.
   if (req.mode === 'navigate') {
     event.respondWith(
-      fetch(req)
-        .then((response) => {
-          if (response && response.ok && response.type === 'basic') {
-            const clone = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(req, clone));
-          }
-          return response;
-        })
-        .catch(() => caches.match(req).then((cached) => cached || caches.match('./index.html'))),
+      fetch(req).catch(() =>
+        caches
+          .match(req, { cacheName: SHELL_CACHE })
+          .then((cached) => cached || caches.match('./index.html', { cacheName: SHELL_CACHE })),
+      ),
     );
     return;
   }
 
-  // Cache-first with background revalidation / caching for same-origin static and ORT WASM assets
+  // Versioned assets: serve only from this build's caches so code always matches the
+  // shell it was precached with. Unknown same-origin requests go to the network and are
+  // never written into the versioned caches.
   event.respondWith(
-    caches.match(req).then((cached) => {
-      if (cached) {
-        return cached;
-      }
-      return fetch(req).then((response) => {
-        if (response && response.ok && response.type === 'basic') {
-          const clone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(req, clone));
-        }
-        return response;
-      });
-    }),
+    caches.match(req, { ignoreSearch: true }).then((cached) => cached || fetch(req)),
   );
 });

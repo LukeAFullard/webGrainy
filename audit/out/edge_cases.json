@@ -1,0 +1,31 @@
+{
+  "empty": {
+    "unit": "px",
+    "D50": null,
+    "fw": null
+  },
+  "single": {
+    "D16": 5,
+    "D50": 5,
+    "D84": 5,
+    "fw": null
+  },
+  "allBorder": {
+    "included": 0,
+    "D50": null
+  },
+  "mixed": {
+    "unit": "px",
+    "D50": 38.23529411764706,
+    "note": "calibrated grain silently reported in px"
+  },
+  "nanArea": {
+    "included": 2,
+    "D50": 20
+  },
+  "csvLabelSample": "",
+  "csvLines": [
+    "p1,'=1+2.jpg,",
+    "p2,'@SUM(1).jpg,"
+  ]
+}

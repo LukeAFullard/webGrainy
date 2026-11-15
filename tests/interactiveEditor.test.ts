@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { perfBudget } from './perfBudget.js';
 import {
   MaskEditHistory,
   ScaleCalibrator,
@@ -379,7 +380,7 @@ describe('interactiveEditor', () => {
       history.redo(masks);
       const elapsed = performance.now() - t0;
 
-      expect(elapsed).toBeLessThan(1.0);
+      expect(elapsed).toBeLessThan(perfBudget(1.0));
       expect(masks[230 * width + 230]).toBe(42);
     });
   });

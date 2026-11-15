@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install (lockfile only)
+        run: npm ci
+
+      - name: Dependency audit
+        run: npm audit --audit-level=high
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit, parity and E2E tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Cache pinned U-Net weights
+        uses: actions/cache@v4
+        with:
+          path: .cache
+          key: unet-7773328a-5e692c55
+
+      - name: Install Chromium for the dist smoke test
+        run: npx playwright install --with-deps chromium
+
+      # Loads the BUILT app in Chromium, checks precache assets and console errors, and runs
+      # one real U-Net analysis (SHA-256-verified pinned weights, WASM backend).
+      - name: Browser smoke test (dist/)
+        run: npm run test:e2e:browser

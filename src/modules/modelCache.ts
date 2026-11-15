@@ -9,8 +9,79 @@ import type {
 export const DB_NAME = 'imagegrains-onnx-cache-v1';
 export const DB_VERSION = 1;
 export const STORE_NAME = 'models';
-export const DEFAULT_HF_BASE_URL =
-  'https://huggingface.co/inYourOwnBrowser/imagegrains-2.0-onnx/resolve/main/';
+/**
+ * Hugging Face commit the app is validated against. Weights are fetched from this
+ * immutable revision (never the moving `main` branch) and verified by SHA-256.
+ */
+export const MODEL_REVISION = '7773328a544ac050b7820667e68cbfb02a2e954a';
+export const DEFAULT_HF_BASE_URL = `https://huggingface.co/inYourOwnBrowser/imagegrains-2.0-onnx/resolve/${MODEL_REVISION}/`;
+
+export interface ModelIntegrity {
+  sha256: string;
+  sizeBytes: number;
+}
+
+/** Expected SHA-256 (Hugging Face LFS oid) and byte size for each pinned model. */
+export const MODEL_INTEGRITY: Record<ModelId, ModelIntegrity> = {
+  ig2_unet_fp32: {
+    sha256: '5e692c5593ac15e614b77602e1d4f8c2f84dd939f4386b1f7e5641dbcd62053c',
+    sizeBytes: 26489665,
+  },
+  ig2_cpsam_fp16: {
+    sha256: '944a114a0cb1a3a215c11affefe7211caac6da2b74895c496d5a7b5a23b6230d',
+    sizeBytes: 617364567,
+  },
+};
+
+let integrityEnforced = true;
+
+/**
+ * Enables/disables SHA-256 + size verification of model weights (default: enabled).
+ * Only intended for unit tests that use synthetic payloads.
+ */
+export function setModelIntegrityEnforcement(enabled: boolean): void {
+  integrityEnforced = enabled;
+}
+
+export function isModelIntegrityEnforced(): boolean {
+  return integrityEnforced;
+}
+
+/** Lower-case hex SHA-256 of `data` via WebCrypto. */
+export async function sha256Hex(data: ArrayBuffer | Uint8Array): Promise<string> {
+  const subtle = globalThis.crypto?.subtle;
+  if (!subtle) {
+    throw new Error('WebCrypto (crypto.subtle) is unavailable; cannot verify model integrity. Serve the app over HTTPS.');
+  }
+  const view = data instanceof Uint8Array ? data : new Uint8Array(data);
+  const digest = await subtle.digest('SHA-256', view as Uint8Array<ArrayBuffer>);
+  const bytes = new Uint8Array(digest);
+  let hex = '';
+  for (const b of bytes) hex += b.toString(16).padStart(2, '0');
+  return hex;
+}
+
+async function verifyModelIntegrity(
+  modelId: ModelId,
+  buffer: ArrayBuffer,
+): Promise<string | undefined> {
+  if (!integrityEnforced) {
+    return undefined;
+  }
+  const expected = MODEL_INTEGRITY[modelId];
+  if (buffer.byteLength !== expected.sizeBytes) {
+    throw new Error(
+      `Integrity check failed for "${modelId}": expected ${expected.sizeBytes} bytes, got ${buffer.byteLength}.`,
+    );
+  }
+  const actual = await sha256Hex(buffer);
+  if (actual !== expected.sha256) {
+    throw new Error(
+      `Integrity check failed for "${modelId}": SHA-256 ${actual} does not match pinned ${expected.sha256}.`,
+    );
+  }
+  return actual;
+}
 
 export const MODEL_FILES: Record<ModelId, string> = {
   ig2_unet_fp32: 'ig2_unet_fp32.onnx',
@@ -22,6 +93,10 @@ interface CachedModelRecord {
   fileName: string;
   sizeBytes: number;
   cachedAt: number;
+  /** SHA-256 verified at download time (absent for legacy / unverified records). */
+  sha256?: string;
+  /** Hugging Face revision the record was downloaded from. */
+  revision?: string;
   data: ArrayBuffer;
 }
 
@@ -85,7 +160,13 @@ function openDatabase(): Promise<IDBDatabase> {
     };
 
     request.onsuccess = () => {
-      resolve(request.result);
+      const db = request.result;
+      // Another tab is upgrading the schema: release our connection instead of
+      // blocking it forever (the next operation reopens at the new version).
+      db.onversionchange = () => {
+        db.close();
+      };
+      resolve(db);
     };
   });
 }
@@ -274,6 +355,10 @@ export async function downloadModel(
     const reader = response.body.getReader();
     const chunks: Uint8Array[] = [];
     let loadedBytes = 0;
+    // Stream straight into a preallocated buffer when the size is known, avoiding a
+    // transient 2x copy (~1.2 GB peak for the 617 MB CP-SAM model).
+    let prealloc: Uint8Array<ArrayBuffer> | null =
+      !isCompressed && totalBytes > 0 ? new Uint8Array(totalBytes) : null;
 
     const onAbort = () => {
       void reader.cancel().catch(() => {});
@@ -298,7 +383,16 @@ export async function downloadModel(
         }
 
         if (value && value.byteLength > 0) {
-          chunks.push(value);
+          if (prealloc !== null && loadedBytes + value.byteLength <= prealloc.byteLength) {
+            prealloc.set(value, loadedBytes);
+          } else {
+            if (prealloc !== null) {
+              // Server sent more than Content-Length: fall back to chunk list.
+              chunks.push(prealloc.subarray(0, loadedBytes));
+              prealloc = null;
+            }
+            chunks.push(value);
+          }
           loadedBytes += value.byteLength;
 
           if (onProgress) {
@@ -335,19 +429,40 @@ export async function downloadModel(
       );
     }
 
-    modelBuffer = concatChunks(chunks, loadedBytes);
+    modelBuffer =
+      prealloc !== null && loadedBytes === prealloc.byteLength
+        ? prealloc.buffer
+        : concatChunks(chunks, loadedBytes);
   }
+
+  const verifiedSha256 = await verifyModelIntegrity(modelId, modelBuffer);
 
   const record: CachedModelRecord = {
     modelId,
     fileName,
     sizeBytes: modelBuffer.byteLength,
     cachedAt: Date.now(),
+    ...(verifiedSha256 !== undefined
+      ? { sha256: verifiedSha256, revision: MODEL_REVISION }
+      : {}),
     data: modelBuffer,
   };
 
   await writeCachedRecord(record);
   return modelBuffer;
+}
+
+function isCachedRecordValid(modelId: ModelId, record: CachedModelRecord): boolean {
+  if (!integrityEnforced) {
+    return true;
+  }
+  const expected = MODEL_INTEGRITY[modelId];
+  // Records written before integrity pinning (no sha256) or from another revision
+  // are treated as stale and transparently re-downloaded.
+  return (
+    record.sha256 === expected.sha256 &&
+    record.data.byteLength === expected.sizeBytes
+  );
 }
 
 /**
@@ -368,7 +483,8 @@ export async function getModel(
     if (
       cached &&
       cached.data instanceof ArrayBuffer &&
-      cached.data.byteLength > 0
+      cached.data.byteLength > 0 &&
+      isCachedRecordValid(modelId, cached)
     ) {
       return cached.data;
     }
@@ -392,6 +508,7 @@ export async function getCachedModels(): Promise<CachedModelInfo[]> {
     fileName: record.fileName,
     sizeBytes: record.sizeBytes,
     cachedAt: record.cachedAt,
+    ...(record.sha256 !== undefined ? { sha256: record.sha256 } : {}),
   }));
 }
 

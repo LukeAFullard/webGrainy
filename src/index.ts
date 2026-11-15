@@ -6,6 +6,10 @@ export {
   STORE_NAME,
   DEFAULT_HF_BASE_URL,
   MODEL_FILES,
+  MODEL_REVISION,
+  MODEL_INTEGRITY,
+  sha256Hex,
+  type ModelIntegrity,
   downloadModel,
   getModel,
   getCachedModels,
@@ -33,6 +37,8 @@ export {
   tileStarts,
   makeBlendWindow,
   createInferenceSession,
+  hasWebGpuAdapter,
+  resolveWasmPaths,
   runUnetInference,
   runCpsamTiledInference,
   type SessionCreateOptions,
@@ -108,6 +114,7 @@ export {
 export {
   computeCroftonPerimeterPx,
   computeConvexHull,
+  computeFeretDiameters,
   computePolygonAreaAndPerimeter,
   computeExtendedMorphometrics,
   computeFabricRoseStats,
@@ -127,6 +134,7 @@ export {
   exportSiteSummaryJson,
   exportSiteSummaryCsv,
   exportPooledGrainsCsv,
+  buildSiteExportMetadata,
   exportSiteGrainsCsv,
   type PoolingMode,
   type SitePhotoMetadata,
@@ -177,3 +185,14 @@ export {
   type BatchRunResult,
 } from './modules/projectStorage.js';
 
+
+export {
+  APP_VERSION,
+  ORT_VERSION,
+  UNOFFICIAL_NOTICE,
+  CITATION_NOTICE,
+  SIZE_METRIC_DEFINITION,
+  buildAnalysisProvenance,
+  baseExportMetadata,
+  csvCell,
+} from './modules/provenance.js';

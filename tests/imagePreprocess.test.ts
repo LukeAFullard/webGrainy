@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { perfBudget } from './perfBudget.js';
 import {
   applyCLAHE,
   normalizeGray,
@@ -208,7 +209,7 @@ describe('imagePreprocess', () => {
         deviceMemoryGB: 8,
       });
 
-      expect(rec.metrics.elapsedMs).toBeLessThan(5);
+      expect(rec.metrics.elapsedMs).toBeLessThan(perfBudget(5));
       expect(rec.confidence).toBeGreaterThanOrEqual(0);
       expect(rec.confidence).toBeLessThanOrEqual(1);
       expect(rec.rationale.length).toBeGreaterThan(10);

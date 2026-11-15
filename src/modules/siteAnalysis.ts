@@ -14,6 +14,12 @@ import {
 } from './morphometricsExt.js';
 import type { AnalysisSession } from './pipelineController.js';
 import {
+  baseExportMetadata,
+  csvCell,
+  metadataCommentLines,
+  metadataSummaryRows,
+} from './provenance.js';
+import {
   buildValidBedMask,
   filterGrainsByRoiAndExclusion,
   type RoiExclusionConfig,
@@ -635,7 +641,7 @@ function lnGamma(z: number): number {
   );
 }
 
-function binomialConfidenceRanks(
+export function binomialConfidenceRanks(
   n: number,
   p: number,
   alpha: number,
@@ -655,21 +661,33 @@ function binomialConfidenceRanks(
   const lnP = Math.log(p);
   const lnQ = Math.log(1 - p);
 
+  // Binomial CDF F(m) = P(X <= m). Ranks are found where F crosses alpha/2 and
+  // 1 - alpha/2 and linearly interpolated between integer ranks (Eaton et al. 2019,
+  // GSDtools), rather than snapped to the conservative integer.
+  const lowTarget = alpha / 2;
+  const highTarget = 1 - alpha / 2;
+  let prevCum = 0;
   let cum = 0;
   let le = 0;
   let ue = n;
+  let foundLe = false;
   let foundUe = false;
 
   for (let m = 0; m <= n; m++) {
     const logPmf =
       lnN - lnGamma(m + 1) - lnGamma(n - m + 1) + m * lnP + (n - m) * lnQ;
+    prevCum = cum;
     cum += Math.exp(logPmf);
-    if (cum <= alpha / 2) {
-      le = m;
+    if (!foundLe && cum >= lowTarget) {
+      const frac = cum > prevCum ? (lowTarget - prevCum) / (cum - prevCum) : 0;
+      le = Math.max(0, m - 1 + frac);
+      foundLe = true;
     }
-    if (!foundUe && cum >= 1 - alpha / 2) {
-      ue = m;
+    if (!foundUe && cum >= highTarget) {
+      const frac = cum > prevCum ? (highTarget - prevCum) / (cum - prevCum) : 0;
+      ue = Math.min(n, m - 1 + frac);
       foundUe = true;
+      break;
     }
   }
 
@@ -1504,19 +1522,65 @@ export function analyzeSite(
   };
 }
 
+/** CSV cell with quoting and spreadsheet formula-injection neutralisation (OWASP). */
 function csvEscape(val: string | number | boolean): string {
-  const str = String(val);
-  if (str.includes(',') || str.includes('"') || str.includes('\n')) {
-    return `"${str.replace(/"/g, '""')}"`;
-  }
-  return str;
+  return csvCell(val);
+}
+
+/**
+ * Provenance block for site-level exports: app/ORT versions, notices, and the
+ * model hash, parameters, and calibration used for each included photo.
+ */
+export function buildSiteExportMetadata(
+  entries: readonly SitePhotoInput[],
+  report?: SiteAnalysisReport,
+): Record<string, unknown> {
+  const photos = entries
+    .filter((e) => e.included)
+    .map((e) => {
+      const prov = e.session.getProvenance();
+      const cal = e.session.getCalibration();
+      return {
+        photoId: e.photoId,
+        label: e.label,
+        mmPerPx: cal?.mmPerPx ?? null,
+        effectiveScaleFactor: e.session.workingImage.effectiveScaleFactor,
+        roiApplied: e.roiConfig !== undefined,
+        ...(prov !== undefined
+          ? {
+              modelId: prov.modelId,
+              modelSha256: prov.modelSha256,
+              modelRevision: prov.modelRevision,
+              executionProvider: prov.executionProvider ?? null,
+              analyzedAt: prov.analyzedAt,
+              analyzedWithAppVersion: prov.appVersion,
+              postProcess: prov.postProcess ?? null,
+            }
+          : { provenance: 'unavailable (analysed before provenance tracking)' }),
+      };
+    });
+  return {
+    ...baseExportMetadata(),
+    ...(report !== undefined
+      ? {
+          poolingMode: report.poolingMode,
+          sizeMetric: report.sizeMetric,
+          unit: report.unit,
+          bootstrapConfidenceLevel: report.bootstrapCi.confidenceLevel,
+        }
+      : {}),
+    photos,
+  };
 }
 
 /**
  * Exports a multi-image site summary report as a JSON Blob.
  */
-export function exportSiteSummaryJson(report: SiteAnalysisReport): Blob {
-  return new Blob([JSON.stringify(report, null, 2)], {
+export function exportSiteSummaryJson(
+  report: SiteAnalysisReport,
+  metadata: Record<string, unknown> = baseExportMetadata(),
+): Blob {
+  return new Blob([JSON.stringify({ metadata, ...report }, null, 2)], {
     type: 'application/json;charset=utf-8',
   });
 }
@@ -1524,8 +1588,12 @@ export function exportSiteSummaryJson(report: SiteAnalysisReport): Blob {
 /**
  * Exports a multi-image site summary report as a structured CSV Blob.
  */
-export function exportSiteSummaryCsv(report: SiteAnalysisReport): Blob {
+export function exportSiteSummaryCsv(
+  report: SiteAnalysisReport,
+  metadata: Record<string, unknown> = baseExportMetadata(),
+): Blob {
   const lines: string[] = ['section,metric,value,unit'];
+  lines.push(...metadataSummaryRows(metadata));
 
   lines.push(`metadata,pooling_mode,${csvEscape(report.poolingMode)},mode`);
   lines.push(
@@ -1621,6 +1689,7 @@ export function exportSiteSummaryCsv(report: SiteAnalysisReport): Blob {
 export function exportPooledGrainsCsv(
   entries: readonly SitePhotoInput[],
   _report?: SiteAnalysisReport,
+  options?: { metadata?: Record<string, unknown> },
 ): Blob {
   const header = [
     'photo_id',
@@ -1648,9 +1717,16 @@ export function exportPooledGrainsCsv(
     'convex_area_mm2',
     'solidity',
     'sphericity_2d',
+    'min_feret_px',
+    'max_feret_px',
+    'min_feret_mm',
+    'max_feret_mm',
   ].join(',');
 
-  const lines: string[] = [header];
+  const lines: string[] =
+    options?.metadata !== undefined
+      ? [...metadataCommentLines(options.metadata), header]
+      : [header];
 
   for (const entry of entries) {
     if (!entry.included) continue;
@@ -1711,6 +1787,10 @@ export function exportPooledGrainsCsv(
           g.convexAreaMm2 ?? '',
           g.solidity,
           g.sphericity2D,
+          g.minFeretPx,
+          g.maxFeretPx,
+          g.minFeretMm ?? '',
+          g.maxFeretMm ?? '',
         ].join(','),
       );
     }

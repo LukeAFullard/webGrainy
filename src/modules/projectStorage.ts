@@ -127,7 +127,13 @@ function openProjectDatabase(options?: ProjectStorageOptions): Promise<IDBDataba
     };
 
     request.onsuccess = () => {
-      resolve(request.result);
+      const db = request.result;
+      // Another tab is upgrading the schema: release our connection instead of
+      // blocking it forever (the next operation reopens at the new version).
+      db.onversionchange = () => {
+        db.close();
+      };
+      resolve(db);
     };
   });
 }
@@ -495,18 +501,145 @@ export async function exportProjectArchive(
 
 export const exportSiteArchive = exportProjectArchive;
 
+/** Maximum accepted archive size (bytes of JSON text). */
+export const MAX_ARCHIVE_BYTES = 1024 * 1024 * 1024;
+/** Maximum accepted image / mask dimension in an archive. */
+export const MAX_ARCHIVE_DIMENSION = 32768;
+
+class ArchiveValidationError extends Error {
+  constructor(message: string) {
+    super(`Invalid .webgrainy.json archive: ${message}`);
+    this.name = 'ArchiveValidationError';
+  }
+}
+
+const DANGEROUS_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
+/** Recursively removes prototype-pollution keys from parsed JSON. */
+function stripDangerousKeys<T>(value: T, depth = 0): T {
+  if (depth > 64 || value === null || typeof value !== 'object') return value;
+  if (Array.isArray(value)) {
+    for (const v of value) stripDangerousKeys(v, depth + 1);
+    return value;
+  }
+  for (const key of Object.keys(value as Record<string, unknown>)) {
+    if (DANGEROUS_KEYS.has(key)) {
+      delete (value as Record<string, unknown>)[key];
+    } else {
+      stripDangerousKeys((value as Record<string, unknown>)[key], depth + 1);
+    }
+  }
+  return value;
+}
+
+const isObj = (v: unknown): v is Record<string, unknown> =>
+  v !== null && typeof v === 'object' && !Array.isArray(v);
+const isFiniteNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+const isDim = (v: unknown): v is number =>
+  typeof v === 'number' && Number.isInteger(v) && v > 0 && v <= MAX_ARCHIVE_DIMENSION;
+const isId = (v: unknown): v is string =>
+  typeof v === 'string' && v.length > 0 && v.length <= 256;
+
+function validatePoint(p: unknown, ctx: string): void {
+  if (!isObj(p) || !isFiniteNum(p['x']) || !isFiniteNum(p['y'])) {
+    throw new ArchiveValidationError(`${ctx}: expected {x, y} finite numbers.`);
+  }
+}
+
+function validateCalibration(c: unknown, ctx: string): void {
+  if (c === undefined) return;
+  if (!isObj(c) || !isFiniteNum(c['mmPerPx']) || (c['mmPerPx'] as number) <= 0) {
+    throw new ArchiveValidationError(`${ctx}.calibration.mmPerPx must be a positive finite number.`);
+  }
+  validatePoint(c['pointA'], `${ctx}.calibration.pointA`);
+  validatePoint(c['pointB'], `${ctx}.calibration.pointB`);
+}
+
+function validateRoi(r: unknown, ctx: string): void {
+  if (r === undefined) return;
+  if (!isObj(r)) throw new ArchiveValidationError(`${ctx}.roiConfig must be an object.`);
+  const polys = r['exclusionPolygons'];
+  const strokes = r['exclusionStrokes'];
+  if (!Array.isArray(polys) || !Array.isArray(strokes)) {
+    throw new ArchiveValidationError(`${ctx}.roiConfig requires exclusionPolygons and exclusionStrokes arrays.`);
+  }
+  for (const poly of polys) {
+    if (!Array.isArray(poly)) throw new ArchiveValidationError(`${ctx}.roiConfig polygon must be an array.`);
+    for (const pt of poly) validatePoint(pt, `${ctx}.roiConfig polygon`);
+  }
+  for (const st of strokes) {
+    if (!isObj(st) || !Array.isArray(st['points']) || !isFiniteNum(st['radiusPx'])) {
+      throw new ArchiveValidationError(`${ctx}.roiConfig stroke is malformed.`);
+    }
+    for (const pt of st['points'] as unknown[]) validatePoint(pt, `${ctx}.roiConfig stroke`);
+  }
+  if (r['roiPolygon'] !== undefined) {
+    if (!Array.isArray(r['roiPolygon'])) throw new ArchiveValidationError(`${ctx}.roiPolygon must be an array.`);
+    for (const pt of r['roiPolygon'] as unknown[]) validatePoint(pt, `${ctx}.roiPolygon`);
+  }
+}
+
+function validateArchivedSession(ss: unknown, ctx: string): SerializedAnalysisSession {
+  if (!isObj(ss) || ss['version'] !== 1) {
+    throw new ArchiveValidationError(`${ctx}: unsupported serialized session version.`);
+  }
+  const wi = ss['workingImage'];
+  if (!isObj(wi) || !isDim(wi['width']) || !isDim(wi['height'])) {
+    throw new ArchiveValidationError(`${ctx}: workingImage width/height must be integers in [1, ${MAX_ARCHIVE_DIMENSION}].`);
+  }
+  if (!isDim(wi['originalWidth']) || !isDim(wi['originalHeight'])) {
+    throw new ArchiveValidationError(`${ctx}: workingImage originalWidth/originalHeight invalid.`);
+  }
+  const sf = wi['effectiveScaleFactor'];
+  if (!isFiniteNum(sf) || sf <= 0 || sf > 1) {
+    throw new ArchiveValidationError(`${ctx}: effectiveScaleFactor must be in (0, 1].`);
+  }
+  if (typeof ss['workingMasksBase64'] !== 'string' || typeof wi['dataBase64'] !== 'string') {
+    throw new ArchiveValidationError(`${ctx}: missing base64 mask or image data.`);
+  }
+  if (!isObj(ss['recommendation'])) {
+    throw new ArchiveValidationError(`${ctx}: missing recommendation.`);
+  }
+  if (typeof ss['excludeBorder'] !== 'boolean') {
+    throw new ArchiveValidationError(`${ctx}: excludeBorder must be boolean.`);
+  }
+  const bm = ss['borderMargin'];
+  if (typeof bm !== 'number' || !Number.isInteger(bm) || bm < 0 || bm > 256) {
+    throw new ArchiveValidationError(`${ctx}: borderMargin must be an integer in [0, 256].`);
+  }
+  validateCalibration(ss['calibration'], ctx);
+
+  const w = wi['width'] as number;
+  const h = wi['height'] as number;
+  const session = deserializeSessionFromArchive(ss as unknown as ArchivedSerializedSession);
+  if (session.workingMasks.length !== w * h) {
+    throw new ArchiveValidationError(`${ctx}: mask length ${session.workingMasks.length} != ${w}x${h}.`);
+  }
+  if (session.workingImage.data.length !== w * h * 4) {
+    throw new ArchiveValidationError(`${ctx}: RGBA image length ${session.workingImage.data.length} != ${w}x${h}x4.`);
+  }
+  return session;
+}
+
 /**
- * Validates and imports a `.webgrainy.json` project archive into IndexedDB,
- * returning the imported `siteId`.
+ * Imports a `.webgrainy.json` archive into IndexedDB and returns the imported `siteId`.
+ *
+ * The archive is fully validated and decoded before anything is written, so a
+ * malformed file never leaves a partial import. If a site with the same `siteId`
+ * already exists, the archive is imported under fresh site/photo ids (with
+ * " (imported)" appended to the name) instead of overwriting the existing data.
  */
 export async function importProjectArchive(
   archiveInput: Blob | string,
   options?: ProjectStorageOptions,
 ): Promise<string> {
-  const rawText =
-    typeof archiveInput === 'string'
-      ? archiveInput
-      : await archiveInput.text();
+  const size = typeof archiveInput === 'string' ? archiveInput.length : archiveInput.size;
+  if (size > MAX_ARCHIVE_BYTES) {
+    throw new ArchiveValidationError(
+      `file is ${(size / 1e6).toFixed(0)} MB; maximum is ${(MAX_ARCHIVE_BYTES / 1e6).toFixed(0)} MB.`,
+    );
+  }
+  const rawText = typeof archiveInput === 'string' ? archiveInput : await archiveInput.text();
 
   let parsed: unknown;
   try {
@@ -520,6 +653,7 @@ export async function importProjectArchive(
   if (!parsed || typeof parsed !== 'object') {
     throw new Error('Invalid .webgrainy.json archive: expected JSON object.');
   }
+  stripDangerousKeys(parsed);
 
   const arch = parsed as Partial<ProjectArchiveV1>;
   if (arch.format !== 'webgrainy-project' || arch.version !== 1) {
@@ -527,44 +661,97 @@ export async function importProjectArchive(
       `Unsupported archive format or version: format=${String(arch.format)}, version=${String(arch.version)}.`,
     );
   }
-  if (!arch.site || typeof arch.site.siteId !== 'string' || !arch.site.siteId) {
+  if (!arch.site || !isId(arch.site.siteId)) {
     throw new Error('Invalid archive: missing site.siteId.');
   }
   if (!Array.isArray(arch.photos) || !Array.isArray(arch.results)) {
     throw new Error('Invalid archive: missing photos or results array.');
   }
+  if (typeof arch.site.name !== 'string' || !Array.isArray(arch.site.photoOrder) || !isObj(arch.site.options)) {
+    throw new ArchiveValidationError('site requires name, photoOrder[] and options{}.');
+  }
 
-  await saveSite(arch.site, options);
-
-  for (const ap of arch.photos) {
-    if (!ap || typeof ap.photoId !== 'string' || typeof ap.imageBase64 !== 'string') {
+  // ---- Phase 1: validate + decode everything in memory --------------------------
+  const decodedPhotos: PhotoRecord[] = [];
+  const photoIds = new Set<string>();
+  for (const [i, ap] of arch.photos.entries()) {
+    const ctx = `photos[${i}]`;
+    if (!ap || !isId(ap.photoId) || typeof ap.imageBase64 !== 'string') {
       throw new Error('Invalid archive: corrupt photo record.');
     }
+    if (photoIds.has(ap.photoId)) throw new ArchiveValidationError(`${ctx}: duplicate photoId.`);
+    photoIds.add(ap.photoId);
+    if (typeof ap.label !== 'string' || ap.label.length > 1024) {
+      throw new ArchiveValidationError(`${ctx}.label must be a string (<= 1024 chars).`);
+    }
+    if (!isDim(ap.width) || !isDim(ap.height)) {
+      throw new ArchiveValidationError(`${ctx}: width/height must be integers in [1, ${MAX_ARCHIVE_DIMENSION}].`);
+    }
+    if (ap.faciesWeight !== undefined && (!isFiniteNum(ap.faciesWeight) || ap.faciesWeight < 0)) {
+      throw new ArchiveValidationError(`${ctx}.faciesWeight must be a non-negative number.`);
+    }
+    validateCalibration(ap.calibration, ctx);
+    validateRoi(ap.roiConfig, ctx);
     const imgBytes = base64ToUint8(ap.imageBase64);
     const { imageBase64: _b64, imageMimeType, ...restPhoto } = ap;
-    const blob = new Blob([imgBytes.slice().buffer], {
-      type: imageMimeType || 'application/octet-stream',
+    const mime =
+      typeof imageMimeType === 'string' && /^image\/(jpeg|png|webp|gif|bmp|tiff|avif)$/i.test(imageMimeType)
+        ? imageMimeType
+        : 'application/octet-stream';
+    decodedPhotos.push({
+      ...restPhoto,
+      included: ap.included !== false,
+      imageBlob: new Blob([imgBytes.slice().buffer], { type: mime }),
     });
-    await savePhoto({ ...restPhoto, imageBlob: blob }, options);
   }
 
-  for (const ar of arch.results) {
-    if (!ar || typeof ar.photoId !== 'string') {
+  const decodedResults: PhotoResultRecord[] = [];
+  for (const [i, ar] of arch.results.entries()) {
+    const ctx = `results[${i}]`;
+    if (!ar || !isId(ar.photoId)) {
       throw new Error('Invalid archive: corrupt result record.');
     }
+    if (!['pending', 'running', 'done', 'error'].includes(ar.status as string)) {
+      throw new ArchiveValidationError(`${ctx}.status is invalid.`);
+    }
     const { serializedSession, ...restRes } = ar;
-    await savePhotoResult(
-      {
-        ...restRes,
-        ...(serializedSession !== undefined
-          ? { serializedSession: deserializeSessionFromArchive(serializedSession) }
-          : {}),
-      },
-      options,
-    );
+    decodedResults.push({
+      ...restRes,
+      ...(serializedSession !== undefined
+        ? { serializedSession: validateArchivedSession(serializedSession, ctx) }
+        : {}),
+    });
   }
 
-  return arch.site.siteId;
+  // ---- Phase 2: resolve id collisions (never overwrite existing data) -----------
+  let site: SiteRecord = { ...arch.site };
+  const existing = await getSite(site.siteId, options);
+  if (existing !== undefined) {
+    const suffix = `_imp${Date.now().toString(36)}`;
+    const idMap = new Map<string, string>();
+    for (const p of decodedPhotos) idMap.set(p.photoId, `${p.photoId}${suffix}`);
+    const newSiteId = `${site.siteId}${suffix}`;
+    site = {
+      ...site,
+      siteId: newSiteId,
+      name: `${site.name} (imported)`,
+      photoOrder: site.photoOrder.map((id) => idMap.get(id) ?? id),
+    };
+    for (const p of decodedPhotos) {
+      p.photoId = idMap.get(p.photoId)!;
+      p.siteId = newSiteId;
+    }
+    for (const r of decodedResults) {
+      r.photoId = idMap.get(r.photoId) ?? r.photoId;
+    }
+  }
+
+  // ---- Phase 3: write ------------------------------------------------------------
+  await saveSite(site, options);
+  for (const p of decodedPhotos) await savePhoto(p, options);
+  for (const r of decodedResults) await savePhotoResult(r, options);
+
+  return site.siteId;
 }
 
 export const importSiteArchive = importProjectArchive;

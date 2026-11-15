@@ -14,7 +14,7 @@
 
 ## Code Layout
 ```
-/home/antigravity/LukeAFullard/webGrainy/
+webGrainy/
 ├── .gitignore
 ├── package.json
 ├── tsconfig.json
@@ -84,7 +84,8 @@
 | M4 | Interactive Editor & Sediment Stats | `src/modules/interactiveEditor.ts`, `src/modules/sedimentStats.ts`, `tests/interactiveEditor.test.ts`, `tests/sedimentStats.test.ts` (incl. `eval_core.py` `1e-6` parity) | M1 | DONE (`28/28` tests, `6.395e-13` PSD parity) |
 | M5 | Pipeline Controller & Integration | `src/modules/pipelineController.ts`, `src/index.ts`, `tests/pipelineController.test.ts`, full typecheck + bundle build | M1, M2, M3, M4 | DONE (`7/7` M5, `94/94` unit tests, `npm run build` exit 0) |
 | E2E | E2E Testing Track | Requirement-driven opaque-box E2E test suite (Tiers 1–4) + `TEST_INFRA.md` + `TEST_READY.md` | parallel | DONE (`95` E2E tests, `TEST_READY.md` published) |
-| M6 | Final Milestone (E2E Pass + Tier 5) | Phase 1: Pass 100% E2E Tiers 1–4; Phase 2: Adversarial Tier 5 coverage hardening | M5, E2E | DONE (`12/12` files, `218/218` tests, `tsc` & `build` exit 0) |
+| M6 | Final Milestone (E2E Pass + Tier 5) | Phase 1: Pass 100% E2E Tiers 1–4; Phase 2: Adversarial Tier 5 coverage hardening | M5, E2E | DONE at the time (`12/12` files, `218/218` tests). Note: the suite never exercised `dist/`, and the built app could not run inference (AUDIT_REPORT F-01). |
+| M7 | Pre-release audit remediation (v1.1.0) | Fixes for AUDIT_REPORT.md: ORT path, pinned + SHA-256 weights, content-hashed service worker, ROI-aware stats, provenance in exports, archive validation, CSV injection, Feret metric, CI + real-model browser smoke test | M6 | DONE (see CHANGELOG.md; counts are in CI output, not tracked here) |
 
 ## Interface Contracts
 

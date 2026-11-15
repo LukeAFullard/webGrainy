@@ -23,6 +23,7 @@ export interface CachedModelInfo {
   fileName: string;
   sizeBytes: number;
   cachedAt: number;
+  sha256?: string;
 }
 
 export interface StorageQuotaInfo {
@@ -202,6 +203,8 @@ export interface SedimentStatsReport {
   numberWeightedDEq: PsdPercentiles;
   folkWard: FolkWardStats | null;
   wentworth: WentworthProportions | null;
+  /** Human-readable caveats (small n, uncalibrated, mixed calibration). */
+  warnings?: string[];
 }
 
 export interface AnalysisConfig {
@@ -223,6 +226,23 @@ export interface EngineCapabilities {
   cachedModels: CachedModelInfo[];
 }
 
+/** Everything needed to reproduce a single-photo analysis (see provenance.ts). */
+export interface AnalysisProvenance {
+  appVersion: string;
+  ortVersion: string;
+  analyzedAt: string;
+  modelId: ModelId;
+  modelFile: string;
+  modelRevision: string;
+  modelSha256: string;
+  executionProvider?: string;
+  scaleMode?: string;
+  effectiveScaleFactor?: number;
+  applyClahe?: boolean;
+  claheClipLimit?: number;
+  postProcess?: Record<string, number>;
+}
+
 export interface SerializedAnalysisSession {
   version: 1;
   workingMasks: Int32Array;
@@ -231,5 +251,6 @@ export interface SerializedAnalysisSession {
   calibration?: CalibrationResult;
   excludeBorder: boolean;
   borderMargin: number;
+  provenance?: AnalysisProvenance;
 }
 

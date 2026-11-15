@@ -1,5 +1,12 @@
 # ImageGrains 2.0 — Complete Ground-Truth Dataset Validation Report
 
+> **Interpretation caveats (added after the pre-release audit, see `AUDIT_REPORT.md` F-02 and `audit/recompute_validation.py`):**
+> - **Not a held-out estimate.** Every row has `split = test`, but 197 of the 237 grain-bearing images carry `site = train`. The browser-engine post-processing (flow-QC formulation, the `maxGrainAreaFraction = 0.15` guard added as the "`3ca10b7c` fix", which is not in this notebook run) was developed while looking at images in this set.
+> - **Restricted to `site = test` (n = 40)**, the browser-engine D50 MAPE vs human GT is **31.3%** (median 15.7%) for U-Net and **12.5%** (median 4.7%) for Cellpose-SAM.
+> - **Metric references.** "D50 MAPE vs GT" is relative to hand-digitised masks, in pixels. "vs PT" is relative to the PyTorch model's own output. Do not mix them.
+> - **Error distributions are long-tailed:** 34 of 235 (U-Net) and 14 of 237 (CP-SAM) images exceed 50% D50 error, with a maximum of 1039% (CP-SAM, `3ca10b7c`).
+> - **Parameters.** The browser engine in this run used `flow_thresh = 0.45`, `min_size = 30`, `cellprob = 0`, `niter = 250`, `margin = 2`. These are the v1.1.0 app defaults.
+
 - **Last Updated:** 2026-11-14 06:18 UTC
 - **Progress:** U-Net `238 / 238` | Cellpose-SAM `238 / 238`
 - **Compute Hardware:** `NVIDIA L4` | Python 3.13.16 | PyTorch 2.14.1+cu130
@@ -20,7 +27,7 @@ All morphometric and PSD metrics are computed on **border-excluded interior grai
 | ONNX + Cellpose Dynamics — IG2 Cellpose-SAM (~588 MB) | 238 / 238 (237 GT) | 0.767 ± 0.115 | 0.542 ± 0.129 | 9.87% (Med: 2.09%) | 21.12% / 21.35% / 19.02% | 83.35 px / 0.370 | 1.98s |
 | ONNX + Browser Engine v4 (F5+F3) — IG2 Cellpose-SAM (~588 MB) | 238 / 238 (237 GT) | 0.728 (vs CP: 0.908) | 0.531 ± 0.124 | 23.33% (Med: 2.21%) | 19.62% / 15.85% / 10.75% | 89.68 px / 0.271 | ONNX 0.91s + Post 16.06s |
 
-![Aggregate Parity and Panoptic Quality](figures/aggregate_d50_parity.png)
+![Aggregate Parity and Panoptic Quality](aggregate_d50_parity.png)
 
 ## 2. Non-Grain Clutter / Negative Control Tiles (`GT Grains = 0`)
 
@@ -29,7 +36,7 @@ All morphometric and PSD metrics are computed on **border-excluded interior grai
 | IG2 U-Net (25.3 MB) | 1 | 1.0 | 2.0 | 1.0 |
 | IG2 Cellpose-SAM (~588 MB) | 1 | 0.0 | 1.0 | 1.0 |
 
-## 3. Breakdown by Official Held-Out `TEST` Split vs. `TRAIN` Split
+## 3. Breakdown by `split` Column (all rows are `test`; see the caveat at the top about the `site` column)
 
 | Model Family | Dataset Split | Images | PyTorch D50 MAPE (%) | ONNX+CP D50 MAPE (%) | BrowserV4 D50 MAPE (%) | BrowserV4 D50 RMSE / R2 | BrowserV4 PQ vs GT |
 | :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |

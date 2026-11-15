@@ -1,6 +1,20 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { build } from 'esbuild';
+
+const pkg = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'package.json'), 'utf8'));
+const ortPkg = JSON.parse(
+  fs.readFileSync(path.join(process.cwd(), 'node_modules', 'onnxruntime-web', 'package.json'), 'utf8'),
+);
+// Compile-time constants consumed by src/modules/provenance.ts
+const define = {
+  __APP_VERSION__: JSON.stringify(pkg.version),
+  __ORT_VERSION__: JSON.stringify(ortPkg.version),
+};
+// The default `onnxruntime-web` entry (ort.all / JSEP) loads exactly these two runtime
+// files for both the WebGPU and the WASM execution providers. Nothing else is shipped.
+const ORT_RUNTIME_FILES = ['ort-wasm-simd-threaded.jsep.mjs', 'ort-wasm-simd-threaded.jsep.wasm'];
 
 const rootDir = process.cwd();
 const srcDir = path.join(rootDir, 'src');
@@ -47,6 +61,7 @@ if (entryPoints.length > 0) {
     outbase: 'src',
     outdir: 'dist',
     sourcemap: true,
+    define,
   });
   console.log(`[build] Bundled ${entryPoints.length} ESM entry point(s) to dist/.`);
 } else {
@@ -64,6 +79,7 @@ if (fs.existsSync(workerFile)) {
     target: 'es2022',
     bundle: true,
     sourcemap: true,
+    define,
   });
   console.log('[build] Bundled grainPostprocess.worker.ts to dist/workers/grainPostprocess.worker.js.');
 } else {
@@ -73,13 +89,13 @@ if (fs.existsSync(workerFile)) {
 // 4. Copy onnxruntime-web WASM/MJS assets into dist/ort/ for zero-CDN offline execution
 fs.mkdirSync(ortDistDir, { recursive: true });
 if (fs.existsSync(ortSrcDir)) {
-  const ortFiles = fs.readdirSync(ortSrcDir);
   let copiedCount = 0;
-  for (const file of ortFiles) {
-    if (file.endsWith('.wasm') || file.endsWith('.mjs')) {
-      fs.copyFileSync(path.join(ortSrcDir, file), path.join(ortDistDir, file));
-      copiedCount++;
+  for (const file of ORT_RUNTIME_FILES) {
+    if (!fs.existsSync(path.join(ortSrcDir, file))) {
+      throw new Error(`[build] Required onnxruntime-web asset missing: ${file}`);
     }
+    fs.copyFileSync(path.join(ortSrcDir, file), path.join(ortDistDir, file));
+    copiedCount++;
   }
   console.log(`[build] Copied ${copiedCount} onnxruntime-web asset(s) to dist/ort/.`);
 } else {
@@ -101,6 +117,7 @@ if (fs.existsSync(uiEntry)) {
     target: 'es2022',
     bundle: true,
     sourcemap: true,
+    define,
   });
   console.log('[build] Bundled src/ui/main.ts to dist/ui/main.js.');
 }
@@ -124,3 +141,33 @@ for (const staticAsset of ['index.html', 'sw.js', 'manifest.webmanifest', 'icon.
   }
 }
 
+// 7. Stamp the service worker with a content hash + generated precache lists so every
+//    release gets a fresh cache and code can never be served stale (no hand-bumping).
+const SHELL_ASSETS = [
+  './',
+  './index.html',
+  './manifest.webmanifest',
+  './icon.svg',
+  './ui/main.js',
+  './ui/main.css',
+  './workers/grainPostprocess.worker.js',
+];
+const ORT_ASSETS = ORT_RUNTIME_FILES.map((f) => `./ort/${f}`);
+const hash = crypto.createHash('sha256');
+for (const rel of SHELL_ASSETS.slice(1)) {
+  hash.update(rel);
+  hash.update(fs.readFileSync(path.join(distDir, rel)));
+}
+const buildHash = hash.digest('hex').slice(0, 16);
+const swPath = path.join(distDir, 'sw.js');
+const swSrc = fs
+  .readFileSync(swPath, 'utf8')
+  .replace('__WEBGRAINY_BUILD_HASH__', buildHash)
+  .replace('__WEBGRAINY_ORT_VERSION__', ortPkg.version)
+  .replace('__WEBGRAINY_SHELL_ASSETS__', JSON.stringify(SHELL_ASSETS))
+  .replace('__WEBGRAINY_ORT_ASSETS__', JSON.stringify(ORT_ASSETS));
+if (swSrc.includes('__WEBGRAINY_')) {
+  throw new Error('[build] Unreplaced placeholder in dist/sw.js');
+}
+fs.writeFileSync(swPath, swSrc);
+console.log(`[build] Stamped dist/sw.js (build ${buildHash}, ORT ${ortPkg.version}).`);
