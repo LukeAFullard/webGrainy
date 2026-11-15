@@ -3,6 +3,16 @@
 webGrainy is a static site: deploy the contents of `dist/` after `npm ci && npm run build`.
 The app has no server-side component.
 
+## GitHub Pages (this repository)
+
+`.github/workflows/pages.yml` builds the app and publishes `dist/` on every push to `main`
+(or on demand via *Actions → Deploy app to GitHub Pages → Run workflow*).
+
+**One-time setup:** go to *Settings → Pages → Build and deployment → Source*, and choose
+**GitHub Actions** (instead of "Deploy from a branch"). The app is then served at
+`https://<owner>.github.io/<repo>/`, and the GPU check page at `…/gpucheck.html`.
+GitHub Pages can't set COOP/COEP headers; the app's service worker adds them (see below).
+
 ## Requirements
 
 | Requirement | Why |

@@ -34,6 +34,12 @@ plausible but slightly different outputs). Only the real-GPU comparison below ca
 that.
 
 ## How to check a real GPU (please run on 1–3 machines)
+
+**Easiest: no installation.** Open <https://lukeafullard.github.io/webGrainy/gpucheck.html> in
+Chrome or Edge, choose *Cellpose-SAM*, press **Run GPU check**, then *Download report*.
+The page runs the same four cases as the script below, using the app's own code.
+
+**Alternative: the command-line script**
 On a computer with a modern GPU and Chrome/Edge (WebGPU with `shader-f16`):
 ```bash
 npm ci && npm run build
