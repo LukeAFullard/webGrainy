@@ -1,5 +1,7 @@
 # webGrainy — ImageGrains 2.0 Web
 
+**Live app:** <https://lukeafullard.github.io/webGrainy/> · **GPU check:** <https://lukeafullard.github.io/webGrainy/gpucheck.html> (tests whether your graphics card gives the same results as the CPU; please send the report)
+
 A **100% browser-native, privacy-first, offline-first** gravel and sediment grain-sizing engine in TypeScript, built to run the pretrained **ImageGrains 2.0** segmentation models directly in the browser via ONNX Runtime Web.
 
 All image preprocessing, neural inference (`onnxruntime-web` via WebGPU or SIMD WASM), gradient flow integration, multigrid PDE post-processing, interactive mask editing, and sedimentological statistics execute **entirely on the user's device**. No imagery or measurements are ever uploaded to a server, and no external CDNs are referenced at runtime.

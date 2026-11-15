@@ -122,6 +122,22 @@ if (fs.existsSync(uiEntry)) {
   console.log('[build] Bundled src/ui/main.ts to dist/ui/main.js.');
 }
 
+// 5b. GPU check page script (src/ui/gpucheck.ts -> dist/ui/gpucheck.js)
+const gpuCheckEntry = path.join(srcDir, 'ui', 'gpucheck.ts');
+if (fs.existsSync(gpuCheckEntry)) {
+  await build({
+    entryPoints: [gpuCheckEntry],
+    outfile: path.join(uiDistDir, 'gpucheck.js'),
+    format: 'esm',
+    platform: 'browser',
+    target: 'es2022',
+    bundle: true,
+    sourcemap: true,
+    define,
+  });
+  console.log('[build] Bundled src/ui/gpucheck.ts to dist/ui/gpucheck.js.');
+}
+
 if (fs.existsSync(uiCssEntry)) {
   await build({
     entryPoints: [uiCssEntry],
@@ -133,7 +149,7 @@ if (fs.existsSync(uiCssEntry)) {
 }
 
 // 6. Copy src/index.html, src/sw.js, src/manifest.webmanifest, and src/icon.svg -> dist/
-for (const staticAsset of ['index.html', 'sw.js', 'manifest.webmanifest', 'icon.svg']) {
+for (const staticAsset of ['index.html', 'gpucheck.html', 'sw.js', 'manifest.webmanifest', 'icon.svg']) {
   const assetSrc = path.join(srcDir, staticAsset);
   if (fs.existsSync(assetSrc)) {
     fs.copyFileSync(assetSrc, path.join(distDir, staticAsset));
@@ -151,6 +167,8 @@ const SHELL_ASSETS = [
   './ui/main.js',
   './ui/main.css',
   './workers/grainPostprocess.worker.js',
+  './gpucheck.html',
+  './ui/gpucheck.js',
 ];
 const ORT_ASSETS = ORT_RUNTIME_FILES.map((f) => `./ort/${f}`);
 const hash = crypto.createHash('sha256');

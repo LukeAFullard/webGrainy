@@ -1,0 +1,51 @@
+{
+  "model": "cpsam",
+  "browser": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.8010.12 Safari/537.36",
+  "cases": [
+    {
+      "case": "small-padded",
+      "size": "100x80",
+      "webgpu_error": "NumericInstabilityError: WebGPU reported 1626 error(s) during inference; results are unreliable ([Invalid CommandBuffer] is invalid due to a previous error.\n - While calling [Queue].Submit([[Invalid CommandBuffer]])\n).",
+      "wasm_seconds": 32.6
+    }
+  ],
+  "adapter": {
+    "vendor": "google",
+    "architecture": "swiftshader",
+    "description": "",
+    "shaderF16": false
+  },
+  "gpuSessionProvider": "webgpu",
+  "console": [
+    "error: \u001b[0;93m2026-11-15 22:17:57.703599 [W:onnxruntime:, session_state.cc:1598 VerifyEachNodeIsAssignedToAnEp] Some nodes were not assigned to the preferred execution providers which may or may not have an negative impact on performance. e.g. ORT explicitly assigns shape related ops to CPU to improve perf",
+    "error: \u001b[0;93m2026-11-15 22:17:57.710699 [W:onnxruntime:, session_state.cc:1600 VerifyEachNodeIsAssignedToAnEp] Rerunning with verbose output on a non-minimal build will show node assignments.\u001b[m",
+    "error: An uncaught WebGPU validation error was raised: Error while parsing WGSL: :21:53 error: 'f16' type used without 'f16' extension enabled\n  @group(0) @binding(0) var<storage, read> a: array<f16>;\n                                                    ^^^\n\n\n - While calling [Device].CreateShaderModule([Sh",
+    "warning: Error while parsing WGSL: :21:53 error: 'f16' type used without 'f16' extension enabled\n  @group(0) @binding(0) var<storage, read> a: array<f16>;\n                                                    ^^^\n\n\n - While calling [Device].CreateShaderModule([ShaderModuleDescriptor \"\"TransposeShared\"\"]).\n",
+    "error: An uncaught WebGPU validation error was raised: [Invalid ShaderModule \"TransposeShared\"] is invalid due to a previous error.\n - While validating compute stage ([Invalid ShaderModule \"TransposeShared\"], entryPoint: \"main\").\n - While calling [Device].CreateComputePipeline([ComputePipelineDescriptor \"\"",
+    "warning: [Invalid ShaderModule \"TransposeShared\"] is invalid due to a previous error.\n - While validating compute stage ([Invalid ShaderModule \"TransposeShared\"], entryPoint: \"main\").\n - While calling [Device].CreateComputePipeline([ComputePipelineDescriptor \"\"TransposeShared\"\"]).\n",
+    "error: An uncaught WebGPU validation error was raised: [Invalid ComputePipeline \"TransposeShared\"] is invalid due to a previous error.\n - While Validating GetBindGroupLayout (0) on [Invalid ComputePipeline \"TransposeShared\"]\n",
+    "warning: [Invalid ComputePipeline \"TransposeShared\"] is invalid due to a previous error.\n - While Validating GetBindGroupLayout (0) on [Invalid ComputePipeline \"TransposeShared\"]\n",
+    "error: An uncaught WebGPU validation error was raised: [Invalid BindGroupLayout (unlabeled)] is invalid due to a previous error.\n - While validating [BindGroupDescriptor \"\"TransposeShared\"\"] against [Invalid BindGroupLayout (unlabeled)]\n - While calling [Device].CreateBindGroup([BindGroupDescriptor \"\"Trans",
+    "warning: [Invalid BindGroupLayout (unlabeled)] is invalid due to a previous error.\n - While validating [BindGroupDescriptor \"\"TransposeShared\"\"] against [Invalid BindGroupLayout (unlabeled)]\n - While calling [Device].CreateBindGroup([BindGroupDescriptor \"\"TransposeShared\"\"]).\n",
+    "error: An uncaught WebGPU validation error was raised: Error while parsing WGSL: :35:53 error: 'f16' type used without 'f16' extension enabled\n  @group(0) @binding(0) var<storage, read> a: array<f16>;\n                                                    ^^^\n\n\n - While calling [Device].CreateShaderModule([Sh",
+    "warning: Error while parsing WGSL: :35:53 error: 'f16' type used without 'f16' extension enabled\n  @group(0) @binding(0) var<storage, read> a: array<f16>;\n                                                    ^^^\n\n\n - While calling [Device].CreateShaderModule([ShaderModuleDescriptor \"\"Transpose\"\"]).\n",
+    "error: An uncaught WebGPU validation error was raised: [Invalid ShaderModule \"Transpose\"] is invalid due to a previous error.\n - While validating compute stage ([Invalid ShaderModule \"Transpose\"], entryPoint: \"main\").\n - While calling [Device].CreateComputePipeline([ComputePipelineDescriptor \"\"Transpose\"\"]",
+    "warning: [Invalid ShaderModule \"Transpose\"] is invalid due to a previous error.\n - While validating compute stage ([Invalid ShaderModule \"Transpose\"], entryPoint: \"main\").\n - While calling [Device].CreateComputePipeline([ComputePipelineDescriptor \"\"Transpose\"\"]).\n",
+    "error: An uncaught WebGPU validation error was raised: [Invalid ComputePipeline \"Transpose\"] is invalid due to a previous error.\n - While Validating GetBindGroupLayout (0) on [Invalid ComputePipeline \"Transpose\"]\n",
+    "warning: [Invalid ComputePipeline \"Transpose\"] is invalid due to a previous error.\n - While Validating GetBindGroupLayout (0) on [Invalid ComputePipeline \"Transpose\"]\n",
+    "error: An uncaught WebGPU validation error was raised: [Invalid BindGroupLayout (unlabeled)] is invalid due to a previous error.\n - While validating [BindGroupDescriptor \"\"Transpose\"\"] against [Invalid BindGroupLayout (unlabeled)]\n - While calling [Device].CreateBindGroup([BindGroupDescriptor \"\"Transpose\"\"",
+    "warning: [Invalid BindGroupLayout (unlabeled)] is invalid due to a previous error.\n - While validating [BindGroupDescriptor \"\"Transpose\"\"] against [Invalid BindGroupLayout (unlabeled)]\n - While calling [Device].CreateBindGroup([BindGroupDescriptor \"\"Transpose\"\"]).\n",
+    "error: An uncaught WebGPU validation error was raised: Error while parsing WGSL: :22:59 error: 'f16' type used without 'f16' extension enabled\n        @group(0) @binding(0) var<storage, read> x: array<f16>;\n                                                          ^^^\n\n\n - While calling [Device].CreateShad",
+    "warning: Error while parsing WGSL: :22:59 error: 'f16' type used without 'f16' extension enabled\n        @group(0) @binding(0) var<storage, read> x: array<f16>;\n                                                          ^^^\n\n\n - While calling [Device].CreateShaderModule([ShaderModuleDescriptor \"\"Conv2DMatMul\"",
+    "error: An uncaught WebGPU validation error was raised: [Invalid ShaderModule \"Conv2DMatMul\"] is invalid due to a previous error.\n - While validating compute stage ([Invalid ShaderModule \"Conv2DMatMul\"], entryPoint: \"main\").\n - While calling [Device].CreateComputePipeline([ComputePipelineDescriptor \"\"Conv2D",
+    "warning: [Invalid ShaderModule \"Conv2DMatMul\"] is invalid due to a previous error.\n - While validating compute stage ([Invalid ShaderModule \"Conv2DMatMul\"], entryPoint: \"main\").\n - While calling [Device].CreateComputePipeline([ComputePipelineDescriptor \"\"Conv2DMatMul\"\"]).\n",
+    "error: An uncaught WebGPU validation error was raised: [Invalid ComputePipeline \"Conv2DMatMul\"] is invalid due to a previous error.\n - While Validating GetBindGroupLayout (0) on [Invalid ComputePipeline \"Conv2DMatMul\"]\n",
+    "warning: [Invalid ComputePipeline \"Conv2DMatMul\"] is invalid due to a previous error.\n - While Validating GetBindGroupLayout (0) on [Invalid ComputePipeline \"Conv2DMatMul\"]\n",
+    "error: An uncaught WebGPU validation error was raised: [Invalid BindGroupLayout (unlabeled)] is invalid due to a previous error.\n - While validating [BindGroupDescriptor \"\"Conv2DMatMul\"\"] against [Invalid BindGroupLayout (unlabeled)]\n - While calling [Device].CreateBindGroup([BindGroupDescriptor \"\"Conv2DMa",
+    "warning: [Invalid BindGroupLayout (unlabeled)] is invalid due to a previous error.\n - While validating [BindGroupDescriptor \"\"Conv2DMatMul\"\"] against [Invalid BindGroupLayout (unlabeled)]\n - While calling [Device].CreateBindGroup([BindGroupDescriptor \"\"Conv2DMatMul\"\"]).\n",
+    "error: An uncaught WebGPU validation error was raised: Error while parsing WGSL: :8:68 error: 'f16' type used without 'f16' extension enabled\n        @group(0) @binding(0) var<storage, read> aData: array<vec4<f16>>;\n                                                                   ^^^\n\n\n - While calling [",
+    "warning: Error while parsing WGSL: :8:68 error: 'f16' type used without 'f16' extension enabled\n        @group(0) @binding(0) var<storage, read> aData: array<vec4<f16>>;\n                                                                   ^^^\n\n\n - While calling [Device].CreateShaderModule([ShaderModuleDescript",
+    "error: An uncaught WebGPU validation error was raised: [Invalid ShaderModule \"Add\"] is invalid due to a previous error.\n - While validating compute stage ([Invalid ShaderModule \"Add\"], entryPoint: \"main\").\n - While calling [Device].CreateComputePipeline([ComputePipelineDescriptor \"\"Add\"\"]).\n",
+    "warning: [Invalid ShaderModule \"Add\"] is invalid due to a previous error.\n - While validating compute stage ([Invalid ShaderModule \"Add\"], entryPoint: \"main\").\n - While calling [Device].CreateComputePipeline([ComputePipelineDescriptor \"\"Add\"\"]).\n"
+  ]
+}

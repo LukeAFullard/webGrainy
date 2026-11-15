@@ -44,6 +44,12 @@ export {
   resolveWasmPaths,
   runUnetInference,
   runCpsamTiledInference,
+  runUnetCellposeInference,
+  runCpsamCellposeInference,
+  assertPlausibleOutput,
+  NumericInstabilityError,
+  type UnetCellposeOptions,
+  type CpsamCellposeOptions,
   type SessionCreateOptions,
   type WebGpuCapabilities,
   type InferenceSessionResult,
@@ -203,3 +209,15 @@ export {
   baseExportMetadata,
   csvCell,
 } from './modules/provenance.js';
+
+export {
+  cpGetPadYX,
+  cpTileStarts,
+  cpTaperMask,
+  cpResizeBilinear,
+  cpPercentile1And99,
+  cpNormalizeRgbPerChannel,
+  runCellposeTiled,
+  type CellposeVersion,
+  type CellposeTilingOptions,
+} from './modules/cellposeTiling.js';

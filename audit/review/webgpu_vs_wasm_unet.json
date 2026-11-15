@@ -1,0 +1,70 @@
+{
+  "model": "unet",
+  "browser": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.8010.12 Safari/537.36",
+  "cases": [
+    {
+      "case": "one-tile",
+      "size": "240x240",
+      "webgpu_seconds": 20.68,
+      "wasm_seconds": 0.68,
+      "flowY": {
+        "maxAbsDiff": 0.000005811,
+        "meanAbsDiff": 2.995e-7,
+        "nonFiniteWebgpu": 0,
+        "nonFiniteWasm": 0
+      },
+      "flowX": {
+        "maxAbsDiff": 0.000004739,
+        "meanAbsDiff": 2.789e-7,
+        "nonFiniteWebgpu": 0,
+        "nonFiniteWasm": 0
+      },
+      "cellprob": {
+        "maxAbsDiff": 0.000007033,
+        "meanAbsDiff": 0.000001196,
+        "nonFiniteWebgpu": 0,
+        "nonFiniteWasm": 0
+      },
+      "cellprobSignAgreementPct": 100,
+      "grainsWebgpu": 43,
+      "grainsWasm": 43,
+      "maskPQ_webgpu_vs_wasm": 1
+    },
+    {
+      "case": "small-padded",
+      "size": "100x80",
+      "webgpu_seconds": 3.42,
+      "wasm_seconds": 0.13,
+      "flowY": {
+        "maxAbsDiff": 0.000002146,
+        "meanAbsDiff": 2.22e-7,
+        "nonFiniteWebgpu": 0,
+        "nonFiniteWasm": 0
+      },
+      "flowX": {
+        "maxAbsDiff": 0.000001915,
+        "meanAbsDiff": 1.801e-7,
+        "nonFiniteWebgpu": 0,
+        "nonFiniteWasm": 0
+      },
+      "cellprob": {
+        "maxAbsDiff": 0.000004768,
+        "meanAbsDiff": 0.000001047,
+        "nonFiniteWebgpu": 0,
+        "nonFiniteWasm": 0
+      },
+      "cellprobSignAgreementPct": 100,
+      "grainsWebgpu": 4,
+      "grainsWasm": 4,
+      "maskPQ_webgpu_vs_wasm": 1
+    }
+  ],
+  "adapter": {
+    "vendor": "google",
+    "architecture": "swiftshader",
+    "description": "",
+    "shaderF16": false
+  },
+  "gpuSessionProvider": "webgpu",
+  "console": []
+}

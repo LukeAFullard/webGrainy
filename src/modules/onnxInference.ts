@@ -42,6 +42,43 @@ export class WebGpuDeviceLostError extends Error {
   }
 }
 
+/**
+ * Thrown when a network tile output contains NaN/Infinity or implausibly large values.
+ * Cellpose flows are bounded (about +/-10) and cell probabilities are logits (about
+ * +/-30). Float16 GPU arithmetic can overflow on unusual inputs, such as the zero
+ * borders the Cellpose pipeline adds. Seen with ONNX Runtime's CUDA FP16 backend in
+ * the Colab benchmark (audit/followup/); unverified for WebGPU.
+ */
+export class NumericInstabilityError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'NumericInstabilityError';
+  }
+}
+
+/** Largest absolute value accepted in a network output tile. */
+export const MAX_PLAUSIBLE_OUTPUT = 1000;
+
+/** Throws NumericInstabilityError if `out` has non-finite or implausible values. */
+export function assertPlausibleOutput(out: Float32Array, context: string): void {
+  let bad = 0;
+  let maxAbs = 0;
+  for (let i = 0; i < out.length; i++) {
+    const v = out[i]!;
+    if (!Number.isFinite(v)) {
+      bad++;
+    } else {
+      const a = v < 0 ? -v : v;
+      if (a > maxAbs) maxAbs = a;
+    }
+  }
+  if (bad > 0 || maxAbs > MAX_PLAUSIBLE_OUTPUT) {
+    throw new NumericInstabilityError(
+      `${context}: network output is numerically invalid (${bad} non-finite values, max |value| ${maxAbs.toPrecision(3)}).`,
+    );
+  }
+}
+
 export function isWebGpuDeviceLostError(err: unknown): boolean {
   if (err instanceof WebGpuDeviceLostError) {
     return true;
@@ -50,17 +87,55 @@ export function isWebGpuDeviceLostError(err: unknown): boolean {
   return /device\s*(was\s*|is\s*)?lost|context\s*lost|gpubuffer.*invalid|webgpu.*lost/i.test(msg);
 }
 
+// ---- WebGPU validation-error watch ---------------------------------------------------
+// A shader that fails to compile (e.g. float16 WGSL on an adapter without `shader-f16`)
+// does NOT make session.run() reject: ORT returns plausible-looking but wrong numbers,
+// and WebGPU only reports an "uncapturederror" event on the device. Count those events
+// and treat any that occur during a run as a failed (numerically invalid) inference.
+interface GpuDeviceLike {
+  lost?: Promise<{ reason?: string; message?: string }>;
+  addEventListener?: (type: string, cb: (ev: { error?: { message?: string } }) => void) => void;
+}
+const watchedDevices = new WeakSet<object>();
+let gpuErrorCount = 0;
+let lastGpuError = '';
+
+/** Number of WebGPU errors seen so far (for tests and diagnostics). */
+export function getWebGpuErrorCount(): number {
+  return gpuErrorCount;
+}
+
+function watchDevice(dev: GpuDeviceLike | undefined): void {
+  if (!dev || typeof dev !== 'object' || watchedDevices.has(dev)) return;
+  if (typeof dev.addEventListener !== 'function') return;
+  watchedDevices.add(dev);
+  dev.addEventListener('uncapturederror', (ev) => {
+    gpuErrorCount++;
+    lastGpuError = ev?.error?.message ?? 'unknown WebGPU error';
+  });
+}
+
 async function runSessionWithDeviceGuard(
   session: ort.InferenceSession,
   feeds: Record<string, ort.Tensor>,
 ): Promise<ort.InferenceSession.OnnxValueMapType> {
-  const webgpuEnv = (ort.env as {
-    webgpu?: { device?: { lost?: Promise<{ reason?: string; message?: string }> } };
-  }).webgpu;
+  const webgpuEnv = (ort.env as { webgpu?: { device?: GpuDeviceLike } }).webgpu;
+  watchDevice(webgpuEnv?.device);
+  const errorsBefore = gpuErrorCount;
+  const checkGpuErrors = async (): Promise<void> => {
+    // the device may only exist after the first run; error events dispatch as tasks
+    watchDevice(webgpuEnv?.device);
+    await new Promise((r) => setTimeout(r, 0));
+    if (gpuErrorCount > errorsBefore) {
+      throw new NumericInstabilityError(
+        `WebGPU reported ${gpuErrorCount - errorsBefore} error(s) during inference; results are unreliable (${lastGpuError.slice(0, 200)}).`,
+      );
+    }
+  };
   const lostPromise = webgpuEnv?.device?.lost;
   try {
     if (lostPromise && typeof lostPromise.then === 'function') {
-      return await Promise.race([
+      const result = await Promise.race([
         session.run(feeds),
         lostPromise.then((info) => {
           const detail = info?.message || info?.reason || 'GPU device reset';
@@ -69,10 +144,14 @@ async function runSessionWithDeviceGuard(
           );
         }),
       ]);
+      await checkGpuErrors();
+      return result;
     }
-    return await session.run(feeds);
+    const result = await session.run(feeds);
+    await checkGpuErrors();
+    return result;
   } catch (err) {
-    if (err instanceof WebGpuDeviceLostError) {
+    if (err instanceof WebGpuDeviceLostError || err instanceof NumericInstabilityError) {
       throw err;
     }
     if (isWebGpuDeviceLostError(err)) {
@@ -752,7 +831,9 @@ export async function runUnetCellposeInference(
       const out = await runSessionWithDeviceGuard(session, { image: t });
       const o = out['flows_cellprob'];
       if (!o) throw new Error('U-Net model output "flows_cellprob" is missing.');
-      return decodeOutputTensorData(o.data);
+      const y = decodeOutputTensorData(o.data);
+      assertPlausibleOutput(y, 'U-Net tile');
+      return y;
     },
     {
       version: 'v3',
@@ -808,7 +889,9 @@ export async function runCpsamCellposeInference(
       const out = await runSessionWithDeviceGuard(session, { image: t });
       const o = out['flows_cellprob'];
       if (!o) throw new Error('Cellpose-SAM model output "flows_cellprob" is missing.');
-      return decodeOutputTensorData(o.data);
+      const y = decodeOutputTensorData(o.data);
+      assertPlausibleOutput(y, 'Cellpose-SAM tile');
+      return y;
     },
     {
       version: 'v4',
