@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   createInferenceSession,
   probeWebGpuCapabilities,
+  defaultWasmThreads,
   hasWebGpuAdapter,
   WebGpuDeviceLostError,
   isWebGpuDeviceLostError,
@@ -170,6 +171,18 @@ describe('onnxInference', () => {
       expect(result.executionProvider).toBe('webgpu');
     });
 
+    it('forceWasm skips WebGPU even when a shader-f16 adapter exists (after device loss)', async () => {
+      const requestAdapter = vi.fn(async () => ({ features: { has: () => true } }));
+      setNavigator({ gpu: { requestAdapter } });
+      const mockSession = { run: vi.fn() } as unknown as ort.InferenceSession;
+      const createSpy = vi.spyOn(ort.InferenceSession, 'create').mockResolvedValueOnce(mockSession);
+      const result = await createInferenceSession(new Uint8Array([1]), { forceWasm: true });
+      expect(requestAdapter).not.toHaveBeenCalled();
+      expect(createSpy).toHaveBeenCalledTimes(1);
+      expect(createSpy.mock.calls[0]?.[1]).toEqual({ executionProviders: ['wasm'] });
+      expect(result.executionProvider).toBe('wasm');
+    });
+
     it('skips WebGPU entirely when navigator.gpu has no adapter (headless / blocklisted GPU)', async () => {
       setNavigator({ gpu: { requestAdapter: async () => null } });
       expect(await hasWebGpuAdapter()).toBe(false);
@@ -179,6 +192,30 @@ describe('onnxInference', () => {
       expect(createSpy).toHaveBeenCalledTimes(1);
       expect(createSpy.mock.calls[0]?.[1]).toEqual({ executionProviders: ['wasm'] });
       expect(result.executionProvider).toBe('wasm');
+    });
+  });
+
+  describe('defaultWasmThreads', () => {
+    const desc = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+    afterEach(() => {
+      delete (globalThis as { crossOriginIsolated?: boolean }).crossOriginIsolated;
+      if (desc) Object.defineProperty(globalThis, 'navigator', desc);
+    });
+    const setEnv = (coi: boolean | undefined, hc: number | undefined) => {
+      (globalThis as { crossOriginIsolated?: boolean }).crossOriginIsolated = coi;
+      Object.defineProperty(globalThis, 'navigator', { value: { hardwareConcurrency: hc }, configurable: true, writable: true });
+    };
+    it('leaves ORT single-threaded default alone when not cross-origin isolated', () => {
+      setEnv(false, 8);
+      expect(defaultWasmThreads()).toBeUndefined();
+    });
+    it('uses all logical cores (capped at 8) when cross-origin isolated', () => {
+      setEnv(true, 4);
+      expect(defaultWasmThreads()).toBe(4);
+      setEnv(true, 32);
+      expect(defaultWasmThreads()).toBe(8);
+      setEnv(true, undefined);
+      expect(defaultWasmThreads()).toBeUndefined();
     });
   });
 

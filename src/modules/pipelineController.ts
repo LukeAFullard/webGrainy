@@ -1482,6 +1482,8 @@ export class ImageGrainsEngine {
   private disposed = false;
   private readonly pendingWorkerRejects = new Set<(err: Error) => void>();
   private readonly sessionExecutionProviders = new Map<ModelKind, string>();
+  /** Set after a WebGPU device loss; GPU inference stays off until the page reloads. */
+  private webgpuDisabledReason: string | null = null;
   private readonly inFlightSessions = new Map<
     ModelKind,
     Promise<ort.InferenceSession | InferenceSessionLike>
@@ -1511,7 +1513,11 @@ export class ImageGrainsEngine {
       | undefined;
 
     // navigator.gpu may exist without a usable adapter (headless, blocklisted GPU) or shader-f16.
-    const { hasAdapter: hasWebGPU, hasShaderF16 } = await probeWebGpuCapabilities();
+    // After a device loss WebGPU stays off for this page, whatever the adapter reports.
+    const { hasAdapter: hasWebGPU, hasShaderF16 } =
+      this.webgpuDisabledReason !== null
+        ? { hasAdapter: false, hasShaderF16: false }
+        : await probeWebGpuCapabilities();
     const hasWasmSimd = probeWasmSimd();
     const deviceMemoryGB =
       typeof nav?.deviceMemory === 'number' && Number.isFinite(nav.deviceMemory)
@@ -1591,61 +1597,63 @@ export class ImageGrainsEngine {
       scaleFactor: workingImage.effectiveScaleFactor,
     });
 
-    const session = await this.acquireSession(selectedModel, signal, emit);
-    throwIfAborted(signal);
-
-    let inferenceOut: InferenceOutput;
-    try {
+    const runInference = async (
+      session: ort.InferenceSession | InferenceSessionLike,
+    ): Promise<InferenceOutput> => {
       if (selectedModel === 'unet') {
         const gray = normalizeGray(
           workingImage.data,
           workingImage.width,
           workingImage.height,
         );
-        inferenceOut = await runUnetInference(
+        return runUnetInference(
           session as ort.InferenceSession,
           gray,
           workingImage.width,
           workingImage.height,
         );
-      } else {
-        const rgb = normalizeRgbJoint99(
-          workingImage.data,
-          workingImage.width,
-          workingImage.height,
-        );
-        inferenceOut = await runCpsamTiledInference(
-          session as ort.InferenceSession,
-          rgb,
-          workingImage.width,
-          workingImage.height,
-          {
-            signal,
-            onProgress: (progress) => emit('inference', progress),
-          },
-        );
       }
+      const rgb = normalizeRgbJoint99(
+        workingImage.data,
+        workingImage.width,
+        workingImage.height,
+      );
+      return runCpsamTiledInference(
+        session as ort.InferenceSession,
+        rgb,
+        workingImage.width,
+        workingImage.height,
+        {
+          signal,
+          onProgress: (progress) => emit('inference', progress),
+        },
+      );
+    };
+
+    let session = await this.acquireSession(selectedModel, signal, emit);
+    throwIfAborted(signal);
+
+    let inferenceOut: InferenceOutput;
+    try {
+      inferenceOut = await runInference(session);
     } catch (err) {
-      if (isWebGpuDeviceLostError(err)) {
-        const lostSession = this.sessionCache.get(selectedModel);
-        this.sessionCache.delete(selectedModel);
-        this.sessionExecutionProviders.delete(selectedModel);
-        if (lostSession && this.ownedSessions.has(lostSession)) {
-          this.ownedSessions.delete(lostSession);
-          if (typeof lostSession.release === 'function') {
-            await lostSession.release().catch(() => undefined);
-          }
-        }
-        emit('warning', {
-          code: 'webgpu-device-lost',
-          model: selectedModel,
-          message:
-            err instanceof Error
-              ? err.message
-              : 'WebGPU device lost during inference. Switch to U-Net or reload to recover.',
-        });
+      if (!isWebGpuDeviceLostError(err) || this.webgpuDisabledReason !== null) {
+        throw err;
       }
-      throw err;
+      // The page's GPUDevice is gone for good: disable WebGPU for this page, drop every
+      // GPU-backed session, and retry this image once on the WASM (CPU) backend.
+      await this.disableWebGpu(err instanceof Error ? err.message : String(err));
+      emit('warning', {
+        code: 'webgpu-device-lost',
+        model: selectedModel,
+        message:
+          'The GPU was reset during analysis. GPU acceleration is now off for this page ' +
+          'and analysis continues on the CPU (slower). Reload the page to use the GPU again.',
+      });
+      throwIfAborted(signal);
+      session = await this.acquireSession(selectedModel, signal, emit);
+      throwIfAborted(signal);
+      inferenceOut = await runInference(session);
     }
     throwIfAborted(signal);
 
@@ -1693,6 +1701,36 @@ export class ImageGrainsEngine {
     });
 
     return analysisSession;
+  }
+
+  /** Why WebGPU was turned off for this page (device loss), or `null` if it is available. */
+  getWebGpuDisabledReason(): string | null {
+    return this.webgpuDisabledReason;
+  }
+
+  /**
+   * Turns WebGPU off for the rest of this page after a device loss: releases every
+   * GPU-backed session so the next `acquireSession` creates WASM sessions, and marks
+   * the capability as unavailable so the model router stops choosing GPU models.
+   */
+  private async disableWebGpu(reason: string): Promise<void> {
+    this.webgpuDisabledReason = reason;
+    // Evict every session not known to be WASM-backed (custom factories don't report an EP).
+    for (const kind of Array.from(this.sessionCache.keys())) {
+      if (this.sessionExecutionProviders.get(kind) === 'wasm') continue;
+      const lost = this.sessionCache.get(kind);
+      this.sessionCache.delete(kind);
+      this.sessionExecutionProviders.delete(kind);
+      if (lost && this.ownedSessions.has(lost)) {
+        this.ownedSessions.delete(lost);
+        if (typeof lost.release === 'function') {
+          await lost.release().catch(() => undefined);
+        }
+      }
+    }
+    if (this.capabilities !== null) {
+      this.capabilities = { ...this.capabilities, hasWebGPU: false, hasShaderF16: false };
+    }
   }
 
   async dispose(): Promise<void> {
@@ -1764,6 +1802,7 @@ export class ImageGrainsEngine {
 
         const created = await createInferenceSession(modelBytes, {
           ...this.options.sessionCreateOptions,
+          ...(this.webgpuDisabledReason !== null ? { forceWasm: true } : {}),
           requireShaderF16:
             this.options.sessionCreateOptions?.requireShaderF16 ??
             modelKind === 'cpsam',

@@ -11,6 +11,12 @@ export interface SessionCreateOptions {
   numThreads?: number;
   /** When true, require WebGPU `shader-f16` support before selecting WebGPU EP. */
   requireShaderF16?: boolean;
+  /**
+   * Skip WebGPU entirely and use the WASM (CPU) EP. Set by the engine after a WebGPU
+   * device loss: ORT keeps one GPUDevice per page, and once it is lost every later
+   * WebGPU session would fail, so only a page reload can restore GPU inference.
+   */
+  forceWasm?: boolean;
 }
 
 export interface WebGpuCapabilities {
@@ -298,6 +304,24 @@ function decodeOutputTensorData(data: unknown): Float32Array {
  * (zero external CDNs). Tries `['webgpu', 'wasm']` and gracefully falls back to `['wasm']`.
  */
 /**
+ * WASM thread count to use when the caller does not specify one.
+ *
+ * WASM threads need `SharedArrayBuffer`, i.e. a cross-origin-isolated page (COOP/COEP
+ * headers, see DEPLOYMENT.md). Without isolation ORT runs single-threaded whatever is
+ * set. When isolated, ORT's own default uses only about half the logical cores; measured
+ * on a 4-core machine (audit/perf/), using all cores made U-Net inference ~1.8x faster
+ * than the default and ~3x faster than single-threaded. Capped at 8: more threads than
+ * physical cores was slower in the same benchmark.
+ */
+export function defaultWasmThreads(): number | undefined {
+  const g = globalThis as { crossOriginIsolated?: boolean; navigator?: { hardwareConcurrency?: number } };
+  if (g.crossOriginIsolated !== true) return undefined;
+  const hc = g.navigator?.hardwareConcurrency;
+  if (typeof hc !== 'number' || !Number.isFinite(hc) || hc < 1) return undefined;
+  return Math.max(1, Math.min(8, Math.floor(hc)));
+}
+
+/**
  * Resolves a relative `wasmPaths` prefix against the *document* base URL.
  * ORT loads its `.mjs`/`.wasm` via dynamic `import()`, which resolves relative
  * specifiers against the importing module (e.g. `dist/ui/main.js` -> `/ui/ort/`),
@@ -326,8 +350,9 @@ export async function createInferenceSession(
 ): Promise<InferenceSessionResult> {
   ort.env.wasm.wasmPaths = resolveWasmPaths(options?.wasmPaths ?? './ort/');
   ort.env.wasm.simd = options?.simd ?? true;
-  if (options?.numThreads !== undefined) {
-    ort.env.wasm.numThreads = options.numThreads;
+  const threads = options?.numThreads ?? defaultWasmThreads();
+  if (threads !== undefined) {
+    ort.env.wasm.numThreads = threads;
   }
 
   const bytes =
@@ -335,9 +360,14 @@ export async function createInferenceSession(
 
   // Only request WebGPU when a real adapter exists (and supports shader-f16 when required):
   // `navigator.gpu` can be present with no usable adapter or without FP16 shader support.
-  const gpuCaps = await probeWebGpuCapabilities();
+  const gpuCaps =
+    options?.forceWasm === true
+      ? { hasAdapter: false, hasShaderF16: false }
+      : await probeWebGpuCapabilities();
   const canUseWebGpu =
-    gpuCaps.hasAdapter && (!options?.requireShaderF16 || gpuCaps.hasShaderF16 !== false);
+    options?.forceWasm !== true &&
+    gpuCaps.hasAdapter &&
+    (!options?.requireShaderF16 || gpuCaps.hasShaderF16 !== false);
   if (canUseWebGpu) {
     try {
       const session = await ort.InferenceSession.create(bytes, {

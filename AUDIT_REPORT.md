@@ -94,7 +94,7 @@ Ordered by severity. Confidence: **V** = verified (with a reproduction), **L** =
 | "Folk & Ward with proper coarse-to-fine mapping" | φ16 = −log2 D84 etc. Formulas identical to an independent recomputation, and skew sign correct for a coarse-tailed sample. | ✓ |
 | HF model "≈588 MB" | 617,364,567 bytes (588.8 MiB). | ⚠ units |
 | Model licence | HF card: CC-BY-4.0 "derived from Zenodo 10.5281/zenodo.15728186". Repo code: BSD-3. Upstream ImageGrains licence could not be fetched. | U |
-| Post-processing time "13–16 s/image" (report) | Not measured in the browser (headless CPU only). In the WASM-only E2E, a 1024×768 photo needed several minutes (one run completed in under 476 s). | U |
+| Post-processing time "13–16 s/image" (report) | Not measured on GPU. **Correction (2026-11-15):** the "several minutes" originally reported here came from a bug in my audit script, which waited out its full timeout because its status selector never matched. Measured per stage in headless Chromium on 4 cores (`audit/perf/`), a 1024×768 photo with U-Net on WASM takes inference 18.4 s (single-threaded) / 6.7 s (cross-origin isolated, all cores) plus post-processing about 1.2 s. | V (CPU) |
 
 ---
 

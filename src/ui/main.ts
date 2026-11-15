@@ -111,6 +111,9 @@ engine.onProgress((stage, detail) => {
     typeof (detail as { message?: unknown }).message === 'string'
   ) {
     store.setState({ statusMessage: (detail as { message: string }).message });
+    if ((detail as { code?: unknown }).code === 'webgpu-device-lost') {
+      void refreshCapabilities();
+    }
   }
 });
 
@@ -428,7 +431,10 @@ async function runBatch(photoIds?: string[]): Promise<void> {
       statusMessage: result.aborted
         ? `Batch cancelled (${result.completed}/${result.total} completed)`
         : `Batch complete: ${result.completed} done, ${result.failed} failed` +
-          (firstFailure ? ` — ${firstFailure}` : ''),
+          (firstFailure ? ` — ${firstFailure}` : '') +
+          (engine.getWebGpuDisabledReason() !== null
+            ? ' · GPU was reset: running on CPU; reload the page to use the GPU again'
+            : ''),
     });
   } catch (err) {
     store.setState({
@@ -585,7 +591,9 @@ async function applyRectificationToActive(
 
 function renderTopbar(state: AppState): void {
   const caps = state.capabilities;
-  const gpuLabel = caps
+  const gpuLabel = engine.getWebGpuDisabledReason() !== null
+    ? 'GPU reset · CPU mode (reload for GPU)'
+    : caps
     ? caps.hasWebGPU
       ? caps.hasShaderF16 === true
         ? 'WebGPU FP16'

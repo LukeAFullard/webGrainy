@@ -29,7 +29,7 @@ All v1.1.0 code-level blockers from `AUDIT_REPORT.md` (F-01 through F-24) and al
 
 ### (b) Scientific Use: **CONDITIONAL-GO for exploratory, relative, or calibrated mask-inspected work (`maxGrainAreaFraction = 0.40` default); NO-GO for unvalidated publishable absolute grain sizes**
 `webGrainy` now provides:
-- Verified within-site held-out benchmark (`n = 40`, shipped TS engine + PyTorch reference + `0.15` vs `1.00` guard ablation). With the `0.15` guard disabled (`guard = 1.00`), Cellpose-SAM achieves **`2.63%` median D50 APE** (`95% CI [2.01, 4.74]`) and **`9.43%` mean D50 APE** (`95% CI [4.91, 15.19]`) vs hand-digitised masks (`PQ = 0.571`)—outperforming upstream PyTorch on D50 (`14.32%` mean / `4.42%` median). Under the legacy v1.1.0 `0.15` guard (`guard = 0.15`), CP-SAM degraded to **`21.85%` mean / `6.50%` median D50 APE** (`P90 = 67.28%`, `20.0% > 50%`); raising the shipped default to `0.40` eliminates large-cobble drops on scenes up to 40% single-grain area (and users can raise the slider/input to `1.0`).
+- Verified within-site held-out benchmark (`n = 40`, shipped TS engine + PyTorch reference + `0.15` vs `1.00` guard ablation). With the `0.15` guard disabled (`guard = 1.00`), Cellpose-SAM achieves **`2.63%` median D50 APE** (`95% CI [2.01, 4.74]`) and **`9.43%` mean D50 APE** (`95% CI [4.91, 15.19]`) vs hand-digitised masks (`PQ = 0.571`), compared with upstream PyTorch's `14.32%` mean / `4.42%` median. **This is not evidence that the browser engine beats PyTorch:** Paired on the same 40 images (`audit/followup/paired_comparison.py`), the shipped engine is **not distinguishable from upstream PyTorch** on D50 error: CP-SAM mean ΔAPE `-4.88` pp, 95% CI `[-11.50, +0.68]`, better on `19/40` images, sign test p = `0.88`; U-Net `+0.01` pp, `[-7.76, +7.41]`, `22/40`. Its PQ is lower than PyTorch (CP-SAM `0.571` vs `0.642`; U-Net `0.485` vs `0.528`). Only the guard effect is significant: for CP-SAM, `1.00` beats `0.15` by `-12.41` pp `[-20.64, -5.33]`, p = `0.002`; for U-Net it is not significant. Under the legacy v1.1.0 `0.15` guard (`guard = 0.15`), CP-SAM degraded to **`21.85%` mean / `6.50%` median D50 APE** (`P90 = 67.28%`, `20.0% > 50%`); the shipped default was raised to `0.40` (upstream Cellpose's `max_size_fraction`). **`0.40` itself has not been benchmarked**: only `0.15` and `1.00` were run, and `0.40` was chosen after inspecting these 40 test images, so they are no longer a clean estimate for it. Users can raise the input to `1.0`.
 - Selectable `minFeret` alongside `bAxis` (moment-ellipse minor axis) and `dEq` (equivalent circular diameter) end-to-end (`Workstream C`) across both Pooled Site and Active Photo scopes.
 - Pinned model revision (`7773328a544ac050b7820667e68cbfb02a2e954a`) with SHA-256 verification and full export provenance.
 - Single-photo and site-level ROI/exclusion filtering, sample-size warnings, and calibrated scale/homography tools.
@@ -48,7 +48,7 @@ All v1.1.0 code-level blockers from `AUDIT_REPORT.md` (F-01 through F-24) and al
   - Executed the **actual bundled TypeScript engine** (`src/modules/postprocessCore.ts` + `src/modules/morphometricsExt.ts` via `audit/followup/ts_postprocess_runner.mjs`, frozen v1.1.0 defaults) and **upstream PyTorch Cellpose/ImageGrains** (`venv_cp3` `cellpose==3.1.1.1` for `IG2_full_set.200525`, `venv_cp4` `cellpose>=4.0.9,<4.2` for `IG2_full_set_cp_SAM`) on all `n = 40` `official_split == 'test'` images.
   - **`onnxruntime-web` WASM parity (`verified`):** On 3 held-out test images (`APF_2__test__DS8-S2_3`, `APF_2__test__GU_bar7_0`, `APF_2__test__K1_2_C1_DJI_0385_clipped_4`), Node `onnxruntime-web` WASM U-Net raw tensor output matched Python `onnxruntime` within `max_abs_diff = 0.0202`, `0.0087`, and `0.0194`.
   - **Ablation impact of `maxGrainAreaFraction = 0.15` (`verified`):** Comparing `ts_v41_guard015` (`0.15`) vs `ts_v41_guard100` (`1.00`, guard off) shows the `0.15` guard dropped legitimate large cobbles (>15% of frame area) on **`10/40` CP-SAM images** and **`6/40` U-Net images** (`audit/followup/heldout_results_per_image.csv`). In CP-SAM, `9/10` affected images suffered severe D50 underprediction (e.g., `NB2__test__P5251741_Crop2`: GT `265.3 px` → `36.6 px` (`86.2%` APE) with `0.15` vs `273.7 px` (`3.2%` APE) with `1.00`; `APF_2__test__kanakacreek_020_4`: GT `186.3 px` → `41.2 px` (`77.9%` APE) vs `186.3 px` (`0.0%` APE)). Only `1` image (`AR__test__DSC_0577_1` under U-Net) improved (`54.7%` → `3.4%`).
-- **Physical ground truth (`verified`):** `IG2_data.zip` contains zero sieve, Wolman, or caliper files (all GT masks are hand-digitised 2D pixel outlines). `dmair1989/imagegrains` `demo_data/K1_field_measurement.csv` (`field_n = 251`, caliper `D16/D50/D84 = 19.0 / 27.0 / 48.0 mm`) overlaps with `APF_2/train` (`8` rows) and `APF_2/test` (`1` row: `K1_2_C1_DJI_0385_clipped_4.jpg`). On `K1_C2_385.jpg` + `K1_C3_0449.jpg` (`0.39 mm/px`), pooled shipped-TS `D50` (`bAxis 15.67–15.70 mm`, `minFeret 16.51–16.71 mm`, `dEq 18.69–18.99 mm`) is ~`38–42%` finer than field caliper `D50 = 27.0 mm`, reflecting fine surface pebbles (<15 mm) omitted/truncated in manual counts and 2D burial/imbrication projection (`audit/followup/physical_gt_and_protocol.md`).
+- **Physical ground truth (`verified`):** `IG2_data.zip` contains zero sieve, Wolman, or caliper files (all GT masks are hand-digitised 2D pixel outlines). `dmair1989/imagegrains` `demo_data/K1_field_measurement.csv` (`field_n = 251`, caliper `D16/D50/D84 = 19.0 / 27.0 / 48.0 mm`) overlaps with `APF_2/train` (`8` rows) and `APF_2/test` (`1` row: `K1_2_C1_DJI_0385_clipped_4.jpg`). On `K1_C2_385.jpg` + `K1_C3_0449.jpg` (`0.39 mm/px`), pooled shipped-TS `D50` (`bAxis 15.67–15.70 mm`, `minFeret 16.51–16.71 mm`, `dEq 18.69–18.99 mm`) is ~`38–42%` finer than field caliper `D50 = 27.0 mm`. **This gap is unexplained.** Candidate causes include fines skipped in the manual count, 2D burial/imbrication, differences between grid-by-number and area weighting, and calibration. None has been tested. It is one site and two photos, and crops of these photos are in the IG2 training set. Treat it as the largest error measured against field data so far, not as a resolved discrepancy (`audit/followup/physical_gt_and_protocol.md`).
 
 ### Held-Out Results Table (`official_split == 'test'`, `n = 40` across 13 sites)
 
@@ -167,3 +167,32 @@ Workstream C is complete across both Pooled Site and Active Photo scopes. Re-run
 | **P2** | Physical ground-truth campaign | **OPEN (External/Field):** Co-located Wolman count (`n >= 100`) or sieve per `audit/followup/physical_gt_and_protocol.md` (`>= 5` reaches for method validation) | Scientific use (absolute mm calibration) |
 | **P2** | Safari/iOS manual PWA check | **OPEN (External/Device):** Run 4-item checklist in `audit/followup/offline_sw_results.json` (7-day ITP, memory, standalone, SW update) | Mobile/Safari sign-off |
 | **P3** | Active Photo `sizeMetric` & `oracle.py` re-run | **UI wiring `DONE` (`dashboardScope === 'photo'` + exports respect `sizeMetric`); `OPEN`:** re-run `python3 -I audit/oracle.py` in a Python environment with `scipy` | Optional Python oracle check |
+
+---
+
+## 7. Review of this follow-up (2026-11-15)
+
+I independently re-ran and checked this follow-up on `main` (`9aee3ec`).
+
+**Reproduced:**
+- All gates pass: typecheck, tests, build, audit, and `npm run test:e2e:browser` with the real U-Net.
+- `verify_offline_sw.mjs` passes.
+- The mutation check is 9/9 and every audit oracle matches.
+- `minFeret` now matches the Python oracle exactly, which closes the `oracle.py` item above.
+- Every value in the held-out table recomputes exactly from `heldout_results_per_image.csv`.
+- The `minFeret` cache stays coherent through add-polygon, split, merge, undo, redo and delete (`audit/review/feret_cache.audit.ts`).
+
+Three corrections and one fix were made:
+
+1. **"Outperforming upstream PyTorch" withdrawn.** Paired on the same 40 images, the shipped engine is not distinguishable from PyTorch on D50 error (`audit/followup/paired_comparison.py`):
+   - CP-SAM: −4.88 pp, 95% CI [−11.50, +0.68], better on 19/40 images, sign test p = 0.88.
+   - U-Net: +0.01 pp, 95% CI [−7.76, +7.41].
+   - PQ is lower than PyTorch for both models.
+   - The only significant effect is the area guard for CP-SAM (1.00 vs 0.15: −12.41 pp, 95% CI [−20.64, −5.33], p = 0.002).
+2. **The 0.40 default is unbenchmarked.** Only 0.15 and 1.00 were run, and 0.40 was chosen after inspecting the test images. A run at 0.40 is still needed (see §6).
+3. **The K1 gap is unexplained.** Photo D50 is about 40% finer than caliper D50. This was previously attributed to fine pebbles and burial, but that explanation is untested. It is now presented as an open discrepancy, with testable hypotheses listed in `physical_gt_and_protocol.md`.
+4. **Fix: recovery after WebGPU device loss.** ORT keeps one `GPUDevice` per page, so after a loss every new WebGPU session would fail again, including the suggested switch to U-Net. The engine now disables WebGPU for the page, evicts GPU sessions, reports the capability as unavailable, and retries the image once on WASM. The UI shows "GPU reset · CPU mode (reload for GPU)". Tests are in `tests/pipelineController.test.ts` and `tests/onnxInference.test.ts`.
+
+**CPU findings:**
+- CP-SAM's FP16 graph does run on the WASM backend, at 33 s per 256 px tile single-threaded (`audit/review/cpsam_wasm_fp16.mjs`).
+- WASM threads scale nearly linearly to the physical core count (`audit/perf/`). When the page is cross-origin isolated, the app now uses all cores, capped at 8. In headless Chromium, U-Net inference on a 1024×768 photo falls from 18.4 s to 6.7 s. See `DEPLOYMENT.md`.

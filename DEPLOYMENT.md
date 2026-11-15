@@ -31,10 +31,21 @@ X-Content-Type-Options: nosniff
 Referrer-Policy: no-referrer
 ```
 
-### Optional: multi-threaded WASM (cross-origin isolation)
+### Recommended: multi-threaded WASM (cross-origin isolation)
 
 Without cross-origin isolation, the WASM backend (the fallback when no WebGPU adapter is
-available) runs **single-threaded**. To enable WASM threads, send:
+available) runs **single-threaded**. When the page is isolated, the app uses all logical
+cores (capped at 8). Measured in headless Chromium on a 4-core machine (`audit/perf/`):
+
+| Workload (CPU / WASM) | Not isolated (1 thread) | Isolated, ORT default (2 threads) | Isolated, all cores (4 threads) |
+|---|---|---|---|
+| U-Net inference, 1024×768 photo | 18.4 s | 11.0 s | **6.7 s** |
+| Whole analysis incl. ~1.2 s post-processing | 19.7 s | 12.4 s | **7.9 s** |
+| Cellpose-SAM, one 256×256 tile (Node, same runtime) | 32.3 s | 16.8 s | **9.5 s** |
+
+A 1024×768 photo needs about 20 Cellpose-SAM tiles, so on CPU it takes roughly 11 minutes
+single-threaded and roughly 3 minutes isolated on 4 cores. Prefer U-Net when no FP16-capable GPU is
+available. To enable WASM threads, send:
 
 ```
 Cross-Origin-Opener-Policy: same-origin

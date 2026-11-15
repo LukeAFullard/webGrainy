@@ -502,6 +502,30 @@ describe('pipelineController (ImageGrainsEngine & AnalysisSession)', () => {
     expect(terminateMock).toHaveBeenCalledTimes(1);
   });
 
+  it('retries a device-lost analysis only once', async () => {
+    Object.defineProperty(globalThis, 'navigator', {
+      value: { gpu: { requestAdapter: async () => ({ features: { has: () => true } }) } },
+      configurable: true,
+    });
+    let created = 0;
+    const engine = new ImageGrainsEngine({
+      sessionFactory: async () => {
+        created += 1;
+        return {
+          async run() {
+            throw new Error('WebGPU device was lost');
+          },
+        };
+      },
+    });
+    await engine.initialize();
+    await expect(
+      engine.analyzeImage(makeRgbaImage(64, 64, 'uniform'), { model: 'unet', scaleMode: '1.0x' }),
+    ).rejects.toThrow(/device lost/i);
+    expect(created).toBe(2);
+    await engine.dispose();
+  });
+
   it('records hasShaderF16, supports AnalysisSession.getStats(sizeMetric), and evicts session on WebGPU device loss', async () => {
     Object.defineProperty(globalThis, 'navigator', {
       value: {
@@ -543,13 +567,18 @@ describe('pipelineController (ImageGrainsEngine & AnalysisSession)', () => {
     });
 
     const img = makeRgbaImage(64, 64, 'uniform');
-    await expect(
-      engine.analyzeImage(img, { model: 'unet', scaleMode: '1.0x' }),
-    ).rejects.toThrow(/device lost/i);
-    expect(warnings.some((w) => w.code === 'webgpu-device-lost')).toBe(true);
-
-    // Next analyzeImage must re-acquire a fresh session (callCount === 2)
+    // Device loss: the lost session is evicted, WebGPU is disabled for the page, and the
+    // same image is retried once on a fresh (WASM) session instead of failing.
     const session = await engine.analyzeImage(img, { model: 'unet', scaleMode: '1.0x' });
+    expect(callCount).toBe(2);
+    expect(warnings.some((w) => w.code === 'webgpu-device-lost')).toBe(true);
+    expect(engine.getWebGpuDisabledReason()).toMatch(/device was lost/i);
+    // WebGPU stays off for the page even though the adapter still reports shader-f16.
+    const capsAfter = await engine.initialize();
+    expect(capsAfter.hasWebGPU).toBe(false);
+    expect(capsAfter.hasShaderF16).toBe(false);
+    // Later analyses reuse the WASM session (no further session creation).
+    await engine.analyzeImage(img, { model: 'unet', scaleMode: '1.0x' });
     expect(callCount).toBe(2);
 
     const statsFeret = session.getStats('minFeret');
