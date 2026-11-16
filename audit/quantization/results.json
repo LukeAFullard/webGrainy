@@ -1,0 +1,1071 @@
+{
+  "seed": 42,
+  "eval_images": 40,
+  "models": {
+    "cpsam": {
+      "fp32": {
+        "size": {
+          "bytes": 1232640907,
+          "mb": 1175.54,
+          "gzip_bytes": 573605485,
+          "gzip_mb": 547.03,
+          "brotli_bytes": 502034337,
+          "brotli_mb": 478.78,
+          "sha256": "2e27d7d176b03c4b75997488d5fcbf29473dd9549b8a09734ef1dee19802d862"
+        },
+        "quantized_layer_count": 0,
+        "quantized_weight_fraction": 0.0,
+        "wasm": {
+          "load_ok": true,
+          "run_ok": true,
+          "load_time_s": 5.6032753070000005,
+          "peak_rss_mb": 4962.7,
+          "avg_tile_ms": 13395.466393454546
+        },
+        "speed_ms": {
+          "wasm_threads": 4,
+          "wasm_ms": 13395.466393454546,
+          "py_cpu_ms": 2090.8046617272576,
+          "py_cuda_ms": 93.78807527271378
+        },
+        "numerics_vs_pt_fp32": {
+          "source": "wasm",
+          "non_finite_count": 0,
+          "flowY_max_abs": 0.028554439544677734,
+          "flowY_mean_abs": 0.000490025500766933,
+          "flowX_max_abs": 0.019758760929107666,
+          "flowX_mean_abs": 0.0005112891085445881,
+          "cellprob_max_abs": 0.02434539794921875,
+          "cellprob_mean_abs": 0.0007060406496748328,
+          "cellprob_sign_agree_pct": 99.99648384425952,
+          "all_zero_cellprob_mean": -5.185276985168457,
+          "all_zero_cellprob_max": -3.8862123489379883,
+          "all_zero_sign_agree_pct": 100.0,
+          "all_zero_negative_ok": true,
+          "py_cpu_vs_wasm_max_abs": 1.621246337890625e-05
+        },
+        "heldout_40": null,
+        "pass_criteria": {
+          "loads_and_runs_wasm": true,
+          "finite_and_allzero_negative": true,
+          "pq_and_d50_within_tol": null,
+          "mask_pq_vs_fp16_ge_095": null,
+          "PASS": true
+        }
+      },
+      "fp16": {
+        "size": {
+          "bytes": 617362451,
+          "mb": 588.76,
+          "gzip_bytes": 471177212,
+          "gzip_mb": 449.35,
+          "brotli_bytes": 465865526,
+          "brotli_mb": 444.28,
+          "sha256": "ffee5e66a643b6b6e0ac83e237c6d593efff6fe63d8d61210f3ed5591e8050db"
+        },
+        "quantized_layer_count": 0,
+        "quantized_weight_fraction": 0.0,
+        "wasm": {
+          "load_ok": true,
+          "run_ok": true,
+          "load_time_s": 4.541328376,
+          "peak_rss_mb": 3868,
+          "avg_tile_ms": 13917.358086954551
+        },
+        "speed_ms": {
+          "wasm_threads": 4,
+          "wasm_ms": 13917.358086954551,
+          "py_cpu_ms": 2273.4795135000404,
+          "py_cuda_ms": 50.0303899545584
+        },
+        "numerics_vs_pt_fp32": {
+          "source": "wasm",
+          "non_finite_count": 0,
+          "flowY_max_abs": 0.013592243194580078,
+          "flowY_mean_abs": 0.0006082456093281507,
+          "flowX_max_abs": 0.012746855616569519,
+          "flowX_mean_abs": 0.0006038281135261059,
+          "cellprob_max_abs": 0.016501903533935547,
+          "cellprob_mean_abs": 0.0012520571472123265,
+          "cellprob_sign_agree_pct": 99.9962848165761,
+          "all_zero_cellprob_mean": -5.1855669021606445,
+          "all_zero_cellprob_max": -3.88671875,
+          "all_zero_sign_agree_pct": 100.0,
+          "all_zero_negative_ok": true,
+          "py_cpu_vs_wasm_max_abs": 0.0078125
+        },
+        "heldout_40": {
+          "pq_vs_gt_mean": 0.6520679696836328,
+          "pq_vs_gt_ci95": [
+            0.6201692741067982,
+            0.6830730194161545
+          ],
+          "D16": {
+            "n": 40,
+            "mean_ape_pct": 13.271473420761845,
+            "mean_ape_ci95": [
+              8.436304026734692,
+              19.34573085388221
+            ],
+            "median_ape_pct": 6.312808409578123,
+            "median_ape_ci95": [
+              3.6707469928996312,
+              10.49356305444751
+            ]
+          },
+          "D50": {
+            "n": 40,
+            "mean_ape_pct": 8.90987532456095,
+            "mean_ape_ci95": [
+              4.003831620266609,
+              15.595945801951306
+            ],
+            "median_ape_pct": 2.8655524180955076,
+            "median_ape_ci95": [
+              2.0162543197994993,
+              4.934253869439667
+            ]
+          },
+          "D84": {
+            "n": 40,
+            "mean_ape_pct": 7.006281074917953,
+            "mean_ape_ci95": [
+              2.518519723535275,
+              13.35604226506641
+            ],
+            "median_ape_pct": 1.2750333258557829,
+            "median_ape_ci95": [
+              0.7249838982349597,
+              2.8759375446030795
+            ]
+          },
+          "grain_count_ratio_mean": 0.827080445984697,
+          "grain_count_ratio_ci95": [
+            0.7659434151234227,
+            0.8882581037114103
+          ],
+          "mask_pq_vs_fp16_mean": 1.0
+        },
+        "pass_criteria": {
+          "loads_and_runs_wasm": true,
+          "finite_and_allzero_negative": true,
+          "pq_and_d50_within_tol": true,
+          "mask_pq_vs_fp16_ge_095": true,
+          "PASS": true
+        }
+      },
+      "fp8_e4m3": {
+        "size": {
+          "bytes": 315824767,
+          "mb": 301.19,
+          "gzip_bytes": 256274793,
+          "gzip_mb": 244.4,
+          "brotli_bytes": 253610856,
+          "brotli_mb": 241.86,
+          "sha256": "0f37439dccc6ebb69b5bbe6706f91020f9987775861a9de13eedee96e06afe6d"
+        },
+        "quantized_layer_count": 96,
+        "quantized_weight_fraction": 0.9816,
+        "wasm": {
+          "load_ok": true,
+          "run_ok": true,
+          "load_time_s": 2.5376109369999997,
+          "peak_rss_mb": 2807.9,
+          "avg_tile_ms": 17886.65926668182
+        },
+        "speed_ms": {
+          "wasm_threads": 4,
+          "wasm_ms": 17886.65926668182,
+          "py_cpu_ms": 4850.01101263637,
+          "py_cuda_ms": 57.264324045490866
+        },
+        "numerics_vs_pt_fp32": {
+          "source": "wasm",
+          "non_finite_count": 0,
+          "flowY_max_abs": 0.3890862464904785,
+          "flowY_mean_abs": 0.008155934512615204,
+          "flowX_max_abs": 0.21662169694900513,
+          "flowX_mean_abs": 0.008333775214850903,
+          "cellprob_max_abs": 0.2540248930454254,
+          "cellprob_mean_abs": 0.017034051939845085,
+          "cellprob_sign_agree_pct": 99.9264260996943,
+          "all_zero_cellprob_mean": -5.16622257232666,
+          "all_zero_cellprob_max": -3.87109375,
+          "all_zero_sign_agree_pct": 100.0,
+          "all_zero_negative_ok": true,
+          "py_cpu_vs_wasm_max_abs": 0.0078125
+        },
+        "heldout_40": {
+          "pq_vs_gt_mean": 0.6529570493478998,
+          "pq_vs_gt_ci95": [
+            0.621482679963177,
+            0.6837220865085938
+          ],
+          "D16": {
+            "n": 40,
+            "mean_ape_pct": 13.225539765377551,
+            "mean_ape_ci95": [
+              8.382729411512672,
+              19.471068326887636
+            ],
+            "median_ape_pct": 6.360993011892244,
+            "median_ape_ci95": [
+              3.683759261745309,
+              10.648405593821337
+            ]
+          },
+          "D50": {
+            "n": 40,
+            "mean_ape_pct": 8.948815174597568,
+            "mean_ape_ci95": [
+              3.999902496307837,
+              15.621483235796473
+            ],
+            "median_ape_pct": 2.830441850447113,
+            "median_ape_ci95": [
+              1.999588764582553,
+              4.869089374003765
+            ]
+          },
+          "D84": {
+            "n": 40,
+            "mean_ape_pct": 6.923359884025077,
+            "mean_ape_ci95": [
+              2.4743778565588666,
+              13.344280062710423
+            ],
+            "median_ape_pct": 1.208085387435478,
+            "median_ape_ci95": [
+              0.6561007666275727,
+              2.2708770025662077
+            ]
+          },
+          "grain_count_ratio_mean": 0.8225258581409433,
+          "grain_count_ratio_ci95": [
+            0.7625220391371234,
+            0.882696997153847
+          ],
+          "mask_pq_vs_fp16_mean": 0.9893270787324624
+        },
+        "pass_criteria": {
+          "loads_and_runs_wasm": true,
+          "finite_and_allzero_negative": true,
+          "pq_and_d50_within_tol": true,
+          "mask_pq_vs_fp16_ge_095": true,
+          "PASS": true
+        }
+      },
+      "fp4_e2m1": {
+        "size": {
+          "bytes": 164829774,
+          "mb": 157.19,
+          "gzip_bytes": 140384272,
+          "gzip_mb": 133.88,
+          "brotli_bytes": 138760875,
+          "brotli_mb": 132.33,
+          "sha256": "2a1966056d800dbb15fc0557938d419a1432d5efce7b26473e53117b863ce064"
+        },
+        "quantized_layer_count": 96,
+        "quantized_weight_fraction": 0.9816,
+        "wasm": {
+          "load_ok": false,
+          "load_error": "Can't create a session. ERROR_CODE: 9, ERROR_MESSAGE: Failed to find kernel for DequantizeLinear(23) (node:'' ep:'CPUExecutionProvider'). Op with name () domain () and type (DequantizeLinear) kernel is not supported in CPUExecutionProvider. Encountered following errors: ( Version mismatch. node_version: 23 kernel start version: 10 kernel_end_version: 12\n Version mismatch. node_version: 23 kernel start version: 10 kernel_end_version: 12\n Version mismatch. node_version: 23 kernel start version: 10 kernel_end_version: 12\n Version mismatch. node_version: 23 kernel start version: 13 kernel_end_version: 18\n Version mismatch. node_version: 23 kernel start version: 13 kernel_end_version: 18\n Version mismatch. node_version: 23 kernel start version: 13 kernel_end_version: 18\n Version mismatch. node_version: 23 kernel start version: 19 kernel_end_version: 20\n Version mismatch. node_version: 23 kernel start version: 19 kernel_end_version: 20\n Version mismatch. node_version: 23 kernel start version: 19 kernel_end_version: 20\n Version mismatch. node_version: 23 kernel start version: 19 kernel_end_version: 20\n Version mismatch. node_version: 23 kernel start version: 19 kernel_end_version: 20\n Version mismatch. node_version: 23 kernel start version: 19 kernel_end_version: 20\n Version mismatch. node_version: 23 kernel start version: 19 kernel_end_version: 20\n Version mismatch. node_version: 23 kernel start version: 21 kernel_end_version: 22\n Version mismatch. node_version: 23 kernel start version: 21 kernel_end_version: 22\n Version mismatch. node_version: 23 kernel start version: 21 kernel_end_version: 22\n Version mismatch. node_version: 23 kernel start version: 21 kernel_end_version: 22\n Version mismatch. node_version: 23 kernel start version: 21 kernel_end_version: 22\n Version mismatch. node_version: 23 kernel start version: 21 kernel_end_version: 22\n Version mismatch. node_version: 23 kernel start version: 21 kernel_end_version: 22\n Version mismatch. node_version: 23 kernel start version: 21 kernel_end_version: 22\n Version mismatch. node_version: 23 kernel start version: 21 kernel_end_version: 22\n Version mismatch. node_version: 23 kernel start version: 21 kernel_end_version: 22\n Version mismatch. node_version: 23 kernel start version: 21 kernel_end_version: 22\nKernel found kernel in the supported version range (node_version: 23). However the types are incompatible. This op has been implemented only for the following types (tensor(uint8),), but the node in the model has the following type (tensor(float4e2m1))\nKernel found kernel in the supported version range (node_version: 23). However the types are incompatible. This op has been implemented only for the following types (tensor(int8),), but the node in the model has the following type (tensor(float4e2m1))\nKernel found kernel in the supported version range (node_version: 23). However the types are incompatible. This op has been implemented only for the following types (tensor(uint16),), but the node in the model has the following type (tensor(float4e2m1))\nKernel found kernel in the supported version range (node_version: 23). However the types are incompatible. This op has been implemented only for the following types (tensor(int16),), but the node in the model has the following type (tensor(float4e2m1))\nKernel found kernel in the supported version range (node_version: 23). However the types are incompatible. This op has been implemented only for the following types (tensor(int32),), but the node in the model has the following type (tensor(float4e2m1))\nKernel found kernel in the supported version range (node_version: 23). However the types are incompatible. This op has been implemented only for the following types (tensor(int4),), but the node in the model has the following type (tensor(float4e2m1))\nKernel found kernel in the supported version range (node_version: 23). However the types are incompatible. This op has been implemented only for the following types (tensor(uint4),), but the node in the model has the following type (tensor(float4e2m1))\nKernel found kernel in the supported version range (node_version: 23). However the types are incompatible. This op has been implemented only for the following types (tensor(float8e4m3fn),), but the node in the model has the following type (tensor(float4e2m1))\nKernel found kernel in the supported version range (node_version: 23). However the types are incompatible. This op has been implemented only for the following types (tensor(float8e4m3fnuz),), but the node in the model has the following type (tensor(float4e2m1))\nKernel found kernel in the supported version range (node_version: 23). However the types are incompatible. This op has been implemented only for the following types (tensor(float8e5m2),), but the node in the model has the following type (tensor(float4e2m1))\nKernel found kernel in the supported version range (node_version: 23). However the types are incompatible. This op has been implemented only for the following types (tensor(float8e5m2fnuz),), but the node in the model has the following type (tensor(float4e2m1))\n Version mismatch. node_version: 23 kernel start version: 24 kernel_end_version: 24\n Version mismatch. node_version: 23 kernel start version: 24 kernel_end_version: 24\n Version mismatch. node_version: 23 kernel start version: 24 kernel_end_version: 24\n Version mismatch. node_version: 23 kernel start version: 24 kernel_end_version: 24\n Version mismatch. node_version: 23 kernel start version: 24 kernel_end_version: 24\n Version mismatch. node_version: 23 kernel start version: 24 kernel_end_version: 24\n Version mismatch. node_version: 23 kernel start version: 24 kernel_end_version: 24\n Version mismatch. node_version: 23 kernel start version: 24 kernel_end_version: 24\n Version mismatch. node_version: 23 kernel start version: 24 kernel_end_version: 24\n Version mismatch. node_version: 23 kernel start version: 24 kernel_end_version: 24\n Version mismatch. node_version: 23 kernel start version: 24 kernel_end_version: 24\n Version mismatch. node_version: 23 kernel start version: 25 kernel_end_version: 2147483647\n Version mismatch. node_version: 23 kernel start version: 25 kernel_end_version: 2147483647\n Version mismatch. node_version: 23 kernel start version: 25 kernel_end_version: 2147483647\n Version mismatch. node_version: 23 kernel start version: 25 kernel_end_version: 2147483647\n Version mismatch. node_version: 23 kernel start version: 25 kernel_end_version: 2147483647\n Version mismatch. node_version: 23 kernel start version: 25 kernel_end_version: 2147483647\n Version mismatch. node_version: 23 kernel start version: 25 kernel_end_version: 2147483647\n Version mismatch. node_version: 23 kernel start version: 25 kernel_end_version: 2147483647\n Version mismatch. node_version: 23 kernel start version: 25 kernel_end_version: 2147483647\n Version mismatch. node_version: 23 kernel start version: 25 kernel_end_version: 2147483647\n Version mismatch. node_version: 23 kernel start version: 25 kernel_end_version: 2147483647\n Version mismatch. node_version: 23 kernel start version: 25 kernel_end_version: 2147483647\n Version mismatch. node_version: 23 kernel start version: 25 kernel_end_version: 2147483647\n)",
+          "load_time_s": 2.1011440559999994,
+          "peak_rss_mb": 1005.3
+        },
+        "speed_ms": {
+          "wasm_threads": 4,
+          "wasm_ms": null,
+          "py_cpu_ms": null,
+          "py_cuda_ms": null
+        },
+        "numerics_vs_pt_fp32": {},
+        "heldout_40": null,
+        "pass_criteria": {
+          "loads_and_runs_wasm": false,
+          "finite_and_allzero_negative": false,
+          "pq_and_d50_within_tol": false,
+          "mask_pq_vs_fp16_ge_095": false,
+          "PASS": false
+        }
+      },
+      "fp4_e2m1_lut": {
+        "size": {
+          "bytes": 183292650,
+          "mb": 174.8,
+          "gzip_bytes": 165316062,
+          "gzip_mb": 157.66,
+          "brotli_bytes": 164241971,
+          "brotli_mb": 156.63,
+          "sha256": "d49d8f0779af3956b45b506719702bc3f9b7e0044a2d2a0a6842751544320c99"
+        },
+        "quantized_layer_count": 96,
+        "quantized_weight_fraction": 0.9816,
+        "wasm": {
+          "load_ok": true,
+          "run_ok": true,
+          "load_time_s": 9.473574592,
+          "peak_rss_mb": 3473.9,
+          "avg_tile_ms": 14177.805630318182
+        },
+        "speed_ms": {
+          "wasm_threads": 4,
+          "wasm_ms": 14177.805630318182,
+          "py_cpu_ms": 2425.9982218636237,
+          "py_cuda_ms": 55.24428368182105
+        },
+        "numerics_vs_pt_fp32": {
+          "source": "wasm",
+          "non_finite_count": 0,
+          "flowY_max_abs": 1.2498544454574585,
+          "flowY_mean_abs": 0.040429387241601944,
+          "flowX_max_abs": 1.063938856124878,
+          "flowX_mean_abs": 0.03773020952939987,
+          "cellprob_max_abs": 1.3001434803009033,
+          "cellprob_mean_abs": 0.07600188255310059,
+          "cellprob_sign_agree_pct": 99.64500095533289,
+          "all_zero_cellprob_mean": -5.087668418884277,
+          "all_zero_cellprob_max": -3.822265625,
+          "all_zero_sign_agree_pct": 100.0,
+          "all_zero_negative_ok": true,
+          "py_cpu_vs_wasm_max_abs": 0.0078125
+        },
+        "heldout_40": {
+          "pq_vs_gt_mean": 0.651996337554119,
+          "pq_vs_gt_ci95": [
+            0.6201418278066397,
+            0.6831473799317369
+          ],
+          "D16": {
+            "n": 40,
+            "mean_ape_pct": 13.241657798338235,
+            "mean_ape_ci95": [
+              8.514865247727665,
+              19.31124496001559
+            ],
+            "median_ape_pct": 6.44129917898233,
+            "median_ape_ci95": [
+              4.824886245413932,
+              11.733448416967018
+            ]
+          },
+          "D50": {
+            "n": 40,
+            "mean_ape_pct": 8.966790845788882,
+            "mean_ape_ci95": [
+              4.071773174057051,
+              15.662156660053213
+            ],
+            "median_ape_pct": 2.7873197561452034,
+            "median_ape_ci95": [
+              1.7060457741626052,
+              5.06721504667243
+            ]
+          },
+          "D84": {
+            "n": 40,
+            "mean_ape_pct": 6.916838236625267,
+            "mean_ape_ci95": [
+              2.4860377675363927,
+              13.319067035045588
+            ],
+            "median_ape_pct": 1.1205940789103694,
+            "median_ape_ci95": [
+              0.7498277416466976,
+              1.9200852812182887
+            ]
+          },
+          "grain_count_ratio_mean": 0.8195323654457084,
+          "grain_count_ratio_ci95": [
+            0.7612934632938888,
+            0.8809487135741214
+          ],
+          "mask_pq_vs_fp16_mean": 0.9663612794411375
+        },
+        "pass_criteria": {
+          "loads_and_runs_wasm": true,
+          "finite_and_allzero_negative": true,
+          "pq_and_d50_within_tol": true,
+          "mask_pq_vs_fp16_ge_095": true,
+          "PASS": true
+        }
+      },
+      "int8_wo": {
+        "size": {
+          "bytes": 315824959,
+          "mb": 301.19,
+          "gzip_bytes": 270143173,
+          "gzip_mb": 257.63,
+          "brotli_bytes": 267789434,
+          "brotli_mb": 255.38,
+          "sha256": "3410ab46a8f7f721f5c4b0c451206005bf039267ab50d934253af5cd6cb34a59"
+        },
+        "quantized_layer_count": 96,
+        "quantized_weight_fraction": 0.9816,
+        "wasm": {
+          "load_ok": false,
+          "load_error": "Can't create a session. ERROR_CODE: 10, ERROR_MESSAGE: This is an invalid model. Type Error: Type 'tensor(float16)' of input parameter (val_3_scale) of operator (DequantizeLinear) in node () is invalid.",
+          "load_time_s": 1.219150756,
+          "peak_rss_mb": 1190.2
+        },
+        "speed_ms": {
+          "wasm_threads": 4,
+          "wasm_ms": null,
+          "py_cpu_ms": null,
+          "py_cuda_ms": null
+        },
+        "numerics_vs_pt_fp32": {},
+        "heldout_40": null,
+        "pass_criteria": {
+          "loads_and_runs_wasm": false,
+          "finite_and_allzero_negative": false,
+          "pq_and_d50_within_tol": false,
+          "mask_pq_vs_fp16_ge_095": false,
+          "PASS": false
+        }
+      },
+      "int4_mnb_bs32": {
+        "size": {
+          "bytes": 436405088,
+          "mb": 416.19,
+          "gzip_bytes": 340564920,
+          "gzip_mb": 324.79,
+          "brotli_bytes": 336906956,
+          "brotli_mb": 321.3,
+          "sha256": "8c79db8f034eff41ee8b0743dfc4dd1eaacf72bfb7f2b8a111df4912e6968b18"
+        },
+        "quantized_layer_count": 48,
+        "quantized_weight_fraction": 0.409,
+        "wasm": {
+          "load_ok": true,
+          "run_ok": true,
+          "load_time_s": 3.4504762479999997,
+          "peak_rss_mb": 2788.8,
+          "avg_tile_ms": 14192.832813181816
+        },
+        "speed_ms": {
+          "wasm_threads": 4,
+          "wasm_ms": 14192.832813181816,
+          "py_cpu_ms": 2314.011369681814,
+          "py_cuda_ms": 53.932090045484735
+        },
+        "numerics_vs_pt_fp32": {
+          "source": "wasm",
+          "non_finite_count": 0,
+          "flowY_max_abs": 0.8409653902053833,
+          "flowY_mean_abs": 0.01918509043753147,
+          "flowX_max_abs": 0.8039295673370361,
+          "flowX_mean_abs": 0.020399844273924828,
+          "cellprob_max_abs": 0.6913449764251709,
+          "cellprob_mean_abs": 0.04230194538831711,
+          "cellprob_sign_agree_pct": 99.83978271484375,
+          "all_zero_cellprob_mean": -5.141634941101074,
+          "all_zero_cellprob_max": -3.861328125,
+          "all_zero_sign_agree_pct": 100.0,
+          "all_zero_negative_ok": true,
+          "py_cpu_vs_wasm_max_abs": 0.0078125
+        },
+        "heldout_40": {
+          "pq_vs_gt_mean": 0.6504360501692665,
+          "pq_vs_gt_ci95": [
+            0.6177898657746096,
+            0.6813345188641534
+          ],
+          "D16": {
+            "n": 40,
+            "mean_ape_pct": 14.962742968497452,
+            "mean_ape_ci95": [
+              9.565867780176625,
+              21.340727209589215
+            ],
+            "median_ape_pct": 7.547690059253519,
+            "median_ape_ci95": [
+              4.191802657813026,
+              11.702680966915542
+            ]
+          },
+          "D50": {
+            "n": 40,
+            "mean_ape_pct": 10.183746007605151,
+            "mean_ape_ci95": [
+              4.924328248373377,
+              16.976216166305814
+            ],
+            "median_ape_pct": 3.168175742361466,
+            "median_ape_ci95": [
+              1.8551374634844264,
+              5.738912525050347
+            ]
+          },
+          "D84": {
+            "n": 40,
+            "mean_ape_pct": 7.758821064916296,
+            "mean_ape_ci95": [
+              3.153945351688516,
+              13.905910525569496
+            ],
+            "median_ape_pct": 1.3227341944963782,
+            "median_ape_ci95": [
+              0.8474984793334654,
+              3.0602008726775694
+            ]
+          },
+          "grain_count_ratio_mean": 0.811904493954924,
+          "grain_count_ratio_ci95": [
+            0.7518262137616765,
+            0.8738917800953538
+          ],
+          "mask_pq_vs_fp16_mean": 0.977950700199543
+        },
+        "pass_criteria": {
+          "loads_and_runs_wasm": true,
+          "finite_and_allzero_negative": true,
+          "pq_and_d50_within_tol": true,
+          "mask_pq_vs_fp16_ge_095": true,
+          "PASS": true
+        }
+      },
+      "int4_mnb_bs128": {
+        "size": {
+          "bytes": 430506848,
+          "mb": 410.56,
+          "gzip_bytes": 332506504,
+          "gzip_mb": 317.1,
+          "brotli_bytes": 328629813,
+          "brotli_mb": 313.41,
+          "sha256": "4515f10a787e4a3a5f8d567aae0e9bf1e7686fe014f96a0e0986fb98b72c2a2e"
+        },
+        "quantized_layer_count": 48,
+        "quantized_weight_fraction": 0.409,
+        "wasm": {
+          "load_ok": true,
+          "run_ok": true,
+          "load_time_s": 3.4944117169999998,
+          "peak_rss_mb": 2912.3,
+          "avg_tile_ms": 14201.772046954546
+        },
+        "speed_ms": {
+          "wasm_threads": 4,
+          "wasm_ms": 14201.772046954546,
+          "py_cpu_ms": 2312.6561687273056,
+          "py_cuda_ms": 54.070335772683556
+        },
+        "numerics_vs_pt_fp32": {
+          "source": "wasm",
+          "non_finite_count": 0,
+          "flowY_max_abs": 1.129211187362671,
+          "flowY_mean_abs": 0.026128364726901054,
+          "flowX_max_abs": 0.9922678470611572,
+          "flowX_mean_abs": 0.028266428038477898,
+          "cellprob_max_abs": 1.3609228134155273,
+          "cellprob_mean_abs": 0.053753387182950974,
+          "cellprob_sign_agree_pct": 99.69661546790081,
+          "all_zero_cellprob_mean": -5.166646480560303,
+          "all_zero_cellprob_max": -3.87109375,
+          "all_zero_sign_agree_pct": 100.0,
+          "all_zero_negative_ok": true,
+          "py_cpu_vs_wasm_max_abs": 0.0078125
+        },
+        "heldout_40": {
+          "pq_vs_gt_mean": 0.6508493212022477,
+          "pq_vs_gt_ci95": [
+            0.6186656608751228,
+            0.6813836206612631
+          ],
+          "D16": {
+            "n": 40,
+            "mean_ape_pct": 15.20128828620695,
+            "mean_ape_ci95": [
+              9.68219068110176,
+              21.561972558893356
+            ],
+            "median_ape_pct": 7.597823309535496,
+            "median_ape_ci95": [
+              3.8178323420124425,
+              13.03873717441595
+            ]
+          },
+          "D50": {
+            "n": 40,
+            "mean_ape_pct": 10.126284436590229,
+            "mean_ape_ci95": [
+              4.910723353998319,
+              16.93194180724921
+            ],
+            "median_ape_pct": 3.0851365045751677,
+            "median_ape_ci95": [
+              1.9089074618061486,
+              5.334769946450032
+            ]
+          },
+          "D84": {
+            "n": 40,
+            "mean_ape_pct": 7.664992325086788,
+            "mean_ape_ci95": [
+              3.1103509524153083,
+              13.715062255989656
+            ],
+            "median_ape_pct": 1.3797773865840794,
+            "median_ape_ci95": [
+              0.6959286727051083,
+              2.7675893426287086
+            ]
+          },
+          "grain_count_ratio_mean": 0.8082451857148089,
+          "grain_count_ratio_ci95": [
+            0.7505456184314716,
+            0.8686679334389841
+          ],
+          "mask_pq_vs_fp16_mean": 0.9714202443695127
+        },
+        "pass_criteria": {
+          "loads_and_runs_wasm": true,
+          "finite_and_allzero_negative": true,
+          "pq_and_d50_within_tol": true,
+          "mask_pq_vs_fp16_ge_095": true,
+          "PASS": true
+        }
+      }
+    },
+    "unet": {
+      "fp32": {
+        "size": {
+          "bytes": 26489665,
+          "mb": 25.26,
+          "gzip_bytes": 24612254,
+          "gzip_mb": 23.47,
+          "brotli_bytes": 24560975,
+          "brotli_mb": 23.42,
+          "sha256": "5e692c5593ac15e614b77602e1d4f8c2f84dd939f4386b1f7e5641dbcd62053c"
+        },
+        "quantized_layer_count": 0,
+        "quantized_weight_fraction": 0.0,
+        "wasm": {
+          "load_ok": true,
+          "run_ok": true,
+          "load_time_s": 0.8885386710000001,
+          "peak_rss_mb": 777.3,
+          "avg_tile_ms": 755.4135592727272
+        },
+        "speed_ms": {
+          "wasm_threads": 4,
+          "wasm_ms": 755.4135592727272,
+          "py_cpu_ms": 138.41434572722474,
+          "py_cuda_ms": 4.984208454598874
+        },
+        "numerics_vs_pt_fp32": {
+          "source": "wasm",
+          "non_finite_count": 0,
+          "flowY_max_abs": 9.5367431640625e-06,
+          "flowY_mean_abs": 3.218063966414775e-07,
+          "flowX_max_abs": 9.059906005859375e-06,
+          "flowX_mean_abs": 3.2140778216671606e-07,
+          "cellprob_max_abs": 1.1444091796875e-05,
+          "cellprob_mean_abs": 9.286179647460813e-07,
+          "cellprob_sign_agree_pct": 100.0,
+          "all_zero_cellprob_mean": -7.884821891784668,
+          "all_zero_cellprob_max": -5.565014839172363,
+          "all_zero_sign_agree_pct": 100.0,
+          "all_zero_negative_ok": true,
+          "py_cpu_vs_wasm_max_abs": 2.47955322265625e-05
+        },
+        "heldout_40": null,
+        "pass_criteria": {
+          "loads_and_runs_wasm": true,
+          "finite_and_allzero_negative": true,
+          "pq_and_d50_within_tol": null,
+          "mask_pq_vs_fp16_ge_095": null,
+          "PASS": true
+        }
+      },
+      "fp16": {
+        "size": {
+          "bytes": 13301726,
+          "mb": 12.69,
+          "gzip_bytes": 12300837,
+          "gzip_mb": 11.73,
+          "brotli_bytes": 12242902,
+          "brotli_mb": 11.68,
+          "sha256": "768fd1ab1fd706c344307e059444c627df3e28dac15eba1f2349475964c0b95f"
+        },
+        "quantized_layer_count": 0,
+        "quantized_weight_fraction": 0.0,
+        "wasm": {
+          "load_ok": true,
+          "run_ok": true,
+          "load_time_s": 0.9810878319999999,
+          "peak_rss_mb": 969.6,
+          "avg_tile_ms": 761.381836181818
+        },
+        "speed_ms": {
+          "wasm_threads": 4,
+          "wasm_ms": 761.381836181818,
+          "py_cpu_ms": 152.73255768186738,
+          "py_cuda_ms": 3.8340072727681798
+        },
+        "numerics_vs_pt_fp32": {
+          "source": "wasm",
+          "non_finite_count": 0,
+          "flowY_max_abs": 0.05208154022693634,
+          "flowY_mean_abs": 0.001721661421470344,
+          "flowX_max_abs": 0.04344189167022705,
+          "flowX_mean_abs": 0.0014255722053349018,
+          "cellprob_max_abs": 0.09633731842041016,
+          "cellprob_mean_abs": 0.0043581523932516575,
+          "cellprob_sign_agree_pct": 99.98142408288044,
+          "all_zero_cellprob_mean": -7.877560615539551,
+          "all_zero_cellprob_max": -5.56640625,
+          "all_zero_sign_agree_pct": 100.0,
+          "all_zero_negative_ok": true,
+          "py_cpu_vs_wasm_max_abs": 0.0078125
+        },
+        "heldout_40": null,
+        "pass_criteria": {
+          "loads_and_runs_wasm": true,
+          "finite_and_allzero_negative": true,
+          "pq_and_d50_within_tol": false,
+          "mask_pq_vs_fp16_ge_095": false,
+          "PASS": false
+        }
+      },
+      "fp8_e4m3": {
+        "size": {
+          "bytes": 26489665,
+          "mb": 25.26,
+          "gzip_bytes": 24612254,
+          "gzip_mb": 23.47,
+          "brotli_bytes": 24560975,
+          "brotli_mb": 23.42,
+          "sha256": "1ec0eb5d072052c749aa525100d50d042964547432eadf00455ccd8b9eb9685d"
+        },
+        "quantized_layer_count": 0,
+        "quantized_weight_fraction": 0.0,
+        "wasm": {
+          "load_ok": false,
+          "load_error": "Can't create a session. ERROR_CODE: 6, ERROR_MESSAGE: Unrecognized attribute: axes for operator ReduceMean",
+          "load_time_s": 0.5643241280000001,
+          "peak_rss_mb": 382.2
+        },
+        "speed_ms": {
+          "wasm_threads": 4,
+          "wasm_ms": null,
+          "py_cpu_ms": null,
+          "py_cuda_ms": null
+        },
+        "numerics_vs_pt_fp32": {},
+        "heldout_40": null,
+        "pass_criteria": {
+          "loads_and_runs_wasm": false,
+          "finite_and_allzero_negative": false,
+          "pq_and_d50_within_tol": false,
+          "mask_pq_vs_fp16_ge_095": false,
+          "PASS": false
+        }
+      },
+      "fp4_e2m1": {
+        "size": {
+          "bytes": 26489665,
+          "mb": 25.26,
+          "gzip_bytes": 24612254,
+          "gzip_mb": 23.47,
+          "brotli_bytes": 24560975,
+          "brotli_mb": 23.42,
+          "sha256": "907e1d8cfffc77ce27cc289a92f02c3db42dc967dc73fa3c3ff3cf7d63e23323"
+        },
+        "quantized_layer_count": 0,
+        "quantized_weight_fraction": 0.0,
+        "wasm": {
+          "load_ok": false,
+          "load_error": "Can't create a session. ERROR_CODE: 6, ERROR_MESSAGE: Unrecognized attribute: axes for operator ReduceMean",
+          "load_time_s": 0.576595844,
+          "peak_rss_mb": 380.5
+        },
+        "speed_ms": {
+          "wasm_threads": 4,
+          "wasm_ms": null,
+          "py_cpu_ms": null,
+          "py_cuda_ms": null
+        },
+        "numerics_vs_pt_fp32": {},
+        "heldout_40": null,
+        "pass_criteria": {
+          "loads_and_runs_wasm": false,
+          "finite_and_allzero_negative": false,
+          "pq_and_d50_within_tol": false,
+          "mask_pq_vs_fp16_ge_095": false,
+          "PASS": false
+        }
+      },
+      "fp4_e2m1_lut": {
+        "size": {
+          "bytes": 26491745,
+          "mb": 25.26,
+          "gzip_bytes": 24612948,
+          "gzip_mb": 23.47,
+          "brotli_bytes": 24561414,
+          "brotli_mb": 23.42,
+          "sha256": "0477fb43c0618be4534787c4f0f412057ab3895c23b4b4973c6a3e8208bd94c1"
+        },
+        "quantized_layer_count": 0,
+        "quantized_weight_fraction": 0.0,
+        "wasm": {
+          "load_ok": false,
+          "load_error": "Can't create a session. ERROR_CODE: 6, ERROR_MESSAGE: Unrecognized attribute: axes for operator ReduceMean",
+          "load_time_s": 0.56931621,
+          "peak_rss_mb": 380.5
+        },
+        "speed_ms": {
+          "wasm_threads": 4,
+          "wasm_ms": null,
+          "py_cpu_ms": null,
+          "py_cuda_ms": null
+        },
+        "numerics_vs_pt_fp32": {},
+        "heldout_40": null,
+        "pass_criteria": {
+          "loads_and_runs_wasm": false,
+          "finite_and_allzero_negative": false,
+          "pq_and_d50_within_tol": false,
+          "mask_pq_vs_fp16_ge_095": false,
+          "PASS": false
+        }
+      },
+      "int8_wo": {
+        "size": {
+          "bytes": 26489665,
+          "mb": 25.26,
+          "gzip_bytes": 24612254,
+          "gzip_mb": 23.47,
+          "brotli_bytes": 24560975,
+          "brotli_mb": 23.42,
+          "sha256": "e98b57529d547f1076bd9b66bb9ade8fccceacea14ebca629083012f6c368544"
+        },
+        "quantized_layer_count": 0,
+        "quantized_weight_fraction": 0.0,
+        "wasm": {
+          "load_ok": false,
+          "load_error": "Can't create a session. ERROR_CODE: 6, ERROR_MESSAGE: Unrecognized attribute: axes for operator ReduceMean",
+          "load_time_s": 0.5738337680000001,
+          "peak_rss_mb": 382.4
+        },
+        "speed_ms": {
+          "wasm_threads": 4,
+          "wasm_ms": null,
+          "py_cpu_ms": null,
+          "py_cuda_ms": null
+        },
+        "numerics_vs_pt_fp32": {},
+        "heldout_40": null,
+        "pass_criteria": {
+          "loads_and_runs_wasm": false,
+          "finite_and_allzero_negative": false,
+          "pq_and_d50_within_tol": false,
+          "mask_pq_vs_fp16_ge_095": false,
+          "PASS": false
+        }
+      },
+      "int4_mnb_bs32": {
+        "size": {
+          "bytes": 26489684,
+          "mb": 25.26,
+          "gzip_bytes": 24612274,
+          "gzip_mb": 23.47,
+          "brotli_bytes": 24561232,
+          "brotli_mb": 23.42,
+          "sha256": "6cf4c0033525b6c7d56a474ad218615d687a568aea211b20165d946768c1b127"
+        },
+        "quantized_layer_count": 0,
+        "quantized_weight_fraction": 0.0,
+        "wasm": {
+          "load_ok": true,
+          "run_ok": true,
+          "load_time_s": 0.919823857,
+          "peak_rss_mb": 757.1,
+          "avg_tile_ms": 748.6345119545455
+        },
+        "speed_ms": {
+          "wasm_threads": 4,
+          "wasm_ms": 748.6345119545455,
+          "py_cpu_ms": 135.95952536365985,
+          "py_cuda_ms": 4.982163681792041
+        },
+        "numerics_vs_pt_fp32": {
+          "source": "wasm",
+          "non_finite_count": 0,
+          "flowY_max_abs": 9.5367431640625e-06,
+          "flowY_mean_abs": 3.218063966414775e-07,
+          "flowX_max_abs": 9.059906005859375e-06,
+          "flowX_mean_abs": 3.2140778216671606e-07,
+          "cellprob_max_abs": 1.1444091796875e-05,
+          "cellprob_mean_abs": 9.286179647460813e-07,
+          "cellprob_sign_agree_pct": 100.0,
+          "all_zero_cellprob_mean": -7.884821891784668,
+          "all_zero_cellprob_max": -5.565014839172363,
+          "all_zero_sign_agree_pct": 100.0,
+          "all_zero_negative_ok": true,
+          "py_cpu_vs_wasm_max_abs": 2.47955322265625e-05
+        },
+        "heldout_40": {
+          "pq_vs_gt_mean": 0.5396990519706703,
+          "pq_vs_gt_ci95": [
+            0.48601072082673347,
+            0.5878188245392374
+          ],
+          "D16": {
+            "n": 40,
+            "mean_ape_pct": 37.576166338193744,
+            "mean_ape_ci95": [
+              25.292743842947154,
+              53.331742501432686
+            ],
+            "median_ape_pct": 23.80688461374215,
+            "median_ape_ci95": [
+              12.106474430463507,
+              42.532797801038186
+            ]
+          },
+          "D50": {
+            "n": 40,
+            "mean_ape_pct": 24.384900042549948,
+            "mean_ape_ci95": [
+              13.690158762229451,
+              39.21004285880958
+            ],
+            "median_ape_pct": 9.43616859063367,
+            "median_ape_ci95": [
+              5.321361142748866,
+              14.853934118637376
+            ]
+          },
+          "D84": {
+            "n": 40,
+            "mean_ape_pct": 11.448963649984288,
+            "mean_ape_ci95": [
+              6.039149328583213,
+              18.107285710283087
+            ],
+            "median_ape_pct": 2.9411620369978433,
+            "median_ape_ci95": [
+              0.9793021761196461,
+              6.306071861882406
+            ]
+          },
+          "grain_count_ratio_mean": 0.5780131805941446,
+          "grain_count_ratio_ci95": [
+            0.4944249331827746,
+            0.6619969850481245
+          ],
+          "mask_pq_vs_fp16_mean": NaN
+        },
+        "pass_criteria": {
+          "loads_and_runs_wasm": true,
+          "finite_and_allzero_negative": true,
+          "pq_and_d50_within_tol": false,
+          "mask_pq_vs_fp16_ge_095": false,
+          "PASS": false
+        }
+      },
+      "int4_mnb_bs128": {
+        "size": {
+          "bytes": 26489684,
+          "mb": 25.26,
+          "gzip_bytes": 24612274,
+          "gzip_mb": 23.47,
+          "brotli_bytes": 24561232,
+          "brotli_mb": 23.42,
+          "sha256": "6cf4c0033525b6c7d56a474ad218615d687a568aea211b20165d946768c1b127"
+        },
+        "quantized_layer_count": 0,
+        "quantized_weight_fraction": 0.0,
+        "wasm": {
+          "load_ok": true,
+          "run_ok": true,
+          "load_time_s": 0.926283706,
+          "peak_rss_mb": 766.9,
+          "avg_tile_ms": 746.7748845909096
+        },
+        "speed_ms": {
+          "wasm_threads": 4,
+          "wasm_ms": 746.7748845909096,
+          "py_cpu_ms": 82.29036031812856,
+          "py_cuda_ms": 4.979312863704101
+        },
+        "numerics_vs_pt_fp32": {
+          "source": "wasm",
+          "non_finite_count": 0,
+          "flowY_max_abs": 9.5367431640625e-06,
+          "flowY_mean_abs": 3.218063966414775e-07,
+          "flowX_max_abs": 9.059906005859375e-06,
+          "flowX_mean_abs": 3.2140778216671606e-07,
+          "cellprob_max_abs": 1.1444091796875e-05,
+          "cellprob_mean_abs": 9.286179647460813e-07,
+          "cellprob_sign_agree_pct": 100.0,
+          "all_zero_cellprob_mean": -7.884821891784668,
+          "all_zero_cellprob_max": -5.565014839172363,
+          "all_zero_sign_agree_pct": 100.0,
+          "all_zero_negative_ok": true,
+          "py_cpu_vs_wasm_max_abs": 2.47955322265625e-05
+        },
+        "heldout_40": {
+          "pq_vs_gt_mean": 0.5396990519706703,
+          "pq_vs_gt_ci95": [
+            0.48601072082673347,
+            0.5878188245392374
+          ],
+          "D16": {
+            "n": 40,
+            "mean_ape_pct": 37.576166338193744,
+            "mean_ape_ci95": [
+              25.292743842947154,
+              53.331742501432686
+            ],
+            "median_ape_pct": 23.80688461374215,
+            "median_ape_ci95": [
+              12.106474430463507,
+              42.532797801038186
+            ]
+          },
+          "D50": {
+            "n": 40,
+            "mean_ape_pct": 24.384900042549948,
+            "mean_ape_ci95": [
+              13.690158762229451,
+              39.21004285880958
+            ],
+            "median_ape_pct": 9.43616859063367,
+            "median_ape_ci95": [
+              5.321361142748866,
+              14.853934118637376
+            ]
+          },
+          "D84": {
+            "n": 40,
+            "mean_ape_pct": 11.448963649984288,
+            "mean_ape_ci95": [
+              6.039149328583213,
+              18.107285710283087
+            ],
+            "median_ape_pct": 2.9411620369978433,
+            "median_ape_ci95": [
+              0.9793021761196461,
+              6.306071861882406
+            ]
+          },
+          "grain_count_ratio_mean": 0.5780131805941446,
+          "grain_count_ratio_ci95": [
+            0.4944249331827746,
+            0.6619969850481245
+          ],
+          "mask_pq_vs_fp16_mean": NaN
+        },
+        "pass_criteria": {
+          "loads_and_runs_wasm": true,
+          "finite_and_allzero_negative": true,
+          "pq_and_d50_within_tol": false,
+          "mask_pq_vs_fp16_ge_095": false,
+          "PASS": false
+        }
+      }
+    }
+  }
+}
