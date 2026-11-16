@@ -54,9 +54,23 @@ In all quantized CP-SAM variants, `Conv` layers (`patch_embed`, `neck`, `out` he
 4. **All passing CP-SAM variants preserve negative `cellprob` on the all-zero tile** (`-5.09` to `-5.19`, `100%` negative).
 
 ### Recommendation
-- **Best drop-in replacement (minimal risk):** `fp8_e4m3` (242 MiB brotli, `0.9893` mask PQ vs `fp16`, faster load, 1 GB less RAM).
-- **Best maximum-compression option:** `fp4_e2m1_lut` (157 MiB brotli, `0.9664` mask PQ vs `fp16`, same WASM speed as `fp16`).
-- **Follow-up experiment:** [`imagegrains_quantize_mixed_w4_w8_colab.ipynb`](imagegrains_quantize_mixed_w4_w8_colab.ipynb) tests the sensitivity-guided mixed W4/W8 scheme from [arXiv:2609.21038](https://arxiv.org/abs/2609.21038) (keeping `blocks.0.mlp.lin2` and `blocks.23.attn.qkv` in `fp8_e4m3`/`fp16` while quantizing the remaining 94 layers to `fp4_e2m1_lut`).
+- **Best near-lossless drop-in (`W8A16`):**
+  - **`int8_wo_fp32scale`**: `301.62 MiB` raw (`255.55 MiB` brotli), `0.9940` mask PQ vs `fp16`, `8.91%` mean D50 APE (identical to `fp16`), `3.12s` load, **2,007 MB peak RAM** (half of `fp16`'s 3,971 MB), and `14.68s/tile` WASM.
+  - **`fp8_e4m3`**: `301.19 MiB` raw (`241.86 MiB` brotli, 13.7 MiB smaller than `int8_wo_fp32scale`), `0.9893` mask PQ vs `fp16`, `2.54s` load, `2,808 MB` peak RAM, `17.89s/tile` WASM.
+- **Best maximum-compression option:** `fp4_e2m1_lut` (`174.80 MiB` raw / `156.63 MiB` brotli, `0.9664` mask PQ vs `fp16`, `8.97%` mean D50 APE, same WASM speed as `fp16`, zero outliers).
+
+---
+
+## Follow-Up Benchmark (`imagegrains_quantize_mixed_w4_w8_colab.ipynb`)
+
+Results recorded in [`results_mixed_w4_w8.json`](results_mixed_w4_w8.json) and [`results_mixed_w4_w8_per_image.csv`](results_mixed_w4_w8_per_image.csv):
+
+| Variant | Size (MiB, gz / br) | SHA-256 (prefix) | ORT-Web Load | Peak RSS | PQ vs GT | D50 Mean / Med APE | Mask PQ vs FP16 | WASM ms/tile | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| **`int8_wo_fp32scale`** | **301.62 (257.7 / 255.6)** | `2cda0be5` | **Yes (3.12s)** | **2,007 MB** | **`0.6529`** | **`8.91%` / `2.88%`** | **`0.9940`** | **14,676** | Worst mask PQ `0.9652`, worst D50 APE delta `+0.39%` |
+| `int4_mnb_bs64_mixed` | 165.61 (140.1 / 138.5) | `ed70b24b` | Yes (2.11s) | 1,532 MB | `0.6486` | `10.16%` / `3.20%` | `0.9665` | 15,038 | Still has `+46.15%` D50 APE spike on `NB2__test__P5240929_Crop_3` |
+| `fp4_lut_mixed_fp8` | 174.80 (157.7 / 156.6) | `daad9e65` | Yes (9.38s) | 3,891 MB | `0.6520` | `8.97%` / `2.79%` | `0.9664` | 14,362 | Identical numerics to `fp4_e2m1_lut` (TorchScript `onnx::MatMul_*` names bypassed pattern match) |
+| `fp4_lut_mixed_fp16` | 174.80 (157.7 / 156.6) | `d49d8f07` | Yes (9.23s) | 3,672 MB | `0.6520` | `8.97%` / `2.79%` | `0.9664` | 14,422 | Identical to `fp4_e2m1_lut` |
 
 ---
 
