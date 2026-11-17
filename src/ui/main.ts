@@ -49,6 +49,7 @@ import { CanvasViewport } from './canvasViewport.js';
 import { parseJpegExifMetadata } from './exif.js';
 import { helpButton, isHelpKey, renderHelpModalHtml } from './help.js';
 import { logicalCores, wasmThreadsFor } from '../modules/onnxInference.js';
+import { CPU_THREADS_KEY, readCpuThreadPref } from './cpuThreads.js';
 import {
   handleExportAction,
   renderAboutModalHtml,
@@ -115,17 +116,7 @@ function makeId(prefix: string): string {
 
 const store = new AppStore();
 
-/** CPU thread preference ('auto' = cores − 1), saved per browser; applies on page load. */
-const CPU_THREADS_KEY = 'webgrainy-cpu-threads';
-function readCpuThreadPref(): 'auto' | number {
-  try {
-    const v = localStorage.getItem(CPU_THREADS_KEY);
-    const n = v === null ? NaN : Number(v);
-    return Number.isInteger(n) && n >= 1 ? n : 'auto';
-  } catch {
-    return 'auto';
-  }
-}
+// CPU thread preference ('auto' = cores − 1), saved per browser; applies on page load.
 const cpuThreadPref = readCpuThreadPref();
 const cpuThreads = wasmThreadsFor(cpuThreadPref);
 

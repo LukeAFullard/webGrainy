@@ -17,8 +17,12 @@ import {
 } from '../modules/onnxInference.js';
 import { flowsToMasksBrowser } from '../modules/postprocessCore.js';
 import { APP_VERSION, ORT_VERSION } from '../modules/provenance.js';
+import { preferredCpuThreads } from './cpuThreads.js';
 import { classifyCase, overallVerdict, type CaseVerdict } from '../modules/gpuCheckVerdict.js';
 import type { InferenceOutput, ModelId } from '../types/index.js';
+
+/** Same CPU thread choice as the app (Advanced → CPU threads); fixed at page load. */
+const cpuThreads = preferredCpuThreads();
 
 type Kind = 'cpsam' | 'cpsam_int8' | 'cpsam_fp4' | 'unet';
 const KIND_MODEL: Record<Kind, ModelId> = {
@@ -161,6 +165,7 @@ async function runAll(kind: Kind): Promise<void> {
     userAgent: navigator.userAgent,
     crossOriginIsolated: self.crossOriginIsolated,
     hardwareConcurrency: navigator.hardwareConcurrency,
+    cpuThreads: cpuThreads ?? 1,
   };
   try {
     const caps = await probeWebGpuCapabilities();
@@ -199,6 +204,7 @@ async function runAll(kind: Kind): Promise<void> {
       setStatus(`Creating ${backend === 'webgpu' ? 'GPU (WebGPU)' : 'CPU (WASM)'} session…`);
       const created = await createInferenceSession(bytes, {
         wasmPaths: './ort/',
+        ...(cpuThreads !== undefined ? { numThreads: cpuThreads } : {}),
         ...(backend === 'wasm' ? { forceWasm: true } : {}),
       });
       if (backend === 'webgpu' && created.executionProvider !== 'webgpu') {
@@ -373,7 +379,7 @@ function init(): void {
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
     void navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).catch(() => undefined);
   }
-  $('env').textContent = `webGrainy ${APP_VERSION} · ONNX Runtime ${ORT_VERSION} · ${self.crossOriginIsolated ? `${navigator.hardwareConcurrency} CPU threads` : '1 CPU thread (reload the page for multi-threaded CPU)'}`;
+  $('env').textContent = `webGrainy ${APP_VERSION} · ONNX Runtime ${ORT_VERSION} · ${cpuThreads !== undefined ? `CPU: ${cpuThreads} of ${navigator.hardwareConcurrency} threads (change in the app: Advanced → CPU threads)` : '1 CPU thread (reload the page for multi-threaded CPU)'}`;
 }
 
 init();
