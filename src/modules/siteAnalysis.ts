@@ -1595,10 +1595,6 @@ export function withExclusionTolerance(
   return { ...roi, maxExcludedFraction };
 }
 
-/** CSV cell with quoting and spreadsheet formula-injection neutralisation (OWASP). */
-function csvEscape(val: string | number | boolean): string {
-  return csvCell(val);
-}
 
 /**
  * Provenance block for site-level exports: app/ORT versions, notices, and the
@@ -1684,9 +1680,9 @@ export function exportSiteSummaryCsv(
   const lines: string[] = ['section,metric,value,unit'];
   lines.push(...metadataSummaryRows(metadata));
 
-  lines.push(`metadata,pooling_mode,${csvEscape(report.poolingMode)},mode`);
+  lines.push(`metadata,pooling_mode,${csvCell(report.poolingMode)},mode`);
   lines.push(
-    `metadata,statistical_basis,${csvEscape(report.statisticalBasisLabel)},label`,
+    `metadata,statistical_basis,${csvCell(report.statisticalBasisLabel)},label`,
   );
   lines.push(`metadata,unit,${report.unit},unit`);
   lines.push(`metadata,size_metric,${report.sizeMetric},metric`);
@@ -1704,9 +1700,9 @@ export function exportSiteSummaryCsv(
   lines.push(
     `metadata,excluded_truncation_area_mm2,${report.excludedTruncationAreaMm2},mm2`,
   );
-  lines.push(`metadata,adequacy_rating,${csvEscape(report.adequacy.rating)},label`);
+  lines.push(`metadata,adequacy_rating,${csvCell(report.adequacy.rating)},label`);
   lines.push(
-    `metadata,bootstrap_mode,${csvEscape(report.bootstrapMode)},mode`,
+    `metadata,bootstrap_mode,${csvCell(report.bootstrapMode)},mode`,
   );
   lines.push(`metadata,bootstrap_seed,${report.bootstrapSeed},seed`);
   lines.push(
@@ -1736,9 +1732,9 @@ export function exportSiteSummaryCsv(
     lines.push(`folk_ward,skewness_phi,${fw.skewnessPhi},phi`);
     lines.push(`folk_ward,kurtosis_phi,${fw.kurtosisPhi},phi`);
     lines.push(`folk_ward,mean_mm,${fw.meanMm},mm`);
-    lines.push(`folk_ward,sorting_label,${csvEscape(fw.sortingLabel)},label`);
-    lines.push(`folk_ward,skewness_label,${csvEscape(fw.skewnessLabel)},label`);
-    lines.push(`folk_ward,kurtosis_label,${csvEscape(fw.kurtosisLabel)},label`);
+    lines.push(`folk_ward,sorting_label,${csvCell(fw.sortingLabel)},label`);
+    lines.push(`folk_ward,skewness_label,${csvCell(fw.skewnessLabel)},label`);
+    lines.push(`folk_ward,kurtosis_label,${csvCell(fw.kurtosisLabel)},label`);
   }
 
   if (report.extra !== null && report.extra !== undefined) {
@@ -1767,7 +1763,7 @@ export function exportSiteSummaryCsv(
     ['size_class_05phi', report.wentworthHistogram05Phi],
   ] as const) {
     for (const b of bins) {
-      const label = csvEscape(`${b.label} [${b.mmMin}-${b.mmMax} mm]`);
+      const label = csvCell(`${b.label} [${b.mmMin}-${b.mmMax} mm]`);
       lines.push(`${sec},${label},${b.weightPct},%`);
       lines.push(`${sec}_count,${label},${b.grainCount},count`);
     }
@@ -1785,7 +1781,7 @@ export function exportSiteSummaryCsv(
   lines.push(`adequacy,largest_clast_area_ratio,${adq.largestClastAreaRatio},fraction`);
   lines.push(`adequacy,largest_clast_warning,${adq.largestClastWarning},label`);
   for (const o of adq.outlierPhotos) {
-    lines.push(`adequacy_outlier_photo,${csvEscape(o.label)},${csvEscape(o.reasons.join('; '))},text`);
+    lines.push(`adequacy_outlier_photo,${csvCell(o.label)},${csvCell(o.reasons.join('; '))},text`);
   }
   if (report.jackknife !== null) {
     lines.push(`jackknife,se_D16,${report.jackknife.seD16},${report.unit}`);
@@ -1796,7 +1792,7 @@ export function exportSiteSummaryCsv(
   const jk = new Map((report.jackknife?.perPhoto ?? []).map((j) => [j.photoId, j]));
   const conv = new Map(report.convergence.map((c) => [c.photoId, c]));
   for (const p of report.perPhoto) {
-    const name = (f: string): string => csvEscape(`${p.label}|${f}`);
+    const name = (f: string): string => csvCell(`${p.label}|${f}`);
     const rows: Array<[string, number | string | undefined, string]> = [
       ['included', String(p.included), 'flag'],
       ['mm_per_px', p.mmPerPx, 'mm/px'],
@@ -1818,24 +1814,24 @@ export function exportSiteSummaryCsv(
       if (v !== undefined) lines.push(`per_photo_detail,${name(f)},${v},${u}`);
     }
   }
-  report.warnings.forEach((w, i) => lines.push(`warning,${i + 1},${csvEscape(w)},text`));
+  report.warnings.forEach((w, i) => lines.push(`warning,${i + 1},${csvCell(w)},text`));
 
   for (const p of report.perPhoto) {
     lines.push(
-      `per_photo,${csvEscape(p.photoId)}_D50,${p.D50},${report.unit}`,
+      `per_photo,${csvCell(p.photoId)}_D50,${p.D50},${report.unit}`,
     );
     lines.push(
-      `per_photo,${csvEscape(p.photoId)}_valid_grains,${p.validGrainCount},count`,
+      `per_photo,${csvCell(p.photoId)}_valid_grains,${p.validGrainCount},count`,
     );
     lines.push(
-      `per_photo,${csvEscape(p.photoId)}_weight_pct,${p.weightContributionPct},%`,
+      `per_photo,${csvCell(p.photoId)}_weight_pct,${p.weightContributionPct},%`,
     );
   }
 
   for (let i = 0; i < report.citations.length; i++) {
     const cit = report.citations[i];
     if (cit !== undefined) {
-      lines.push(`citation,ref_${i + 1},${csvEscape(cit)},text`);
+      lines.push(`citation,ref_${i + 1},${csvCell(cit)},text`);
     }
   }
 
@@ -1923,8 +1919,8 @@ export function exportPooledGrainsCsv(
     for (const g of extGrains) {
       lines.push(
         [
-          csvEscape(entry.photoId),
-          csvEscape(entry.label),
+          csvCell(entry.photoId),
+          csvCell(entry.label),
           mmPerPx ?? '',
           g.id,
           g.centroidX,

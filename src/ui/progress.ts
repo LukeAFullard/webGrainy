@@ -166,3 +166,26 @@ export function describeActivity(s: ActivityState): ActivityView {
   const batchFraction = s.photoTotal > 0 ? Math.min(1, (Math.max(0, s.photoIndex - 1) + within) / s.photoTotal) : 0;
   return { title, detail, fraction, batchFraction };
 }
+
+/** The activity bar's inner HTML (status text, step and batch progress bars, Cancel). */
+export function renderActivityHtml(s: ActivityState): string {
+  const esc = (t: string): string =>
+    t.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+  const v = describeActivity(s);
+  const pct = v.fraction !== null ? Math.round(v.fraction * 100) : null;
+  return `
+    <div class="activity-text">
+      <div class="activity-title">${esc(v.title)}</div>
+      <div class="activity-detail">${esc(v.detail)}</div>
+    </div>
+    <div class="activity-bars">
+      ${
+        pct !== null
+          ? `<progress class="native-progress" value="${pct}" max="100" aria-label="Current step progress"></progress>`
+          : `<progress class="native-progress" aria-label="Current step in progress"></progress>`
+      }
+      ${s.photoTotal > 1 ? `<progress class="native-progress batch" value="${Math.round(v.batchFraction * 100)}" max="100" aria-label="All photos progress"></progress>` : ''}
+    </div>
+    <button type="button" class="btn btn-sm btn-danger" data-action="cancel-batch">Cancel</button>
+  `;
+}

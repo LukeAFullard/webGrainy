@@ -117,19 +117,30 @@ src/
 ├── index.ts                        # Public library exports
 ├── types/
 │   └── index.ts                    # Shared TypeScript interfaces & types
-├── modules/
-│   ├── modelCache.ts               # Streaming HF downloader + IndexedDB cache
-│   ├── imagePreprocess.ts          # CLAHE, adaptive scaling, complexity router
-│   ├── onnxInference.ts            # WebGPU/WASM sessions, tiling, FP16 utilities
+├── modules/                        # Analysis and data (no UI code)
+│   ├── modelCache.ts               # Pinned, SHA-256-verified model download + IndexedDB cache (Blobs)
+│   ├── imagePreprocess.ts          # CLAHE, adaptive scaling, complexity router, mobile detection
+│   ├── onnxInference.ts            # WebGPU/WASM sessions, Cellpose pipelines, FP16 utilities, GPU guards
+│   ├── cellposeTiling.ts           # Upstream-exact Cellpose tiling, padding, taper blending
+│   ├── roiTileSkip.ts              # Skipping inference tiles outside the ROI
 │   ├── postprocessCore.ts          # Flow integration, Multigrid PDE, QC, moments
+│   ├── orientationGeometry.ts      # Grain orientation convention (measurements and overlays)
 │   ├── interactiveEditor.ts        # Split/merge/delete/add, undo/redo, calibration
-│   ├── sedimentStats.ts            # PSD percentiles, Folk & Ward, CSV/JSON/PNG/GeoJSON/SVG
-│   ├── pipelineController.ts       # ImageGrainsEngine & reactive AnalysisSession
+│   ├── analysisSession.ts          # One photo's results: edits, ROI, stats, cached values, photo exports
+│   ├── engine.ts                   # ImageGrainsEngine: models, inference, post-processing, provenance
+│   ├── pipelineController.ts       # Compatibility re-export of analysisSession + engine
+│   ├── sedimentStats.ts            # PSD percentiles, Folk & Ward, Wentworth, summary rows
+│   ├── grainStatsExtra.ts          # Sauter/De Brouckère means, Dg/σg, φ moments, Cu/Cc, Trask, Fredle
+│   ├── morphometricsExt.ts         # Shape metrics, Feret diameters, fabric statistics, size classes
+│   ├── siteAnalysis.ts             # Multi-photo pooling, bootstrap / binomial CIs, adequacy, site CSV
+│   ├── siteWorkspace.ts            # App state -> site inputs and dashboard reports
+│   ├── exportFormats.ts            # PNG mask encoder, outline tracing, GeoJSON/SVG writers
+│   ├── exports.ts                  # Every download: contents, metadata and file name
 │   ├── provenance.ts               # Export metadata, versions, notices, CSV-safe cells
 │   ├── roiAndRectify.ts            # ROI/exclusion masks, 4-point homography rectification
-│   ├── morphometricsExt.ts         # Shape metrics, Feret diameters, fabric statistics
-│   ├── siteAnalysis.ts             # Multi-photo pooling, bootstrap / binomial CIs, adequacy
-│   └── projectStorage.ts           # IndexedDB projects, validated archive import/export
+│   ├── projectStorage.ts           # IndexedDB projects, validated archive import/export
+│   └── abort.ts, gpuCheckVerdict.ts
+├── ui/                             # Rendering and interaction (main.ts, canvas, charts, modals, help, …)
 └── workers/
     └── grainPostprocess.worker.ts  # Transferable Web Worker wrapper (v4.1)
 ```

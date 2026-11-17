@@ -21,21 +21,13 @@ import {
   type PhotoRecord,
   type SiteRecord,
 } from '../modules/projectStorage.js';
+import { computeFabricRoseStats } from '../modules/morphometricsExt.js';
+import { rectifyPerspective } from '../modules/roiAndRectify.js';
 import {
-  computeExtendedMorphometrics,
-  computeFabricRoseStats,
-  computeWentworthHistogram,
-} from '../modules/morphometricsExt.js';
-import {
-  rectifyPerspective,
-  filterGrainsByRoiAndExclusion,
-  type RoiExclusionConfig,
-} from '../modules/roiAndRectify.js';
-import {
-  analyzeSite,
-  withExclusionTolerance,
-  type SitePhotoInput,
-} from '../modules/siteAnalysis.js';
+  buildSiteInputs,
+  computeWorkspaceReports,
+  effectiveRoi,
+} from '../modules/siteWorkspace.js';
 import { ScaleCalibrator } from '../modules/interactiveEditor.js';
 import {
   renderAspectRatioHistogramSvg,
@@ -49,8 +41,9 @@ import { CanvasViewport } from './canvasViewport.js';
 import { parseJpegExifMetadata } from './exif.js';
 import { helpButton, isHelpKey, renderHelpModalHtml } from './help.js';
 import { logicalCores, wasmThreadsFor } from '../modules/onnxInference.js';
-import { GUIDE_HIDDEN_KEY, guideSteps, renderGuideHtml } from './onboarding.js';
-import { applyEvent, describeActivity, newActivity, startPhoto, type ActivityState } from './progress.js';
+import { GUIDE_HIDDEN_KEY, guideInputFrom, guideSteps, renderGuideHtml } from './onboarding.js';
+import { EXPORTED_ONCE_KEY, readFlag, writeFlag } from './prefs.js';
+import { applyEvent, newActivity, renderActivityHtml, startPhoto, type ActivityState } from './progress.js';
 import { CPU_THREADS_KEY, readCpuThreadPref } from './cpuThreads.js';
 import {
   handleExportAction,
@@ -156,41 +149,11 @@ function askSiteName(message: string, current: string): string | null {
 }
 
 // ---- Getting-started guide (hidden flag and "exported once" are per browser) ----
-const EXPORTED_KEY = 'webgrainy-exported-once';
-function readFlag(key: string): boolean {
-  try {
-    return localStorage.getItem(key) === '1';
-  } catch {
-    return false;
-  }
-}
-function writeFlag(key: string, on: boolean): void {
-  try {
-    if (on) localStorage.setItem(key, '1');
-    else localStorage.removeItem(key);
-  } catch {
-    /* storage blocked */
-  }
-}
 let guideHidden = readFlag(GUIDE_HIDDEN_KEY);
-let exportedOnce = readFlag(EXPORTED_KEY);
+let exportedOnce = readFlag(EXPORTED_ONCE_KEY);
 
 function guideHtml(state: AppState): string {
-  if (guideHidden) return '';
-  const hasExclusions = (ph: PhotoRecord): boolean =>
-    ph.roiConfig !== undefined &&
-    (ph.roiConfig.roiPolygon !== undefined || ph.roiConfig.exclusionPolygons.length > 0 || ph.roiConfig.exclusionStrokes.length > 0);
-  return renderGuideHtml(
-    guideSteps({
-      photoCount: state.photos.length,
-      calibratedCount: state.photos.filter((ph) => ph.calibration !== undefined).length,
-      exclusionCount: state.photos.filter(hasExclusions).length,
-      analysedCount: state.photos.filter((ph) => state.photoStatuses.get(ph.photoId) === 'done').length,
-      exported: exportedOnce,
-      isMobile: state.capabilities?.isMobile === true,
-      batchRunning: state.batchRunning,
-    }),
-  );
+  return guideHidden ? '' : renderGuideHtml(guideSteps(guideInputFrom(state, exportedOnce)));
 }
 
 // ---- Analysis activity bar (stage, tiles, time left, cancel) ----
@@ -212,25 +175,9 @@ function renderActivityBar(): void {
     document.body.classList.remove('has-activity');
     return;
   }
-  const v = describeActivity(activity);
   el.hidden = false;
   document.body.classList.add('has-activity');
-  const pct = v.fraction !== null ? Math.round(v.fraction * 100) : null;
-  el.innerHTML = `
-    <div class="activity-text">
-      <div class="activity-title">${esc(v.title)}</div>
-      <div class="activity-detail">${esc(v.detail)}</div>
-    </div>
-    <div class="activity-bars">
-      ${
-        pct !== null
-          ? `<progress class="native-progress" value="${pct}" max="100" aria-label="Current step progress"></progress>`
-          : `<progress class="native-progress" aria-label="Current step in progress"></progress>`
-      }
-      ${activity.photoTotal > 1 ? `<progress class="native-progress batch" value="${Math.round(v.batchFraction * 100)}" max="100" aria-label="All photos progress"></progress>` : ''}
-    </div>
-    <button type="button" class="btn btn-sm btn-danger" data-action="cancel-batch">Cancel</button>
-  `;
+  el.innerHTML = renderActivityHtml(activity);
 }
 engine.onProgress((stage, detail) => {
   if (activity === null) return;
@@ -272,56 +219,9 @@ function getActivePhoto(state: AppState): PhotoRecord | null {
   return state.photos.find((p) => p.photoId === state.activePhotoId) ?? null;
 }
 
-/** A photo's ROI config with the site-wide exclusion overlap tolerance applied. */
-function effectiveRoi(
-  photo: Pick<PhotoRecord, 'roiConfig'> | undefined,
-  siteOptions: AppState['siteOptions'],
-): RoiExclusionConfig | undefined {
-  return photo?.roiConfig !== undefined
-    ? withExclusionTolerance(photo.roiConfig, siteOptions.maxExcludedFraction)
-    : undefined;
-}
-
-function buildSiteInputs(state: AppState): SitePhotoInput[] {
-  const inputs: SitePhotoInput[] = [];
-  for (const photo of state.photos) {
-    const session = state.sessions.get(photo.photoId);
-    if (!session) continue;
-    inputs.push({
-      photoId: photo.photoId,
-      label: photo.label,
-      included: photo.included,
-      session,
-      ...(photo.roiConfig !== undefined ? { roiConfig: effectiveRoi(photo, state.siteOptions)! } : {}),
-      ...(photo.faciesWeight !== undefined ? { faciesWeight: photo.faciesWeight } : {}),
-      ...(photo.metadata !== undefined ? { metadata: photo.metadata } : {}),
-    });
-  }
-  return inputs;
-}
-
 function recomputeReports(): void {
   const state = store.getState();
-  const activePhoto = getActivePhoto(state);
-  const activeSession = activePhoto
-    ? state.sessions.get(activePhoto.photoId) ?? null
-    : null;
-  const activeMetric = state.siteOptions.sizeMetric ?? 'bAxis';
-  const singlePhotoStats = activeSession ? activeSession.getStats(activeMetric) : null;
-
-  const siteInputs = buildSiteInputs(state);
-  let siteReport = null;
-  let siteReportError: string | null = null;
-  if (siteInputs.some((p) => p.included)) {
-    try {
-      siteReport = analyzeSite(siteInputs, state.siteOptions);
-    } catch (err) {
-      siteReport = null;
-      siteReportError = err instanceof Error ? err.message : String(err);
-    }
-  }
-
-  store.setState({ singlePhotoStats, siteReport, siteReportError });
+  store.setState(computeWorkspaceReports(state));
 }
 
 async function refreshCapabilities(): Promise<void> {
@@ -1147,15 +1047,7 @@ function renderViewportExtras(state: AppState): void {
   if (state.inspectedGrainId !== null && session && activePhoto) {
     const grain = session.getResult().grains.find((g) => g.id === state.inspectedGrainId);
     if (grain) {
-      const ext = computeExtendedMorphometrics(
-        session.getWorkingMasks(),
-        [grain],
-        session.workingImage.width,
-        session.workingImage.height,
-        session.workingImage.effectiveScaleFactor,
-        session.getCalibration()?.mmPerPx,
-        session.getHullCache(),
-      )[0];
+      const ext = session.getExtendedGrain(grain.id);
       inspectorEl.style.display = 'block';
       inspectorEl.innerHTML = `
         <div class="row-between" style="margin-bottom:4px;">
@@ -1305,31 +1197,9 @@ function renderDashboard(state: AppState): void {
       state.histogramStepPhi === 0.5
         ? report?.wentworthHistogram05Phi ?? []
         : report?.wentworthHistogram10Phi ?? [];
-    const activeGrains = activeSession ? activeSession.getResult().grains : [];
-    const extGrains =
-      activeSession && activeGrains.length > 0
-        ? computeExtendedMorphometrics(
-            activeSession.getWorkingMasks(),
-            activeGrains,
-            activeSession.workingImage.width,
-            activeSession.workingImage.height,
-            activeSession.workingImage.effectiveScaleFactor,
-            activeSession.getCalibration()?.mmPerPx,
-            activeSession.getHullCache(),
-          )
-        : [];
-    const packingInfo =
-      activeSession && activePhoto?.roiConfig
-        ? filterGrainsByRoiAndExclusion(
-            activeSession.getWorkingMasks(),
-            activeSession.getResult().grains,
-            activeSession.workingImage.width,
-            activeSession.workingImage.height,
-            activeSession.workingImage.effectiveScaleFactor,
-            effectiveRoi(activePhoto, state.siteOptions)!,
-            activeSession.getCalibration()?.mmPerPx,
-          )
-        : null;
+    // Cached on the session (recomputed only when its results change).
+    const extGrains = activeSession ? activeSession.getExtendedGrains() : [];
+    const packingInfo = activeSession ? activeSession.getRoiFilterResult() : null;
 
     tabContent = `
       <div class="row-between" style="margin-top:8px;">
@@ -1350,10 +1220,9 @@ function renderDashboard(state: AppState): void {
     const rose =
       isSite && report
         ? report.fabricRose
-        : computeFabricRoseStats(activeSession ? activeSession.getResult().grains : [], {
-            weighted: true,
-            binCount: 12,
-          });
+        : activeSession
+          ? activeSession.getFabricRose()
+          : computeFabricRoseStats([], { weighted: true, binCount: 12 });
     tabContent = `
       <div class="chart-box">${renderFabricRoseSvg(rose, lightTheme)}</div>
       ${
@@ -1855,7 +1724,7 @@ function attachDelegatedHandlers(): void {
       store.setState({ activeModal: m });
       if (m === 'export' && !exportedOnce) {
         exportedOnce = true;
-        writeFlag(EXPORTED_KEY, true);
+        writeFlag(EXPORTED_ONCE_KEY, true);
         renderSidebar(store.getState());
       }
       return;
