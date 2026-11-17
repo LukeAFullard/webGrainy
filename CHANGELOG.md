@@ -40,6 +40,16 @@ All notable changes to webGrainy are recorded here. The format follows
   retried once on WASM instead of failing. Previously the next WebGPU session reused the
   lost device. The UI shows "GPU reset · CPU mode (reload for GPU)".
 
+### Internal
+- **Code organisation (no change in results).** One copy of the PNG/GeoJSON/SVG
+  writers (`exportFormats.ts`; two copies had drifted), one summary-CSV writer, `csvCell`
+  everywhere, and `exports.ts` building every download. App logic moved out of the UI
+  (`siteWorkspace.ts`); the dashboard uses cached session values instead of recomputing
+  on each redraw; `pipelineController.ts` split into `analysisSession.ts` and `engine.ts`
+  (re-exported, so imports are unchanged). Exports verified identical to the previous
+  build except that photo-summary text labels are now quoted only when needed. The photo
+  Fabric tab now uses the grains that count in the statistics, like its export.
+
 ### Added
 - **More grain-size statistics** (Results → PSD → *More statistics*, and in all summary
   exports): Sauter mean D[3,2], De Brouckère mean D[4,3], arithmetic mean D[1,0]
