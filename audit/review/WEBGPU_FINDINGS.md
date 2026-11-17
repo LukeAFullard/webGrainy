@@ -45,7 +45,7 @@ On a computer with a modern GPU and Chrome/Edge (WebGPU with `shader-f16`):
 npm ci && npm run build
 # download the pinned model once (or reuse the app's cache):
 curl -L -o ig2_cpsam_fp16.onnx \
-  https://huggingface.co/inYourOwnBrowser/imagegrains-2.0-onnx/resolve/7773328a544ac050b7820667e68cbfb02a2e954a/ig2_cpsam_fp16.onnx
+  https://huggingface.co/inYourOwnBrowser/imagegrains-2.0-onnx/resolve/98e76b1374dc22cfff8193aca71c308f2b4dd3b3/ig2_cpsam_fp16.onnx
 MODEL=cpsam MODEL_PATH=ig2_cpsam_fp16.onnx CHROME="/path/to/Google Chrome" HEADED=1 \
   node audit/review/webgpu_vs_wasm.mjs
 # optional: PHOTO=some_gravel.jpg to use a real photo

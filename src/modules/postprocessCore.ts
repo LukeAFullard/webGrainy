@@ -1,3 +1,4 @@
+import { orientationFromMoments } from './orientationGeometry.js';
 import type {
   GrainMorphometrics,
   PostProcessOptions,
@@ -749,14 +750,7 @@ export function computeGrainMorphometrics(
     const dEqPx = Math.sqrt((4.0 * acc.area) / Math.PI);
 
     // Matches skimage.measure.regionprops.orientation (inertia_tensor [[muX, -muYX], [-muYX, muY]])
-    const orientationRad =
-      muY === muX
-        ? muYX === 0
-          ? 0
-          : muYX > 0
-            ? Math.PI / 4.0
-            : -Math.PI / 4.0
-        : 0.5 * Math.atan2(2.0 * muYX, muY - muX);
+    const orientationRad = orientationFromMoments(muX, muY, muYX);
 
     grains.push({
       id: acc.id,

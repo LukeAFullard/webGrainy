@@ -663,7 +663,7 @@ function renderTopbar(state: AppState): void {
       </span>
     </div>
     <div class="topbar-right">
-      <button type="button" class="btn btn-sm" data-open-modal="models">Models (${caps?.cachedModels.length ?? 0}/2)</button>
+      <button type="button" class="btn btn-sm" data-open-modal="models">Models (${caps?.cachedModels.length ?? 0} cached)</button>
       <button type="button" class="btn btn-sm" data-open-modal="export">Export</button>
       <button type="button" class="btn btn-sm" data-open-help="">Help</button>
       <button type="button" class="btn btn-sm" data-open-modal="about">About &amp; Citations</button>
@@ -785,7 +785,16 @@ function renderSidebar(state: AppState): void {
             <select class="select" data-param="model">
               <option value="auto" ${p.model === 'auto' ? 'selected' : ''}>Auto (Router)</option>
               <option value="unet" ${p.model === 'unet' ? 'selected' : ''}>U-Net (25 MB)</option>
-              <option value="cpsam" ${p.model === 'cpsam' ? 'selected' : ''}>CP-SAM (617 MB)</option>
+              <option value="cpsam" ${p.model === 'cpsam' ? 'selected' : ''}>CP-SAM</option>
+            </select>
+          </label>
+          <label class="field-label">
+            <span class="label-row">CP-SAM weights ${helpButton('cpsamWeights')}</span>
+            <select class="select" data-param="cpsamWeights">
+              <option value="auto" ${p.cpsamWeights === 'auto' ? 'selected' : ''}>Auto (GPU: FP16, CPU: INT8)</option>
+              <option value="fp16" ${p.cpsamWeights === 'fp16' ? 'selected' : ''}>FP16 (617 MB)</option>
+              <option value="int8" ${p.cpsamWeights === 'int8' ? 'selected' : ''}>INT8 (316 MB)</option>
+              <option value="fp4" ${p.cpsamWeights === 'fp4' ? 'selected' : ''}>FP4 (183 MB)</option>
             </select>
           </label>
           <label class="field-label">

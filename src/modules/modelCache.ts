@@ -13,7 +13,7 @@ export const STORE_NAME = 'models';
  * Hugging Face commit the app is validated against. Weights are fetched from this
  * immutable revision (never the moving `main` branch) and verified by SHA-256.
  */
-export const MODEL_REVISION = '7773328a544ac050b7820667e68cbfb02a2e954a';
+export const MODEL_REVISION = '98e76b1374dc22cfff8193aca71c308f2b4dd3b3';
 export const DEFAULT_HF_BASE_URL = `https://huggingface.co/inYourOwnBrowser/imagegrains-2.0-onnx/resolve/${MODEL_REVISION}/`;
 
 export interface ModelIntegrity {
@@ -30,6 +30,14 @@ export const MODEL_INTEGRITY: Record<ModelId, ModelIntegrity> = {
   ig2_cpsam_fp16: {
     sha256: '944a114a0cb1a3a215c11affefe7211caac6da2b74895c496d5a7b5a23b6230d',
     sizeBytes: 617364567,
+  },
+  ig2_cpsam_int8_wo_fp32scale: {
+    sha256: '2cda0be5b81f1d0c0ac36998beb9f741e11833aacd089c4f5cee92488bab6f43',
+    sizeBytes: 316272029,
+  },
+  ig2_cpsam_fp4_e2m1_lut: {
+    sha256: 'd49d8f0779af3956b45b506719702bc3f9b7e0044a2d2a0a6842751544320c99',
+    sizeBytes: 183292650,
   },
 };
 
@@ -86,7 +94,36 @@ async function verifyModelIntegrity(
 export const MODEL_FILES: Record<ModelId, string> = {
   ig2_unet_fp32: 'ig2_unet_fp32.onnx',
   ig2_cpsam_fp16: 'ig2_cpsam_fp16.onnx',
+  ig2_cpsam_int8_wo_fp32scale: 'ig2_cpsam_int8_wo_fp32scale.onnx',
+  ig2_cpsam_fp4_e2m1_lut: 'ig2_cpsam_fp4_e2m1_lut.onnx',
 };
+
+/** The model family (and so the inference pipeline) a weight file belongs to. */
+export function modelKindOf(modelId: ModelId): 'unet' | 'cpsam' {
+  return modelId === 'ig2_unet_fp32' ? 'unet' : 'cpsam';
+}
+
+export const CPSAM_MODEL_IDS: Record<Exclude<import('../types/index.js').CpsamWeights, 'auto'>, ModelId> = {
+  fp16: 'ig2_cpsam_fp16',
+  int8: 'ig2_cpsam_int8_wo_fp32scale',
+  fp4: 'ig2_cpsam_fp4_e2m1_lut',
+};
+
+/**
+ * Picks the weight file. Cellpose-SAM 'auto' uses FP16 when it will run on a WebGPU GPU
+ * with shader-f16 (native float16 kernels; checked on real hardware with the GPU check
+ * page), and INT8 otherwise: on the CPU it is 2.2x faster and needs about half the memory
+ * (2.1 GB vs 3.8 GB) with the same benchmark accuracy.
+ */
+export function resolveModelId(
+  kind: 'unet' | 'cpsam',
+  weights: import('../types/index.js').CpsamWeights = 'auto',
+  fp16GpuUsable = false,
+): ModelId {
+  if (kind === 'unet') return 'ig2_unet_fp32';
+  if (weights !== 'auto') return CPSAM_MODEL_IDS[weights];
+  return fp16GpuUsable ? 'ig2_cpsam_fp16' : 'ig2_cpsam_int8_wo_fp32scale';
+}
 
 interface CachedModelRecord {
   modelId: ModelId;

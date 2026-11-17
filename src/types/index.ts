@@ -3,7 +3,18 @@
  * Consumed across M1–M5 modules, Web Workers, and tests.
  */
 
-export type ModelId = 'ig2_unet_fp32' | 'ig2_cpsam_fp16';
+export type ModelId =
+  | 'ig2_unet_fp32'
+  | 'ig2_cpsam_fp16'
+  | 'ig2_cpsam_int8_wo_fp32scale'
+  | 'ig2_cpsam_fp4_e2m1_lut';
+
+/**
+ * Which Cellpose-SAM weight file to use. All three gave the same accuracy on the 40-image
+ * held-out benchmark (PQ 0.652–0.653, median D50 error 2.8–2.9%).
+ * 'auto': FP16 on a WebGPU GPU with shader-f16, otherwise INT8 (faster on CPU, half the memory).
+ */
+export type CpsamWeights = 'auto' | 'fp16' | 'int8' | 'fp4';
 
 export type ModelKind = 'unet' | 'cpsam';
 
@@ -230,6 +241,8 @@ export type InferencePipeline = 'cellpose' | 'legacy';
 
 export interface AnalysisConfig {
   model?: ModelKind | 'auto';
+  /** Cellpose-SAM weight file (default 'auto'). Ignored for U-Net. */
+  cpsamWeights?: CpsamWeights;
   inferencePipeline?: InferencePipeline;
   scaleMode?: ScaleMode;
   applyClahe?: boolean;

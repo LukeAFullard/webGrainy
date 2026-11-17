@@ -509,6 +509,57 @@ describe('pipelineController (ImageGrainsEngine & AnalysisSession)', () => {
     expect(terminateMock).toHaveBeenCalledTimes(1);
   });
 
+  it('chooses the Cellpose-SAM weight file (auto: FP16 on a float16 GPU, INT8 on CPU) and records it', async () => {
+    const fakeSession = (): InferenceSessionLike => ({
+      async run(feeds: Record<string, unknown>) {
+        const t = feeds['image'] as { dims: readonly number[] };
+        const n = (t.dims[2] ?? 0) * (t.dims[3] ?? 0);
+        return { flows_cellprob: { data: new Float32Array(3 * n).fill(-5), dims: [1, 3, t.dims[2] ?? 0, t.dims[3] ?? 0] } };
+      },
+    });
+    const requested: string[] = [];
+    const factory = async (_kind: string, modelId: string) => {
+      requested.push(modelId);
+      return fakeSession();
+    };
+    const img = makeRgbaImage(64, 64, 'uniform');
+
+    // No WebGPU: auto -> INT8.
+    Object.defineProperty(globalThis, 'navigator', { value: {}, configurable: true });
+    const cpu = new ImageGrainsEngine({ sessionFactory: factory });
+    await cpu.initialize();
+    const a = await cpu.analyzeImage(img, { model: 'cpsam', scaleMode: '1.0x' });
+    expect(a.getProvenance()?.modelId).toBe('ig2_cpsam_int8_wo_fp32scale');
+    const b = await cpu.analyzeImage(img, { model: 'cpsam', scaleMode: '1.0x', cpsamWeights: 'fp4' });
+    expect(b.getProvenance()?.modelId).toBe('ig2_cpsam_fp4_e2m1_lut');
+    const c = await cpu.analyzeImage(img, { model: 'unet', scaleMode: '1.0x', cpsamWeights: 'fp4' });
+    expect(c.getProvenance()?.modelId).toBe('ig2_unet_fp32');
+    await cpu.dispose();
+
+    // WebGPU adapter with shader-f16: auto -> FP16; explicit INT8 still honoured.
+    Object.defineProperty(globalThis, 'navigator', {
+      value: { gpu: { requestAdapter: async () => ({ features: { has: (f: string) => f === 'shader-f16' } }) } },
+      configurable: true,
+    });
+    const gpu = new ImageGrainsEngine({ sessionFactory: factory });
+    await gpu.initialize();
+    const d = await gpu.analyzeImage(img, { model: 'cpsam', scaleMode: '1.0x' });
+    expect(d.getProvenance()?.modelId).toBe('ig2_cpsam_fp16');
+    const e = await gpu.analyzeImage(img, { model: 'cpsam', scaleMode: '1.0x', cpsamWeights: 'int8' });
+    expect(e.getProvenance()?.modelId).toBe('ig2_cpsam_int8_wo_fp32scale');
+    await gpu.dispose();
+
+    // One session per weight file.
+    expect(requested).toEqual([
+      'ig2_cpsam_int8_wo_fp32scale',
+      'ig2_cpsam_fp4_e2m1_lut',
+      'ig2_unet_fp32',
+      'ig2_cpsam_fp16',
+      'ig2_cpsam_int8_wo_fp32scale',
+    ]);
+    Object.defineProperty(globalThis, 'navigator', { value: {}, configurable: true });
+  });
+
   it('defaults to the upstream-exact Cellpose pipeline (tiles, channels, provenance)', async () => {
     Object.defineProperty(globalThis, 'navigator', { value: {}, configurable: true });
     const calls: Array<{ dims: number[]; type: string }> = [];

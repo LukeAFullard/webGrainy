@@ -20,7 +20,19 @@ import { APP_VERSION, ORT_VERSION } from '../modules/provenance.js';
 import { classifyCase, overallVerdict, type CaseVerdict } from '../modules/gpuCheckVerdict.js';
 import type { InferenceOutput, ModelId } from '../types/index.js';
 
-type Kind = 'cpsam' | 'unet';
+type Kind = 'cpsam' | 'cpsam_int8' | 'cpsam_fp4' | 'unet';
+const KIND_MODEL: Record<Kind, ModelId> = {
+  cpsam: 'ig2_cpsam_fp16',
+  cpsam_int8: 'ig2_cpsam_int8_wo_fp32scale',
+  cpsam_fp4: 'ig2_cpsam_fp4_e2m1_lut',
+  unet: 'ig2_unet_fp32',
+};
+const KIND_LABEL: Record<Kind, string> = {
+  cpsam: 'Cellpose-SAM (FP16)',
+  cpsam_int8: 'Cellpose-SAM (INT8)',
+  cpsam_fp4: 'Cellpose-SAM (FP4)',
+  unet: 'U-Net',
+};
 const CASES = ['photo', 'one-tile', 'small-padded', 'all-black', 'photo-black'] as const;
 type CaseName = (typeof CASES)[number];
 const CASE_LABEL: Record<CaseName, string> = {
@@ -145,6 +157,7 @@ async function runAll(kind: Kind): Promise<void> {
     ortVersion: ORT_VERSION,
     date: new Date().toISOString(),
     model: kind,
+    modelId: KIND_MODEL[kind],
     userAgent: navigator.userAgent,
     crossOriginIsolated: self.crossOriginIsolated,
     hardwareConcurrency: navigator.hardwareConcurrency,
@@ -164,11 +177,11 @@ async function runAll(kind: Kind): Promise<void> {
       setStatus('No WebGPU adapter: this browser/computer cannot run the GPU path, so there is nothing to compare. Try Chrome or Edge with hardware acceleration enabled.');
       return;
     }
-    if (kind === 'cpsam' && !caps.hasShaderF16) {
+    if (kind !== 'unet' && !caps.hasShaderF16) {
       log('Note: without shader-f16 the app never uses the GPU for Cellpose-SAM (it uses the CPU). Running anyway to show what would happen.');
     }
 
-    const modelId: ModelId = kind === 'cpsam' ? 'ig2_cpsam_fp16' : 'ig2_unet_fp32';
+    const modelId: ModelId = KIND_MODEL[kind];
     setStatus('Downloading / loading the model (cached after the first time)…');
     const bytes = new Uint8Array(
       await getModel(modelId, {
@@ -176,7 +189,7 @@ async function runAll(kind: Kind): Promise<void> {
       }),
     );
     log(`Model ${modelId} loaded and SHA-256 verified (${(bytes.byteLength / 1e6).toFixed(0)} MB).`);
-    const run = kind === 'cpsam' ? runCpsamCellposeInference : runUnetCellposeInference;
+    const run = kind === 'unet' ? runUnetCellposeInference : runCpsamCellposeInference;
     const images = CASES.map((c) => [c, makeImage(c)] as const);
     const outputs: Record<'webgpu' | 'wasm', Partial<Record<CaseName, InferenceOutput>>> = { webgpu: {}, wasm: {} };
     const results: CaseResult[] = images.map(([c, img]) => ({ case: c, size: `${img.width}×${img.height}` }));
@@ -327,7 +340,7 @@ function renderResults(results: CaseResult[], kind: Kind, report: Record<string,
     <tbody>${rows}</tbody></table>`;
   const verdict = overallVerdict(
     results.map((r) => ({ case: r.case, verdict: r.verdict, hasBlankArea: r.case === 'all-black' || r.case === 'photo-black' })),
-    kind === 'cpsam' ? 'Cellpose-SAM' : 'U-Net',
+    KIND_LABEL[kind],
   );
   report['verdict'] = verdict;
   setStatus(verdict);

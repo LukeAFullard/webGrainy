@@ -54,7 +54,8 @@ describe('interactiveEditor', () => {
       // Discrete uniform variance of 5 integers is (5^2 - 1)/12 = 2 -> 4*sqrt(2)
       expect(g3.bAxisPx).toBeCloseTo(4 * Math.sqrt(2), 10);
       expect(g3.dEqPx).toBeCloseTo(Math.sqrt((4 * 55) / Math.PI), 10);
-      expect(g3.orientationRad).toBeCloseTo(0, 10);
+      // Wider than tall: major axis horizontal = ±π/2 from the vertical row axis (skimage).
+      expect(Math.abs(g3.orientationRad)).toBeCloseTo(Math.PI / 2, 10);
 
       const g7 = grains.find((g) => g.id === 7)!;
       expect(g7.touchesBorder).toBe(true);

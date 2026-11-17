@@ -17,7 +17,7 @@ import { extname, join, normalize, resolve } from 'node:path';
 import { chromium } from 'playwright';
 
 const DIST = resolve('dist');
-const MODEL_REVISION = '7773328a544ac050b7820667e68cbfb02a2e954a';
+const MODEL_REVISION = '98e76b1374dc22cfff8193aca71c308f2b4dd3b3';
 const UNET_SHA256 = '5e692c5593ac15e614b77602e1d4f8c2f84dd939f4386b1f7e5641dbcd62053c';
 const UNET_URL = `https://huggingface.co/inYourOwnBrowser/imagegrains-2.0-onnx/resolve/${MODEL_REVISION}/ig2_unet_fp32.onnx`;
 const TIMEOUT_MS = Number(process.env.SMOKE_TIMEOUT_MS ?? 15 * 60 * 1000);

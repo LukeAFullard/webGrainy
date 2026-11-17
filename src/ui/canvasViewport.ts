@@ -1,3 +1,4 @@
+import { ellipseRotationDeg, majorAxisDirection } from '../modules/orientationGeometry.js';
 import type { GrainMorphometrics, Point2D } from '../types/index.js';
 import type { AnalysisSession } from '../modules/pipelineController.js';
 import type { PhotoRecord } from '../modules/projectStorage.js';
@@ -544,7 +545,7 @@ export class CanvasViewport {
         if (this.overlays.ellipses || isSelected) {
           const rx = Math.max(1, (g.aAxisPx / 2) * this.zoom);
           const ry = Math.max(1, (g.bAxisPx / 2) * this.zoom);
-          const deg = (g.orientationRad * 180) / Math.PI + 90;
+          const deg = ellipseRotationDeg(g.orientationRad);
           const strokeCol = isSelected ? '#ffd166' : '#5ab0ff';
           parts.push(
             `<ellipse cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" rx="${rx.toFixed(1)}" ry="${ry.toFixed(1)}" transform="rotate(${deg.toFixed(1)} ${cx.toFixed(1)} ${cy.toFixed(1)})" fill="none" stroke="${strokeCol}" stroke-width="${isSelected ? 2.2 : 1}" />`,
@@ -553,8 +554,9 @@ export class CanvasViewport {
 
         if (this.overlays.orientations) {
           const halfLen = (g.aAxisPx / 2) * this.zoom;
-          const dx = Math.sin(g.orientationRad) * halfLen;
-          const dy = Math.cos(g.orientationRad) * halfLen;
+          const dir = majorAxisDirection(g.orientationRad);
+          const dx = dir.dx * halfLen;
+          const dy = dir.dy * halfLen;
           parts.push(
             `<line x1="${(cx - dx).toFixed(1)}" y1="${(cy - dy).toFixed(1)}" x2="${(cx + dx).toFixed(1)}" y2="${(cy + dy).toFixed(1)}" stroke="#f5a623" stroke-width="1.3" />`,
           );

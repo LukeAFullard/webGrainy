@@ -7,6 +7,12 @@ All notable changes to webGrainy are recorded here. The format follows
 ## [Unreleased]
 
 ### Fixed
+- **Grain ellipses were drawn mirrored.** The ellipse overlay was rotated by θ + 90°
+  instead of 90° − θ, so every diagonal grain's ellipse leaned the wrong way (the
+  orientation vectors were already correct). Hand-drawn or edited grains also used a
+  different angle convention (from the x axis instead of skimage's row axis), which
+  affected their exported `orientation_rad` and the orientation statistics. One shared
+  convention now lives in `src/modules/orientationGeometry.ts`, with tests at 8 angles.
 - **Intermittent broken thumbnails when loading a site.** Old thumbnail URLs were revoked before the new ones were in place (`net::ERR_FILE_NOT_FOUND`).
 - **Cellpose-SAM on the CPU (WASM) crashed** with `std::bad_alloc` on full-size photos. It now runs one tile per call.
 - **Recovery after WebGPU device loss.** After a loss, WebGPU is disabled for the page,
@@ -15,6 +21,12 @@ All notable changes to webGrainy are recorded here. The format follows
   lost device. The UI shows "GPU reset · CPU mode (reload for GPU)".
 
 ### Added
+- **Quantized Cellpose-SAM weights:** INT8 (316 MB) and FP4 (183 MB), from the model
+  repository (revision `98e76b13`, SHA-256 pinned). Same benchmark accuracy as FP16
+  (`audit/quantization/`). New *CP-SAM weights* setting: *Auto* (default) uses FP16 on a
+  WebGPU GPU with shader-f16 and INT8 otherwise (about 2× faster on the CPU, half the
+  memory). The weight file is recorded in provenance and exports. The model manager and
+  the GPU check page list all three.
 - **Exclusion overlap tolerance is configurable** (site option `maxExcludedFraction`,
   default 0.10). Applies immediately, and is recorded in exports.
 - **Multi-threaded CPU inference on any host.** The service worker adds COOP/COEP headers,
