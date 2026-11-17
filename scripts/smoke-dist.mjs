@@ -187,6 +187,10 @@ try {
     if (process.env.SMOKE_SCREENSHOT) {
       // Optional visual check: grain ellipses and orientation vectors over the photo.
       await page.click('details.display-menu > summary');
+      if (await page.locator('details.more-stats > summary').count()) {
+        await page.click('details.more-stats > summary');
+        await page.locator('details.more-stats').scrollIntoViewIfNeeded();
+      }
       for (const ov of ['ellipses', 'orientations']) {
         const box = page.locator(`input[data-ov="${ov}"]`);
         if ((await box.count()) && !(await box.isChecked())) await box.check();

@@ -1185,3 +1185,36 @@ details.settings-block > summary {
 .stat-value {
   font-size: 1.05rem;
 }
+
+/* More statistics table */
+.stats-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.75rem;
+  margin-top: 6px;
+}
+.stats-table th,
+.stats-table td {
+  text-align: left;
+  padding: 3px 6px 3px 0;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+.stats-table {
+  table-layout: fixed;
+}
+.stats-table th {
+  font-weight: 600;
+  width: 58%;
+}
+.stats-table td {
+  font-family: var(--font-mono, monospace);
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+.stats-note {
+  display: block;
+  font-weight: 400;
+  font-size: 0.68rem;
+  color: var(--text-secondary);
+}

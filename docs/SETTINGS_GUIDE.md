@@ -522,7 +522,7 @@ SHA-256, all settings, site name) so results can be reproduced.
 
 | File | Contains |
 |---|---|
-| **Site Summary CSV** | D5–D95 with bootstrap and binomial confidence intervals; Folk & Ward mean, sorting, skewness, kurtosis with confidence intervals; Wentworth class percentages and size-class histograms (1 φ and 0.5 φ bins, % and counts); fabric (mean orientation, alignment R, circular variance, Rayleigh test, rose bins); sample adequacy (rating, effective grain count, largest clast, outlier photos); jackknife sensitivity; a per-photo breakdown by photo name (scale, grain counts, truncation, sampled area, packing/matrix %, D16/D50/D84, weight, influence, cumulative D50); warnings; citations. |
+| **Site Summary CSV** | D5–D95 with bootstrap and binomial confidence intervals; mean diameters (Sauter D[3,2], De Brouckère D[4,3], arithmetic), geometric mean and SD, D30/D60/D65, moment statistics in φ, Cu, Cc, Trask sorting, span, Fredle index; Folk & Ward mean, sorting, skewness, kurtosis with confidence intervals; Wentworth class percentages and size-class histograms (1 φ and 0.5 φ bins, % and counts); fabric (mean orientation, alignment R, circular variance, Rayleigh test, rose bins); sample adequacy (rating, effective grain count, largest clast, outlier photos); jackknife sensitivity; a per-photo breakdown by photo name (scale, grain counts, truncation, sampled area, packing/matrix %, D16/D50/D84, weight, influence, cumulative D50); warnings; citations. |
 | **Site Summary JSON** | Everything above, plus the convergence series and per-photo jackknife detail, in one structured file. |
 | **Pooled Grains CSV** | One row per grain from all included photos: size (px and mm), axes, Feret widths, orientation, perimeter, circularity, aspect ratio, elongation, convexity/solidity, 2D sphericity. |
 | **Printable SVG PSD Figure** | The grain-size curve with confidence band, for reports. |
@@ -533,6 +533,23 @@ SHA-256, all settings, site name) so results can be reproduced.
 | File | Contains |
 |---|---|
 | **Photo Grains CSV** | One row per grain: as in the pooled grains CSV, plus whether the grain is inside the ROI and whether it counts in the statistics. |
-| **Photo Summary CSV / JSON** | D5–D95 for the area- and number-weighted b-axis, equivalent diameter and min-Feret; Folk & Ward; Wentworth classes and size-class histograms (calibrated photos only); fabric statistics; warnings. |
+| **Photo Summary CSV / JSON** | D5–D95 for the area- and number-weighted b-axis, equivalent diameter and min-Feret; Folk & Ward; the *More statistics* values (as in the site summary); Wentworth classes and size-class histograms (calibrated photos only); fabric statistics; warnings. |
 | **16/32-bit PNG mask** | The grain label image (each grain a different value), for GIS or Python. |
 | **GeoJSON / SVG contours** | Grain outlines in original photo coordinates. |
+
+### The extra statistics (Results → PSD → More statistics)
+
+| Statistic | Definition | Typical use |
+|---|---|---|
+| Sauter mean D[3,2] | Σd³/Σd² over all grains (= the area-weighted mean size) | "Mean grain size" in transport and roughness formulas |
+| De Brouckère mean D[4,3] | Σd⁴/Σd³ | Mean emphasising the large grains |
+| Arithmetic mean D[1,0] | Σd/n | Simple average grain |
+| Geometric mean Dg, σg | exp(mean ln d), exp(SD ln d), weighted like the PSD | River engineering; σg ≈ √(D84/D16) for log-normal beds |
+| D30, D60, D65 | Percentiles of the PSD | D65: Einstein roughness; D30/D60 for Cu and Cc |
+| Moments (φ) | Method-of-moments mean, sorting, skewness, kurtosis on the φ scale | Alternative to Folk & Ward (GRADISTAT) |
+| Uniformity Cu, curvature Cc | D60/D10, D30²/(D10·D60) | Engineering gradation (well/poorly graded) |
+| Trask sorting So, span | √(D75/D25), (D90−D10)/D50 | Spread of the distribution |
+| Fredle index | Dg/So | Spawning-gravel quality (Lotspeich & Everest 1981) |
+
+All are 2D surface measures from photos: like D50, they cannot see fines hidden under the
+surface layer or the subsurface, and they use the chosen size metric (b-axis by default).

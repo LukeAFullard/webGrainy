@@ -1,3 +1,4 @@
+import { computeExtraGrainStats, extraStatsCsvRows } from './grainStatsExtra.js';
 import type {
   FolkWardStats,
   GrainMorphometrics,
@@ -391,6 +392,20 @@ export function computeSedimentStats(
 
   const effectiveMetric: SizeMetric =
     sizeMetric === 'minFeret' && !hasFeret ? 'bAxis' : sizeMetric;
+  const metricVals = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    const g = included[i];
+    if (g === undefined) continue;
+    metricVals[i] =
+      effectiveMetric === 'dEq'
+        ? dEqVals[i]!
+        : effectiveMetric === 'minFeret'
+          ? unit === 'mm'
+            ? (g.minFeretMm ?? g.minFeretPx ?? g.bAxisPx)
+            : (g.minFeretPx ?? g.bAxisPx)
+          : bVals[i]!;
+  }
+  const extra = n > 0 ? computeExtraGrainStats(metricVals, areaWeights, fwPsd, unit) : undefined;
   const folkWard =
     unit === 'mm' && n >= 2 ? computeFolkWardStats(fwPsd) : null;
   const wentworth =
@@ -409,6 +424,7 @@ export function computeSedimentStats(
     ...(numberWeightedMinFeret ? { numberWeightedMinFeret } : {}),
     folkWard,
     wentworth,
+    ...(extra ? { extra } : {}),
     warnings,
   };
 }
@@ -513,6 +529,8 @@ export function exportSummaryCsv(report: SedimentStatsReport): Blob {
     lines.push(`wentworth,cobble_pct,${w.cobblePct},%`);
     lines.push(`wentworth,boulder_pct,${w.boulderPct},%`);
   }
+
+  if (report.extra) lines.push(...extraStatsCsvRows(report.extra, report.unit));
 
   return new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
 }

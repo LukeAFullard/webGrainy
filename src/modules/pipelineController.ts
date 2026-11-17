@@ -58,6 +58,7 @@ import {
   type GrainHullCache,
 } from './morphometricsExt.js';
 import { computeSedimentStats } from './sedimentStats.js';
+import { extraStatsCsvRows } from './grainStatsExtra.js';
 import {
   type AnalysisProvenance,
   baseExportMetadata,
@@ -1240,6 +1241,7 @@ export class AnalysisSession {
       lines.push(`wentworth,cobble_pct,${w.cobblePct},%`);
       lines.push(`wentworth,boulder_pct,${w.boulderPct},%`);
     }
+    if (report.extra) lines.push(...extraStatsCsvRows(report.extra, report.unit));
     lines.push(...this.summaryExtrasCsv(sizeMetric));
 
     return lines.join('\n');

@@ -1251,6 +1251,37 @@ function renderDashboard(state: AppState): void {
             </div>`
           : ''
       }
+      ${(() => {
+        const x = isSite ? report?.extra ?? null : single?.extra ?? null;
+        if (!x || x.n === 0) return '';
+        const v = (n: number | null, d = 1): string => (n === null || !Number.isFinite(n) ? '—' : n.toFixed(d));
+        const row = (label: string, val: string, note: string): string =>
+          `<tr><th scope="row">${label}<span class="stats-note">${note}</span></th><td>${val}</td></tr>`;
+        return `<details class="advanced-block more-stats" style="margin-top:8px;" data-keep-open="more-stats">
+          <summary>More statistics <span class="summary-note">Sauter mean ${v(x.sauterMeanD32)} ${unit} · Dg ${v(x.geometricMean)} ${unit}</span></summary>
+          <table class="stats-table">
+            <tbody>
+              ${row('Sauter mean D[3,2]', `${v(x.sauterMeanD32)} ${unit}`, 'Σd³/Σd², each grain once; = area-weighted mean size')}
+              ${row('De Brouckère mean D[4,3]', `${v(x.deBrouckereMeanD43)} ${unit}`, 'Σd⁴/Σd³, each grain once')}
+              ${row('Arithmetic mean D[1,0]', `${v(x.arithmeticMeanD10)} ${unit}`, 'each grain once')}
+              ${row('Geometric mean Dg', `${v(x.geometricMean)} ${unit}`, 'same weighting as the PSD')}
+              ${row('Geometric SD σg', v(x.geometricSd, 2), '1 = uniform; larger = wider spread')}
+              ${row('D30 / D60 / D65', `${v(x.D30)} / ${v(x.D60)} / ${v(x.D65)} ${unit}`, 'D65: Einstein roughness')}
+              ${row('Uniformity Cu', v(x.uniformityCu, 2), 'D60/D10')}
+              ${row('Curvature Cc', v(x.curvatureCc, 2), 'D30²/(D10·D60)')}
+              ${row('Trask sorting So', v(x.traskSorting, 2), '√(D75/D25)')}
+              ${row('Span', v(x.span, 2), '(D90−D10)/D50')}
+              ${row('Fredle index', v(x.fredleIndex, 1), 'Dg/So (spawning-gravel quality)')}
+              ${
+                x.momentMeanPhi !== null
+                  ? row('Moments (φ)', `${v(x.momentMeanPhi, 2)} / ${v(x.momentSortingPhi, 2)} / ${v(x.momentSkewness, 2)} / ${v(x.momentKurtosis, 2)}`, 'mean / sorting / skewness / kurtosis (method of moments)')
+                  : ''
+              }
+            </tbody>
+          </table>
+          <p class="field-hint">Included in the summary CSV and JSON exports. ${helpButton('moreStats')}</p>
+        </details>`;
+      })()}
     `;
   } else if (state.dashboardTab === 'adequacy') {
     const adeq = report?.adequacy;

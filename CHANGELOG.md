@@ -40,6 +40,14 @@ All notable changes to webGrainy are recorded here. The format follows
   retried once on WASM instead of failing. Previously the next WebGPU session reused the
   lost device. The UI shows "GPU reset · CPU mode (reload for GPU)".
 
+### Added
+- **More grain-size statistics** (Results → PSD → *More statistics*, and in all summary
+  exports): Sauter mean D[3,2], De Brouckère mean D[4,3], arithmetic mean D[1,0]
+  (moment ratios over all grains, ISO 9276-2); geometric mean Dg and geometric standard
+  deviation σg; D30, D60, D65; method-of-moments mean, sorting, skewness and kurtosis in φ
+  (GRADISTAT, Blott & Pye 2001); uniformity Cu, curvature Cc, Trask sorting So, span and
+  the Fredle index. Percentile-based values use the same weighting as the PSD curve.
+
 ### Changed
 - **Name sites:** *+ New* asks for a name, and *Rename* changes it. The site name is in
   export file names and in the export metadata.
