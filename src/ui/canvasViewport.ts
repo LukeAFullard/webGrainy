@@ -73,6 +73,15 @@ export class CanvasViewport {
   private lastPointerX = 0;
   private lastPointerY = 0;
 
+  /** Active touch points (pointerId -> client position) for touch gestures. */
+  private readonly touches = new Map<number, { x: number; y: number }>();
+  /** One-finger touch: start point and whether it has moved enough to be a drag. */
+  private touchStart: { x: number; y: number; dragging: boolean } | null = null;
+  /** Two-finger pinch: starting distance, zoom and the image point under the midpoint. */
+  private pinch: { dist: number; zoom: number; imgX: number; imgY: number } | null = null;
+  /** The view at "fit" zoom; one-finger swipes scroll the page until the user zooms in. */
+  private fitZoom = 1;
+
   private activePoints: Point2D[] = [];
   private isDrawingStroke = false;
   private splitTargetGrainId: number | null = null;
@@ -98,6 +107,7 @@ export class CanvasViewport {
     this.maskOffscreen = document.createElement('canvas');
 
     this.bindEvents();
+    this.bindRest();
   }
 
   private scheduleRender(): void {
@@ -132,6 +142,10 @@ export class CanvasViewport {
 
     this.stage.addEventListener('pointerdown', (e) => {
       if (!this.photo) return;
+      if (e.pointerType === 'touch') {
+        this.onTouchDown(e);
+        return;
+      }
       const rect = this.stage.getBoundingClientRect();
       const sx = e.clientX - rect.left;
       const sy = e.clientY - rect.top;
@@ -144,7 +158,24 @@ export class CanvasViewport {
         return;
       }
       if (e.button !== 0) return;
+      this.applyToolAt(sx, sy);
+    });
 
+    this.stage.addEventListener('pointermove', (e) => {
+      if (e.pointerType === 'touch') this.onTouchMove(e);
+    });
+    const endTouch = (e: PointerEvent): void => {
+      if (e.pointerType === 'touch') this.onTouchEnd(e, e.type === 'pointerup');
+    };
+    this.stage.addEventListener('pointerup', endTouch);
+    this.stage.addEventListener('pointercancel', endTouch);
+
+    this.bindMouseMoveAndUp();
+  }
+
+  /** Runs the active tool's click/tap action at a stage point. */
+  private applyToolAt(sx: number, sy: number): void {
+    {
       const pt = this.screenToImage(sx, sy);
       if (!pt) return;
 
@@ -175,9 +206,128 @@ export class CanvasViewport {
         this.activePoints = [pt];
         this.renderVectorOverlay();
       }
-    });
+    }
+  }
 
+  // ---- Touch gestures --------------------------------------------------------------
+  // Two fingers: pinch to zoom and drag to pan. One finger: tap runs the active tool;
+  // a drag pans the photo when zoomed in, otherwise scrolls the page (so a photo that
+  // fills the phone screen never traps scrolling). The brush draws with one finger.
+
+  private stagePoint(e: { clientX: number; clientY: number }): { sx: number; sy: number } {
+    const rect = this.stage.getBoundingClientRect();
+    return { sx: e.clientX - rect.left, sy: e.clientY - rect.top };
+  }
+
+  private startPinch(): void {
+    const [a, b] = Array.from(this.touches.values());
+    if (!a || !b) return;
+    const rect = this.stage.getBoundingClientRect();
+    const mx = (a.x + b.x) / 2 - rect.left;
+    const my = (a.y + b.y) / 2 - rect.top;
+    this.pinch = {
+      dist: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)),
+      zoom: this.zoom,
+      imgX: (mx - this.panX) / this.zoom,
+      imgY: (my - this.panY) / this.zoom,
+    };
+  }
+
+  private onTouchDown(e: PointerEvent): void {
+    this.touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    this.stage.setPointerCapture?.(e.pointerId);
+    if (this.touches.size === 2) {
+      // A second finger turns any pending tap or stroke into a pinch.
+      this.touchStart = null;
+      if (this.isDrawingStroke) {
+        this.isDrawingStroke = false;
+        this.activePoints = [];
+        this.renderVectorOverlay();
+      }
+      this.startPinch();
+      return;
+    }
+    if (this.touches.size > 2) return;
+    this.touchStart = { x: e.clientX, y: e.clientY, dragging: false };
+    if (this.tool === 'excludeBrush') {
+      const { sx, sy } = this.stagePoint(e);
+      this.applyToolAt(sx, sy); // starts the stroke
+    }
+  }
+
+  private onTouchMove(e: PointerEvent): void {
+    const prev = this.touches.get(e.pointerId);
+    if (!prev) return;
+    this.touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    e.preventDefault();
+
+    if (this.pinch && this.touches.size >= 2) {
+      const [a, b] = Array.from(this.touches.values());
+      if (!a || !b) return;
+      const rect = this.stage.getBoundingClientRect();
+      const mx = (a.x + b.x) / 2 - rect.left;
+      const my = (a.y + b.y) / 2 - rect.top;
+      const dist = Math.max(1, Math.hypot(a.x - b.x, a.y - b.y));
+      this.zoom = Math.max(0.05, Math.min(40, this.pinch.zoom * (dist / this.pinch.dist)));
+      this.panX = mx - this.pinch.imgX * this.zoom;
+      this.panY = my - this.pinch.imgY * this.zoom;
+      this.scheduleRender();
+      return;
+    }
+
+    const start = this.touchStart;
+    if (!start) return;
+    if (this.isDrawingStroke && this.tool === 'excludeBrush') {
+      const { sx, sy } = this.stagePoint(e);
+      const pt = this.screenToImage(sx, sy);
+      if (pt) {
+        this.activePoints.push(pt);
+        this.renderVectorOverlay();
+      }
+      return;
+    }
+    if (!start.dragging && Math.hypot(e.clientX - start.x, e.clientY - start.y) < 10) return;
+    start.dragging = true;
+    const dx = e.clientX - prev.x;
+    const dy = e.clientY - prev.y;
+    if (this.zoom > this.fitZoom * 1.05) {
+      this.panX += dx;
+      this.panY += dy;
+      this.scheduleRender();
+    } else {
+      window.scrollBy(0, -dy);
+    }
+  }
+
+  private onTouchEnd(e: PointerEvent, completed: boolean): void {
+    if (!this.touches.has(e.pointerId)) return;
+    this.touches.delete(e.pointerId);
+    if (this.pinch) {
+      if (this.touches.size < 2) this.pinch = null;
+      // Lifting one of two fingers must not trigger a tap.
+      this.touchStart = null;
+      return;
+    }
+    const start = this.touchStart;
+    this.touchStart = null;
+    if (this.tool === 'excludeBrush' && this.isDrawingStroke) {
+      this.isDrawingStroke = false;
+      if (completed && this.activePoints.length >= 2) {
+        this.callbacks.onAddExclusionStroke([...this.activePoints], 20);
+      }
+      this.activePoints = [];
+      this.renderVectorOverlay();
+      return;
+    }
+    if (completed && start && !start.dragging) {
+      const { sx, sy } = this.stagePoint(e);
+      this.applyToolAt(sx, sy);
+    }
+  }
+
+  private bindMouseMoveAndUp(): void {
     window.addEventListener('pointermove', (e) => {
+      if (e.pointerType === 'touch') return;
       if (this.isPanning) {
         this.panX += e.clientX - this.lastPointerX;
         this.panY += e.clientY - this.lastPointerY;
@@ -214,7 +364,8 @@ export class CanvasViewport {
       this.renderLoupe();
     });
 
-    window.addEventListener('pointerup', () => {
+    window.addEventListener('pointerup', (e) => {
+      if (e.pointerType === 'touch') return;
       if (this.isPanning) {
         this.isPanning = false;
         this.stage.classList.remove('panning');
@@ -229,6 +380,9 @@ export class CanvasViewport {
       }
     });
 
+  }
+
+  private bindRest(): void {
     this.stage.addEventListener('dblclick', (e) => {
       e.preventDefault();
       this.commitActiveShape();
@@ -292,6 +446,18 @@ export class CanvasViewport {
 
     const ro = new ResizeObserver(() => this.scheduleRender());
     ro.observe(this.stage);
+  }
+
+  /** Completes the polygon / split line being drawn (touch-friendly Enter). */
+  finishShape(): void {
+    if (this.activePoints.length >= 2) this.commitActiveShape();
+  }
+
+  /** Discards the shape being drawn (touch-friendly Esc). */
+  cancelShape(): void {
+    this.activePoints = [];
+    this.splitTargetGrainId = null;
+    this.renderVectorOverlay();
   }
 
   private commitActiveShape(): void {
@@ -384,6 +550,7 @@ export class CanvasViewport {
     const scaleX = (rect.width - 24) / this.photo.width;
     const scaleY = (rect.height - 24) / this.photo.height;
     this.zoom = Math.max(0.05, Math.min(4, Math.min(scaleX, scaleY)));
+    this.fitZoom = this.zoom;
     this.panX = (rect.width - this.photo.width * this.zoom) / 2;
     this.panY = (rect.height - this.photo.height * this.zoom) / 2;
     this.render();

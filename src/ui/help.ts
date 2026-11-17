@@ -33,7 +33,7 @@ export const HELP_TOPICS = {
   model: {
     title: 'Model',
     group: 'Analysis',
-    what: 'Which neural network finds the grains. CP-SAM is more accurate but a larger download (180–617 MB, see "CP-SAM weights") and needs a modern graphics card for good speed. U-Net is small (26 MB) and fast and works almost anywhere, but is less accurate. Auto picks one for you based on the photo and your hardware.',
+    what: 'Which neural network finds the grains. CP-SAM is more accurate but a larger download (180–617 MB, see "CP-SAM weights") and needs a modern graphics card for good speed. U-Net is small (26 MB) and fast and works almost anywhere, but is less accurate. Auto picks one for you based on the photo and your hardware. On phones and tablets Auto always picks U-Net.',
     default: 'Auto',
     when: 'Use CP-SAM for results you will report or publish (median D50 error about 3% in testing, vs about 15% for U-Net). Use U-Net for a quick look or on a phone. Use the same model for all photos you compare.',
   },
@@ -41,7 +41,7 @@ export const HELP_TOPICS = {
     title: 'CP-SAM weights',
     group: 'Analysis',
     what: 'Which copy of the Cellpose-SAM network to download and run. FP16 is the original (617 MB). INT8 (316 MB) and FP4 (183 MB) store the same network in compressed form. All three gave the same accuracy on the 40-photo benchmark (outline score 0.652–0.653, median D50 error 2.8–2.9%). Only used when the model is CP-SAM.',
-    default: 'Auto: FP16 on a graphics card (WebGPU with float16), otherwise INT8',
+    default: 'Auto: FP16 on a graphics card (WebGPU with float16), otherwise INT8 (always INT8 on phones and tablets)',
     when: 'On a computer without a suitable graphics card, INT8 needs about half the memory of FP16 (about 2 GB vs 3.8 GB), loads much faster, and is as fast or faster (up to about 2× in the benchmark, depending on the computer). Choose FP4 for the smallest download on a slow or metered connection (it needs about as much memory as FP16 while running). On a graphics card, FP16 has been checked against the CPU on real hardware; INT8 and FP4 have not yet (use the GPU check page). Keep the same choice for all photos you compare, and note it when reporting results (it is recorded in the export).',
   },
   scaleMode: {

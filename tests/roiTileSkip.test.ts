@@ -77,3 +77,26 @@ describe('skipping inference tiles outside the ROI', () => {
     expect(f).toBeCloseTo(1 - (450 * 350) / (W * H), 6);
   });
 });
+
+import { isMobileDevice, recommendModel } from '../src/modules/imagePreprocess.js';
+
+describe('phones and tablets', () => {
+  it('detects mobile browsers (incl. iPadOS with a Mac user agent)', () => {
+    expect(isMobileDevice({ userAgent: 'Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 Chrome/131 Mobile Safari/537.36' })).toBe(true);
+    expect(isMobileDevice({ userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)' })).toBe(true);
+    expect(isMobileDevice({ userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)', maxTouchPoints: 5 })).toBe(true);
+    expect(isMobileDevice({ userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)', maxTouchPoints: 0 })).toBe(false);
+    expect(isMobileDevice({ userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/156', userAgentData: { mobile: false } })).toBe(false);
+    expect(isMobileDevice({ userAgent: 'x', userAgentData: { mobile: true } })).toBe(true);
+  });
+  it('Auto picks U-Net on mobile even with a float16 GPU', () => {
+    const w = 64, h = 64;
+    const rgba = new Uint8ClampedArray(w * h * 4);
+    for (let i = 0; i < rgba.length; i++) rgba[i] = (i * 7919) % 256;
+    const desktop = recommendModel(rgba, w, h, { hasWebGPU: true, hasShaderF16: true, deviceMemoryGB: 16 });
+    const phone = recommendModel(rgba, w, h, { hasWebGPU: true, hasShaderF16: true, deviceMemoryGB: 8, isMobile: true });
+    expect(phone.model).toBe('unet');
+    expect(phone.rationale).toMatch(/Phone/);
+    expect(['unet', 'cpsam']).toContain(desktop.model);
+  });
+});

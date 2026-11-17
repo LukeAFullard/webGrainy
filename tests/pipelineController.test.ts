@@ -549,6 +549,29 @@ describe('pipelineController (ImageGrainsEngine & AnalysisSession)', () => {
     expect(e.getProvenance()?.modelId).toBe('ig2_cpsam_int8_wo_fp32scale');
     await gpu.dispose();
 
+    // Phone with a float16 GPU: Auto weights -> INT8, and a warning is emitted.
+    Object.defineProperty(globalThis, 'navigator', {
+      value: {
+        userAgent: 'Mozilla/5.0 (Linux; Android 14; Pixel 7) Mobile',
+        gpu: { requestAdapter: async () => ({ features: { has: (f: string) => f === 'shader-f16' } }) },
+      },
+      configurable: true,
+    });
+    const phone = new ImageGrainsEngine({ sessionFactory: factory });
+    await phone.initialize();
+    const warnings: string[] = [];
+    const f = await phone.analyzeImage(img, {
+      model: 'cpsam',
+      scaleMode: '1.0x',
+      onProgress: (stage, d) => {
+        if (stage === 'warning') warnings.push(String((d as { code?: string }).code));
+      },
+    });
+    expect(f.getProvenance()?.modelId).toBe('ig2_cpsam_int8_wo_fp32scale');
+    expect(warnings).toContain('cpsam-mobile');
+    await phone.dispose();
+    requested.pop();
+
     // One session per weight file.
     expect(requested).toEqual([
       'ig2_cpsam_int8_wo_fp32scale',
