@@ -270,7 +270,7 @@ export function renderConvergenceChartSvg(
   const parts: string[] = [];
   parts.push(`<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`);
   parts.push(`<rect width="${W}" height="${H}" fill="${bg}" />`);
-  parts.push(`<text x="${padL}" y="14" fill="${fg}" font-size="10.5" font-weight="700" font-family="system-ui, sans-serif">Cumulative Convergence (1..N Photos): D₁₆ / D₅₀ ± 95% CI / D₈₄</text>`);
+  parts.push(`<text x="${padL}" y="14" fill="${fg}" font-size="10.5" font-weight="700" font-family="system-ui, sans-serif">Cumulative Convergence (1..N Photos): D16 / D50 ± 95% CI / D84</text>`);
 
   // CI ribbon for D50
   if (points.length > 1) {
@@ -329,7 +329,7 @@ export function renderJackknifeChartSvg(
   const parts: string[] = [];
   parts.push(`<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`);
   parts.push(`<rect width="${W}" height="${H}" fill="${bg}" />`);
-  parts.push(`<text x="10" y="15" fill="${fg}" font-size="10.5" font-weight="700" font-family="system-ui, sans-serif">Leave-One-Out Jackknife Influence on D₅₀ (%)</text>`);
+  parts.push(`<text x="10" y="15" fill="${fg}" font-size="10.5" font-weight="700" font-family="system-ui, sans-serif">Leave-One-Out Jackknife Influence on D50 (%)</text>`);
   parts.push(`<line x1="${zeroX.toFixed(1)}" y1="${padT}" x2="${zeroX.toFixed(1)}" y2="${H - 8}" stroke="${axisCol}" />`);
 
   items.forEach((item, i) => {

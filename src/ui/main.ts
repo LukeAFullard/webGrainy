@@ -147,6 +147,14 @@ engine.onProgress((stage, detail) => {
   }
 });
 
+/** Asks for a site name; returns null if cancelled. Trims and limits to 120 characters. */
+function askSiteName(message: string, current: string): string | null {
+  const raw = window.prompt(message, current);
+  if (raw === null) return null;
+  const name = raw.replace(/\s+/g, ' ').trim().slice(0, 120);
+  return name.length > 0 ? name : current;
+}
+
 // ---- Getting-started guide (hidden flag and "exported once" are per browser) ----
 const EXPORTED_KEY = 'webgrainy-exported-once';
 function readFlag(key: string): boolean {
@@ -806,6 +814,7 @@ function renderSidebar(state: AppState): void {
       <div class="panel-header">
         <span class="panel-title">Site</span>
         <div class="row">
+          <button type="button" class="btn btn-sm" data-action="rename-site" title="Rename this site" ${activeSite ? '' : 'disabled'}>Rename</button>
           <button type="button" class="btn btn-sm" data-action="new-site" title="Create a new site">+ New</button>
           <button type="button" class="btn btn-sm" data-action="import-archive" title="Open a saved .webgrainy.json project">Open</button>
         </div>
@@ -1316,6 +1325,15 @@ function renderDashboard(state: AppState): void {
           });
     tabContent = `
       <div class="chart-box">${renderFabricRoseSvg(rose, lightTheme)}</div>
+      ${
+        rose.grainCount > 0
+          ? `<div class="stat-grid" style="margin-top:8px;">
+              <div class="stat-card"><div class="stat-label">Mean orientation</div><div class="stat-value">${rose.meanAxialDeg.toFixed(0)}°</div><div class="stat-sub">0° = up–down in the photo</div></div>
+              <div class="stat-card"><div class="stat-label">Alignment (R)</div><div class="stat-value">${rose.resultantLength.toFixed(2)}</div><div class="stat-sub">0 = random, 1 = all parallel</div></div>
+              <div class="stat-card"><div class="stat-label">Rayleigh p</div><div class="stat-value">${rose.rayleighP === null ? '—' : rose.rayleighP < 0.001 ? '&lt;0.001' : rose.rayleighP.toFixed(3)}</div><div class="stat-sub">${rose.rayleighP !== null && rose.rayleighP < 0.05 ? 'preferred direction' : 'no clear direction'} · n = ${rose.grainCount}</div></div>
+            </div>`
+          : ''
+      }
       <div class="basis-banner">
         Axial 180° double-angle statistics (Curray 1956; Mardia &amp; Jupp 2000). 0° = Image Vertical (Top/Bottom), 90° = Image Horizontal.
       </div>
@@ -1364,9 +1382,9 @@ function renderDashboard(state: AppState): void {
           : '';
       })()}
       <div class="stat-grid" style="margin-top:8px;">
-        <div class="stat-card"><div class="stat-label">D₁₆</div><div class="stat-value">${psd ? psd.D16.toFixed(1) : '—'}</div><div class="stat-sub">${unit}</div></div>
-        <div class="stat-card"><div class="stat-label">D₅₀ (Median)</div><div class="stat-value">${psd ? psd.D50.toFixed(1) : '—'}</div><div class="stat-sub">${unit}</div></div>
-        <div class="stat-card"><div class="stat-label">D₈₄</div><div class="stat-value">${psd ? psd.D84.toFixed(1) : '—'}</div><div class="stat-sub">${unit}</div></div>
+        <div class="stat-card"><div class="stat-label">D<sub>16</sub></div><div class="stat-value">${psd ? psd.D16.toFixed(1) : '—'}</div><div class="stat-sub">${unit}</div></div>
+        <div class="stat-card"><div class="stat-label">D<sub>50</sub> (median)</div><div class="stat-value">${psd ? psd.D50.toFixed(1) : '—'}</div><div class="stat-sub">${unit}</div></div>
+        <div class="stat-card"><div class="stat-label">D<sub>84</sub></div><div class="stat-value">${psd ? psd.D84.toFixed(1) : '—'}</div><div class="stat-sub">${unit}</div></div>
       </div>
       <p class="metric-note">${esc(metricNoteText)}</p>
       <details class="advanced-block stats-settings" style="margin-top:8px;" data-keep-open="stats-settings">
@@ -1838,9 +1856,11 @@ function attachDelegatedHandlers(): void {
         return;
       }
       if (act === 'new-site') {
+        const name = askSiteName('Name for the new site (e.g. river and reach):', `Field Site ${state.sites.length + 1}`);
+        if (name === null) return;
         const newSite: SiteRecord = {
           siteId: makeId('site'),
-          name: `Field Site ${state.sites.length + 1}`,
+          name,
           createdAt: Date.now(),
           updatedAt: Date.now(),
           options: state.siteOptions,
@@ -1850,6 +1870,15 @@ function attachDelegatedHandlers(): void {
           const sites = await listSites();
           store.setState({ sites });
           await loadSiteData(newSite.siteId);
+        });
+      } else if (act === 'rename-site') {
+        const site = getActiveSite(state);
+        if (!site) return;
+        const name = askSiteName('New name for this site:', site.name);
+        if (name === null || name === site.name) return;
+        const renamed: SiteRecord = { ...site, name, updatedAt: Date.now() };
+        void saveSite(renamed).then(async () => {
+          store.setState({ sites: await listSites(), statusMessage: `Site renamed to "${name}".` });
         });
       } else if (act === 'import-archive') {
         archiveInputEl.click();

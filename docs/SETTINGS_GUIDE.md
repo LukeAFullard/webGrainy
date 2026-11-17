@@ -510,3 +510,29 @@ calibration and the date. When you publish or share results, also state:
 - **that outlines were checked and edited**, and roughly how much;
 - that webGrainy is an **unofficial browser version of ImageGrains 2.0**, and cite the
   ImageGrains and Cellpose papers (see *About* in the app).
+
+---
+
+## 13. What you can export (Export button)
+
+Every file starts with the provenance metadata (app and model versions, model file and
+SHA-256, all settings, site name) so results can be reproduced.
+
+**Whole site**
+
+| File | Contains |
+|---|---|
+| **Site Summary CSV** | D5–D95 with bootstrap and binomial confidence intervals; Folk & Ward mean, sorting, skewness, kurtosis with confidence intervals; Wentworth class percentages and size-class histograms (1 φ and 0.5 φ bins, % and counts); fabric (mean orientation, alignment R, circular variance, Rayleigh test, rose bins); sample adequacy (rating, effective grain count, largest clast, outlier photos); jackknife sensitivity; a per-photo breakdown by photo name (scale, grain counts, truncation, sampled area, packing/matrix %, D16/D50/D84, weight, influence, cumulative D50); warnings; citations. |
+| **Site Summary JSON** | Everything above, plus the convergence series and per-photo jackknife detail, in one structured file. |
+| **Pooled Grains CSV** | One row per grain from all included photos: size (px and mm), axes, Feret widths, orientation, perimeter, circularity, aspect ratio, elongation, convexity/solidity, 2D sphericity. |
+| **Printable SVG PSD Figure** | The grain-size curve with confidence band, for reports. |
+| **.webgrainy.json archive** | The whole project (photos, scale, ROIs, results) to reopen later or share. |
+
+**This photo**
+
+| File | Contains |
+|---|---|
+| **Photo Grains CSV** | One row per grain: as in the pooled grains CSV, plus whether the grain is inside the ROI and whether it counts in the statistics. |
+| **Photo Summary CSV / JSON** | D5–D95 for the area- and number-weighted b-axis, equivalent diameter and min-Feret; Folk & Ward; Wentworth classes and size-class histograms (calibrated photos only); fabric statistics; warnings. |
+| **16/32-bit PNG mask** | The grain label image (each grain a different value), for GIS or Python. |
+| **GeoJSON / SVG contours** | Grain outlines in original photo coordinates. |

@@ -53,6 +53,8 @@ import {
 } from './interactiveEditor.js';
 import {
   computeExtendedMorphometrics,
+  computeFabricRoseStats,
+  computeWentworthHistogram,
   type GrainHullCache,
 } from './morphometricsExt.js';
 import { computeSedimentStats } from './sedimentStats.js';
@@ -1110,16 +1112,31 @@ export class AnalysisSession {
       'grain_id,centroid_x,centroid_y,area_px,a_axis_px,b_axis_px,d_eq_px,a_axis_mm,b_axis_mm,d_eq_mm' +
       (hasFeret ? ',min_feret_px,max_feret_px,min_feret_mm,max_feret_mm' : '') +
       ',touches_border' +
-      (this.roiConfig !== undefined ? ',in_roi' : '');
+      (this.roiConfig !== undefined ? ',in_roi' : '') +
+      ',included_in_stats,orientation_rad,orientation_deg,perimeter_px,perimeter_mm,circularity,aspect_ratio,elongation,convex_area_px,convex_area_mm2,solidity,sphericity_2d';
     const lines: string[] = options?.includeMetadata
       ? [...metadataCommentLines(this.getExportMetadata()), header]
       : [header];
+    const statsIds = new Set(this.statsGrainsForSummaries().map((g) => g.id));
     const inRoi =
       this.roiConfig !== undefined
         ? new Set(this.getStatsGrains().map((g) => g.id))
         : null;
+    const ext = new Map(
+      computeExtendedMorphometrics(
+        this.workingMasks,
+        this.grains,
+        this.workingImage.width,
+        this.workingImage.height,
+        this.workingImage.effectiveScaleFactor,
+        this.calibration?.mmPerPx,
+        this.hullCache,
+      ).map((e) => [e.id, e]),
+    );
+    const opt = (v: number | undefined): number | string => (v === undefined ? '' : v);
 
     for (const g of this.grains) {
+      const e = ext.get(g.id);
       const row = [
         g.id,
         g.centroidX,
@@ -1141,6 +1158,18 @@ export class AnalysisSession {
           : []),
         g.touchesBorder,
         ...(inRoi !== null ? [inRoi.has(g.id)] : []),
+        statsIds.has(g.id),
+        g.orientationRad,
+        (g.orientationRad * 180) / Math.PI,
+        opt(e?.perimeterPx),
+        opt(e?.perimeterMm),
+        opt(e?.circularity),
+        opt(e?.aspectRatio),
+        opt(e?.elongation),
+        opt(e?.convexAreaPx),
+        opt(e?.convexAreaMm2),
+        opt(e?.solidity),
+        opt(e?.sphericity2D),
       ].join(',');
       lines.push(row);
     }
@@ -1211,8 +1240,47 @@ export class AnalysisSession {
       lines.push(`wentworth,cobble_pct,${w.cobblePct},%`);
       lines.push(`wentworth,boulder_pct,${w.boulderPct},%`);
     }
+    lines.push(...this.summaryExtrasCsv(sizeMetric));
 
     return lines.join('\n');
+  }
+
+  /** Grains that count in the statistics: inside the ROI and (if set) not touching the border. */
+  private statsGrainsForSummaries(): GrainMorphometrics[] {
+    const g = this.getStatsGrains();
+    return this.excludeBorder ? g.filter((x) => !x.touchesBorder) : g;
+  }
+
+  /**
+   * Summary rows also shown in the dashboard: size-class histograms (area-weighted, 1 φ and
+   * 0.5 φ bins), fabric (orientation) statistics, and warnings.
+   */
+  private summaryExtrasCsv(sizeMetric: SizeMetric): string[] {
+    const out: string[] = [];
+    const grains = this.statsGrainsForSummaries();
+    const q = (t: string): string => `"${t.replace(/"/g, '""')}"`;
+    if (this.calibration === undefined) {
+      out.push('size_class,note,"Not available: size classes need a calibrated photo (mm)",text');
+    }
+    for (const step of [1.0, 0.5] as const) {
+      const bins = this.calibration === undefined ? [] : computeWentworthHistogram(grains, { stepPhi: step, weighted: true, sizeMetric });
+      const sec = step === 1 ? 'size_class_1phi' : 'size_class_05phi';
+      for (const b of bins) {
+        out.push(`${sec},${q(`${b.label} [${b.mmMin}-${b.mmMax} mm]`)},${b.weightPct},% (area-weighted)`);
+        out.push(`${sec}_count,${q(`${b.label} [${b.mmMin}-${b.mmMax} mm]`)},${b.grainCount},count`);
+      }
+    }
+    const f = computeFabricRoseStats(grains, { weighted: true, binCount: 12 });
+    out.push(`fabric,grain_count,${f.grainCount},count`);
+    out.push(`fabric,mean_axial_orientation_deg,${f.meanAxialDeg},deg (0 = image vertical)`);
+    out.push(`fabric,resultant_length_R,${f.resultantLength},ratio`);
+    out.push(`fabric,circular_variance,${f.circularVariance},ratio`);
+    out.push(`fabric,rayleigh_z,${f.rayleighZ},stat`);
+    out.push(`fabric,rayleigh_p,${f.rayleighP ?? ''},p`);
+    for (const b of f.bins) out.push(`fabric_bin,${b.startDeg}-${b.endDeg}deg,${b.proportionPct},%`);
+    const warnings = this.getStats(sizeMetric).warnings ?? [];
+    warnings.forEach((w, i) => out.push(`warning,${i + 1},${q(w)},text`));
+    return out;
   }
 
   exportMaskPng(bitDepth: 16 | 32 = 16): Uint8Array {

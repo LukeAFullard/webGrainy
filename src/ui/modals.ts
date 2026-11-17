@@ -329,13 +329,18 @@ export async function handleExportAction(
   siteOptions?: Partial<SiteAnalysisOptions>,
 ): Promise<void> {
   const safeSite = (site?.name ?? 'site').replace(/[^a-zA-Z0-9_-]+/g, '_');
+  // Site name first, then the usual provenance metadata.
+  const siteMeta = (): Record<string, unknown> => ({
+    ...(site?.name ? { siteName: site.name } : {}),
+    ...buildSiteExportMetadata(siteInputs, siteReport!, siteOptions),
+  });
   const safePhoto = (photo?.label ?? 'photo').replace(/[^a-zA-Z0-9_-]+/g, '_');
 
   switch (kind) {
     case 'site-summary-csv':
       if (siteReport) {
         triggerBlobDownload(
-          exportSiteSummaryCsv(siteReport, buildSiteExportMetadata(siteInputs, siteReport, siteOptions)),
+          exportSiteSummaryCsv(siteReport, siteMeta()),
           `${safeSite}_summary.csv`,
         );
       }
@@ -343,7 +348,7 @@ export async function handleExportAction(
     case 'site-summary-json':
       if (siteReport) {
         triggerBlobDownload(
-          exportSiteSummaryJson(siteReport, buildSiteExportMetadata(siteInputs, siteReport, siteOptions)),
+          exportSiteSummaryJson(siteReport, siteMeta()),
           `${safeSite}_summary.json`,
         );
       }
@@ -352,7 +357,7 @@ export async function handleExportAction(
       if (siteReport) {
         triggerBlobDownload(
           exportSiteGrainsCsv(siteInputs, siteReport, {
-            metadata: buildSiteExportMetadata(siteInputs, siteReport, siteOptions),
+            metadata: siteMeta(),
           }),
           `${safeSite}_pooled_grains.csv`,
         );
@@ -361,7 +366,7 @@ export async function handleExportAction(
     case 'site-psd-svg':
       if (siteReport) {
         const rawSvg = renderPrintablePsdSvg(siteReport, site?.name ?? 'Site', psdXAxis);
-        const metaXml = JSON.stringify(buildSiteExportMetadata(siteInputs, siteReport, siteOptions))
+        const metaXml = JSON.stringify(siteMeta())
           .replace(/&/g, '&amp;')
           .replace(/</g, '&lt;')
           .replace(/>/g, '&gt;');

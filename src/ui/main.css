@@ -1170,3 +1170,18 @@ details.settings-block > summary {
   font-size: 0.72rem;
   max-width: 28rem;
 }
+
+/* Readable percentile labels (D16, D50, D84): real subscripts at a legible size. */
+.stat-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+.stat-label sub {
+  font-size: 0.85em;
+  vertical-align: baseline;
+  position: relative;
+  top: 0.18em;
+}
+.stat-value {
+  font-size: 1.05rem;
+}

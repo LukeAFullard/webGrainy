@@ -1744,6 +1744,74 @@ export function exportSiteSummaryCsv(
     lines.push(`wentworth,boulder_pct,${w.boulderPct},%`);
   }
 
+  lines.push(`metadata,confidence_level,${report.binomialCi.confidenceLevel},fraction`);
+  if (report.folkWardCi !== null) {
+    const ci = report.folkWardCi;
+    for (const [k, v] of Object.entries(ci) as Array<[string, [number, number]]>) {
+      const unit = k === 'meanMm' ? 'mm' : 'phi';
+      const name = k.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
+      lines.push(`folk_ward_ci_lo,${name},${v[0]},${unit}`);
+      lines.push(`folk_ward_ci_hi,${name},${v[1]},${unit}`);
+    }
+  }
+  for (const [sec, bins] of [
+    ['size_class_1phi', report.wentworthHistogram10Phi],
+    ['size_class_05phi', report.wentworthHistogram05Phi],
+  ] as const) {
+    for (const b of bins) {
+      const label = csvEscape(`${b.label} [${b.mmMin}-${b.mmMax} mm]`);
+      lines.push(`${sec},${label},${b.weightPct},%`);
+      lines.push(`${sec}_count,${label},${b.grainCount},count`);
+    }
+  }
+  const fr = report.fabricRose;
+  lines.push(`fabric,grain_count,${fr.grainCount},count`);
+  lines.push(`fabric,mean_axial_orientation_deg,${fr.meanAxialDeg},deg (0 = image vertical)`);
+  lines.push(`fabric,resultant_length_R,${fr.resultantLength},ratio`);
+  lines.push(`fabric,circular_variance,${fr.circularVariance},ratio`);
+  lines.push(`fabric,rayleigh_z,${fr.rayleighZ},stat`);
+  lines.push(`fabric,rayleigh_p,${fr.rayleighP ?? ''},p`);
+  for (const b of fr.bins) lines.push(`fabric_bin,${b.startDeg}-${b.endDeg}deg,${b.proportionPct},%`);
+  const adq = report.adequacy;
+  lines.push(`adequacy,effective_grain_count,${adq.effectiveGrainCount},count`);
+  lines.push(`adequacy,largest_clast_area_ratio,${adq.largestClastAreaRatio},fraction`);
+  lines.push(`adequacy,largest_clast_warning,${adq.largestClastWarning},label`);
+  for (const o of adq.outlierPhotos) {
+    lines.push(`adequacy_outlier_photo,${csvEscape(o.label)},${csvEscape(o.reasons.join('; '))},text`);
+  }
+  if (report.jackknife !== null) {
+    lines.push(`jackknife,se_D16,${report.jackknife.seD16},${report.unit}`);
+    lines.push(`jackknife,se_D50,${report.jackknife.seD50},${report.unit}`);
+    lines.push(`jackknife,se_D84,${report.jackknife.seD84},${report.unit}`);
+  }
+  // One row per photo: <photo label>|<field>.
+  const jk = new Map((report.jackknife?.perPhoto ?? []).map((j) => [j.photoId, j]));
+  const conv = new Map(report.convergence.map((c) => [c.photoId, c]));
+  for (const p of report.perPhoto) {
+    const name = (f: string): string => csvEscape(`${p.label}|${f}`);
+    const rows: Array<[string, number | string | undefined, string]> = [
+      ['included', String(p.included), 'flag'],
+      ['mm_per_px', p.mmPerPx, 'mm/px'],
+      ['raw_grains', p.rawGrainCount, 'count'],
+      ['valid_grains', p.validGrainCount, 'count'],
+      ['excluded_truncation', p.excludedTruncationCount, 'count'],
+      ['sampled_bed_area_mm2', p.sampledBedAreaMm2, 'mm2'],
+      ['clast_packing_pct', p.clastPackingPct, '%'],
+      ['exposed_matrix_pct', p.exposedMatrixPct, '%'],
+      ['D16', p.D16, report.unit],
+      ['D50', p.D50, report.unit],
+      ['D84', p.D84, report.unit],
+      ['weight_pct', p.weightContributionPct, '%'],
+      ['jackknife_delta_D50', jk.get(p.photoId)?.deltaD50, report.unit],
+      ['cumulative_D50', conv.get(p.photoId)?.D50, report.unit],
+      ['cumulative_D50_ci_half_width_pct', conv.get(p.photoId)?.relativeHalfWidthD50Pct, '%'],
+    ];
+    for (const [f, v, u] of rows) {
+      if (v !== undefined) lines.push(`per_photo_detail,${name(f)},${v},${u}`);
+    }
+  }
+  report.warnings.forEach((w, i) => lines.push(`warning,${i + 1},${csvEscape(w)},text`));
+
   for (const p of report.perPhoto) {
     lines.push(
       `per_photo,${csvEscape(p.photoId)}_D50,${p.D50},${report.unit}`,

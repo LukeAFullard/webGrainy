@@ -247,8 +247,19 @@ describe('F-07 ROI / exclusion applies to single-photo statistics', () => {
     expect(s.getRoiExcludedGrainCount()).toBe(1);
     expect(s.getStats().areaWeightedB.D50).toBeLessThan(d50Before);
     const csv = s.exportCsv().split('\n');
-    expect(csv[0]).toMatch(/,in_roi$/);
-    expect(csv.slice(1).map((l) => l.split(',').pop())).toEqual(['true', 'false']);
+    const cols = csv[0]!.split(',');
+    const inRoi = cols.indexOf('in_roi');
+    expect(inRoi).toBeGreaterThan(0);
+    expect(csv.slice(1).map((l) => l.split(',')[inRoi])).toEqual(['true', 'false']);
+    // The stats flag agrees (border exclusion does not apply to these interior grains).
+    const inStats = cols.indexOf('included_in_stats');
+    expect(csv.slice(1).map((l) => l.split(',')[inStats])).toEqual(['true', 'false']);
+    expect(cols).toEqual(expect.arrayContaining(['orientation_deg', 'circularity', 'solidity', 'aspect_ratio']));
+    const summary = s.exportSummaryCsv();
+    expect(summary).toContain('fabric,mean_axial_orientation_deg');
+    expect(summary).toContain('size_class,note,"Not available: size classes need a calibrated photo (mm)"');
+    // Only the grain inside the ROI counts in the photo's fabric statistics.
+    expect(summary).toContain('fabric,grain_count,1,count');
   });
 });
 
