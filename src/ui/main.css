@@ -690,8 +690,6 @@ input:not([type="range"]):user-invalid {
   border-radius: var(--radius-sm);
   padding: 0.375rem;
   margin-top: 0.5rem;
-  content-visibility: auto;
-  contain-intrinsic-size: auto 180px;
 }
 
 .chart-box svg {
@@ -1239,4 +1237,21 @@ details.settings-block > summary {
     min-height: 2rem;
     padding: 2px 10px;
   }
+}
+
+/*
+ * The side panels are flex columns that scroll. Their sections must keep their natural
+ * height: with the default flex-shrink, a tall section was squashed and its overflowing
+ * content painted over the next one (the dashboard tabs became unclickable on short windows).
+ */
+.sidebar-left > *,
+.dashboard-right > * {
+  flex-shrink: 0;
+}
+
+/* Keep the dashboard tabs reachable while scrolling through the charts. */
+.dashboard-right .tabs {
+  position: sticky;
+  top: 0;
+  z-index: 5;
 }

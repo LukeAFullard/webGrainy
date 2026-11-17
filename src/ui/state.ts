@@ -150,7 +150,8 @@ export function createInitialState(): AppState {
     siteReport: null,
     singlePhotoStats: null,
     siteReportError: null,
-    dashboardScope: 'site',
+    // Start with the photo being looked at; the user can switch to the whole site.
+    dashboardScope: 'photo',
     dashboardTab: 'psd',
     psdXAxis: 'mm',
     histogramStepPhi: 0.5,

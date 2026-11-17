@@ -1055,7 +1055,11 @@ function renderViewportExtras(state: AppState): void {
       inspectorEl.style.display = 'block';
       inspectorEl.innerHTML = `
         <div class="row-between" style="margin-bottom:4px;">
-          <strong>Grain #${grain.id}</strong>
+          <strong>Grain #${grain.id}</strong>${
+            session.getRoiFilterResult()?.excludedGrainIds.has(grain.id)
+              ? ' <span class="badge warn" title="Outside the ROI or inside an excluded area: not counted in the statistics">not counted</span>'
+              : ''
+          }
           <button type="button" class="btn btn-sm" data-action="close-inspector" aria-label="Close grain inspector">×</button>
         </div>
         <div style="font-family:var(--font-mono);line-height:1.5;">
@@ -1251,7 +1255,8 @@ function renderDashboard(state: AppState): void {
     `;
   } else if (state.dashboardTab === 'shape') {
     // Cached on the session (recomputed only when its results change).
-    const ratios = activeSession ? activeSession.getExtendedGrains().map((g) => g.aspectRatio) : [];
+    // Same grains as the statistics (inside the ROI, border rule applied), so n matches.
+    const ratios = activeSession ? activeSession.getExtendedStatsGrains().map((g) => g.aspectRatio) : [];
     const arCounts = aspectRatioCounts(ratios, 10);
     const packingInfo = activeSession ? activeSession.getRoiFilterResult() : null;
 

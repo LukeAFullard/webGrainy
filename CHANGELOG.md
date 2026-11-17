@@ -7,6 +7,19 @@ All notable changes to webGrainy are recorded here. The format follows
 ## [Unreleased]
 
 ### Fixed
+- **Dashboard tabs could become unclickable** on shorter windows: the side panels are
+  scrolling flex columns, and a tall section was squashed so its content painted over the
+  tabs. Sections now keep their height, the tab bar stays visible while scrolling (sticky),
+  and charts no longer use `content-visibility` (which made their heights jump).
+- **Aspect-ratio chart counted more grains than the statistics**: it included grains on
+  the photo border and outside the ROI / inside exclusions. It now uses the same grains
+  as n.
+- **Grains inside excluded areas looked like counted grains.** They are still detected
+  (the model sees the whole photo) but are now drawn grey and hatched, without ellipses or
+  orientation lines, and the grain inspector marks them "not counted".
+
+### Changed
+- **Results open on *This photo*;** switch to *Whole site* for the pooled statistics.
 - **Cellpose-SAM failed with "The serialized keys and/or value are too large".** Chromium
   (Chrome/Edge) rejects single IndexedDB values over about 127 MB, and the cache stored
   each model as one ArrayBuffer (FP4 183 MB, INT8 316 MB, FP16 617 MB). Models are now
