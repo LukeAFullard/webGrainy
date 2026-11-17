@@ -1,3 +1,4 @@
+import { computeExtraGrainStats, extraStatsCsvRows, type ExtraGrainStats } from './grainStatsExtra.js';
 import type {
   FolkWardStats,
   GrainMorphometrics,
@@ -206,6 +207,8 @@ export interface SiteAnalysisReport {
   excludedTruncationAreaMm2: number;
   psd: PsdPercentiles;
   folkWard: FolkWardStats | null;
+  /** Mean diameters (incl. Sauter), geometric and moment statistics, percentile ratios. */
+  extra: ExtraGrainStats | null;
   wentworth: WentworthProportions | null;
   wentworthHistogram05Phi: WentworthBin[];
   wentworthHistogram10Phi: WentworthBin[];
@@ -1242,6 +1245,7 @@ export function analyzeSite(
   } = buildPooledArrays(preparedPhotos, options.poolingMode);
   const psd = computePsdPercentiles(values, weights);
   const folkWard = unit === 'mm' ? computeFolkWardStats(psd) : null;
+  const extra = values.length > 0 ? computeExtraGrainStats(values, weights, psd, unit) : null;
   const wentworth =
     unit === 'mm'
       ? computeSiteWentworth(preparedPhotos, options.poolingMode, sizeMetric)
@@ -1544,6 +1548,7 @@ export function analyzeSite(
     excludedTruncationAreaMm2,
     psd,
     folkWard,
+    extra,
     wentworth,
     wentworthHistogram05Phi,
     wentworthHistogram10Phi,
@@ -1736,6 +1741,9 @@ export function exportSiteSummaryCsv(
     lines.push(`folk_ward,kurtosis_label,${csvEscape(fw.kurtosisLabel)},label`);
   }
 
+  if (report.extra !== null && report.extra !== undefined) {
+    lines.push(...extraStatsCsvRows(report.extra, report.unit));
+  }
   if (report.wentworth !== null) {
     const w = report.wentworth;
     lines.push(`wentworth,sand_pct,${w.sandPct},%`);

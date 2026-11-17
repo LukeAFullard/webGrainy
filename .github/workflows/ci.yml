@@ -23,8 +23,18 @@ jobs:
       - name: Install (lockfile only)
         run: npm ci
 
-      - name: Dependency audit
-        run: npm audit --audit-level=high
+      # Blocking: anything that ships to users (production dependencies).
+      - name: Dependency audit (shipped code)
+        run: npm audit --omit=dev --audit-level=high
+
+      # Report-only: test/build tooling (never shipped). Advisories here can have no fixed
+      # release yet (e.g. picomatch GHSA-fc5q-39xc-vjpf, via vitest/vite), so they warn
+      # instead of failing the build. Review the warning and update when a fix is released.
+      - name: Dependency audit (dev tooling, report only)
+        run: |
+          if ! npm audit --audit-level=high; then
+            echo "::warning title=Dev dependency advisory::npm audit reports high-severity advisories in dev-only tooling (not shipped). See the log above; update when a fix is released."
+          fi
 
       - name: Typecheck
         run: npm run typecheck

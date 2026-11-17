@@ -249,6 +249,8 @@ export interface SedimentStatsReport {
   numberWeightedMinFeret?: PsdPercentiles;
   folkWard: FolkWardStats | null;
   wentworth: WentworthProportions | null;
+  /** Mean diameters (incl. Sauter), geometric and moment statistics, percentile ratios. */
+  extra?: import('../modules/grainStatsExtra.js').ExtraGrainStats;
   /** Human-readable caveats (small n, uncalibrated, mixed calibration). */
   warnings?: string[];
 }

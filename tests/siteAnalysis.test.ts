@@ -423,6 +423,11 @@ describe('siteAnalysis', () => {
     const firstPhoto = report.perPhoto[0]!;
     expect(summaryCsv).toContain(`per_photo_detail,${firstPhoto.label}|D50,${firstPhoto.D50}`);
     expect(summaryCsv).toMatch(/\nwarning,1,/);
+    expect(report.extra).not.toBeNull();
+    expect(summaryCsv).toContain('mean_diameters,sauter_mean_D32,');
+    expect(summaryCsv).toContain('ratios,uniformity_Cu,');
+    // Sauter mean lies between the smallest and largest grains, and above the arithmetic mean.
+    expect(report.extra!.sauterMeanD32).toBeGreaterThan(report.extra!.arithmeticMeanD10);
 
     const summaryJson = JSON.parse(await exportSiteSummaryJson(report).text()) as {
       poolingMode: string;

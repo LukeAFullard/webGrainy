@@ -142,6 +142,13 @@ export const HELP_TOPICS = {
     default: '2',
     when: 'Rarely needed. Increase (e.g. 4–6) if noise creates many tiny fragment grains. Decrease to 1 only for very small grains. The default is the tested value.',
   },
+  moreStats: {
+    title: 'More statistics',
+    group: 'Site statistics',
+    what: 'Extra summary numbers. Mean diameters D[p,q] = Σdᵖ/Σd^q use every grain once: the Sauter mean D[3,2] is the mean size weighted by grain area (the same basis as the grid-by-number PSD); D[4,3] weights larger grains more. The geometric mean Dg and geometric standard deviation σg, D30/D60/D65, the uniformity (Cu) and curvature (Cc) coefficients, Trask sorting So, span and the Fredle index use the same weighting as the PSD curve. Moments (φ) are the method-of-moments mean, sorting, skewness and kurtosis on the φ scale (GRADISTAT; Blott & Pye 2001), an alternative to Folk & Ward.',
+    default: 'Always computed; uses the chosen size metric',
+    when: 'Use the Sauter mean or Dg when a formula asks for a "mean grain size"; D65 for Einstein-type roughness; Cu/Cc for engineering gradation; the Fredle index for spawning-gravel assessments. All are 2D surface measures from photos, so they inherit the same limits as D50 (no hidden fines, no subsurface).',
+  },
   poolingMode: {
     title: 'Pooling mode',
     group: 'Site statistics',
