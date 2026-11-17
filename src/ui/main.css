@@ -1001,3 +1001,59 @@ details summary {
     min-height: 2.25rem;
   }
 }
+
+/* Analysis activity bar: fixed at the bottom so it is visible on every layout. */
+.activity-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.875rem calc(0.5rem + env(safe-area-inset-bottom, 0px));
+  background: var(--bg-elevated);
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.18);
+}
+.activity-bar[hidden] {
+  display: none;
+}
+.activity-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.activity-title {
+  font-weight: 600;
+  font-size: 0.8rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.activity-detail {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+.activity-bars {
+  flex: 0 1 40%;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.activity-bars .native-progress.batch {
+  height: 4px;
+  opacity: 0.7;
+}
+body.has-activity .app-shell {
+  padding-bottom: 4rem;
+}
+@media (max-width: 600px) {
+  .activity-bar {
+    flex-wrap: wrap;
+  }
+  .activity-bars {
+    flex: 1 1 100%;
+    order: 3;
+  }
+}

@@ -200,6 +200,7 @@ export async function runCellposeTiled(
   opts.onPlan?.({ run: runRects, total: ys.length * xs.length });
   const total = plan.length;
   let done = 0;
+  opts.onTile?.(0, total); // lets progress UIs time the first tile
   for (const [ty, tx] of plan) {
     {
       if (opts.signal?.aborted) {

@@ -49,6 +49,7 @@ import { CanvasViewport } from './canvasViewport.js';
 import { parseJpegExifMetadata } from './exif.js';
 import { helpButton, isHelpKey, renderHelpModalHtml } from './help.js';
 import { logicalCores, wasmThreadsFor } from '../modules/onnxInference.js';
+import { applyEvent, describeActivity, newActivity, startPhoto, type ActivityState } from './progress.js';
 import { CPU_THREADS_KEY, readCpuThreadPref } from './cpuThreads.js';
 import {
   handleExportAction,
@@ -143,6 +144,51 @@ engine.onProgress((stage, detail) => {
       void refreshCapabilities();
     }
   }
+});
+
+// ---- Analysis activity bar (stage, tiles, time left, cancel) ----
+let activity: ActivityState | null = null;
+let activityRaf: number | null = null;
+function scheduleActivityRender(): void {
+  if (activityRaf !== null) return;
+  activityRaf = requestAnimationFrame(() => {
+    activityRaf = null;
+    renderActivityBar();
+  });
+}
+function renderActivityBar(): void {
+  const el = document.getElementById('activity-bar');
+  if (!el) return;
+  if (activity === null) {
+    el.hidden = true;
+    el.innerHTML = '';
+    document.body.classList.remove('has-activity');
+    return;
+  }
+  const v = describeActivity(activity);
+  el.hidden = false;
+  document.body.classList.add('has-activity');
+  const pct = v.fraction !== null ? Math.round(v.fraction * 100) : null;
+  el.innerHTML = `
+    <div class="activity-text">
+      <div class="activity-title">${esc(v.title)}</div>
+      <div class="activity-detail">${esc(v.detail)}</div>
+    </div>
+    <div class="activity-bars">
+      ${
+        pct !== null
+          ? `<progress class="native-progress" value="${pct}" max="100" aria-label="Current step progress"></progress>`
+          : `<progress class="native-progress" aria-label="Current step in progress"></progress>`
+      }
+      ${activity.photoTotal > 1 ? `<progress class="native-progress batch" value="${Math.round(v.batchFraction * 100)}" max="100" aria-label="All photos progress"></progress>` : ''}
+    </div>
+    <button type="button" class="btn btn-sm btn-danger" data-action="cancel-batch">Cancel</button>
+  `;
+}
+engine.onProgress((stage, detail) => {
+  if (activity === null) return;
+  activity = applyEvent(activity, stage, detail, performance.now());
+  scheduleActivityRender();
 });
 
 let viewport: CanvasViewport | null = null;
@@ -404,6 +450,9 @@ async function runBatch(photoIds?: string[]): Promise<void> {
 
   batchAbortController = new AbortController();
   const analysisConfig = toAnalysisConfig(state.analysisParams);
+  activity = newActivity(photoIds?.length ?? state.photos.length);
+  let photoCounter = 0;
+  renderActivityBar();
   store.setState({
     batchRunning: true,
     batchProgress: {
@@ -424,8 +473,17 @@ async function runBatch(photoIds?: string[]): Promise<void> {
       signal: batchAbortController.signal,
       onProgress: (p) => {
         store.setState({ batchProgress: p });
+        if (activity && p.total > 0 && activity.photoTotal !== p.total) {
+          activity = { ...activity, photoTotal: p.total };
+          scheduleActivityRender();
+        }
       },
       onPhotoStart: (photo) => {
+        photoCounter += 1;
+        if (activity) {
+          activity = startPhoto(activity, photoCounter, photo.label);
+          scheduleActivityRender();
+        }
         const nextStatuses = new Map(store.getState().photoStatuses);
         nextStatuses.set(photo.photoId, 'running');
         store.setState({ photoStatuses: nextStatuses });
@@ -483,6 +541,8 @@ async function runBatch(photoIds?: string[]): Promise<void> {
   } finally {
     batchAbortController = null;
     store.setState({ batchRunning: false, batchProgress: null });
+    activity = null;
+    renderActivityBar();
     recomputeReports();
     await refreshCapabilities();
   }
@@ -728,17 +788,6 @@ function renderSidebar(state: AppState): void {
         <span style="display:block;font-size:0.65rem;color:var(--text-muted);margin-top:2px;">Local-only EXIF &amp; dimension parsing</span>
       </button>
 
-      ${
-        state.batchRunning && state.batchProgress
-          ? `<div style="margin-top:8px;">
-              <div class="row-between" style="font-size:0.7rem;margin-bottom:3px;">
-                <span>${esc(state.batchProgress.currentLabel)}</span>
-                <span>${state.batchProgress.completed}/${state.batchProgress.total}</span>
-              </div>
-              <progress class="native-progress" value="${state.batchProgress.completed}" max="${Math.max(1, state.batchProgress.total)}" aria-label="Batch segmentation progress"></progress>
-            </div>`
-          : ''
-      }
 
       <div class="photo-list" style="margin-top:8px;">
         ${
@@ -1462,6 +1511,7 @@ function mountShell(): void {
       </section>
       <aside class="dashboard-right" id="dashboard-right" aria-label="Scientific Dashboard"></aside>
     </main>
+    <div class="activity-bar" id="activity-bar" role="status" aria-live="polite" hidden></div>
     <dialog id="app-dialog" class="app-dialog" closedby="any" aria-labelledby="dialog-title"></dialog>
     <div id="sr-announcer" class="sr-only" aria-live="polite" aria-atomic="true"></div>
     <input type="file" id="photo-file-input" accept="image/*" multiple style="display:none;" />

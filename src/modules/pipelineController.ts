@@ -1904,12 +1904,20 @@ export class ImageGrainsEngine {
       if (this.options.sessionFactory !== undefined) {
         session = await this.options.sessionFactory(modelKind, modelId);
       } else {
+        const userOnProgress = this.options.modelDownloadOptions?.onProgress;
         const dlOpts: ModelDownloadOptions = {
           ...this.options.modelDownloadOptions,
           signal: signal ?? this.options.modelDownloadOptions?.signal,
+          // Report first-time model downloads to the analysis progress UI.
+          onProgress: (p) => {
+            userOnProgress?.(p);
+            emit?.('download', { modelId, ...p });
+          },
         };
+        emit?.('model-load', { modelId, phase: 'fetch' });
         const modelBytes = await getModel(modelId, dlOpts);
         throwIfAborted(signal);
+        emit?.('model-load', { modelId, phase: 'create-session', sizeBytes: modelBytes.byteLength });
 
         const created = await createInferenceSession(modelBytes, {
           ...this.options.sessionCreateOptions,
