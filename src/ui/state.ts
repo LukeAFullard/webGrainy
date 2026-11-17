@@ -94,6 +94,8 @@ export interface AppState {
   dashboardScope: 'site' | 'photo' | 'compare';
   /** Sites chosen for comparison (null = all sites). */
   compareSiteIds: string[] | null;
+  /** Compare sites in pixels (when they are not calibrated). */
+  compareInPixels: boolean;
   /** Comparison results for the chosen sites (computed asynchronously). */
   comparison: { loading: boolean; sites: ComparedSite[]; error: string | null } | null;
   dashboardTab: DashboardTab;
@@ -158,6 +160,7 @@ export function createInitialState(): AppState {
     // Start with the photo being looked at; the user can switch to the whole site.
     dashboardScope: 'photo',
     compareSiteIds: null,
+    compareInPixels: false,
     comparison: null,
     dashboardTab: 'psd',
     psdXAxis: 'mm',

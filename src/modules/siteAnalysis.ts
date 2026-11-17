@@ -315,6 +315,15 @@ export function validateSiteCalibration(
     }
   }
 
+  // Photo names (not internal IDs) for user-facing messages.
+  const labelOf = new Map(included.map((p) => [p.photoId, p.label]));
+  const names = (ids: readonly string[]): string => {
+    const shown = ids.slice(0, 5).map((id) => labelOf.get(id) ?? id);
+    return shown.join(', ') + (ids.length > 5 ? ` and ${ids.length - 5} more` : '');
+  };
+  const howTo =
+    'Calibrate each photo with Scale → Calibrate (mark two points a known distance apart, e.g. the ends of a ruler), or use "Copy Scale to Site" if all photos share the same camera and height.';
+
   const requestedUnit = options?.unit;
   const allowFallback =
     options?.allowEqualPhotoFallback === true &&
@@ -350,7 +359,7 @@ export function validateSiteCalibration(
       calibratedPhotoIds: [],
       uncalibratedPhotoIds,
       warnings: [],
-      message: `Cannot pool in physical mm units: ${uncalibratedPhotoIds.length} photo(s) lack mmPerPx calibration (${uncalibratedPhotoIds.join(', ')}). Calibrate all photos or switch to unit='px'.`,
+      message: `No scale yet: ${uncalibratedPhotoIds.length === 1 ? '1 photo is' : `${uncalibratedPhotoIds.length} photos are`} not calibrated (${names(uncalibratedPhotoIds)}), so sizes cannot be given in mm. ${howTo}`,
     };
   }
 
@@ -374,7 +383,7 @@ export function validateSiteCalibration(
     calibratedPhotoIds,
     uncalibratedPhotoIds,
     warnings: [],
-    message: `Mixed calibration state: cannot pool in physical mm units because some included photos lack mmPerPx (${uncalibratedPhotoIds.join(', ')}). Calibrate missing photos, exclude them, or switch to unit='px'.`,
+    message: `Mixed calibration: ${uncalibratedPhotoIds.length} of ${included.length} photos have no scale yet (${names(uncalibratedPhotoIds)}). ${howTo} Or untick those photos to leave them out of the site results.`,
   };
 }
 

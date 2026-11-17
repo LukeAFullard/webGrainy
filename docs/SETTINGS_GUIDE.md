@@ -415,6 +415,12 @@ gravel/cobble share. **All sites use the current statistics settings** (pooling 
 metric, cutoffs), so the comparison is like for like. Sites must be calibrated to be
 plotted together.
 
+If a site shows "No scale yet", press *Open* next to it, select each photo and use
+*Scale → Calibrate* (or *Copy Scale to Site* after calibrating one photo, if all photos share
+the same camera and height). *Compare in pixels* compares uncalibrated sites directly; this is
+only meaningful if all photos were taken with the same camera at the same height.
+*Analyse all sites* (under the site selector) analyses every photo not yet analysed in all sites.
+
 For each pair of sites, *D50 differences* gives the ratio of their D50s with a 95% interval
 and a p-value. This is approximate: it combines each site's bootstrap interval on a log
 scale (z-test). Treat p < 0.05 as "likely different" and look at the curves; for a formal

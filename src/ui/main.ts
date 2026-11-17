@@ -409,7 +409,81 @@ async function handleFilesAdded(files: FileList | File[]): Promise<void> {
   }
 }
 
+/**
+ * Analyses every not-yet-analysed photo in every site: the open site first (so its results
+ * appear as usual), then the others, whose results are saved for when they are opened or
+ * compared.
+ */
+async function runAllSites(): Promise<void> {
+  const start = store.getState();
+  if (start.batchRunning) return;
+  const activeId = start.activeSiteId;
+  await runBatch();
+  if (lastBatchCancelled) return; // Cancel stops the whole job, not just the open site.
+  const others = store.getState().sites.filter((s) => s.siteId !== activeId);
+  // Count pending photos per site, so the progress bar can show the whole job.
+  const pendingBySite: Array<{ siteId: string; name: string; count: number }> = [];
+  for (const site of others) {
+    let count = 0;
+    for (const p of await listSitePhotos(site.siteId)) {
+      const r = await getPhotoResult(p.photoId);
+      if (!r || r.status === 'pending' || r.status === 'error' || r.status === 'running') count++;
+    }
+    if (count > 0) pendingBySite.push({ siteId: site.siteId, name: site.name, count });
+  }
+  const total = pendingBySite.reduce((n, s) => n + s.count, 0);
+  if (total === 0) {
+    store.setState({ statusMessage: 'All photos in all sites are analysed.' });
+    return;
+  }
+  batchAbortController = new AbortController();
+  const analysisConfig = toAnalysisConfig(store.getState().analysisParams);
+  activity = newActivity(total);
+  renderActivityBar();
+  store.setState({ batchRunning: true, statusMessage: `Analysing ${total} photo(s) in ${pendingBySite.length} other site(s)…` });
+  let counter = 0;
+  let done = 0;
+  let failed = 0;
+  try {
+    for (const site of pendingBySite) {
+      if (batchAbortController.signal.aborted) break;
+      const res = await runSiteBatch({
+        siteId: site.siteId,
+        engine,
+        analysisConfig,
+        signal: batchAbortController.signal,
+        onPhotoStart: (photo) => {
+          counter += 1;
+          if (activity) {
+            activity = startPhoto(activity, counter, `${site.name} · ${photo.label}`);
+            scheduleActivityRender();
+          }
+        },
+      });
+      done += res.completed;
+      failed += res.failed;
+    }
+    store.setState({
+      statusMessage: batchAbortController.signal.aborted
+        ? `Cancelled: ${done} of ${total} photos in other sites analysed.`
+        : `All sites analysed: ${done} done, ${failed} failed in other sites.`,
+    });
+  } catch (err) {
+    store.setState({ statusMessage: `Batch error: ${err instanceof Error ? err.message : String(err)}` });
+  } finally {
+    batchAbortController = null;
+    store.setState({ batchRunning: false, batchProgress: null });
+    activity = null;
+    renderActivityBar();
+    storedSiteInputsCache.clear();
+    if (store.getState().dashboardScope === 'compare') void refreshComparison();
+  }
+}
+
+let lastBatchCancelled = false;
+
 async function runBatch(photoIds?: string[]): Promise<void> {
+  lastBatchCancelled = false;
   const state = store.getState();
   const site = getActiveSite(state);
   if (!site || state.batchRunning) return;
@@ -487,6 +561,7 @@ async function runBatch(photoIds?: string[]): Promise<void> {
       },
     });
 
+    lastBatchCancelled = result.aborted;
     const errs = store.getState().photoErrors;
     const firstFailure = result.failedPhotoIds
       .map((id) => errs.get(id))
@@ -735,6 +810,7 @@ function renderSidebar(state: AppState): void {
         <div class="row">
           <button type="button" class="btn btn-sm" data-action="rename-site" title="Rename this site" ${activeSite ? '' : 'disabled'}>Rename</button>
           <button type="button" class="btn btn-sm" data-action="new-site" title="Create a new site">+ New</button>
+
           <button type="button" class="btn btn-sm" data-action="import-archive" title="Open a saved .webgrainy.json project">Open</button>
         </div>
       </div>
@@ -746,6 +822,7 @@ function renderSidebar(state: AppState): void {
           )
           .join('')}
       </select>
+      ${state.sites.length > 1 ? `<button type="button" class="btn btn-sm" style="margin-top:6px;width:100%;" data-action="analyse-all-sites" title="Analyse every photo that is not analysed yet, in all ${state.sites.length} sites" ${state.batchRunning ? 'disabled' : ''}>Analyse all sites (${state.sites.length})</button>` : ''}
     </div>
 
     <div class="panel-section">
@@ -1180,7 +1257,11 @@ async function refreshComparison(): Promise<void> {
     }
     if (run !== comparisonRun) return;
     // Same settings for every site, so the comparison is like for like.
-    const sites = computeComparedSites(entries, store.getState().siteOptions);
+    const opts = store.getState();
+    const sites = computeComparedSites(
+      entries,
+      opts.compareInPixels ? { ...opts.siteOptions, unit: 'px' } : opts.siteOptions,
+    );
     store.setState({ comparison: { loading: false, sites, error: null } });
   } catch (err) {
     if (run !== comparisonRun) return;
@@ -1237,10 +1318,23 @@ function renderCompareHtml(state: AppState, lightTheme: boolean): string {
     : '';
   const problems = (cmp?.sites ?? []).filter((s) => s.report === null || (mixedUnits && s.report.unit !== 'mm'));
   const problemHtml = problems.length
-    ? `<div class="warning-banner">${problems
-        .map((s) => `${esc(s.name)}: ${esc(s.report === null ? s.error ?? 'no results' : 'not calibrated (sizes in px), so it cannot be plotted with calibrated sites')}`)
-        .join('<br/>')}</div>`
+    ? `<div class="warning-banner compare-problems">${problems
+        .map(
+          (s) => `<div class="row-between" style="gap:8px;align-items:flex-start;">
+            <span><strong>${esc(s.name)}:</strong> ${esc(s.report === null ? s.error ?? 'no results' : 'not calibrated (sizes in px), so it cannot be plotted with calibrated sites')}</span>
+            ${s.siteId !== state.activeSiteId ? `<button type="button" class="btn btn-sm" data-action="open-site" data-site-id="${esc(s.siteId)}" title="Open this site to calibrate or analyse its photos">Open</button>` : ''}
+          </div>`,
+        )
+        .join('')}</div>`
     : '';
+  const anyUncalibrated = (cmp?.sites ?? []).some((s) => (s.error ?? '').includes('No scale yet') || s.report?.unit === 'px');
+  const pixelsToggle =
+    anyUncalibrated || state.compareInPixels
+      ? `<label class="checkbox-label" style="margin-top:6px;">
+          <input type="checkbox" data-action="toggle-compare-px" ${state.compareInPixels ? 'checked' : ''} />
+          Compare in pixels instead of mm <span class="summary-note">only meaningful if all photos were taken with the same camera at the same height</span>
+        </label>`
+      : '';
   const psdSeries = plotted.map((s) => ({ name: s.name, color: s.color, psd: s.report!.psd, ciLower: s.report!.bootstrapCi.lower, ciUpper: s.report!.bootstrapCi.upper }));
   const histSeries = plotted.map((s) => ({
     name: s.name,
@@ -1257,6 +1351,7 @@ function renderCompareHtml(state: AppState, lightTheme: boolean): string {
       ${cmp?.loading ? '<div class="basis-banner">Loading the chosen sites…</div>' : ''}
       ${cmp?.error ? `<div class="warning-banner">${esc(cmp.error)}</div>` : ''}
       ${problemHtml}
+      ${pixelsToggle}
       ${table}
       ${
         plotted.length
@@ -1949,6 +2044,23 @@ function attachDelegatedHandlers(): void {
     if (actionEl) {
       const act = actionEl.dataset['action'];
       const state = store.getState();
+      if (act === 'open-site') {
+        const id = actionEl.dataset['siteId'];
+        if (id) {
+          store.setState({ dashboardScope: 'photo' });
+          void loadSiteData(id);
+        }
+        return;
+      }
+      if (act === 'toggle-compare-px') {
+        store.setState({ compareInPixels: (actionEl as HTMLInputElement).checked });
+        void refreshComparison();
+        return;
+      }
+      if (act === 'analyse-all-sites') {
+        void runAllSites();
+        return;
+      }
       if (act === 'export-comparison') {
         const cmp = state.comparison;
         if (cmp && cmp.sites.length > 0) {
