@@ -101,3 +101,28 @@ export function renderGuideHtml(steps: GuideStep[]): string {
       </ol>
     </section>`;
 }
+
+/** The guide's inputs from the app's photos and status (photos need roiConfig/calibration). */
+export function guideInputFrom(state: {
+  photos: ReadonlyArray<{
+    photoId: string;
+    calibration?: unknown;
+    roiConfig?: { roiPolygon?: unknown; exclusionPolygons: unknown[]; exclusionStrokes: unknown[] };
+  }>;
+  photoStatuses: ReadonlyMap<string, string>;
+  capabilities: { isMobile?: boolean } | null;
+  batchRunning: boolean;
+}, exported: boolean): GuideInput {
+  const hasExclusions = (ph: (typeof state.photos)[number]): boolean =>
+    ph.roiConfig !== undefined &&
+    (ph.roiConfig.roiPolygon !== undefined || ph.roiConfig.exclusionPolygons.length > 0 || ph.roiConfig.exclusionStrokes.length > 0);
+  return {
+    photoCount: state.photos.length,
+    calibratedCount: state.photos.filter((ph) => ph.calibration !== undefined).length,
+    exclusionCount: state.photos.filter(hasExclusions).length,
+    analysedCount: state.photos.filter((ph) => state.photoStatuses.get(ph.photoId) === 'done').length,
+    exported,
+    isMobile: state.capabilities?.isMobile === true,
+    batchRunning: state.batchRunning,
+  };
+}

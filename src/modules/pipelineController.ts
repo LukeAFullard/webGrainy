@@ -55,6 +55,8 @@ import {
   computeExtendedMorphometrics,
   computeFabricRoseStats,
   computeWentworthHistogram,
+  type ExtendedGrainMorphometrics,
+  type FabricRoseStats,
   type GrainHullCache,
 } from './morphometricsExt.js';
 import { createAnalysisAbortError } from './abort.js';
@@ -71,6 +73,7 @@ import {
 } from './provenance.js';
 import {
   filterGrainsByRoiAndExclusion,
+  type ExclusionFilterResult,
   type RoiExclusionConfig,
 } from './roiAndRectify.js';
 
@@ -254,6 +257,13 @@ export class AnalysisSession {
   private roiExcludedGrainCount = 0;
   private readonly history = new MaskEditHistory();
   private readonly hullCache: GrainHullCache = new Map();
+  /** Derived values computed on demand; cleared whenever the results change. */
+  private derivedCache: {
+    extended?: ExtendedGrainMorphometrics[];
+    extendedById?: Map<number, ExtendedGrainMorphometrics>;
+    roiFilter?: ExclusionFilterResult | null;
+    fabric?: FabricRoseStats;
+  } = {};
   private readonly listeners = new Set<(session: AnalysisSession) => void>();
 
   constructor(params: {
@@ -848,17 +858,7 @@ export class AnalysisSession {
       this.roiConfig !== undefined
         ? new Set(this.getStatsGrains().map((g) => g.id))
         : null;
-    const ext = new Map(
-      computeExtendedMorphometrics(
-        this.workingMasks,
-        this.grains,
-        this.workingImage.width,
-        this.workingImage.height,
-        this.workingImage.effectiveScaleFactor,
-        this.calibration?.mmPerPx,
-        this.hullCache,
-      ).map((e) => [e.id, e]),
-    );
+    const ext = new Map(this.getExtendedGrains().map((e) => [e.id, e]));
     const opt = (v: number | undefined): number | string => (v === undefined ? '' : v);
 
     for (const g of this.grains) {
@@ -943,7 +943,7 @@ export class AnalysisSession {
         out.push(`${sec}_count,${csvCell(`${b.label} [${b.mmMin}-${b.mmMax} mm]`)},${b.grainCount},count`);
       }
     }
-    const f = computeFabricRoseStats(grains, { weighted: true, binCount: 12 });
+    const f = this.getFabricRose();
     out.push(`fabric,grain_count,${f.grainCount},count`);
     out.push(`fabric,mean_axial_orientation_deg,${f.meanAxialDeg},deg (0 = image vertical)`);
     out.push(`fabric,resultant_length_R,${f.resultantLength},ratio`);
@@ -990,24 +990,70 @@ export class AnalysisSession {
 
   /** Grains eligible for statistics: all grains, minus those excluded by the ROI config. */
   private getStatsGrains(): GrainMorphometrics[] {
-    this.roiExcludedGrainCount = 0;
-    if (this.roiConfig === undefined || this.grains.length === 0) {
-      return this.grains;
+    const res = this.getRoiFilterResult();
+    this.roiExcludedGrainCount = res === null ? 0 : this.grains.length - res.includedGrains.length;
+    return res === null ? this.grains : res.includedGrains;
+  }
+
+  /**
+   * ROI / exclusion filtering of the current grains (with clast packing and exposed-matrix
+   * percentages), or null without an ROI. Cached until the results change.
+   */
+  getRoiFilterResult(): ExclusionFilterResult | null {
+    if (this.derivedCache.roiFilter === undefined) {
+      this.derivedCache.roiFilter =
+        this.roiConfig === undefined || this.grains.length === 0
+          ? null
+          : filterGrainsByRoiAndExclusion(
+              this.workingMasks,
+              this.grains,
+              this.workingImage.width,
+              this.workingImage.height,
+              this.workingImage.effectiveScaleFactor,
+              this.roiConfig,
+              this.calibration?.mmPerPx,
+            );
     }
-    const res = filterGrainsByRoiAndExclusion(
-      this.workingMasks,
-      this.grains,
-      this.workingImage.width,
-      this.workingImage.height,
-      this.workingImage.effectiveScaleFactor,
-      this.roiConfig,
-      this.calibration?.mmPerPx,
-    );
-    this.roiExcludedGrainCount = this.grains.length - res.includedGrains.length;
-    return res.includedGrains;
+    return this.derivedCache.roiFilter;
+  }
+
+  /** Shape measures (perimeter, circularity, solidity, Feret, …) for every grain. Cached. */
+  getExtendedGrains(): ExtendedGrainMorphometrics[] {
+    if (this.derivedCache.extended === undefined) {
+      this.derivedCache.extended = computeExtendedMorphometrics(
+        this.workingMasks,
+        this.grains,
+        this.workingImage.width,
+        this.workingImage.height,
+        this.workingImage.effectiveScaleFactor,
+        this.calibration?.mmPerPx,
+        this.hullCache,
+      );
+    }
+    return this.derivedCache.extended;
+  }
+
+  /** Shape measures for one grain (e.g. the grain inspector). */
+  getExtendedGrain(id: number): ExtendedGrainMorphometrics | undefined {
+    if (this.derivedCache.extendedById === undefined) {
+      this.derivedCache.extendedById = new Map(this.getExtendedGrains().map((g) => [g.id, g]));
+    }
+    return this.derivedCache.extendedById.get(id);
+  }
+
+  /**
+   * Area-weighted orientation (fabric) statistics of the grains that count in the
+   * statistics (inside the ROI, border rule applied). Cached.
+   */
+  getFabricRose(): FabricRoseStats {
+    if (this.derivedCache.fabric === undefined) {
+      this.derivedCache.fabric = computeFabricRoseStats(this.statsGrainsForSummaries(), { weighted: true, binCount: 12 });
+    }
+    return this.derivedCache.fabric;
   }
 
   private recomputeDerivedState(notify: boolean): void {
+    this.derivedCache = {};
     const s = this.workingImage.effectiveScaleFactor;
     let derived = this.workingGrains.map((g) => rescaleGrainToOriginal(g, s));
     if (this.calibration !== undefined) {
