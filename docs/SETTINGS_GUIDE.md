@@ -528,12 +528,18 @@ SHA-256, all settings, site name) so results can be reproduced.
 | **Printable SVG PSD Figure** | The grain-size curve with confidence band, for reports. |
 | **.webgrainy.json archive** | The whole project (photos, scale, ROIs, results) to reopen later or share. |
 
+**Charts:** every chart on the right-hand panel has **SVG** and **PNG** buttons. The file is
+drawn on a white background for reports (PNG at 3× resolution) and carries the same
+provenance metadata as the other exports. The PSD tab shows the cumulative curve and the
+**size distribution histogram** (area-weighted %, Wentworth φ classes in mm, or ×2 / ×√2
+pixel classes before calibration); the Shape tab shows the aspect-ratio distribution.
+
 **This photo**
 
 | File | Contains |
 |---|---|
 | **Photo Grains CSV** | One row per grain: as in the pooled grains CSV, plus whether the grain is inside the ROI and whether it counts in the statistics. |
-| **Photo Summary CSV / JSON** | D5–D95 for the area- and number-weighted b-axis, equivalent diameter and min-Feret; Folk & Ward; the *More statistics* values (as in the site summary); Wentworth classes and size-class histograms (calibrated photos only); fabric statistics; warnings. |
+| **Photo Summary CSV / JSON** | D5–D95 for the area- and number-weighted b-axis, equivalent diameter and min-Feret; Folk & Ward; the *More statistics* values (as in the site summary); Wentworth classes and size-class histograms (φ classes in mm, or pixel classes before calibration); fabric statistics; warnings. |
 | **16/32-bit PNG mask** | The grain label image (each grain a different value), for GIS or Python. |
 | **GeoJSON / SVG contours** | Grain outlines in original photo coordinates. |
 

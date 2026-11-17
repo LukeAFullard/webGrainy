@@ -22,6 +22,7 @@ import {
   type SiteRecord,
 } from '../modules/projectStorage.js';
 import { computeFabricRoseStats } from '../modules/morphometricsExt.js';
+import { aspectRatioCounts, sizeHistogramFromWentworth } from '../modules/histograms.js';
 import { rectifyPerspective } from '../modules/roiAndRectify.js';
 import {
   buildSiteInputs,
@@ -35,7 +36,7 @@ import {
   renderFabricRoseSvg,
   renderJackknifeChartSvg,
   renderPsdChartSvg,
-  renderWentworthHistogramSvg,
+  renderSizeHistogramSvg,
 } from './charts.js';
 import { CanvasViewport } from './canvasViewport.js';
 import { parseJpegExifMetadata } from './exif.js';
@@ -45,8 +46,11 @@ import { GUIDE_HIDDEN_KEY, guideInputFrom, guideSteps, renderGuideHtml } from '.
 import { EXPORTED_ONCE_KEY, readFlag, writeFlag } from './prefs.js';
 import { applyEvent, newActivity, renderActivityHtml, startPhoto, type ActivityState } from './progress.js';
 import { CPU_THREADS_KEY, readCpuThreadPref } from './cpuThreads.js';
+import { svgToPngBlob, withSvgMetadata } from './chartExport.js';
+import { baseExportMetadata } from '../modules/provenance.js';
 import {
   handleExportAction,
+  triggerBlobDownload,
   renderAboutModalHtml,
   renderExportModalHtml,
   renderModelsModalHtml,
@@ -1080,7 +1084,50 @@ function renderViewportExtras(state: AppState): void {
   inspectorEl.style.display = 'none';
 }
 
+// ---- Charts: each chart can be downloaded as SVG or PNG (rendered in the light theme) ----
+const chartRenderers = new Map<string, { title: string; render: (light: boolean) => string }>();
+
+function chartBox(id: string, title: string, render: (light: boolean) => string, light: boolean): string {
+  chartRenderers.set(id, { title, render });
+  return `<div class="chart-box" data-chart-id="${esc(id)}">${render(light)}
+    <div class="chart-actions">
+      <button type="button" class="btn btn-xs" data-chart-dl="${esc(id)}" data-fmt="svg" title="Download as SVG (vector, for reports)" aria-label="Download ${esc(title)} as SVG">SVG</button>
+      <button type="button" class="btn btn-xs" data-chart-dl="${esc(id)}" data-fmt="png" title="Download as PNG image" aria-label="Download ${esc(title)} as PNG">PNG</button>
+    </div>
+  </div>`;
+}
+
+/** Saves a dashboard chart (light theme, with provenance metadata) as SVG or PNG. */
+async function downloadChart(id: string, format: 'svg' | 'png'): Promise<void> {
+  const chart = chartRenderers.get(id);
+  if (!chart) return;
+  const state = store.getState();
+  const site = getActiveSite(state);
+  const photo = getActivePhoto(state);
+  const isSite = state.dashboardScope === 'site';
+  const svg = withSvgMetadata(chart.render(true), {
+    ...baseExportMetadata(),
+    chart: chart.title,
+    scope: isSite ? 'site' : 'photo',
+    ...(site ? { siteName: site.name } : {}),
+    ...(!isSite && photo ? { photo: photo.label } : {}),
+    sizeMetric: state.siteOptions.sizeMetric ?? 'bAxis',
+    poolingMode: state.siteOptions.poolingMode,
+  });
+  const base = [site?.name ?? 'site', !isSite && photo ? photo.label : '', id]
+    .filter((s) => s.length > 0)
+    .join('_')
+    .replace(/[^a-zA-Z0-9_-]+/g, '_');
+  try {
+    const blob = format === 'svg' ? new Blob([svg], { type: 'image/svg+xml' }) : await svgToPngBlob(svg, 3);
+    triggerBlobDownload(blob, `${base}.${format}`);
+  } catch (err) {
+    store.setState({ statusMessage: `Could not save the chart: ${err instanceof Error ? err.message : String(err)}` });
+  }
+}
+
 function renderDashboard(state: AppState): void {
+  chartRenderers.clear();
   const report = state.siteReport;
   const single = state.singlePhotoStats;
   const activePhoto = getActivePhoto(state);
@@ -1107,7 +1154,7 @@ function renderDashboard(state: AppState): void {
 
   let tabContent = '';
   if (state.dashboardTab === 'psd') {
-    const svg = psd
+    const psdSvg = (light: boolean): string => psd
       ? renderPsdChartSvg({
           psd,
           unit,
@@ -1117,10 +1164,16 @@ function renderDashboard(state: AppState): void {
           ciLower: isSite ? report?.bootstrapCi.lower : undefined,
           ciUpper: isSite ? report?.bootstrapCi.upper : undefined,
           perPhotoCurves: isSite ? report?.perPhoto : undefined,
-          lightTheme,
+          lightTheme: light,
         })
-      : `<svg viewBox="0 0 400 220" xmlns="http://www.w3.org/2000/svg"><rect width="400" height="220" fill="${lightTheme ? '#ffffff' : '#0c1014'}"/><text x="200" y="110" text-anchor="middle" fill="${lightTheme ? '#4a5568' : '#8fa0b2'}" font-size="12" font-family="system-ui, sans-serif">No segmented grains yet</text></svg>`;
+      : `<svg viewBox="0 0 400 220" xmlns="http://www.w3.org/2000/svg"><rect width="400" height="220" fill="${light ? '#ffffff' : '#0c1014'}"/><text x="200" y="110" text-anchor="middle" fill="${light ? '#4a5568' : '#8fa0b2'}" font-size="12" font-family="system-ui, sans-serif">No segmented grains yet</text></svg>`;
 
+    const step: 0.5 | 1 = state.histogramStepPhi === 0.5 ? 0.5 : 1;
+    const sizeHist = isSite
+      ? sizeHistogramFromWentworth((step === 0.5 ? report?.wentworthHistogram05Phi : report?.wentworthHistogram10Phi) ?? [], step)
+      : activeSession
+        ? activeSession.getSizeHistogram(step, activeMetric)
+        : sizeHistogramFromWentworth([], step);
     tabContent = `
       <div class="row-between" style="margin-top:8px;">
         <div class="row">
@@ -1133,7 +1186,12 @@ function renderDashboard(state: AppState): void {
             : ''
         }
       </div>
-      <div class="chart-box">${svg}</div>
+      ${chartBox('cumulative-psd', 'Cumulative grain-size distribution', psdSvg, lightTheme)}
+      <div class="row" style="margin-top:8px;">
+        <button type="button" class="btn btn-sm ${step === 0.5 ? 'active' : ''}" aria-pressed="${step === 0.5 ? 'true' : 'false'}" data-phi-step="0.5">Narrow classes (${sizeHist.unit === 'mm' ? '0.5 φ' : '×√2'})</button>
+        <button type="button" class="btn btn-sm ${step === 1 ? 'active' : ''}" aria-pressed="${step === 1 ? 'true' : 'false'}" data-phi-step="1.0">Wide classes (${sizeHist.unit === 'mm' ? '1 φ' : '×2'})</button>
+      </div>
+      ${chartBox('size-distribution', 'Grain-size distribution histogram', (light) => renderSizeHistogramSvg(sizeHist, light, isSite ? 'Site Size Distribution (area-weighted %)' : 'Photo Size Distribution (area-weighted %)'), lightTheme)}
       ${
         fw
           ? `<div class="stat-grid" style="margin-top:8px;">
@@ -1177,8 +1235,7 @@ function renderDashboard(state: AppState): void {
     `;
   } else if (state.dashboardTab === 'adequacy') {
     const adeq = report?.adequacy;
-    const convSvg = renderConvergenceChartSvg(report?.convergence ?? [], lightTheme);
-    const jackSvg = renderJackknifeChartSvg(report?.jackknife ?? null, lightTheme);
+
     tabContent = `
       ${
         adeq
@@ -1189,32 +1246,23 @@ function renderDashboard(state: AppState): void {
             </div>`
           : ''
       }
-      <div class="chart-box">${convSvg}</div>
-      <div class="chart-box">${jackSvg}</div>
+      ${chartBox('convergence', 'D50 convergence with number of photos', (light) => renderConvergenceChartSvg(report?.convergence ?? [], light), lightTheme)}
+      ${chartBox('jackknife', 'Leave-one-photo-out influence on D50', (light) => renderJackknifeChartSvg(report?.jackknife ?? null, light), lightTheme)}
     `;
   } else if (state.dashboardTab === 'shape') {
-    const bins =
-      state.histogramStepPhi === 0.5
-        ? report?.wentworthHistogram05Phi ?? []
-        : report?.wentworthHistogram10Phi ?? [];
     // Cached on the session (recomputed only when its results change).
-    const extGrains = activeSession ? activeSession.getExtendedGrains() : [];
+    const ratios = activeSession ? activeSession.getExtendedGrains().map((g) => g.aspectRatio) : [];
+    const arCounts = aspectRatioCounts(ratios, 10);
     const packingInfo = activeSession ? activeSession.getRoiFilterResult() : null;
 
     tabContent = `
-      <div class="row-between" style="margin-top:8px;">
-        <div class="row">
-          <button type="button" class="btn btn-sm ${state.histogramStepPhi === 0.5 ? 'active' : ''}" aria-pressed="${state.histogramStepPhi === 0.5 ? 'true' : 'false'}" data-phi-step="0.5">0.5 φ bins</button>
-          <button type="button" class="btn btn-sm ${state.histogramStepPhi === 1.0 ? 'active' : ''}" aria-pressed="${state.histogramStepPhi === 1.0 ? 'true' : 'false'}" data-phi-step="1.0">1.0 φ bins</button>
-        </div>
-        ${
-          packingInfo
-            ? `<span style="font-size:0.7rem;color:var(--text-secondary);">Clast Packing: ${packingInfo.clastPackingPct.toFixed(1)}% · Matrix: ${packingInfo.exposedMatrixPct.toFixed(1)}%</span>`
-            : ''
-        }
-      </div>
-      <div class="chart-box">${renderWentworthHistogramSvg(bins, lightTheme)}</div>
-      <div class="chart-box">${renderAspectRatioHistogramSvg(extGrains, lightTheme)}</div>
+      ${
+        packingInfo
+          ? `<div class="basis-banner" style="margin-top:8px;">Clast packing: ${packingInfo.clastPackingPct.toFixed(1)}% · Exposed matrix: ${packingInfo.exposedMatrixPct.toFixed(1)}% (inside the ROI)</div>`
+          : ''
+      }
+      ${chartBox('aspect-ratio', 'Aspect ratio (b/a) distribution', (light) => renderAspectRatioHistogramSvg(arCounts, light), lightTheme)}
+      <p class="field-hint">Grain shape for this photo. The size distribution is on the PSD tab.</p>
     `;
   } else {
     const rose =
@@ -1224,7 +1272,7 @@ function renderDashboard(state: AppState): void {
           ? activeSession.getFabricRose()
           : computeFabricRoseStats([], { weighted: true, binCount: 12 });
     tabContent = `
-      <div class="chart-box">${renderFabricRoseSvg(rose, lightTheme)}</div>
+      ${chartBox('fabric-rose', 'Grain orientation (fabric) rose', (light) => renderFabricRoseSvg(rose, light), lightTheme)}
       ${
         rose.grainCount > 0
           ? `<div class="stat-grid" style="margin-top:8px;">
@@ -1942,6 +1990,12 @@ function attachDelegatedHandlers(): void {
     const psdXBtn = target.closest<HTMLElement>('[data-psd-x]');
     if (psdXBtn) {
       store.setState({ psdXAxis: psdXBtn.dataset['psdX'] as 'mm' | 'phi' });
+      return;
+    }
+
+    const chartDl = target.closest<HTMLElement>('[data-chart-dl]');
+    if (chartDl) {
+      void downloadChart(chartDl.dataset['chartDl'] ?? '', chartDl.dataset['fmt'] === 'png' ? 'png' : 'svg');
       return;
     }
 

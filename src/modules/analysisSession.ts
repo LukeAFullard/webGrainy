@@ -32,6 +32,7 @@ import {
   type FabricRoseStats,
   type GrainHullCache,
 } from './morphometricsExt.js';
+import { photoSizeHistogram, type SizeHistogram } from './histograms.js';
 import { buildContourGeoJson, buildContourSvg, encodeMaskPng } from './exportFormats.js';
 import { computeSedimentStats, filterBorderGrains, summaryCsvRows } from './sedimentStats.js';
 import {
@@ -104,6 +105,7 @@ export class AnalysisSession {
     extendedById?: Map<number, ExtendedGrainMorphometrics>;
     roiFilter?: ExclusionFilterResult | null;
     fabric?: FabricRoseStats;
+    sizeHistograms?: Map<string, SizeHistogram>;
   } = {};
   private readonly listeners = new Set<(session: AnalysisSession) => void>();
 
@@ -774,7 +776,16 @@ export class AnalysisSession {
     const out: string[] = [];
     const grains = this.statsGrainsForSummaries();
     if (this.calibration === undefined) {
-      out.push('size_class,note,"Not available: size classes need a calibrated photo (mm)",text');
+      // Uncalibrated: power-of-two pixel classes (the same as the dashboard histogram).
+      for (const step of [1, 0.5] as const) {
+        const h = this.getSizeHistogram(step, sizeMetric);
+        const sec = step === 1 ? 'size_class_px_x2' : 'size_class_px_xsqrt2';
+        for (const b of h.bins) {
+          const label = csvCell(`${+b.lo.toFixed(2)}-${+b.hi.toFixed(2)} px`);
+          out.push(`${sec},${label},${b.weightPct},% (area-weighted)`);
+          out.push(`${sec}_count,${label},${b.count},count`);
+        }
+      }
     }
     for (const step of [1.0, 0.5] as const) {
       const bins = this.calibration === undefined ? [] : computeWentworthHistogram(grains, { stepPhi: step, weighted: true, sizeMetric });
@@ -880,6 +891,21 @@ export class AnalysisSession {
       this.derivedCache.extendedById = new Map(this.getExtendedGrains().map((g) => [g.id, g]));
     }
     return this.derivedCache.extendedById.get(id);
+  }
+
+  /**
+   * Area-weighted size histogram of the grains that count in the statistics (φ classes in
+   * mm when calibrated, power-of-two px classes otherwise). Cached per step and metric.
+   */
+  getSizeHistogram(step: 0.5 | 1 = 1, sizeMetric: SizeMetric = 'bAxis'): SizeHistogram {
+    const key = `${step}|${sizeMetric}`;
+    const cache = (this.derivedCache.sizeHistograms ??= new Map());
+    let h = cache.get(key);
+    if (h === undefined) {
+      h = photoSizeHistogram(this.statsGrainsForSummaries(), { step, sizeMetric });
+      cache.set(key, h);
+    }
+    return h;
   }
 
   /**
