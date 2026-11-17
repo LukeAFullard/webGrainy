@@ -24,8 +24,9 @@ All notable changes to webGrainy are recorded here. The format follows
 - **Quantized Cellpose-SAM weights:** INT8 (316 MB) and FP4 (183 MB), from the model
   repository (revision `98e76b13`, SHA-256 pinned). Same benchmark accuracy as FP16
   (`audit/quantization/`). New *CP-SAM weights* setting: *Auto* (default) uses FP16 on a
-  WebGPU GPU with shader-f16 and INT8 otherwise (about 2× faster on the CPU, half the
-  memory). The weight file is recorded in provenance and exports. The model manager and
+  WebGPU GPU with shader-f16 and INT8 otherwise (half the download and memory, much
+  faster loading, CPU speed equal to about 2× faster depending on the machine;
+  `audit/quantization/APP_INTEGRATION_CHECK.md`). The weight file is recorded in provenance and exports. The model manager and
   the GPU check page list all three.
 - **Exclusion overlap tolerance is configurable** (site option `maxExcludedFraction`,
   default 0.10). Applies immediately, and is recorded in exports.

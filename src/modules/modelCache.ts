@@ -112,8 +112,8 @@ export const CPSAM_MODEL_IDS: Record<Exclude<import('../types/index.js').CpsamWe
 /**
  * Picks the weight file. Cellpose-SAM 'auto' uses FP16 when it will run on a WebGPU GPU
  * with shader-f16 (native float16 kernels; checked on real hardware with the GPU check
- * page), and INT8 otherwise: on the CPU it is 2.2x faster and needs about half the memory
- * (2.1 GB vs 3.8 GB) with the same benchmark accuracy.
+ * page), and INT8 otherwise: on the CPU it needs about half the memory (2.1 GB vs 3.8 GB),
+ * loads much faster and is equally fast or faster, with the same benchmark accuracy.
  */
 export function resolveModelId(
   kind: 'unet' | 'cpsam',

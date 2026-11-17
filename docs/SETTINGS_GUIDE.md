@@ -84,7 +84,7 @@ Use the same model for all photos you want to compare.
 ### CP-SAM weights
 | | |
 |---|---|
-| **Options** | `Auto (GPU: FP16, CPU: INT8)` · `FP16 (617 MB)` · `INT8 (316 MB)` · `FP4 (183 MB)` |
+| **Options** | `Auto` (GPU: FP16, CPU: INT8) · `FP16 (617 MB)` · `INT8 (316 MB)` · `FP4 (183 MB)` |
 | **Default** | `Auto` |
 | **What it does** | Chooses which copy of the Cellpose-SAM network to download and run. Only used when the model is CP-SAM. |
 
@@ -96,11 +96,13 @@ median D50 error 2.8–2.9%; the differences are within measurement noise).
 |---|---|---|---|
 | Download | 617 MB | 316 MB | 183 MB |
 | Memory while running (CPU) | about 3.8 GB | **about 2.1 GB** | about 3.7 GB |
-| Speed on the CPU (per 256 px tile, benchmark machine) | about 32 s | **about 15 s** | about 14 s |
+| Speed on the CPU | baseline | same to about 2× faster | same to about 2× faster |
+| Loading time | slowest | **fastest** | middle |
 
 - **Auto** uses FP16 on a graphics card that supports WebGPU float16, and INT8 otherwise.
-- **INT8** is the best choice on the processor (no suitable graphics card): about twice as
-  fast as FP16 and needs about half the memory.
+- **INT8** is the best choice on the processor (no suitable graphics card). It needs about
+  half the memory and half the download of FP16. Its speed is the same or better: up to
+  about 2× faster in the benchmark, but the same on a 4-core test machine.
 - **FP4** has the smallest download, for slow or metered connections. It needs about as much
   memory as FP16 while running, so use it on computers with at least 8 GB of memory.
 

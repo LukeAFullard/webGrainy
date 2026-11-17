@@ -64,7 +64,8 @@ cores (capped at 8). Measured in headless Chromium on a 4-core machine (`audit/p
 
 A 1024×768 photo needs about 20 Cellpose-SAM tiles, so on CPU it takes roughly 11 minutes
 single-threaded and roughly 3 minutes isolated on 4 cores (these are FP16 timings; the INT8
-weights, used automatically on the CPU since this release, are about 2× faster). Prefer U-Net when no FP16-capable GPU is
+weights, used automatically on the CPU since this release, use half the memory and are
+the same speed to about 2× faster, depending on the machine). Prefer U-Net when no FP16-capable GPU is
 available. To enable WASM threads, send:
 
 ```

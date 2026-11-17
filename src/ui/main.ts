@@ -791,7 +791,7 @@ function renderSidebar(state: AppState): void {
           <label class="field-label">
             <span class="label-row">CP-SAM weights ${helpButton('cpsamWeights')}</span>
             <select class="select" data-param="cpsamWeights">
-              <option value="auto" ${p.cpsamWeights === 'auto' ? 'selected' : ''}>Auto (GPU: FP16, CPU: INT8)</option>
+              <option value="auto" ${p.cpsamWeights === 'auto' ? 'selected' : ''}>Auto</option>
               <option value="fp16" ${p.cpsamWeights === 'fp16' ? 'selected' : ''}>FP16 (617 MB)</option>
               <option value="int8" ${p.cpsamWeights === 'int8' ? 'selected' : ''}>INT8 (316 MB)</option>
               <option value="fp4" ${p.cpsamWeights === 'fp4' ? 'selected' : ''}>FP4 (183 MB)</option>

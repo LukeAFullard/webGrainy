@@ -153,7 +153,7 @@ export function renderModelsModalHtml(
       id: 'ig2_cpsam_int8_wo_fp32scale',
       title: 'Cellpose-SAM INT8 — ig2_cpsam_int8_wo_fp32scale.onnx',
       sizeLabel: '316 MB',
-      desc: 'Same accuracy as FP16 in testing. Used automatically on the CPU: about 2× faster and half the memory (2.1 GB).',
+      desc: 'Same accuracy as FP16 in testing. Used automatically on the CPU: half the memory (about 2 GB) and faster loading.',
     },
     {
       id: 'ig2_cpsam_fp4_e2m1_lut',
