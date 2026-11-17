@@ -7,6 +7,15 @@ All notable changes to webGrainy are recorded here. The format follows
 ## [Unreleased]
 
 ### Fixed
+- **Phones: the photo viewer had zero height and touch scrolling was blocked.** The
+  phone layout rule was overridden by a later desktop rule, and the side panels'
+  `overscroll-behavior: contain` stopped swipes from scrolling the page. The viewer now
+  gets 60% of the screen height, and panels no longer trap scrolling.
+- **Photo viewer had no touch gestures** (panning needed a middle mouse button or
+  Space, zoom a mouse wheel). Now: pinch to zoom, two-finger drag to pan, one-finger
+  drag pans when zoomed in and scrolls the page otherwise, tap runs the active tool,
+  the brush draws with one finger. New *Finish shape* / *Cancel shape* buttons replace
+  double-click / Enter / Esc for polygons and split lines on touch screens.
 - **Grain ellipses were drawn mirrored.** The ellipse overlay was rotated by θ + 90°
   instead of 90° − θ, so every diagonal grain's ellipse leaned the wrong way (the
   orientation vectors were already correct). Hand-drawn or edited grains also used a
@@ -19,6 +28,12 @@ All notable changes to webGrainy are recorded here. The format follows
   GPU sessions are evicted, the capability is reported unavailable, and the image is
   retried once on WASM instead of failing. Previously the next WebGPU session reused the
   lost device. The UI shows "GPU reset · CPU mode (reload for GPU)".
+
+### Changed
+- **Phones and tablets:** Auto always picks U-Net; Cellpose-SAM stays selectable
+  (labelled "not for phones"), uses the INT8 weights, and warns that it needs about
+  1.5 GB of memory and can take 10+ minutes per photo. The settings panel starts
+  collapsed on narrow screens, and buttons/inputs have larger touch targets.
 
 ### Added
 - **Skip areas outside the ROI** (Advanced, default on). With an ROI or exclusions drawn

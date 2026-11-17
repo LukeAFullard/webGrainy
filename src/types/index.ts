@@ -279,6 +279,8 @@ export interface AnalysisConfig {
 export interface EngineCapabilities {
   hasWebGPU: boolean;
   hasShaderF16?: boolean;
+  /** Phone or tablet: Auto uses U-Net, and Cellpose-SAM uses INT8 weights. */
+  isMobile?: boolean;
   hasWasmSimd: boolean;
   deviceMemoryGB: number | null;
   cachedModels: CachedModelInfo[];

@@ -75,7 +75,10 @@ analyse a photo. They do not change photos that are already analysed.
 - **U-Net** is **small and fast** and works on almost any device, including phones. It is
   **less accurate**: median D50 error was about 15%.
 - **Auto** picks one based on the photo and your hardware. It avoids CP-SAM when your
-  device can't run it efficiently.
+  device can't run it efficiently, and **always picks U-Net on phones and tablets**:
+  CP-SAM needs about 1.5 GB of memory and can take 10+ minutes per photo on a phone,
+  and mobile browsers often close the tab first. You can still choose CP-SAM by hand
+  (it then uses the smaller INT8 weights).
 
 **When to change it:** choose **CP-SAM** for any result you will report or publish. Use
 **U-Net** for a quick first look, on a phone, or when you just need a rough estimate.

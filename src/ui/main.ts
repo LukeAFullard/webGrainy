@@ -686,7 +686,9 @@ function renderSidebar(state: AppState): void {
     const st = state.photoStatuses.get(ph.photoId);
     return !st || st === 'pending' || st === 'error';
   }).length;
-  const prevDetailsOpen = sidebarEl.querySelector('details')?.open ?? true;
+  // Collapsed by default on narrow screens, so the photo is reachable without scrolling past every setting.
+  const prevDetailsOpen =
+    sidebarEl.querySelector('details')?.open ?? !window.matchMedia('(max-width: 960px)').matches;
   const prevPhotoScroll = sidebarEl.querySelector('.photo-list')?.scrollTop ?? 0;
 
   const keptOpenSidebar = captureOpenDetails(sidebarEl);
@@ -793,7 +795,7 @@ function renderSidebar(state: AppState): void {
             <select class="select" data-param="model">
               <option value="auto" ${p.model === 'auto' ? 'selected' : ''}>Auto (Router)</option>
               <option value="unet" ${p.model === 'unet' ? 'selected' : ''}>U-Net (25 MB)</option>
-              <option value="cpsam" ${p.model === 'cpsam' ? 'selected' : ''}>CP-SAM</option>
+              <option value="cpsam" ${p.model === 'cpsam' ? 'selected' : ''}>CP-SAM${state.capabilities?.isMobile ? ' (not for phones)' : ''}</option>
             </select>
           </label>
           <label class="field-label">
@@ -926,6 +928,12 @@ function renderToolbarAndOverlays(state: AppState): void {
     ${
       state.activeTool === 'merge' && state.selectedGrainIds.size >= 2
         ? `<button type="button" class="btn btn-sm btn-primary" data-action="commit-merge">Merge (${state.selectedGrainIds.size})</button>`
+        : ''
+    }
+    ${
+      state.activeTool === 'split' || state.activeTool === 'addPolygon' || state.activeTool === 'excludePoly'
+        ? `<button type="button" class="btn btn-sm btn-primary" data-action="finish-shape" title="Same as double-click or Enter">Finish shape</button>
+           <button type="button" class="btn btn-sm" data-action="cancel-shape" title="Same as Esc">Cancel shape</button>`
         : ''
     }
     <span class="toolbar-sep" aria-hidden="true"></span>
@@ -1691,6 +1699,10 @@ function attachDelegatedHandlers(): void {
         void runBatch([state.activePhotoId]);
       } else if (act === 'fit-view') {
         viewport?.fitToScreen();
+      } else if (act === 'finish-shape') {
+        viewport?.finishShape();
+      } else if (act === 'cancel-shape') {
+        viewport?.cancelShape();
       } else if (act === 'close-inspector') {
         store.setState({ inspectedGrainId: null });
         void syncViewport(false);

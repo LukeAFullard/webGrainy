@@ -538,7 +538,8 @@ input:not([type="range"]):user-invalid {
   cursor: crosshair;
   user-select: none;
   overscroll-behavior: contain;
-  touch-action: pinch-zoom;
+  /* Touch gestures are handled by the viewer (pinch/pan, tap, one-finger page scroll). */
+  touch-action: none;
 }
 
 .canvas-stage:focus-visible {
@@ -957,5 +958,46 @@ details summary {
 @media (max-width: 520px) {
   .help-dl {
     grid-template-columns: 1fr;
+  }
+}
+
+/*
+ * Phones and narrow tablets (single column). Kept at the end of the file so it overrides
+ * the desktop rules above (same specificity, so source order decides).
+ * - The side panels are scroll areas on desktop; here they are full height, so they must
+ *   not trap touch scrolling (overscroll-behavior: contain blocked scroll chaining, and
+ *   swipes over them did not scroll the page).
+ * - The photo viewer gets a real height (it collapsed to 0 px because the desktop
+ *   `min-height: 0` came later in the file than the phone rule).
+ */
+@media (max-width: 960px) {
+  .sidebar-left,
+  .dashboard-right {
+    overflow: visible;
+    overscroll-behavior: auto;
+  }
+  .sidebar-left {
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+  .dashboard-right {
+    border-left: none;
+    border-top: 1px solid var(--border);
+  }
+  .viewport-center {
+    min-height: 0;
+  }
+  .canvas-stage {
+    height: 60vh;
+    height: 60svh;
+  }
+  /* Comfortable touch targets. */
+  .btn,
+  .select,
+  .input {
+    min-height: 2.5rem;
+  }
+  .toolbar .btn {
+    min-height: 2.25rem;
   }
 }

@@ -26,6 +26,7 @@ import {
   normalizeGray,
   normalizeRgbJoint99,
   prepareWorkingImage,
+  isMobileDevice,
   recommendModel,
   type ImageBufferLike,
 } from './imagePreprocess.js';
@@ -1549,6 +1550,7 @@ export class ImageGrainsEngine {
     this.capabilities = {
       hasWebGPU,
       ...(hasShaderF16 !== undefined ? { hasShaderF16 } : {}),
+      isMobile: isMobileDevice(),
       hasWasmSimd,
       deviceMemoryGB,
       cachedModels,
@@ -1593,6 +1595,7 @@ export class ImageGrainsEngine {
           ? { hasShaderF16: this.capabilities.hasShaderF16 }
           : {}),
         deviceMemoryGB: this.capabilities?.deviceMemoryGB ?? null,
+        isMobile: this.capabilities?.isMobile ?? false,
       },
     );
     throwIfAborted(signal);
@@ -1603,12 +1606,23 @@ export class ImageGrainsEngine {
         : recommendation.model;
 
     // Weight file: Cellpose-SAM has FP16 / INT8 / FP4 variants (same accuracy).
+    // On phones/tablets the 617 MB FP16 weights do not fit: Auto uses INT8 (1.4 GB).
     const fp16GpuUsable =
+      this.capabilities?.isMobile !== true &&
       this.capabilities?.hasWebGPU === true &&
       this.capabilities?.hasShaderF16 === true &&
       this.webgpuDisabledReason === null &&
       !this.wasmOnlyModels.has('ig2_cpsam_fp16');
     const modelId = resolveModelId(selectedModel, config?.cpsamWeights ?? 'auto', fp16GpuUsable);
+
+    if (selectedModel === 'cpsam' && this.capabilities?.isMobile === true) {
+      emit('warning', {
+        code: 'cpsam-mobile',
+        model: selectedModel,
+        message:
+          'Cellpose-SAM on a phone or tablet needs about 1.5 GB of memory and can take 10+ minutes per photo; the browser may close the tab. U-Net is recommended on mobile.',
+      });
+    }
 
     const workingImage = prepareWorkingImage(
       preImg.data,

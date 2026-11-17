@@ -15,6 +15,26 @@ export interface HardwareCapabilities {
   hasWebGPU?: boolean;
   hasShaderF16?: boolean;
   deviceMemoryGB?: number | null;
+  /** Phone or tablet (see isMobileDevice). */
+  isMobile?: boolean;
+}
+
+/**
+ * True on phones and tablets. Cellpose-SAM needs 1.4–4 GB of memory and many minutes per
+ * photo on mobile processors, and mobile browsers kill tabs well before that, so the
+ * router picks U-Net there. Uses User-Agent Client Hints where available, else the UA
+ * string; iPadOS reports a Mac UA, so a Mac UA with multi-touch counts as mobile.
+ */
+export function isMobileDevice(
+  nav: { userAgent?: string; maxTouchPoints?: number; userAgentData?: { mobile?: boolean } } | undefined = (
+    globalThis as { navigator?: { userAgent?: string; maxTouchPoints?: number; userAgentData?: { mobile?: boolean } } }
+  ).navigator,
+): boolean {
+  if (!nav) return false;
+  if (nav.userAgentData?.mobile === true) return true;
+  const ua = nav.userAgent ?? '';
+  if (/Android|iPhone|iPad|iPod|Mobile|Silk|Kindle/i.test(ua)) return true;
+  return /Macintosh/.test(ua) && (nav.maxTouchPoints ?? 0) > 1;
 }
 
 function validateImageDimensions(
@@ -735,11 +755,17 @@ export function recommendModel(
 
   const lowMemory = deviceMemoryGB !== null && deviceMemoryGB < 4;
   const missingF16 = hasWebGPU && hasShaderF16 === false;
+  const mobile = capabilities?.isMobile ?? false;
   let model: ModelKind;
   let confidence: number;
   let rationale: string;
 
-  if (!hasWebGPU || missingF16 || lowMemory) {
+  if (mobile) {
+    model = 'unet';
+    confidence = 0.9;
+    rationale =
+      'Phone/tablet detected -> U-Net 25 MB (Cellpose-SAM needs 1.4-4 GB of memory and many minutes per photo on mobile processors).';
+  } else if (!hasWebGPU || missingF16 || lowMemory) {
     model = 'unet';
     const hwReason = !hasWebGPU
       ? 'No WebGPU detected'
