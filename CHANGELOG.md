@@ -30,6 +30,18 @@ All notable changes to webGrainy are recorded here. The format follows
   lost device. The UI shows "GPU reset · CPU mode (reload for GPU)".
 
 ### Changed
+- **Name sites:** *+ New* asks for a name, and *Rename* changes it. The site name is in
+  export file names and in the export metadata.
+- **Exports now contain everything the dashboard shows.** Site summary CSV adds Folk &
+  Ward confidence intervals, size-class histograms (1 φ and 0.5 φ), fabric statistics,
+  adequacy details, jackknife, a per-photo breakdown by photo name, the confidence level
+  and warnings. Photo grains CSV adds orientation, perimeter, circularity, aspect ratio,
+  elongation, convexity, solidity, sphericity and an "included in statistics" flag. Photo
+  summary CSV adds size-class histograms and fabric statistics. Listed in
+  `docs/SETTINGS_GUIDE.md` §13.
+- **Fabric tab shows its numbers** (mean orientation, alignment R, Rayleigh p).
+- **Readable D16/D50/D84 labels** (real subscripts at a legible size instead of tiny
+  Unicode subscript digits).
 - **Simpler layout (progressive disclosure).** One status chip instead of three; settings
   folded into *Analysis settings* (with *Fine-tuning* and *Advanced*), *Statistics
   settings* and a *Display* menu, each showing a one-line summary; toolbar grouped into

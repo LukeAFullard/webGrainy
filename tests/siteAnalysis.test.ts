@@ -416,6 +416,13 @@ describe('siteAnalysis', () => {
     const summaryCsv = await exportSiteSummaryCsv(report).text();
     expect(summaryCsv).toContain('Area-Weighted (Grid-by-Number / Sieve-Equivalent, Kellerhals & Bray 1971)');
     expect(summaryCsv).toContain('psd_bootstrap_ci_lo,D50');
+    // Everything the dashboard shows is in the CSV too.
+    for (const section of ['fabric,mean_axial_orientation_deg', 'fabric,rayleigh_p', 'size_class_1phi,', 'size_class_05phi,', 'adequacy,effective_grain_count', 'jackknife,se_D50', 'per_photo_detail,', 'metadata,confidence_level']) {
+      expect(summaryCsv).toContain(section);
+    }
+    const firstPhoto = report.perPhoto[0]!;
+    expect(summaryCsv).toContain(`per_photo_detail,${firstPhoto.label}|D50,${firstPhoto.D50}`);
+    expect(summaryCsv).toMatch(/\nwarning,1,/);
 
     const summaryJson = JSON.parse(await exportSiteSummaryJson(report).text()) as {
       poolingMode: string;
