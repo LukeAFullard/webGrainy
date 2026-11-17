@@ -115,7 +115,7 @@ describe('Tier 2: Boundary & Corner Cases — ImageGrains 2.0 Web', () => {
         fetch: { payloadBytes: new Uint8Array(16 * 1024) },
       });
 
-      await expect(downloadModel('ig2_unet_fp32')).rejects.toThrow(/Quota/i);
+      await expect(downloadModel('ig2_unet_fp32', { requireCache: true })).rejects.toThrow(/Quota/i);
     });
   });
 

@@ -48,6 +48,11 @@ export interface ModelDownloadOptions {
   signal?: AbortSignal;
   baseUrl?: string;
   forceRefresh?: boolean;
+  /**
+   * Throw if the model cannot be stored for offline use (explicit "Download" in the model
+   * manager). Default false: during analysis a failed cache write is only a warning.
+   */
+  requireCache?: boolean;
 }
 
 export interface WorkingImageResult {

@@ -1952,6 +1952,7 @@ function attachDelegatedHandlers(): void {
         store.setState({ modelDownloads: nextDl });
         void downloadModel(modelId, {
           signal: ctrl.signal,
+          requireCache: true,
           onProgress: (prog) => {
             const m = new Map(store.getState().modelDownloads);
             m.set(modelId, { active: true, ...prog });

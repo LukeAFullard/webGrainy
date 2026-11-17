@@ -20,7 +20,7 @@ import type {
   WorkingImageResult,
 } from '../types/index.js';
 import { buildRegionNeedTest, ROI_TILE_MARGIN_PX, unanalysedValidFraction } from './roiTileSkip.js';
-import { getCachedModels, getModel, modelKindOf, resolveModelId } from './modelCache.js';
+import { getCachedModels, getLastCacheWriteError, getModel, modelKindOf, resolveModelId } from './modelCache.js';
 import {
   applyCLAHE,
   normalizeGray,
@@ -1983,8 +1983,20 @@ export class ImageGrainsEngine {
           },
         };
         emit?.('model-load', { modelId, phase: 'fetch' });
+        const cacheErrBefore = getLastCacheWriteError();
         const modelBytes = await getModel(modelId, dlOpts);
         throwIfAborted(signal);
+        const cacheErr = getLastCacheWriteError();
+        if (cacheErr !== null && cacheErr !== cacheErrBefore) {
+          emit?.('warning', {
+            code: 'model-cache-failed',
+            model: modelKind,
+            modelId,
+            message:
+              `The model could not be saved for offline use (${cacheErr}). Analysis continues, ` +
+              'but the model will be downloaded again next time. Check free disk space, or leave private browsing.',
+          });
+        }
         emit?.('model-load', { modelId, phase: 'create-session', sizeBytes: modelBytes.byteLength });
 
         const created = await createInferenceSession(modelBytes, {

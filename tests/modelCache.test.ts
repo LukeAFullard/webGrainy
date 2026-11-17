@@ -13,6 +13,7 @@ import {
   downloadModel,
   getCachedModels,
   getModel,
+  getLastCacheWriteError,
   MODEL_FILES,
   STORE_NAME,
 } from '../src/modules/modelCache.js';
@@ -550,9 +551,30 @@ describe('modelCache', () => {
       createChunkedResponse([new Uint8Array([1, 2, 3])], { contentLength: 3 }),
     ) as unknown as typeof fetch;
 
-    await expect(downloadModel('ig2_unet_fp32')).rejects.toMatchObject({
+    // Explicit "download for offline use": the failure is reported.
+    await expect(downloadModel('ig2_unet_fp32', { requireCache: true })).rejects.toMatchObject({
       name: 'QuotaExceededError',
     });
+    // During an analysis: the model is still returned, and the failure is recorded.
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      createChunkedResponse([new Uint8Array([1, 2, 3])], { contentLength: 3 }),
+    ) as unknown as typeof fetch;
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const buf = await downloadModel('ig2_unet_fp32');
+    expect(new Uint8Array(buf)).toEqual(new Uint8Array([1, 2, 3]));
+    expect(getLastCacheWriteError()).toMatch(/QuotaExceeded|quota/i);
+    warn.mockRestore();
+  });
+
+  it('stores models as Blobs (Chromium rejects single IndexedDB values over ~127 MB) and reads them back', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      createChunkedResponse([new Uint8Array([7, 8, 9, 10])], { contentLength: 4 }),
+    ) as unknown as typeof fetch;
+    await downloadModel('ig2_unet_fp32');
+    globalThis.fetch = vi.fn() as unknown as typeof fetch;
+    const again = await getModel('ig2_unet_fp32');
+    expect(new Uint8Array(again)).toEqual(new Uint8Array([7, 8, 9, 10]));
+    expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
   it('checks storage quota via navigator.storage.estimate() and falls back to zeros when unavailable', async () => {
