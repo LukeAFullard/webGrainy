@@ -182,6 +182,16 @@ try {
     await page.waitForTimeout(500);
     const nText = await page.evaluate(() => document.body.innerText.match(/n = (\d+)/)?.[1] ?? '0');
     if (Number(nText) <= 0) fail('no grains reported after analysis');
+    if (process.env.SMOKE_SCREENSHOT) {
+      // Optional visual check: grain ellipses and orientation vectors over the photo.
+      for (const ov of ['ellipses', 'orientations']) {
+        const box = page.locator(`input[data-ov="${ov}"]`);
+        if ((await box.count()) && !(await box.isChecked())) await box.check();
+      }
+      await page.waitForTimeout(800);
+      await page.screenshot({ path: process.env.SMOKE_SCREENSHOT });
+      console.log(`screenshot: ${process.env.SMOKE_SCREENSHOT}`);
+    }
     if (problems.length) fail(problems.join(' | '));
     console.log(`SMOKE PASS (n = ${nText} grains)`);
   }
