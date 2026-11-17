@@ -32,13 +32,23 @@ Everything runs in your browser. Photos and results never leave your computer. T
 download is the model itself, fetched once and then stored for offline use.
 
 ### Typical workflow
-1. **Create a site** (`+ Site`) and **add photos** (drag them onto the photo list).
-2. **Calibrate each photo** (`Calibrate` tool). Without this, all sizes are in pixels.
-3. **Rectify oblique photos** (`4-Pt Rectify`) if the camera was not pointing straight down.
-4. **Run the analysis** (`Analyze Active Photo` or `Run Pending`).
-5. **Check the outlines.** Split, merge, delete or add grains where the model got it wrong.
-6. **Exclude non-gravel areas** such as boots, rulers, vegetation and water.
-7. **Read the statistics** in the dashboard and **export** the results.
+The **Getting started** checklist at the top of the left panel walks through these steps
+and ticks them off as you go. Hide it with *Hide*; bring it back from *Help*.
+
+1. **Create a site** (`+ New`) and **add photos** (`Add photos`, or drag them onto the photo list).
+2. **Calibrate each photo** (`Scale → Calibrate`). Without this, all sizes are in pixels.
+3. **Rectify oblique photos** (`Scale → Rectify`) if the camera was not pointing straight down.
+4. **Exclude non-gravel areas** (`Exclude → Area` or `Brush`): boots, rulers, vegetation,
+   water. Doing this before analysing is faster (areas far from the counted area are skipped).
+5. **Run the analysis** (`Analyse` in the photo list). A bar at the bottom of the screen shows
+   the current step, the tiles done and the time left, with a Cancel button.
+6. **Check the outlines.** The `Edit grains` tools (Split, Merge, Delete, Add) appear once a
+   photo is analysed.
+7. **Read the results** on the right (*Whole site* or *This photo*) and **export** them.
+
+Rarely needed options are folded away: *Analysis settings* (left), *Fine-tuning* and
+*Advanced* inside it, *Statistics settings* (right) and *Display* (above the photo). Each
+folded section shows a one-line summary, e.g. "tested defaults" or "2 settings changed".
 
 ---
 
@@ -56,7 +66,7 @@ Settings cannot fix a poor photo. For best results:
 
 ---
 
-## 3. Analysis settings (sidebar, "Inference & Post-Processing Controls")
+## 3. Analysis settings (left panel, "Analysis settings"; tuning values under "Fine-tuning")
 
 These control how grains are found and outlined. They take effect the next time you
 analyse a photo. They do not change photos that are already analysed.
@@ -301,7 +311,7 @@ redone, and statistics update immediately.
 | **Split** | Two or more stones were outlined as one. Draw a line across where they meet. |
 | **Merge** | One stone was cut into pieces. Select the pieces, then press `Merge`. |
 | **Delete** | Something that isn't a grain was outlined (a leaf, a ruler, a shadow). |
-| **+ Polygon** | A grain was missed. Draw around it. |
+| **Add** | A grain was missed. Draw around it, then press *Finish shape* (or double-click / Enter). |
 
 ---
 
@@ -309,8 +319,8 @@ redone, and statistics update immediately.
 
 | Tool | Use it when… |
 |---|---|
-| **Excl Poly** | You want to remove a region: a ruler, boot, quadrat frame, vegetation, water or deep shadow. Draw around it. |
-| **Excl Brush** | You want to paint over smaller or irregular areas to remove them. |
+| **Exclude → Area** | You want to remove a region: a ruler, boot, quadrat frame, vegetation, water or deep shadow. Draw around it. |
+| **Exclude → Brush** | You want to paint over smaller or irregular areas to remove them. |
 
 Grains with more than 10% of their area inside an excluded region are left out of the statistics (exports flag them). The 10% can be changed with **Exclusion overlap** in the dashboard. The
 dashboard shows how many were excluded. Excluding is better than deleting for objects
@@ -407,19 +417,22 @@ Changes apply immediately.
 
 ---
 
-## 8. Display options (above the photo)
+## 8. Display options ("Display" menu above the photo)
 
 These only change what you see, never the results.
 
 | Option | Shows |
 |---|---|
-| **IDs** | Grain numbers. |
-| **Wentworth** | Colours grains by size class (sand, gravel classes, cobble, boulder). |
-| **a/b Ellipses** | The fitted ellipse and its axes for each grain. |
-| **Vectors** | Grain orientation (long-axis direction). |
-| **Border/Trunc** | Highlights grains excluded for touching the photo edge or being too small. |
-| **Opacity** | How strongly outlines are drawn over the photo. |
-| **Loupe (2×)** | A magnifier that follows the cursor, for precise editing. |
+| **Grain IDs** | Grain numbers. |
+| **Size colours (Wentworth)** | Colours grains by size class (sand, gravel classes, cobble, boulder). |
+| **Ellipses (a/b axes)** | The fitted ellipse and its axes for each grain. |
+| **Orientation lines** | Grain orientation (long-axis direction). |
+| **Mark edge/too-small grains** | Highlights grains excluded for touching the photo edge or being too small. |
+| **Outline opacity** | How strongly outlines are drawn over the photo. |
+| **Magnifier (2×)** | A magnifier that follows the cursor, for precise editing. |
+
+On a touch screen: pinch to zoom, drag with two fingers to move the photo. With one finger,
+a drag moves the photo when zoomed in and scrolls the page otherwise; a tap uses the active tool.
 
 ---
 
@@ -427,10 +440,10 @@ These only change what you see, never the results.
 
 | Panel | Settings |
 |---|---|
-| **Left sidebar → Inference & Post-Processing Controls** | Model, Scale mode, Flow threshold, Cellprob threshold, Min size, Max area fraction, Border margin, CLAHE, Exclude border grains, *Advanced:* Flow steps, Seed density |
+| **Left panel → Analysis settings** | Model, CP-SAM weights, Scale mode, Exclude border grains; *Fine-tuning:* Flow threshold, Cellprob threshold, Min size, Max area fraction, Border margin, CLAHE; *Advanced:* Flow steps, Inference pipeline, Seed density, CPU threads, Skip areas outside the ROI |
 | **Left sidebar → photo list** | Include/exclude photo from the site; Facies weight (Facies-weighted mode only) |
-| **Toolbar (above the photo)** | Calibrate, 4-Pt Rectify, Split, Merge, Delete, + Polygon, Excl Poly, Excl Brush |
-| **Right-hand dashboard** | Pooling mode, Size metric, Field-count cutoff, Min b-axis, Exclusion overlap, Harmonize cutoff, *Uncertainty & sampling:* Confidence level, Bootstrap repeats, Bootstrap seed, Two-stage bootstrap, Virtual Wolman points |
+| **Toolbar (above the photo)** | *Scale:* Calibrate, Rectify · *Exclude:* Area, Brush · *Edit grains* (after analysis): Split, Merge, Delete, Add · Display |
+| **Right-hand panel → Statistics settings** | Pooling mode, Size metric, Field-count cutoff, Min b-axis, Exclusion overlap, Harmonize cutoff, *Uncertainty & sampling:* Confidence level, Bootstrap repeats, Bootstrap seed, Two-stage bootstrap, Virtual Wolman points |
 
 All settings are recorded in every export.
 
@@ -451,7 +464,7 @@ All settings are recorded in every export.
 | Comparing with a field pebble count | As above, plus **Field-count cutoff = your field minimum** (e.g. 10–16 mm). Consider **min-Feret** if the field data are caliper b-axes. |
 | Big cobbles or boulders, few per photo | Scale Mode **0.5x**; **Max Area Frac 1.0** if a single stone fills much of the frame; take more photos to reach 100+ grains. |
 | Fine gravel, many small grains | Scale Mode **1.0x Full**; consider **Min Size 15**; get the camera closer. |
-| Harsh sun, deep shadows | Turn on **CLAHE**; use **Excl Brush** on deep shadows; check for split or merged grains. |
+| Harsh sun, deep shadows | Turn on **CLAHE**; use **Exclude → Brush** on deep shadows; check for split or merged grains. |
 | Huge false "grains" over sand or water | Lower **Max Area Frac** (e.g. 0.2), or exclude those areas. |
 | Many grains missed | Lower **Cellprob** (−1), then try raising **Flow Threshold** (0.6). |
 | Messy, ragged outlines | Raise **Cellprob** (+1), or lower **Flow Threshold** (0.3). |
@@ -496,4 +509,4 @@ calibration and the date. When you publish or share results, also state:
 - **how many grains** were measured, and the **number of photos**;
 - **that outlines were checked and edited**, and roughly how much;
 - that webGrainy is an **unofficial browser version of ImageGrains 2.0**, and cite the
-  ImageGrains and Cellpose papers (see *About & Citations* in the app).
+  ImageGrains and Cellpose papers (see *About* in the app).

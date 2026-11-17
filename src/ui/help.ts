@@ -250,7 +250,7 @@ export const HELP_TOPICS = {
   editing: {
     title: 'Editing tools',
     group: 'Tools',
-    what: 'Split (draw a line across stones that were joined), Merge (select pieces of one stone), Delete (remove non-grains), + Polygon (draw a missed grain). All edits can be undone.',
+    what: 'Split (draw a line across stones that were joined), Merge (select pieces of one stone), Delete (remove non-grains), Add (draw a missed grain; press Finish shape when done). These tools appear once the photo is analysed. All edits can be undone.',
     default: '—',
     when: 'Always check the outlines and fix obvious mistakes before reporting results.',
   },
@@ -308,6 +308,7 @@ export function renderHelpModalHtml(focus: HelpKey | null): string {
         <button type="button" class="btn btn-sm" data-action="close-modal" autofocus>Close</button>
       </div>
       <div class="modal-body">
+        <p class="help-intro"><strong>New here?</strong> <button type="button" class="btn btn-sm" data-action="show-guide">Show the getting-started guide</button></p>
         <p class="help-intro"><strong>Using a GPU?</strong> The <a href="./gpucheck.html" target="_blank" rel="noopener">GPU check</a> page tests whether your graphics card gives the same results as the CPU (please send us the report).</p>
         <p class="help-intro">The defaults are the settings that were tested. For most photos: calibrate the scale, check the outlines, and set the field-count cutoff if you compare with a pebble count. Change other settings only for the reasons below, and note what you changed (exports record all settings).</p>
         ${focus ? topicHtml(focus, true) : ''}

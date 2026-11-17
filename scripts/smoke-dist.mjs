@@ -165,6 +165,8 @@ try {
       buffer: Buffer.from(pngB64, 'base64'),
     });
     await page.waitForSelector('.photo-item', { timeout: 30000 });
+    // Settings are collapsed by default: open them to choose the model.
+    await page.click('details.settings-block > summary');
     await page.selectOption('select[data-param="model"]', 'unet');
     await page.click('button[data-action="run-active"]');
 
@@ -184,6 +186,7 @@ try {
     if (Number(nText) <= 0) fail('no grains reported after analysis');
     if (process.env.SMOKE_SCREENSHOT) {
       // Optional visual check: grain ellipses and orientation vectors over the photo.
+      await page.click('details.display-menu > summary');
       for (const ov of ['ellipses', 'orientations']) {
         const box = page.locator(`input[data-ov="${ov}"]`);
         if ((await box.count()) && !(await box.isChecked())) await box.check();
