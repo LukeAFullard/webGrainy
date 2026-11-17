@@ -39,5 +39,9 @@ describe('session caches', () => {
     });
     expect(s.getRoiFilterResult()?.includedGrains.map((g) => g.id)).toEqual([1]);
     expect(s.getFabricRose().grainCount).toBe(1);
+    // The aspect-ratio chart uses the same counted grains as n in the statistics.
+    expect(s.getExtendedStatsGrains().map((g) => g.id)).toEqual([1]);
+    expect(s.getStats().includedGrains).toBe(1);
+    expect(s.getExtendedGrains().length).toBe(2);
   });
 });

@@ -885,6 +885,12 @@ export class AnalysisSession {
     return this.derivedCache.extended;
   }
 
+  /** Shape measures of the grains that count in the statistics (inside the ROI, border rule). */
+  getExtendedStatsGrains(): ExtendedGrainMorphometrics[] {
+    const ids = new Set(this.statsGrainsForSummaries().map((g) => g.id));
+    return this.getExtendedGrains().filter((g) => ids.has(g.id));
+  }
+
   /** Shape measures for one grain (e.g. the grain inspector). */
   getExtendedGrain(id: number): ExtendedGrainMorphometrics | undefined {
     if (this.derivedCache.extendedById === undefined) {

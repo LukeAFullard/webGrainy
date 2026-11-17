@@ -604,10 +604,23 @@ export class CanvasViewport {
       grainMap.set(g.id, g);
     }
 
+    // Grains outside the ROI or inside an exclusion are still detected, but not counted:
+    // draw them grey and hatched so they do not look like measured grains.
+    const excluded = this.session.getRoiFilterResult()?.excludedGrainIds;
     const colorCache = new Map<number, [number, number, number]>();
     for (let i = 0; i < masks.length; i++) {
       const id = masks[i] ?? 0;
       if (id <= 0) continue;
+      if (excluded?.has(id)) {
+        const x = i % wi.width;
+        const y = (i - x) / wi.width;
+        const p = i * 4;
+        data[p] = 140;
+        data[p + 1] = 140;
+        data[p + 2] = 140;
+        data[p + 3] = ((x + y) >> 2) & 1 ? 150 : 25;
+        continue;
+      }
       let rgb = colorCache.get(id);
       if (!rgb) {
         if (this.overlays.wentworthColors) {
@@ -701,12 +714,15 @@ export class CanvasViewport {
     // Grain vector overlays
     if (this.session) {
       const grains = this.session.getResult().grains;
+      const excludedIds = this.session.getRoiFilterResult()?.excludedGrainIds;
       for (const g of grains) {
         const cx = toSx(g.centroidX);
         const cy = toSy(g.centroidY);
         if (cx < -100 || cy < -100 || cx > w + 100 || cy > h + 100) continue;
 
         const isSelected = this.selectedIds.has(g.id) || this.inspectedId === g.id;
+        // Excluded grains (outside the ROI / inside an exclusion): no ellipse or orientation line.
+        if (excludedIds?.has(g.id) && !isSelected) continue;
         const isTruncated = this.minBaxisPx > 0 && g.bAxisPx < this.minBaxisPx;
 
         if (this.overlays.ellipses || isSelected) {
