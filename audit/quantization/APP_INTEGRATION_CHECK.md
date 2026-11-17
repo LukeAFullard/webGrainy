@@ -27,3 +27,14 @@ time. So the speed gain depends on the machine (thread count, memory bandwidth).
 dependable advantages are a half-size download, about half the memory, and much faster loading.
 
 **On a WebGPU GPU:** not yet tested. The GPU check page now offers INT8 and FP4.
+
+## ROI tile skipping (same photo, INT8, CPU)
+
+| ROI (left part of the photo) | Tiles run | Time | Grains with centroid in ROI, identical to the full run |
+|---|---|---|---|
+| none (full) | 16 / 16 | 185 s | — |
+| 40% (205 px) | 16 / 16 | 183 s | 433 / 433 |
+| 20% (102 px) | 12 / 16 | 143 s | 208 / 208 |
+
+On this small photo (504×512), the 128 px safety margin plus 256 px tiles leave little to
+skip. Savings grow with photo size, and with the share of the photo far from the ROI.
