@@ -7,6 +7,17 @@ All notable changes to webGrainy are recorded here. The format follows
 ## [Unreleased]
 
 ### Fixed
+- **Cellpose-SAM failed with "The serialized keys and/or value are too large".** Chromium
+  (Chrome/Edge) rejects single IndexedDB values over about 127 MB, and the cache stored
+  each model as one ArrayBuffer (FP4 183 MB, INT8 316 MB, FP16 617 MB). Models are now
+  stored as Blobs, which the browser keeps on disk outside that limit (verified in
+  Chromium with a 150 MB model: the ArrayBuffer write did not complete; the Blob write
+  and read-back worked). Existing cached models stay readable. If a model still cannot be
+  cached (disk full, private mode), the analysis continues and a message says it will be
+  downloaded again next time; only the explicit *Download* in the model manager reports
+  it as an error. The app also asks the browser to keep its storage (persistent storage)
+  so cached models are less likely to be evicted. Listing cached models no longer loads
+  every model into memory.
 - **Phones: the photo viewer had zero height and touch scrolling was blocked.** The
   phone layout rule was overridden by a later desktop rule, and the side panels'
   `overscroll-behavior: contain` stopped swipes from scrolling the page. The viewer now

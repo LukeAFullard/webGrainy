@@ -265,7 +265,7 @@ describe('Tier 5: Adversarial Hardening — ImageGrains 2.0 Web', () => {
         chunkSize: 64,
       });
 
-      await expect(downloadModel('ig2_unet_fp32')).rejects.toThrow(/QuotaExceededError/);
+      await expect(downloadModel('ig2_unet_fp32', { requireCache: true })).rejects.toThrow(/QuotaExceededError/);
       globalThis.indexedDB = origIdb;
     });
 

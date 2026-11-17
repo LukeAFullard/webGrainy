@@ -134,7 +134,12 @@ interface CachedModelRecord {
   sha256?: string;
   /** Hugging Face revision the record was downloaded from. */
   revision?: string;
-  data: ArrayBuffer;
+  /**
+   * The weights. Stored as a Blob (out-of-line on disk): Chromium rejects single
+   * IndexedDB values over ~127 MB ("The serialized keys and/or value are too large"),
+   * which the 183–617 MB Cellpose-SAM files exceed. Older records hold an ArrayBuffer.
+   */
+  data: ArrayBuffer | Blob;
 }
 
 function getIndexedDB(): IDBFactory {
@@ -482,11 +487,60 @@ export async function downloadModel(
     ...(verifiedSha256 !== undefined
       ? { sha256: verifiedSha256, revision: MODEL_REVISION }
       : {}),
-    data: modelBuffer,
+    data: typeof Blob === 'function' ? new Blob([modelBuffer], { type: 'application/octet-stream' }) : modelBuffer,
   };
 
-  await writeCachedRecord(record);
+  // Caching is an optimisation: if the browser refuses to store the model (quota, private
+  // mode, size limits), analysis still goes ahead; the model is just downloaded again next time.
+  try {
+    await writeCachedRecord(record);
+    void requestPersistentStorage();
+  } catch (err) {
+    if (options.requireCache === true) throw err;
+    lastCacheWriteError = err instanceof Error ? err.message : String(err);
+    console.warn(`[webGrainy] Could not cache model "${modelId}" for offline use: ${lastCacheWriteError}`);
+  }
   return modelBuffer;
+}
+
+let lastCacheWriteError: string | null = null;
+let persistRequested = false;
+
+/**
+ * Asks the browser to keep this site's storage (models) instead of evicting it under
+ * storage pressure. Best-effort and asked once per page: Chromium decides silently from
+ * site engagement; Firefox may ask the user.
+ */
+async function requestPersistentStorage(): Promise<void> {
+  if (persistRequested) return;
+  persistRequested = true;
+  const storage = (globalThis as { navigator?: { storage?: { persisted?: () => Promise<boolean>; persist?: () => Promise<boolean> } } })
+    .navigator?.storage;
+  try {
+    if (storage?.persisted && (await storage.persisted())) return;
+    await storage?.persist?.();
+  } catch {
+    /* not supported */
+  }
+}
+
+/** The most recent failure to store a model in IndexedDB, if any (for UI messages). */
+export function getLastCacheWriteError(): string | null {
+  return lastCacheWriteError;
+}
+
+function recordDataSize(record: CachedModelRecord): number {
+  const d = record.data as unknown;
+  if (d instanceof ArrayBuffer) return d.byteLength;
+  if (typeof Blob === 'function' && d instanceof Blob) return d.size;
+  return -1;
+}
+
+async function recordDataBuffer(record: CachedModelRecord): Promise<ArrayBuffer | null> {
+  const d = record.data as unknown;
+  if (d instanceof ArrayBuffer) return d;
+  if (typeof Blob === 'function' && d instanceof Blob) return d.arrayBuffer();
+  return null;
 }
 
 function isCachedRecordValid(modelId: ModelId, record: CachedModelRecord): boolean {
@@ -498,7 +552,7 @@ function isCachedRecordValid(modelId: ModelId, record: CachedModelRecord): boole
   // are treated as stale and transparently re-downloaded.
   return (
     record.sha256 === expected.sha256 &&
-    record.data.byteLength === expected.sizeBytes
+    recordDataSize(record) === expected.sizeBytes
   );
 }
 
@@ -517,13 +571,9 @@ export async function getModel(
 
   if (!options.forceRefresh) {
     const cached = await readCachedRecord(modelId);
-    if (
-      cached &&
-      cached.data instanceof ArrayBuffer &&
-      cached.data.byteLength > 0 &&
-      isCachedRecordValid(modelId, cached)
-    ) {
-      return cached.data;
+    if (cached && recordDataSize(cached) > 0 && isCachedRecordValid(modelId, cached)) {
+      const buf = await recordDataBuffer(cached);
+      if (buf !== null && buf.byteLength > 0) return buf;
     }
   }
 
