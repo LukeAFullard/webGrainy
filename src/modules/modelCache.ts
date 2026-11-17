@@ -1,3 +1,4 @@
+import { createAbortError } from './abort.js';
 import type {
   CachedModelInfo,
   DownloadProgress,
@@ -149,18 +150,6 @@ function getIndexedDB(): IDBFactory {
   return globalThis.indexedDB;
 }
 
-function createAbortError(reason?: unknown): Error {
-  if (reason instanceof Error) {
-    return reason;
-  }
-  const err = new Error(
-    typeof reason === 'string' && reason.length > 0
-      ? reason
-      : 'The operation was aborted.',
-  );
-  err.name = 'AbortError';
-  return err;
-}
 
 function isQuotaExceededError(err: unknown): boolean {
   if (!err || typeof err !== 'object') {

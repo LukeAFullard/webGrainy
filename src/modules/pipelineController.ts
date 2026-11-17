@@ -57,13 +57,16 @@ import {
   computeWentworthHistogram,
   type GrainHullCache,
 } from './morphometricsExt.js';
-import { computeSedimentStats } from './sedimentStats.js';
+import { createAnalysisAbortError } from './abort.js';
+import { buildContourGeoJson, buildContourSvg, encodeMaskPng } from './exportFormats.js';
+import { computeSedimentStats, filterBorderGrains, summaryCsvRows } from './sedimentStats.js';
 import { extraStatsCsvRows } from './grainStatsExtra.js';
 import {
   type AnalysisProvenance,
   baseExportMetadata,
   buildAnalysisProvenance,
   metadataCommentLines,
+  csvCell,
   metadataSummaryRows,
 } from './provenance.js';
 import {
@@ -93,288 +96,10 @@ export interface ImageGrainsEngineOptions {
 const DEFAULT_PERCENTILES = [5, 10, 16, 25, 50, 75, 84, 90, 95] as const;
 
 
-const CRC32_TABLE = (() => {
-  const table = new Uint32Array(256);
-  for (let i = 0; i < 256; i++) {
-    let c = i;
-    for (let k = 0; k < 8; k++) {
-      c = (c & 1) !== 0 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
-    }
-    table[i] = c >>> 0;
-  }
-  return table;
-})();
-
-function crc32(data: Uint8Array): number {
-  let crc = 0xffffffff;
-  for (let i = 0; i < data.length; i++) {
-    const byte = data[i] ?? 0;
-    crc = (CRC32_TABLE[(crc ^ byte) & 0xff] ?? 0) ^ (crc >>> 8);
-  }
-  return (crc ^ 0xffffffff) >>> 0;
-}
-
-function adler32(data: Uint8Array): number {
-  let a = 1;
-  let b = 0;
-  const MOD_ADLER = 65521;
-  for (let i = 0; i < data.length; i++) {
-    a = (a + (data[i] ?? 0)) % MOD_ADLER;
-    b = (b + a) % MOD_ADLER;
-  }
-  return ((b << 16) | a) >>> 0;
-}
-
-function writeUint32BE(buf: Uint8Array, offset: number, val: number): void {
-  buf[offset] = (val >>> 24) & 0xff;
-  buf[offset + 1] = (val >>> 16) & 0xff;
-  buf[offset + 2] = (val >>> 8) & 0xff;
-  buf[offset + 3] = val & 0xff;
-}
-
-function makePngChunk(type: string, data: Uint8Array): Uint8Array {
-  const chunk = new Uint8Array(12 + data.length);
-  writeUint32BE(chunk, 0, data.length);
-  chunk[4] = type.charCodeAt(0);
-  chunk[5] = type.charCodeAt(1);
-  chunk[6] = type.charCodeAt(2);
-  chunk[7] = type.charCodeAt(3);
-  chunk.set(data, 8);
-  const crc = crc32(chunk.subarray(4, 8 + data.length));
-  writeUint32BE(chunk, 8 + data.length, crc);
-  return chunk;
-}
-
-function deflateStoredZlib(raw: Uint8Array): Uint8Array {
-  const maxBlock = 65535;
-  const numBlocks = Math.max(1, Math.ceil(raw.length / maxBlock));
-  const totalLen = 2 + numBlocks * 5 + raw.length + 4;
-  const out = new Uint8Array(totalLen);
-
-  out[0] = 0x78;
-  out[1] = 0x01;
-
-  let outPos = 2;
-  let inPos = 0;
-
-  for (let b = 0; b < numBlocks; b++) {
-    const remaining = raw.length - inPos;
-    const blockLen = Math.min(maxBlock, remaining);
-    const isFinal = b === numBlocks - 1 ? 1 : 0;
-    const nlen = ~blockLen & 0xffff;
-
-    out[outPos++] = isFinal;
-    out[outPos++] = blockLen & 0xff;
-    out[outPos++] = (blockLen >>> 8) & 0xff;
-    out[outPos++] = nlen & 0xff;
-    out[outPos++] = (nlen >>> 8) & 0xff;
-
-    if (blockLen > 0) {
-      out.set(raw.subarray(inPos, inPos + blockLen), outPos);
-      outPos += blockLen;
-      inPos += blockLen;
-    }
-  }
-
-  const adler = adler32(raw);
-  writeUint32BE(out, outPos, adler);
-  return out;
-}
-
-type ContourRing = Array<[number, number]>;
-
-function traceGrainContours(
-  masks: Int32Array,
-  width: number,
-  height: number,
-  grainId: number,
-  bbox: [number, number, number, number],
-  scaleInv: number,
-): { outers: ContourRing[]; holes: ContourRing[] } {
-  const minX = Math.max(0, Math.floor(bbox[0]));
-  const minY = Math.max(0, Math.floor(bbox[1]));
-  const maxX = Math.min(width - 1, Math.ceil(bbox[2]));
-  const maxY = Math.min(height - 1, Math.ceil(bbox[3]));
-
-  const isInside = (x: number, y: number): number => {
-    if (x < 0 || x >= width || y < 0 || y >= height) return 0;
-    return masks[y * width + x] === grainId ? 1 : 0;
-  };
-
-  const strideX = (width + 2) * 2;
-  const toKey = (x2: number, y2: number): number => (y2 + 2) * strideX + (x2 + 2);
-
-  const adj = new Map<number, number[]>();
-  const addSegment = (
-    ax2: number,
-    ay2: number,
-    bx2: number,
-    by2: number,
-  ): void => {
-    const kA = toKey(ax2, ay2);
-    const kB = toKey(bx2, by2);
-    let list = adj.get(kA);
-    if (list === undefined) {
-      list = [kB];
-      adj.set(kA, list);
-    } else {
-      list.push(kB);
-    }
-  };
-
-  for (let cy = minY - 1; cy <= maxY; cy++) {
-    for (let cx = minX - 1; cx <= maxX; cx++) {
-      const tl = isInside(cx, cy);
-      const tr = isInside(cx + 1, cy);
-      const br = isInside(cx + 1, cy + 1);
-      const bl = isInside(cx, cy + 1);
-      const code = (tl << 3) | (tr << 2) | (br << 1) | bl;
-      if (code === 0 || code === 15) continue;
-
-      const tx = 2 * cx + 2;
-      const ty = 2 * cy + 1;
-      const rx = 2 * cx + 3;
-      const ry = 2 * cy + 2;
-      const bx = 2 * cx + 2;
-      const by = 2 * cy + 3;
-      const lx = 2 * cx + 1;
-      const ly = 2 * cy + 2;
-
-      switch (code) {
-        case 1:
-          addSegment(bx, by, lx, ly);
-          break;
-        case 2:
-          addSegment(rx, ry, bx, by);
-          break;
-        case 3:
-          addSegment(rx, ry, lx, ly);
-          break;
-        case 4:
-          addSegment(tx, ty, rx, ry);
-          break;
-        case 5:
-          addSegment(tx, ty, rx, ry);
-          addSegment(bx, by, lx, ly);
-          break;
-        case 6:
-          addSegment(tx, ty, bx, by);
-          break;
-        case 7:
-          addSegment(tx, ty, lx, ly);
-          break;
-        case 8:
-          addSegment(lx, ly, tx, ty);
-          break;
-        case 9:
-          addSegment(bx, by, tx, ty);
-          break;
-        case 10:
-          addSegment(lx, ly, tx, ty);
-          addSegment(rx, ry, bx, by);
-          break;
-        case 11:
-          addSegment(rx, ry, tx, ty);
-          break;
-        case 12:
-          addSegment(lx, ly, rx, ry);
-          break;
-        case 13:
-          addSegment(bx, by, rx, ry);
-          break;
-        case 14:
-          addSegment(lx, ly, bx, by);
-          break;
-      }
-    }
-  }
-
-  const decodePoint = (key: number): [number, number] => {
-    const y2 = Math.floor(key / strideX) - 2;
-    const x2 = (key % strideX) - 2;
-    return [x2 * 0.5 * scaleInv, y2 * 0.5 * scaleInv];
-  };
-
-  const outersWithArea: Array<{ ring: ContourRing; absArea2: number }> = [];
-  const holes: ContourRing[] = [];
-
-  for (const [startKey, startNeighbors] of adj.entries()) {
-    while (startNeighbors.length > 0) {
-      const ring: ContourRing = [decodePoint(startKey)];
-      const firstNext = startNeighbors.pop();
-      if (firstNext === undefined) break;
-
-      let curr = firstNext;
-      while (curr !== startKey) {
-        ring.push(decodePoint(curr));
-        const neighbors = adj.get(curr);
-        if (neighbors === undefined || neighbors.length === 0) {
-          break;
-        }
-        const next = neighbors.pop();
-        if (next === undefined) break;
-        curr = next;
-      }
-
-      const firstPt = ring[0];
-      if (firstPt !== undefined) {
-        ring.push([firstPt[0], firstPt[1]]);
-      }
-
-      if (ring.length < 4) continue;
-
-      let signedArea2 = 0;
-      for (let i = 0; i < ring.length - 1; i++) {
-        const p0 = ring[i];
-        const p1 = ring[i + 1];
-        if (p0 === undefined || p1 === undefined) continue;
-        signedArea2 += p0[0] * p1[1] - p1[0] * p0[1];
-      }
-
-      if (signedArea2 <= 0) {
-        outersWithArea.push({ ring, absArea2: Math.abs(signedArea2) });
-      } else {
-        holes.push(ring);
-      }
-    }
-  }
-
-  outersWithArea.sort((a, b) => b.absArea2 - a.absArea2);
-  const outers = outersWithArea.map((entry) => entry.ring);
-  return { outers, holes };
-}
-
-function pointInRing(pt: [number, number], ring: ContourRing): boolean {
-  const px = pt[0];
-  const py = pt[1];
-  let inside = false;
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const pi = ring[i];
-    const pj = ring[j];
-    if (pi === undefined || pj === undefined) continue;
-    const xi = pi[0];
-    const yi = pi[1];
-    const xj = pj[0];
-    const yj = pj[1];
-    const intersects =
-      yi > py !== yj > py && px < ((xj - xi) * (py - yi)) / (yj - yi) + xi;
-    if (intersects) inside = !inside;
-  }
-  return inside;
-}
-
-function createAbortError(message = 'Analysis aborted'): Error {
-  if (typeof DOMException !== 'undefined') {
-    return new DOMException(message, 'AbortError');
-  }
-  const err = new Error(message);
-  err.name = 'AbortError';
-  return err;
-}
 
 function throwIfAborted(signal?: AbortSignal): void {
   if (signal?.aborted) {
-    throw createAbortError();
+    throw createAnalysisAbortError();
   }
 }
 
@@ -1187,70 +912,17 @@ export class AnalysisSession {
   }
 
   exportSummaryCsv(sizeMetric: SizeMetric = 'bAxis'): string {
-    const report = this.getStats(sizeMetric);
-    const lines: string[] = ['section,metric,value,unit'];
-    lines.push(...metadataSummaryRows(this.getExportMetadata()));
-
-    lines.push(`summary,total_grains,${report.totalGrains},count`);
-    lines.push(`summary,included_grains,${report.includedGrains},count`);
-    lines.push(
-      `summary,excluded_border_grains,${report.excludedBorderGrains},count`,
-    );
-    lines.push(`summary,unit,${report.unit},unit`);
-
-    const distributions: Array<[string, typeof report.areaWeightedB]> = [
-      ['area_weighted_b', report.areaWeightedB],
-      ['number_weighted_b', report.numberWeightedB],
-      ['area_weighted_d_eq', report.areaWeightedDEq],
-      ['number_weighted_d_eq', report.numberWeightedDEq],
-      ...(report.areaWeightedMinFeret
-        ? ([['area_weighted_min_feret', report.areaWeightedMinFeret]] as Array<
-            [string, typeof report.areaWeightedB]
-          >)
-        : []),
-      ...(report.numberWeightedMinFeret
-        ? ([['number_weighted_min_feret', report.numberWeightedMinFeret]] as Array<
-            [string, typeof report.areaWeightedB]
-          >)
-        : []),
-    ];
-
-    for (const [section, psd] of distributions) {
-      for (const p of DEFAULT_PERCENTILES) {
-        const key = `D${p}` as keyof typeof psd;
-        lines.push(`${section},${key},${psd[key]},${report.unit}`);
-      }
-    }
-
-    if (report.folkWard !== null) {
-      const fw = report.folkWard;
-      lines.push(`folk_ward,mean_phi,${fw.meanPhi},phi`);
-      lines.push(`folk_ward,sorting_phi,${fw.sortingPhi},phi`);
-      lines.push(`folk_ward,skewness_phi,${fw.skewnessPhi},phi`);
-      lines.push(`folk_ward,kurtosis_phi,${fw.kurtosisPhi},phi`);
-      lines.push(`folk_ward,mean_mm,${fw.meanMm},mm`);
-      lines.push(`folk_ward,sorting_label,"${fw.sortingLabel}",label`);
-      lines.push(`folk_ward,skewness_label,"${fw.skewnessLabel}",label`);
-      lines.push(`folk_ward,kurtosis_label,"${fw.kurtosisLabel}",label`);
-    }
-
-    if (report.wentworth !== null) {
-      const w = report.wentworth;
-      lines.push(`wentworth,sand_pct,${w.sandPct},%`);
-      lines.push(`wentworth,gravel_pct,${w.gravelPct},%`);
-      lines.push(`wentworth,cobble_pct,${w.cobblePct},%`);
-      lines.push(`wentworth,boulder_pct,${w.boulderPct},%`);
-    }
-    if (report.extra) lines.push(...extraStatsCsvRows(report.extra, report.unit));
-    lines.push(...this.summaryExtrasCsv(sizeMetric));
-
-    return lines.join('\n');
+    return [
+      'section,metric,value,unit',
+      ...metadataSummaryRows(this.getExportMetadata()),
+      ...summaryCsvRows(this.getStats(sizeMetric)),
+      ...this.summaryExtrasCsv(sizeMetric),
+    ].join('\n');
   }
 
   /** Grains that count in the statistics: inside the ROI and (if set) not touching the border. */
   private statsGrainsForSummaries(): GrainMorphometrics[] {
-    const g = this.getStatsGrains();
-    return this.excludeBorder ? g.filter((x) => !x.touchesBorder) : g;
+    return filterBorderGrains(this.getStatsGrains(), this.excludeBorder);
   }
 
   /**
@@ -1260,7 +932,6 @@ export class AnalysisSession {
   private summaryExtrasCsv(sizeMetric: SizeMetric): string[] {
     const out: string[] = [];
     const grains = this.statsGrainsForSummaries();
-    const q = (t: string): string => `"${t.replace(/"/g, '""')}"`;
     if (this.calibration === undefined) {
       out.push('size_class,note,"Not available: size classes need a calibrated photo (mm)",text');
     }
@@ -1268,8 +939,8 @@ export class AnalysisSession {
       const bins = this.calibration === undefined ? [] : computeWentworthHistogram(grains, { stepPhi: step, weighted: true, sizeMetric });
       const sec = step === 1 ? 'size_class_1phi' : 'size_class_05phi';
       for (const b of bins) {
-        out.push(`${sec},${q(`${b.label} [${b.mmMin}-${b.mmMax} mm]`)},${b.weightPct},% (area-weighted)`);
-        out.push(`${sec}_count,${q(`${b.label} [${b.mmMin}-${b.mmMax} mm]`)},${b.grainCount},count`);
+        out.push(`${sec},${csvCell(`${b.label} [${b.mmMin}-${b.mmMax} mm]`)},${b.weightPct},% (area-weighted)`);
+        out.push(`${sec}_count,${csvCell(`${b.label} [${b.mmMin}-${b.mmMax} mm]`)},${b.grainCount},count`);
       }
     }
     const f = computeFabricRoseStats(grains, { weighted: true, binCount: 12 });
@@ -1281,234 +952,40 @@ export class AnalysisSession {
     out.push(`fabric,rayleigh_p,${f.rayleighP ?? ''},p`);
     for (const b of f.bins) out.push(`fabric_bin,${b.startDeg}-${b.endDeg}deg,${b.proportionPct},%`);
     const warnings = this.getStats(sizeMetric).warnings ?? [];
-    warnings.forEach((w, i) => out.push(`warning,${i + 1},${q(w)},text`));
+    warnings.forEach((w, i) => out.push(`warning,${i + 1},${csvCell(w)},text`));
     return out;
   }
 
   exportMaskPng(bitDepth: 16 | 32 = 16): Uint8Array {
-    const width = this.workingImage.width;
-    const height = this.workingImage.height;
-    const masks = this.workingMasks;
-    if (width <= 0 || height <= 0 || masks.length !== width * height) {
-      throw new Error('Invalid mask dimensions for PNG export.');
-    }
-
-    const bytesPerPixel = bitDepth === 16 ? 2 : 4;
-    const rowBytes = 1 + width * bytesPerPixel;
-    const raw = new Uint8Array(rowBytes * height);
-
-    if (bitDepth === 16) {
-      for (let y = 0; y < height; y++) {
-        const rawRow = y * rowBytes;
-        raw[rawRow] = 0;
-        const maskRow = y * width;
-        for (let x = 0; x < width; x++) {
-          const id = masks[maskRow + x] ?? 0;
-          const clamped = id <= 0 ? 0 : id > 65535 ? 65535 : id;
-          const pos = rawRow + 1 + x * 2;
-          raw[pos] = (clamped >>> 8) & 0xff;
-          raw[pos + 1] = clamped & 0xff;
-        }
-      }
-    } else {
-      for (let y = 0; y < height; y++) {
-        const rawRow = y * rowBytes;
-        raw[rawRow] = 0;
-        const maskRow = y * width;
-        for (let x = 0; x < width; x++) {
-          const id = (masks[maskRow + x] ?? 0) >>> 0;
-          const pos = rawRow + 1 + x * 4;
-          raw[pos] = (id >>> 24) & 0xff;
-          raw[pos + 1] = (id >>> 16) & 0xff;
-          raw[pos + 2] = (id >>> 8) & 0xff;
-          raw[pos + 3] = id & 0xff;
-        }
-      }
-    }
-
-    const ihdrData = new Uint8Array(13);
-    writeUint32BE(ihdrData, 0, width);
-    writeUint32BE(ihdrData, 4, height);
-    ihdrData[8] = bitDepth === 16 ? 16 : 8;
-    ihdrData[9] = bitDepth === 16 ? 0 : 6;
-    ihdrData[10] = 0;
-    ihdrData[11] = 0;
-    ihdrData[12] = 0;
-
-    const signature = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
-    const ihdrChunk = makePngChunk('IHDR', ihdrData);
-    const idatChunk = makePngChunk('IDAT', deflateStoredZlib(raw));
-    const iendChunk = makePngChunk('IEND', new Uint8Array(0));
-
-    const pngBytes = new Uint8Array(
-      signature.length + ihdrChunk.length + idatChunk.length + iendChunk.length,
-    );
-    let offset = 0;
-    pngBytes.set(signature, offset);
-    offset += signature.length;
-    pngBytes.set(ihdrChunk, offset);
-    offset += ihdrChunk.length;
-    pngBytes.set(idatChunk, offset);
-    offset += idatChunk.length;
-    pngBytes.set(iendChunk, offset);
-
-    return pngBytes;
+    return encodeMaskPng(this.workingMasks, this.workingImage.width, this.workingImage.height, bitDepth);
   }
 
+  /** Outlines in original-image coordinates, with measurements and provenance. */
   exportGeoJson(): string {
-    const width = this.workingImage.width;
-    const height = this.workingImage.height;
-    const s = this.workingImage.effectiveScaleFactor;
-    const scaleInv = s !== 1 && s > 0 ? 1 / s : 1;
-
-    const grainById = new Map<number, GrainMorphometrics>();
-    for (const g of this.grains) {
-      grainById.set(g.id, g);
-    }
-
-    const features: Array<{
-      type: 'Feature';
-      geometry:
-        | { type: 'Polygon'; coordinates: ContourRing[] }
-        | { type: 'MultiPolygon'; coordinates: ContourRing[][] };
-      properties: Record<string, unknown>;
-    }> = [];
-
-    for (const wg of this.workingGrains) {
-      const g = grainById.get(wg.id) ?? wg;
-      const { outers, holes } = traceGrainContours(
-        this.workingMasks,
-        width,
-        height,
-        wg.id,
-        wg.bbox,
-        scaleInv,
-      );
-      if (outers.length === 0) continue;
-
-      let geometry:
-        | { type: 'Polygon'; coordinates: ContourRing[] }
-        | { type: 'MultiPolygon'; coordinates: ContourRing[][] };
-
-      if (outers.length === 1) {
-        geometry = {
-          type: 'Polygon' as const,
-          coordinates: [outers[0]!, ...holes],
-        };
-      } else {
-        const polygons: ContourRing[][] = outers.map((outer) => [outer]);
-        for (const hole of holes) {
-          const testPt = hole[0];
-          let targetIdx = 0;
-          if (testPt !== undefined) {
-            for (let i = outers.length - 1; i >= 0; i--) {
-              const outer = outers[i];
-              if (outer !== undefined && pointInRing(testPt, outer)) {
-                targetIdx = i;
-                break;
-              }
-            }
-          }
-          polygons[targetIdx]!.push(hole);
-        }
-        geometry = {
-          type: 'MultiPolygon' as const,
-          coordinates: polygons,
-        };
-      }
-
-      const properties: Record<string, unknown> = {
-        grainId: g.id,
-        areaPx: g.areaPx,
-        centroidX: g.centroidX,
-        centroidY: g.centroidY,
-        aAxisPx: g.aAxisPx,
-        bAxisPx: g.bAxisPx,
-        dEqPx: g.dEqPx,
-        orientationRad: g.orientationRad,
-        touchesBorder: g.touchesBorder,
-      };
-
-      if (g.areaMm2 !== undefined) properties['areaMm2'] = g.areaMm2;
-      if (g.aAxisMm !== undefined) properties['aAxisMm'] = g.aAxisMm;
-      if (g.bAxisMm !== undefined) properties['bAxisMm'] = g.bAxisMm;
-      if (g.dEqMm !== undefined) properties['dEqMm'] = g.dEqMm;
-      if (g.minFeretPx !== undefined) properties['minFeretPx'] = g.minFeretPx;
-      if (g.maxFeretPx !== undefined) properties['maxFeretPx'] = g.maxFeretPx;
-      if (g.minFeretMm !== undefined) properties['minFeretMm'] = g.minFeretMm;
-      if (g.maxFeretMm !== undefined) properties['maxFeretMm'] = g.maxFeretMm;
-
-      features.push({
-        type: 'Feature',
-        geometry,
-        properties,
-      });
-    }
-
-    return JSON.stringify({
-      type: 'FeatureCollection',
-      // RFC 7946 §6.1 foreign member: provenance & coordinate system.
-      metadata: this.getExportMetadata(),
-      features,
-    });
+    const grainById = new Map(this.grains.map((g) => [g.id, g]));
+    return JSON.stringify(
+      buildContourGeoJson(this.workingMasks, this.workingGrains, this.workingImage.width, this.workingImage.height, {
+        scaleInv: this.outputScaleInv(),
+        propertiesFor: (wg) => grainById.get(wg.id) ?? wg,
+        // RFC 7946 §6.1 foreign member: provenance & coordinate system.
+        metadata: this.getExportMetadata(),
+      }),
+    );
   }
 
   exportSvg(): string {
-    const width = this.workingImage.width;
-    const height = this.workingImage.height;
-    const origWidth = this.workingImage.originalWidth;
-    const origHeight = this.workingImage.originalHeight;
+    return buildContourSvg(this.workingMasks, this.workingGrains, this.workingImage.width, this.workingImage.height, {
+      scaleInv: this.outputScaleInv(),
+      outWidth: this.workingImage.originalWidth,
+      outHeight: this.workingImage.originalHeight,
+      metadata: this.getExportMetadata(),
+    });
+  }
+
+  /** Factor from working-image to original-image coordinates. */
+  private outputScaleInv(): number {
     const s = this.workingImage.effectiveScaleFactor;
-    const scaleInv = s !== 1 && s > 0 ? 1 / s : 1;
-
-    const paths: string[] = [];
-
-    for (const wg of this.workingGrains) {
-      const { outers, holes } = traceGrainContours(
-        this.workingMasks,
-        width,
-        height,
-        wg.id,
-        wg.bbox,
-        scaleInv,
-      );
-      if (outers.length === 0) continue;
-
-      const allRings = [...outers, ...holes];
-      const dParts: string[] = [];
-
-      for (const ring of allRings) {
-        if (ring.length < 3) continue;
-        const first = ring[0];
-        if (first === undefined) continue;
-        let d = `M ${first[0]} ${first[1]}`;
-        for (let i = 1; i < ring.length - 1; i++) {
-          const pt = ring[i];
-          if (pt !== undefined) {
-            d += ` L ${pt[0]} ${pt[1]}`;
-          }
-        }
-        d += ' Z';
-        dParts.push(d);
-      }
-
-      if (dParts.length > 0) {
-        paths.push(
-          `  <path data-grain-id="${wg.id}" fill="rgba(56, 189, 248, 0.25)" stroke="#0284c7" stroke-width="1" fill-rule="evenodd" d="${dParts.join(' ')}" />`,
-        );
-      }
-    }
-
-    const metaJson = JSON.stringify(this.getExportMetadata())
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;');
-    return [
-      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${origWidth} ${origHeight}" width="${origWidth}" height="${origHeight}">`,
-      `  <metadata id="webgrainy-provenance">${metaJson}</metadata>`,
-      ...paths,
-      '</svg>',
-    ].join('\n');
+    return s !== 1 && s > 0 ? 1 / s : 1;
   }
 
   /** Grains eligible for statistics: all grains, minus those excluded by the ROI config. */
@@ -2113,7 +1590,7 @@ export class ImageGrainsEngine {
       };
 
       const handleAbort = (): void => {
-        rejectRequest(createAbortError());
+        rejectRequest(createAnalysisAbortError());
       };
 
       const handleError = (ev: Event | ErrorEvent): void => {
@@ -2154,7 +1631,7 @@ export class ImageGrainsEngine {
       };
 
       if (signal?.aborted) {
-        reject(createAbortError());
+        reject(createAnalysisAbortError());
         return;
       }
 

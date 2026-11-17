@@ -1,3 +1,4 @@
+import { createAbortError } from './abort.js';
 import * as ort from 'onnxruntime-web';
 import {
   cpNormalizeRgbPerChannel,
@@ -356,18 +357,6 @@ export function makeBlendWindow(tileSize = 256): Float32Array {
   return out;
 }
 
-function createAbortError(reason?: unknown): Error {
-  if (reason instanceof Error) {
-    return reason;
-  }
-  const err = new Error(
-    typeof reason === 'string' && reason.length > 0
-      ? reason
-      : 'The operation was aborted.',
-  );
-  err.name = 'AbortError';
-  return err;
-}
 
 function decodeOutputTensorData(data: unknown): Float32Array {
   if (data instanceof Float32Array) {

@@ -2,13 +2,7 @@ import type { ModelId, SizeMetric, StorageQuotaInfo } from '../types/index.js';
 import type { AnalysisSession } from '../modules/pipelineController.js';
 import type { PhotoRecord, SiteRecord } from '../modules/projectStorage.js';
 import type { SiteAnalysisOptions, SiteAnalysisReport, SitePhotoInput } from '../modules/siteAnalysis.js';
-import {
-  buildSiteExportMetadata,
-  exportSiteGrainsCsv,
-  exportSiteSummaryCsv,
-  exportSiteSummaryJson,
-} from '../modules/siteAnalysis.js';
-import { exportSiteArchive } from '../modules/projectStorage.js';
+import { buildExport, isExportKind } from '../modules/exports.js';
 import { renderPrintablePsdSvg } from './charts.js';
 import type { AppState } from './state.js';
 
@@ -328,111 +322,17 @@ export async function handleExportAction(
   sizeMetric: SizeMetric = 'bAxis',
   siteOptions?: Partial<SiteAnalysisOptions>,
 ): Promise<void> {
-  const safeSite = (site?.name ?? 'site').replace(/[^a-zA-Z0-9_-]+/g, '_');
-  // Site name first, then the usual provenance metadata.
-  const siteMeta = (): Record<string, unknown> => ({
-    ...(site?.name ? { siteName: site.name } : {}),
-    ...buildSiteExportMetadata(siteInputs, siteReport!, siteOptions),
+  if (!isExportKind(kind)) return;
+  const file = await buildExport(kind, {
+    site,
+    photo,
+    session,
+    siteReport,
+    siteInputs,
+    psdXAxis,
+    sizeMetric,
+    ...(siteOptions !== undefined ? { siteOptions } : {}),
+    renderPsdSvg: renderPrintablePsdSvg,
   });
-  const safePhoto = (photo?.label ?? 'photo').replace(/[^a-zA-Z0-9_-]+/g, '_');
-
-  switch (kind) {
-    case 'site-summary-csv':
-      if (siteReport) {
-        triggerBlobDownload(
-          exportSiteSummaryCsv(siteReport, siteMeta()),
-          `${safeSite}_summary.csv`,
-        );
-      }
-      break;
-    case 'site-summary-json':
-      if (siteReport) {
-        triggerBlobDownload(
-          exportSiteSummaryJson(siteReport, siteMeta()),
-          `${safeSite}_summary.json`,
-        );
-      }
-      break;
-    case 'site-grains-csv':
-      if (siteReport) {
-        triggerBlobDownload(
-          exportSiteGrainsCsv(siteInputs, siteReport, {
-            metadata: siteMeta(),
-          }),
-          `${safeSite}_pooled_grains.csv`,
-        );
-      }
-      break;
-    case 'site-psd-svg':
-      if (siteReport) {
-        const rawSvg = renderPrintablePsdSvg(siteReport, site?.name ?? 'Site', psdXAxis);
-        const metaXml = JSON.stringify(siteMeta())
-          .replace(/&/g, '&amp;')
-          .replace(/</g, '&lt;')
-          .replace(/>/g, '&gt;');
-        const openEnd = rawSvg.indexOf('>') + 1;
-        const svg = `${rawSvg.slice(0, openEnd)}<metadata id="webgrainy-provenance">${metaXml}</metadata>${rawSvg.slice(openEnd)}`;
-        triggerBlobDownload(new Blob([svg], { type: 'image/svg+xml' }), `${safeSite}_psd.svg`);
-      }
-      break;
-    case 'site-archive':
-      if (site) {
-        const blob = await exportSiteArchive(site.siteId);
-        triggerBlobDownload(blob, `${safeSite}.webgrainy.json`);
-      }
-      break;
-    case 'photo-grains-csv':
-      if (session) {
-        triggerBlobDownload(
-          new Blob([session.exportCsv({ includeMetadata: true })], { type: 'text/csv' }),
-          `${safePhoto}_grains.csv`,
-        );
-      }
-      break;
-    case 'photo-summary-csv':
-      if (session) {
-        triggerBlobDownload(
-          new Blob([session.exportSummaryCsv(sizeMetric)], { type: 'text/csv' }),
-          `${safePhoto}_summary.csv`,
-        );
-      }
-      break;
-    case 'photo-summary-json':
-      if (session) {
-        triggerBlobDownload(
-          new Blob([session.exportSummaryJson(sizeMetric)], { type: 'application/json' }),
-          `${safePhoto}_summary.json`,
-        );
-      }
-      break;
-    case 'photo-mask-16':
-      if (session) {
-        const bytes = session.exportMaskPng(16);
-        triggerBlobDownload(new Blob([bytes.slice().buffer], { type: 'image/png' }), `${safePhoto}_mask16.png`);
-      }
-      break;
-    case 'photo-mask-32':
-      if (session) {
-        const bytes = session.exportMaskPng(32);
-        triggerBlobDownload(new Blob([bytes.slice().buffer], { type: 'image/png' }), `${safePhoto}_mask32.png`);
-      }
-      break;
-    case 'photo-geojson':
-      if (session) {
-        // Session exporter: original-image coordinates + provenance metadata.
-        triggerBlobDownload(
-          new Blob([session.exportGeoJson()], { type: 'application/geo+json' }),
-          `${safePhoto}_contours.geojson`,
-        );
-      }
-      break;
-    case 'photo-svg':
-      if (session) {
-        triggerBlobDownload(
-          new Blob([session.exportSvg()], { type: 'image/svg+xml' }),
-          `${safePhoto}_contours.svg`,
-        );
-      }
-      break;
-  }
+  if (file) triggerBlobDownload(file.blob, file.filename);
 }

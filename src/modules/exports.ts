@@ -1,0 +1,137 @@
+/**
+ * Every downloadable export in one place: which file, which contents and metadata, which
+ * file name. The UI only asks for an export by kind and saves the result.
+ */
+import type { SizeMetric } from '../types/index.js';
+import type { AnalysisSession } from './pipelineController.js';
+import { exportSiteArchive, type PhotoRecord, type SiteRecord } from './projectStorage.js';
+import {
+  buildSiteExportMetadata,
+  exportSiteGrainsCsv,
+  exportSiteSummaryCsv,
+  exportSiteSummaryJson,
+  type SiteAnalysisOptions,
+  type SiteAnalysisReport,
+  type SitePhotoInput,
+} from './siteAnalysis.js';
+
+export const EXPORT_KINDS = [
+  'site-summary-csv',
+  'site-summary-json',
+  'site-grains-csv',
+  'site-psd-svg',
+  'site-archive',
+  'photo-grains-csv',
+  'photo-summary-csv',
+  'photo-summary-json',
+  'photo-mask-16',
+  'photo-mask-32',
+  'photo-geojson',
+  'photo-svg',
+] as const;
+export type ExportKind = (typeof EXPORT_KINDS)[number];
+
+export function isExportKind(kind: string): kind is ExportKind {
+  return (EXPORT_KINDS as readonly string[]).includes(kind);
+}
+
+export interface ExportContext {
+  site: SiteRecord | null;
+  photo: PhotoRecord | null;
+  session: AnalysisSession | null;
+  siteReport: SiteAnalysisReport | null;
+  siteInputs: SitePhotoInput[];
+  psdXAxis: 'mm' | 'phi';
+  sizeMetric?: SizeMetric;
+  siteOptions?: Partial<SiteAnalysisOptions>;
+  /** Printable PSD figure renderer (an SVG string); supplied by the UI's chart code. */
+  renderPsdSvg?: (report: SiteAnalysisReport, title: string, xAxis: 'mm' | 'phi') => string;
+}
+
+export interface ExportFile {
+  blob: Blob;
+  filename: string;
+}
+
+const safeName = (name: string | undefined, fallback: string): string =>
+  (name ?? fallback).replace(/[^a-zA-Z0-9_-]+/g, '_');
+
+const escapeXml = (s: string): string => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+/** Builds the requested export, or null when its inputs are not available yet. */
+export async function buildExport(kind: ExportKind, ctx: ExportContext): Promise<ExportFile | null> {
+  const { site, photo, session, siteReport, siteInputs } = ctx;
+  const sizeMetric = ctx.sizeMetric ?? 'bAxis';
+  const siteFile = safeName(site?.name, 'site');
+  const photoFile = safeName(photo?.label, 'photo');
+  // Site name first, then the usual provenance metadata.
+  const siteMeta = (report: SiteAnalysisReport): Record<string, unknown> => ({
+    ...(site?.name ? { siteName: site.name } : {}),
+    ...buildSiteExportMetadata(siteInputs, report, ctx.siteOptions),
+  });
+
+  switch (kind) {
+    case 'site-summary-csv':
+      return siteReport
+        ? { blob: exportSiteSummaryCsv(siteReport, siteMeta(siteReport)), filename: `${siteFile}_summary.csv` }
+        : null;
+    case 'site-summary-json':
+      return siteReport
+        ? { blob: exportSiteSummaryJson(siteReport, siteMeta(siteReport)), filename: `${siteFile}_summary.json` }
+        : null;
+    case 'site-grains-csv':
+      return siteReport
+        ? {
+            blob: exportSiteGrainsCsv(siteInputs, siteReport, { metadata: siteMeta(siteReport) }),
+            filename: `${siteFile}_pooled_grains.csv`,
+          }
+        : null;
+    case 'site-psd-svg': {
+      if (!siteReport || !ctx.renderPsdSvg) return null;
+      const rawSvg = ctx.renderPsdSvg(siteReport, site?.name ?? 'Site', ctx.psdXAxis);
+      const openEnd = rawSvg.indexOf('>') + 1;
+      const meta = escapeXml(JSON.stringify(siteMeta(siteReport)));
+      const svg = `${rawSvg.slice(0, openEnd)}<metadata id="webgrainy-provenance">${meta}</metadata>${rawSvg.slice(openEnd)}`;
+      return { blob: new Blob([svg], { type: 'image/svg+xml' }), filename: `${siteFile}_psd.svg` };
+    }
+    case 'site-archive':
+      return site ? { blob: await exportSiteArchive(site.siteId), filename: `${siteFile}.webgrainy.json` } : null;
+    case 'photo-grains-csv':
+      return session
+        ? {
+            blob: new Blob([session.exportCsv({ includeMetadata: true })], { type: 'text/csv' }),
+            filename: `${photoFile}_grains.csv`,
+          }
+        : null;
+    case 'photo-summary-csv':
+      return session
+        ? { blob: new Blob([session.exportSummaryCsv(sizeMetric)], { type: 'text/csv' }), filename: `${photoFile}_summary.csv` }
+        : null;
+    case 'photo-summary-json':
+      return session
+        ? {
+            blob: new Blob([session.exportSummaryJson(sizeMetric)], { type: 'application/json' }),
+            filename: `${photoFile}_summary.json`,
+          }
+        : null;
+    case 'photo-mask-16':
+    case 'photo-mask-32': {
+      if (!session) return null;
+      const depth = kind === 'photo-mask-16' ? 16 : 32;
+      const bytes = session.exportMaskPng(depth);
+      return { blob: new Blob([bytes.slice().buffer], { type: 'image/png' }), filename: `${photoFile}_mask${depth}.png` };
+    }
+    case 'photo-geojson':
+      // Original-image coordinates + provenance metadata.
+      return session
+        ? {
+            blob: new Blob([session.exportGeoJson()], { type: 'application/geo+json' }),
+            filename: `${photoFile}_contours.geojson`,
+          }
+        : null;
+    case 'photo-svg':
+      return session
+        ? { blob: new Blob([session.exportSvg()], { type: 'image/svg+xml' }), filename: `${photoFile}_contours.svg` }
+        : null;
+  }
+}
