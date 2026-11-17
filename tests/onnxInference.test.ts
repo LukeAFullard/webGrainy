@@ -5,6 +5,7 @@ import {
   probeWebGpuCapabilities,
   assertPlausibleOutput,
   defaultWasmThreads,
+  wasmThreadsFor,
   NumericInstabilityError,
   hasWebGpuAdapter,
   WebGpuDeviceLostError,
@@ -212,13 +213,26 @@ describe('onnxInference', () => {
       setEnv(false, 8);
       expect(defaultWasmThreads()).toBeUndefined();
     });
-    it('uses all logical cores (capped at 8) when cross-origin isolated', () => {
+    it('uses one fewer than the logical cores (at least 1, at most 8) when cross-origin isolated', () => {
       setEnv(true, 4);
-      expect(defaultWasmThreads()).toBe(4);
+      expect(defaultWasmThreads()).toBe(3);
+      setEnv(true, 2);
+      expect(defaultWasmThreads()).toBe(1);
+      setEnv(true, 1);
+      expect(defaultWasmThreads()).toBe(1);
       setEnv(true, 32);
       expect(defaultWasmThreads()).toBe(8);
       setEnv(true, undefined);
       expect(defaultWasmThreads()).toBeUndefined();
+    });
+    it('honours a user thread count, clamped to the available cores', () => {
+      setEnv(true, 6);
+      expect(wasmThreadsFor(6)).toBe(6);
+      expect(wasmThreadsFor(12)).toBe(6);
+      expect(wasmThreadsFor(0)).toBe(1);
+      expect(wasmThreadsFor('auto')).toBe(5);
+      setEnv(false, 6);
+      expect(wasmThreadsFor(4)).toBeUndefined();
     });
   });
 

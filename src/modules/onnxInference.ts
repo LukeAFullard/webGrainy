@@ -4,11 +4,14 @@ import {
   cpPercentile1And99,
   cpResizeBilinear,
   runCellposeTiled,
+  type CellposeTilingOptions,
 } from './cellposeTiling.js';
 import type {
   CpsamInferenceOptions,
   ExecutionProvider,
   InferenceOutput,
+  RegionNeedTest,
+  TileSkipRecord,
 } from '../types/index.js';
 
 export interface SessionCreateOptions {
@@ -395,15 +398,35 @@ function decodeOutputTensorData(data: unknown): Float32Array {
  * headers, see DEPLOYMENT.md). Without isolation ORT runs single-threaded whatever is
  * set. When isolated, ORT's own default uses only about half the logical cores; measured
  * on a 4-core machine (audit/perf/), using all cores made U-Net inference ~1.8x faster
- * than the default and ~3x faster than single-threaded. Capped at 8: more threads than
- * physical cores was slower in the same benchmark.
+ * than the default and ~3x faster than single-threaded.
+ *
+ * Default: one fewer than the logical cores (at least 1), so one core stays free for the
+ * page, the post-processing worker and the rest of the device (phones, quad-cores).
+ * Capped at 8: more threads than physical cores was slower in the same benchmark, and
+ * `hardwareConcurrency` counts hyper-threads. Users can override (`wasmThreadsFor`).
  */
 export function defaultWasmThreads(): number | undefined {
-  const g = globalThis as { crossOriginIsolated?: boolean; navigator?: { hardwareConcurrency?: number } };
-  if (g.crossOriginIsolated !== true) return undefined;
-  const hc = g.navigator?.hardwareConcurrency;
-  if (typeof hc !== 'number' || !Number.isFinite(hc) || hc < 1) return undefined;
-  return Math.max(1, Math.min(8, Math.floor(hc)));
+  return wasmThreadsFor('auto');
+}
+
+/** Logical cores reported by the browser, or undefined. */
+export function logicalCores(): number | undefined {
+  const hc = (globalThis as { navigator?: { hardwareConcurrency?: number } }).navigator?.hardwareConcurrency;
+  return typeof hc === 'number' && Number.isFinite(hc) && hc >= 1 ? Math.floor(hc) : undefined;
+}
+
+/**
+ * WASM threads for a user preference: 'auto' (cores − 1, max 8) or an explicit count
+ * (clamped to 1..cores). Undefined when the page is not cross-origin isolated (ORT is
+ * single-threaded then, whatever is set) or the core count is unknown.
+ */
+export function wasmThreadsFor(pref: 'auto' | number): number | undefined {
+  if ((globalThis as { crossOriginIsolated?: boolean }).crossOriginIsolated !== true) return undefined;
+  const hc = logicalCores();
+  if (hc === undefined) return undefined;
+  if (pref === 'auto') return Math.max(1, Math.min(8, hc - 1));
+  if (!Number.isFinite(pref)) return undefined;
+  return Math.max(1, Math.min(hc, Math.floor(pref)));
 }
 
 /**
@@ -777,6 +800,44 @@ export async function runCpsamTiledInference(
 // ---------------------------------------------------------------------------
 
 /** Settings for the upstream-exact U-Net pipeline (Cellpose 3.1, IG2 U-Net). */
+/**
+ * Tiler options that skip tiles outside `needRegion` (working-image px). `sx`/`sy` map
+ * the tiler's image coordinates to working-image px (U-Net runs on a resized image).
+ * Reports the analysed area through `onRecord` only when at least one tile was skipped.
+ */
+function tileSkipOptions(
+  options: { needRegion?: RegionNeedTest; needRegionMarginPx?: number } | undefined,
+  sx: number,
+  sy: number,
+  width: number,
+  height: number,
+  onRecord: (t: TileSkipRecord) => void,
+): Pick<CellposeTilingOptions, 'needTile' | 'onPlan'> {
+  const need = options?.needRegion;
+  if (!need) return {};
+  const toWorking = (y0: number, x0: number, y1: number, x1: number): [number, number, number, number] => [
+    Math.max(0, Math.floor(x0 * sx)),
+    Math.max(0, Math.floor(y0 * sy)),
+    Math.min(width, Math.ceil(x1 * sx)),
+    Math.min(height, Math.ceil(y1 * sy)),
+  ];
+  return {
+    needTile: (y0, x0, y1, x1) => {
+      const [a, b, c, d] = toWorking(y0, x0, y1, x1);
+      return need(a, b, c, d);
+    },
+    onPlan: ({ run, total }) => {
+      if (run.length === total) return;
+      onRecord({
+        tilesRun: run.length,
+        tilesTotal: total,
+        marginPx: options?.needRegionMarginPx ?? 0,
+        analysedRects: run.map(([y0, x0, y1, x1]) => toWorking(y0, x0, y1, x1)),
+      });
+    },
+  };
+}
+
 export interface UnetCellposeOptions {
   /** Model's training diameter (stored in the IG2 U-Net weights). */
   diamMean?: number;
@@ -786,6 +847,10 @@ export interface UnetCellposeOptions {
    * uses the training label diameter 29.26 instead).
    */
   diameter?: number;
+  /** Skip tiles where this returns false (working-image px); see roiTileSkip.ts. */
+  needRegion?: RegionNeedTest;
+  /** Margin recorded with the analysed area. */
+  needRegionMarginPx?: number;
   signal?: AbortSignal;
   onProgress?: (progress: { completedTiles: number; totalTiles: number; percent: number }) => void;
 }
@@ -820,6 +885,7 @@ export async function runUnetCellposeInference(
   const small = rescale === 1 ? gray : cpResizeBilinear(gray, 1, height, width, H2, W2);
   const input2 = new Float32Array(2 * H2 * W2); // channel 1 stays zero
   input2.set(small, 0);
+  let tiling: TileSkipRecord | undefined;
 
   const yf = await runCellposeTiled(
     input2,
@@ -840,6 +906,7 @@ export async function runUnetCellposeInference(
       bsize: 224,
       tileOverlap: 0.1,
       ...(options?.signal ? { signal: options.signal } : {}),
+      ...tileSkipOptions(options, width / W2, height / H2, width, height, (t) => (tiling = t)),
       onTile: (done, total) =>
         options?.onProgress?.({ completedTiles: done, totalTiles: total, percent: Math.round((done / total) * 100) }),
     },
@@ -851,6 +918,7 @@ export async function runUnetCellposeInference(
     cellprob: full.slice(2 * n, 3 * n),
     width,
     height,
+    ...(tiling !== undefined ? { tiling } : {}),
   };
 }
 
@@ -858,6 +926,10 @@ export async function runUnetCellposeInference(
 export interface CpsamCellposeOptions {
   /** Tile overlap fraction (the benchmark's PyTorch reference used 0.25). */
   tileOverlap?: number;
+  /** Skip tiles where this returns false (working-image px); see roiTileSkip.ts. */
+  needRegion?: RegionNeedTest;
+  /** Margin recorded with the analysed area. */
+  needRegionMarginPx?: number;
   signal?: AbortSignal;
   onProgress?: (progress: { completedTiles: number; totalTiles: number; percent: number }) => void;
 }
@@ -879,6 +951,7 @@ export async function runCpsamCellposeInference(
     throw new RangeError(`rgba length (${rgba.length}) does not match ${width}x${height}x4.`);
   }
   const chw = cpNormalizeRgbPerChannel(rgba, width, height);
+  let tiling: TileSkipRecord | undefined;
   const yf = await runCellposeTiled(
     chw,
     3,
@@ -898,6 +971,7 @@ export async function runCpsamCellposeInference(
       bsize: 256,
       tileOverlap: options?.tileOverlap ?? 0.25,
       ...(options?.signal ? { signal: options.signal } : {}),
+      ...tileSkipOptions(options, 1, 1, width, height, (t) => (tiling = t)),
       onTile: (done, total) =>
         options?.onProgress?.({ completedTiles: done, totalTiles: total, percent: Math.round((done / total) * 100) }),
     },
@@ -908,5 +982,6 @@ export async function runCpsamCellposeInference(
     cellprob: yf.slice(2 * n, 3 * n),
     width,
     height,
+    ...(tiling !== undefined ? { tiling } : {}),
   };
 }

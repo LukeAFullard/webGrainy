@@ -21,6 +21,13 @@ All notable changes to webGrainy are recorded here. The format follows
   lost device. The UI shows "GPU reset · CPU mode (reload for GPU)".
 
 ### Added
+- **Skip areas outside the ROI** (Advanced, default on). With an ROI or exclusions drawn
+  before analysis, inference tiles that are entirely farther than 128 px (working image)
+  from the valid bed area are not run. Predictions within that margin are identical to a
+  full analysis (tested; on a real photo all 433 grains inside a test ROI were
+  pixel-identical). The analysed area is recorded in provenance; if the ROI is later
+  enlarged or an exclusion removed, the dashboard asks for re-analysis.
+- **CPU threads setting** (Advanced; saved per browser, applied on reload).
 - **Quantized Cellpose-SAM weights:** INT8 (316 MB) and FP4 (183 MB), from the model
   repository (revision `98e76b13`, SHA-256 pinned). Same benchmark accuracy as FP16
   (`audit/quantization/`). New *CP-SAM weights* setting: *Auto* (default) uses FP16 on a
@@ -62,8 +69,10 @@ All notable changes to webGrainy are recorded here. The format follows
     - median D50 error: U-Net 15.5 → 9.1 %, Cellpose-SAM 8.6 → 3.3 %.
   - The previous pipeline stays available as "Legacy" (Advanced) and is recorded in
     provenance. See `audit/parity/README.md`.
-- **CPU inference uses all cores (capped at 8) when the page is cross-origin isolated**
-  (U-Net on a 1024×768 photo: 18.4 s → 6.7 s on 4 cores). See `DEPLOYMENT.md`.
+- **CPU inference uses multiple cores when the page is cross-origin isolated**
+  (U-Net on a 1024×768 photo: 18.4 s → 6.7 s on 4 cores). Default: one fewer than the
+  logical cores (at least 1, at most 8), so quad-core computers and phones keep a core free.
+  See `DEPLOYMENT.md`.
 
 ### Documentation
 - **Withdrew "outperforms upstream PyTorch".** The paired comparison is not significant

@@ -67,6 +67,8 @@ export interface UiAnalysisParams {
   minSeedDensity: number;
   /** Advanced: inference tiling pipeline. */
   inferencePipeline: 'cellpose' | 'legacy';
+  /** Skip inference tiles outside the photo's ROI / exclusions. */
+  skipTilesOutsideRoi: boolean;
 }
 
 export interface AppState {
@@ -236,6 +238,7 @@ export function toAnalysisConfig(
     claheClipLimit: params.claheClipLimit,
     excludeBorder: params.excludeBorder,
     inferencePipeline: params.inferencePipeline,
+    skipTilesOutsideRoi: params.skipTilesOutsideRoi,
     postProcess: {
       flowThreshold: params.flowThreshold,
       cellprobThreshold: params.cellprobThreshold,
@@ -267,5 +270,6 @@ export function defaultAnalysisParams(): UiAnalysisParams {
   niter: DEFAULT_POSTPROCESS_OPTIONS.niter,
   minSeedDensity: DEFAULT_POSTPROCESS_OPTIONS.minSeedDensity,
     inferencePipeline: 'cellpose',
+  skipTilesOutsideRoi: true,
 };
 }

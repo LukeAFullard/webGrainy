@@ -87,7 +87,22 @@ export interface InferenceOutput {
   cellprob: Float32Array;
   width: number;
   height: number;
+  /** Present when tiles were skipped (ROI): which areas the network actually saw. */
+  tiling?: TileSkipRecord;
 }
+
+/** Record of an analysis that skipped tiles outside the ROI (working-image px). */
+export interface TileSkipRecord {
+  tilesRun: number;
+  tilesTotal: number;
+  /** Margin around the valid area that was always analysed. */
+  marginPx: number;
+  /** Analysed tile rectangles [x0, y0, x1, y1], end-exclusive. */
+  analysedRects: Array<[number, number, number, number]>;
+}
+
+/** Region test in working-image px (end-exclusive): true = run inference there. */
+export type RegionNeedTest = (x0: number, y0: number, x1: number, y1: number) => boolean;
 
 export interface CpsamInferenceOptions {
   tileSize?: number;
@@ -243,6 +258,13 @@ export interface AnalysisConfig {
   model?: ModelKind | 'auto';
   /** Cellpose-SAM weight file (default 'auto'). Ignored for U-Net. */
   cpsamWeights?: CpsamWeights;
+  /**
+   * ROI / exclusions (original-image coordinates) used to skip inference tiles that lie
+   * entirely outside the valid bed area plus a safety margin (Cellpose pipeline only).
+   */
+  inferenceRoi?: import('../modules/roiAndRectify.js').RoiExclusionConfig;
+  /** Skip tiles outside the photo's ROI during batch analysis (default true). */
+  skipTilesOutsideRoi?: boolean;
   inferencePipeline?: InferencePipeline;
   scaleMode?: ScaleMode;
   applyClahe?: boolean;
@@ -278,6 +300,8 @@ export interface AnalysisProvenance {
   applyClahe?: boolean;
   claheClipLimit?: number;
   postProcess?: Record<string, number>;
+  /** Set when inference skipped tiles outside the ROI. */
+  tileSkipping?: TileSkipRecord;
 }
 
 export interface SerializedAnalysisSession {

@@ -560,6 +560,45 @@ describe('pipelineController (ImageGrainsEngine & AnalysisSession)', () => {
     Object.defineProperty(globalThis, 'navigator', { value: {}, configurable: true });
   });
 
+  it('skips tiles outside the ROI, records the analysed area, and flags a later larger ROI', async () => {
+    Object.defineProperty(globalThis, 'navigator', { value: {}, configurable: true });
+    let calls = 0;
+    const session = (): InferenceSessionLike => ({
+      async run(feeds: Record<string, unknown>) {
+        calls++;
+        const t = feeds['image'] as { dims: readonly number[] };
+        const n = (t.dims[2] ?? 0) * (t.dims[3] ?? 0);
+        return { flows_cellprob: { data: new Float32Array(3 * n).fill(-5), dims: [1, 3, t.dims[2] ?? 0, t.dims[3] ?? 0] } };
+      },
+    });
+    const engine = new ImageGrainsEngine({ sessionFactory: async () => session() });
+    await engine.initialize();
+    const img = makeRgbaImage(1000, 800, 'uniform');
+    const cfg = { model: 'cpsam' as const, scaleMode: '1.0x' as const };
+    const full = await engine.analyzeImage(img, cfg);
+    const fullCalls = calls;
+    expect(full.getProvenance()?.tileSkipping).toBeUndefined();
+    calls = 0;
+    const roi = {
+      roiPolygon: [{ x: 0, y: 0 }, { x: 200, y: 0 }, { x: 200, y: 200 }, { x: 0, y: 200 }],
+      exclusionPolygons: [],
+      exclusionStrokes: [],
+    };
+    const part = await engine.analyzeImage(img, { ...cfg, inferenceRoi: roi });
+    expect(calls).toBeLessThan(fullCalls);
+    const skip = part.getProvenance()?.tileSkipping;
+    expect(skip?.tilesRun).toBe(calls);
+    expect(skip?.tilesTotal).toBe(fullCalls);
+    part.setRoiConfig(roi);
+    expect(part.getUnanalysedRoiFraction()).toBe(0);
+    part.setRoiConfig(undefined); // whole photo now counted, but only the top-left was analysed
+    expect(part.getUnanalysedRoiFraction()).toBeGreaterThan(0.3);
+    // Survives serialisation (saved projects).
+    const AnalysisSessionCtor = part.constructor as unknown as { fromSerialized: (d: unknown) => typeof part };
+    expect(AnalysisSessionCtor.fromSerialized(part.toSerialized()).getProvenance()?.tileSkipping?.tilesRun).toBe(calls);
+    await engine.dispose();
+  });
+
   it('defaults to the upstream-exact Cellpose pipeline (tiles, channels, provenance)', async () => {
     Object.defineProperty(globalThis, 'navigator', { value: {}, configurable: true });
     const calls: Array<{ dims: number[]; type: string }> = [];
