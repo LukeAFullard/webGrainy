@@ -145,9 +145,21 @@ export function renderModelsModalHtml(
     },
     {
       id: 'ig2_cpsam_fp16',
-      title: 'Cellpose-SAM (High Accuracy) — ig2_cpsam_fp16.onnx',
-      sizeLabel: '588.8 MiB / 617.4 MB (Native FP16)',
-      desc: 'Recommended for desktop WebGPU (requires shader-f16) & complex cobble/shadowed scenes. 256×256 Hanning-tapered tiles.',
+      title: 'Cellpose-SAM FP16 — ig2_cpsam_fp16.onnx',
+      sizeLabel: '617 MB',
+      desc: 'Original weights. Used automatically on a graphics card with WebGPU float16 (shader-f16).',
+    },
+    {
+      id: 'ig2_cpsam_int8_wo_fp32scale',
+      title: 'Cellpose-SAM INT8 — ig2_cpsam_int8_wo_fp32scale.onnx',
+      sizeLabel: '316 MB',
+      desc: 'Same accuracy as FP16 in testing. Used automatically on the CPU: half the memory (about 2 GB) and faster loading.',
+    },
+    {
+      id: 'ig2_cpsam_fp4_e2m1_lut',
+      title: 'Cellpose-SAM FP4 — ig2_cpsam_fp4_e2m1_lut.onnx',
+      sizeLabel: '183 MB',
+      desc: 'Same accuracy as FP16 in testing. Smallest download; needs about 3.7 GB of memory while running.',
     },
   ];
 

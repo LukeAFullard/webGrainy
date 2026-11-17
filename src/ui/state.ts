@@ -5,6 +5,7 @@ import type {
   EngineCapabilities,
   ModelId,
   ModelKind,
+  CpsamWeights,
   Point2D,
   ScaleMode,
   SedimentStatsReport,
@@ -48,6 +49,8 @@ export interface OverlaySettings {
 
 export interface UiAnalysisParams {
   model: ModelKind | 'auto';
+  /** Cellpose-SAM weight file: auto / fp16 / int8 / fp4. */
+  cpsamWeights: CpsamWeights;
   scaleMode: ScaleMode;
   applyClahe: boolean;
   claheClipLimit: number;
@@ -227,6 +230,7 @@ export function toAnalysisConfig(
 ): Omit<AnalysisConfig, 'signal' | 'onProgress' | 'calibration'> {
   return {
     model: params.model,
+    cpsamWeights: params.cpsamWeights,
     scaleMode: params.scaleMode,
     applyClahe: params.applyClahe,
     claheClipLimit: params.claheClipLimit,
@@ -248,6 +252,7 @@ export function toAnalysisConfig(
 export function defaultAnalysisParams(): UiAnalysisParams {
   return {
   model: 'auto',
+  cpsamWeights: 'auto',
   scaleMode: 'auto',
   applyClahe: false,
   claheClipLimit: 2.0,

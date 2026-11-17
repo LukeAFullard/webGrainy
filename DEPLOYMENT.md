@@ -63,7 +63,9 @@ cores (capped at 8). Measured in headless Chromium on a 4-core machine (`audit/p
 | Cellpose-SAM, one 256×256 tile (Node, same runtime) | 32.3 s | 16.8 s | **9.5 s** |
 
 A 1024×768 photo needs about 20 Cellpose-SAM tiles, so on CPU it takes roughly 11 minutes
-single-threaded and roughly 3 minutes isolated on 4 cores. Prefer U-Net when no FP16-capable GPU is
+single-threaded and roughly 3 minutes isolated on 4 cores (these are FP16 timings; the INT8
+weights, used automatically on the CPU since this release, use half the memory and are
+the same speed to about 2× faster, depending on the machine). Prefer U-Net when no FP16-capable GPU is
 available. To enable WASM threads, send:
 
 ```
@@ -103,7 +105,7 @@ location /webgrainy/ {
 ## Post-deployment checklist
 
 1. Open the site and check the DevTools console for errors, failed requests or CSP violations.
-2. Analyse a photo with U-Net. "Models (1/2)" should appear, and the photo should finish `done`.
+2. Analyse a photo with U-Net. "Models (1 cached)" should appear, and the photo should finish `done`.
 3. Go offline (DevTools → Network → Offline), reload, and analyse again. It must work
    without network access once the model and runtime are cached.
 4. Export a summary JSON and confirm that `metadata.analysis.modelSha256` matches the
@@ -114,7 +116,7 @@ steps 1–2 headlessly.
 
 ## Browser support (expected; not exhaustively tested)
 
-| Browser | U-Net (26 MB) | Cellpose-SAM (617 MB, FP16) | Notes |
+| Browser | U-Net (26 MB) | Cellpose-SAM (FP16 617 MB / INT8 316 MB / FP4 183 MB) | Notes |
 |---|---|---|---|
 | Chrome / Edge ≥ 121 desktop | WebGPU or WASM | WebGPU (needs `shader-f16` adapter) | Primary target |
 | Firefox desktop | WASM (WebGPU where enabled) | Not recommended | |

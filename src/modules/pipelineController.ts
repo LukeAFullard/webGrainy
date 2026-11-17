@@ -19,7 +19,7 @@ import type {
   WorkerResponse,
   WorkingImageResult,
 } from '../types/index.js';
-import { getCachedModels, getModel } from './modelCache.js';
+import { getCachedModels, getModel, modelKindOf, resolveModelId } from './modelCache.js';
 import {
   applyCLAHE,
   normalizeGray,
@@ -77,6 +77,7 @@ export interface InferenceSessionLike {
 export interface ImageGrainsEngineOptions {
   sessionFactory?: (
     modelKind: ModelKind,
+    modelId: ModelId,
   ) => Promise<ort.InferenceSession | InferenceSessionLike>;
   workerFactory?: () => Worker;
   useWorker?: boolean;
@@ -86,10 +87,6 @@ export interface ImageGrainsEngineOptions {
 
 const DEFAULT_PERCENTILES = [5, 10, 16, 25, 50, 75, 84, 90, 95] as const;
 
-const MODEL_ID_BY_KIND: Record<ModelKind, ModelId> = {
-  unet: 'ig2_unet_fp32',
-  cpsam: 'ig2_cpsam_fp16',
-};
 
 const CRC32_TABLE = (() => {
   const table = new Uint32Array(256);
@@ -1474,7 +1471,7 @@ export class ImageGrainsEngine {
   private readonly options: ImageGrainsEngineOptions;
   private capabilities: EngineCapabilities | null = null;
   private readonly sessionCache = new Map<
-    ModelKind,
+    ModelId,
     ort.InferenceSession | InferenceSessionLike
   >();
   private readonly ownedSessions = new Set<
@@ -1484,13 +1481,13 @@ export class ImageGrainsEngine {
   private requestSeq = 0;
   private disposed = false;
   private readonly pendingWorkerRejects = new Set<(err: Error) => void>();
-  private readonly sessionExecutionProviders = new Map<ModelKind, string>();
+  private readonly sessionExecutionProviders = new Map<ModelId, string>();
   /** Models forced onto WASM after the GPU produced numerically invalid output. */
-  private readonly wasmOnlyModels = new Set<ModelKind>();
+  private readonly wasmOnlyModels = new Set<ModelId>();
   /** Set after a WebGPU device loss; GPU inference stays off until the page reloads. */
   private webgpuDisabledReason: string | null = null;
   private readonly inFlightSessions = new Map<
-    ModelKind,
+    ModelId,
     Promise<ort.InferenceSession | InferenceSessionLike>
   >();
   private readonly progressListeners = new Set<
@@ -1587,6 +1584,14 @@ export class ImageGrainsEngine {
         ? config.model
         : recommendation.model;
 
+    // Weight file: Cellpose-SAM has FP16 / INT8 / FP4 variants (same accuracy).
+    const fp16GpuUsable =
+      this.capabilities?.hasWebGPU === true &&
+      this.capabilities?.hasShaderF16 === true &&
+      this.webgpuDisabledReason === null &&
+      !this.wasmOnlyModels.has('ig2_cpsam_fp16');
+    const modelId = resolveModelId(selectedModel, config?.cpsamWeights ?? 'auto', fp16GpuUsable);
+
     const workingImage = prepareWorkingImage(
       preImg.data,
       preImg.width,
@@ -1597,6 +1602,7 @@ export class ImageGrainsEngine {
 
     emit('inference', {
       model: selectedModel,
+      modelId,
       width: workingImage.width,
       height: workingImage.height,
       scaleFactor: workingImage.effectiveScaleFactor,
@@ -1652,12 +1658,12 @@ export class ImageGrainsEngine {
           signal,
           onProgress: onTileProgress,
           // One tile per run on CPU: a 16-tile ViT-L batch exhausts the 4 GB WASM heap.
-          ...(this.sessionExecutionProviders.get(selectedModel) === 'webgpu' ? {} : { batchSize: 1 }),
+          ...(this.sessionExecutionProviders.get(modelId) === 'webgpu' ? {} : { batchSize: 1 }),
         },
       );
     };
 
-    let session = await this.acquireSession(selectedModel, signal, emit);
+    let session = await this.acquireSession(modelId, signal, emit);
     throwIfAborted(signal);
 
     let inferenceOut: InferenceOutput;
@@ -1666,13 +1672,13 @@ export class ImageGrainsEngine {
     } catch (err) {
       if (
         err instanceof NumericInstabilityError &&
-        this.sessionExecutionProviders.get(selectedModel) === 'webgpu' &&
-        !this.wasmOnlyModels.has(selectedModel)
+        this.sessionExecutionProviders.get(modelId) === 'webgpu' &&
+        !this.wasmOnlyModels.has(modelId)
       ) {
         // Float16 GPU arithmetic produced invalid values: run this model on the CPU
         // (WASM) for the rest of the page and redo the image once.
-        this.wasmOnlyModels.add(selectedModel);
-        await this.evictSession(selectedModel);
+        this.wasmOnlyModels.add(modelId);
+        await this.evictSession(modelId);
         emit('warning', {
           code: 'webgpu-numeric-instability',
           model: selectedModel,
@@ -1682,7 +1688,7 @@ export class ImageGrainsEngine {
             'Please report your GPU and browser so this can be investigated.',
         });
         throwIfAborted(signal);
-        session = await this.acquireSession(selectedModel, signal, emit);
+        session = await this.acquireSession(modelId, signal, emit);
         throwIfAborted(signal);
         inferenceOut = await runInference(session);
       } else if (!isWebGpuDeviceLostError(err) || this.webgpuDisabledReason !== null) {
@@ -1699,7 +1705,7 @@ export class ImageGrainsEngine {
             'and analysis continues on the CPU (slower). Reload the page to use the GPU again.',
         });
         throwIfAborted(signal);
-        session = await this.acquireSession(selectedModel, signal, emit);
+        session = await this.acquireSession(modelId, signal, emit);
         throwIfAborted(signal);
         inferenceOut = await runInference(session);
       }
@@ -1732,9 +1738,9 @@ export class ImageGrainsEngine {
         config?.postProcess?.excludeBorderMargin ??
         DEFAULT_POSTPROCESS_OPTIONS.excludeBorderMargin,
       provenance: buildAnalysisProvenance({
-        modelId: MODEL_ID_BY_KIND[selectedModel],
-        ...(this.sessionExecutionProviders.has(selectedModel)
-          ? { executionProvider: this.sessionExecutionProviders.get(selectedModel)! }
+        modelId,
+        ...(this.sessionExecutionProviders.has(modelId)
+          ? { executionProvider: this.sessionExecutionProviders.get(modelId)! }
           : {}),
         inferencePipeline: pipeline,
         scaleMode: config?.scaleMode ?? 'auto',
@@ -1764,7 +1770,7 @@ export class ImageGrainsEngine {
    * the capability as unavailable so the model router stops choosing GPU models.
    */
   /** Drops a model's cached session (releasing it if the engine owns it). */
-  private async evictSession(kind: ModelKind): Promise<void> {
+  private async evictSession(kind: ModelId): Promise<void> {
     const sess = this.sessionCache.get(kind);
     this.sessionCache.delete(kind);
     this.sessionExecutionProviders.delete(kind);
@@ -1823,7 +1829,7 @@ export class ImageGrainsEngine {
   }
 
   private async acquireSession(
-    modelKind: ModelKind,
+    modelId: ModelId,
     signal?: AbortSignal,
     emit?: (stage: string, detail?: unknown) => void,
   ): Promise<ort.InferenceSession | InferenceSessionLike> {
@@ -1831,12 +1837,13 @@ export class ImageGrainsEngine {
       throw new Error('ImageGrainsEngine has been disposed.');
     }
 
-    const cached = this.sessionCache.get(modelKind);
+    const modelKind = modelKindOf(modelId);
+    const cached = this.sessionCache.get(modelId);
     if (cached !== undefined) {
       return cached;
     }
 
-    const existingInFlight = this.inFlightSessions.get(modelKind);
+    const existingInFlight = this.inFlightSessions.get(modelId);
     if (existingInFlight !== undefined) {
       const session = await existingInFlight;
       if (this.disposed) {
@@ -1851,9 +1858,8 @@ export class ImageGrainsEngine {
       let isOwned = false;
 
       if (this.options.sessionFactory !== undefined) {
-        session = await this.options.sessionFactory(modelKind);
+        session = await this.options.sessionFactory(modelKind, modelId);
       } else {
-        const modelId = MODEL_ID_BY_KIND[modelKind];
         const dlOpts: ModelDownloadOptions = {
           ...this.options.modelDownloadOptions,
           signal: signal ?? this.options.modelDownloadOptions?.signal,
@@ -1863,7 +1869,7 @@ export class ImageGrainsEngine {
 
         const created = await createInferenceSession(modelBytes, {
           ...this.options.sessionCreateOptions,
-          ...(this.webgpuDisabledReason !== null || this.wasmOnlyModels.has(modelKind)
+          ...(this.webgpuDisabledReason !== null || this.wasmOnlyModels.has(modelId)
             ? { forceWasm: true }
             : {}),
           requireShaderF16:
@@ -1871,16 +1877,17 @@ export class ImageGrainsEngine {
             modelKind === 'cpsam',
         });
         session = created.session;
-        this.sessionExecutionProviders.set(modelKind, created.executionProvider);
+        this.sessionExecutionProviders.set(modelId, created.executionProvider);
         isOwned = true;
 
         if (modelKind === 'cpsam' && created.executionProvider === 'wasm') {
           emit?.('warning', {
             code: 'cpsam-wasm-fallback',
             model: modelKind,
+            modelId,
             executionProvider: 'wasm',
             message:
-              'CP-SAM FP16 is running on CPU WASM because WebGPU shader-f16 was unavailable; expect significantly slower inference.',
+              `Cellpose-SAM (${modelId}) is running on the CPU (WASM) because WebGPU with shader-f16 is unavailable; expect slow inference (roughly 15 s per 256 px tile with INT8 weights).`,
           });
         }
       }
@@ -1895,15 +1902,15 @@ export class ImageGrainsEngine {
       if (isOwned) {
         this.ownedSessions.add(session);
       }
-      this.sessionCache.set(modelKind, session);
+      this.sessionCache.set(modelId, session);
       return session;
     })();
 
-    this.inFlightSessions.set(modelKind, createPromise);
+    this.inFlightSessions.set(modelId, createPromise);
     try {
       return await createPromise;
     } finally {
-      this.inFlightSessions.delete(modelKind);
+      this.inFlightSessions.delete(modelId);
     }
   }
 

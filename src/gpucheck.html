@@ -39,14 +39,16 @@
     </p>
     <p>
       Use <strong>Chrome or Edge</strong> on a laptop or desktop. The first run downloads the model
-      (Cellpose-SAM 617 MB, or U-Net 26 MB), which is cached for the app afterwards. The CPU part of the
+      (Cellpose-SAM 183–617 MB depending on the weights, or U-Net 26 MB), which is cached for the app afterwards. The CPU part of the
       Cellpose-SAM check can take several minutes.
     </p>
     <div class="row">
       <label>Model
         <select id="model" class="select" style="width:auto;">
-          <option value="cpsam" selected>Cellpose-SAM (the one to test)</option>
-          <option value="unet">U-Net (quick)</option>
+          <option value="cpsam" selected>Cellpose-SAM FP16 (617 MB)</option>
+          <option value="cpsam_int8">Cellpose-SAM INT8 (316 MB)</option>
+          <option value="cpsam_fp4">Cellpose-SAM FP4 (183 MB)</option>
+          <option value="unet">U-Net (26 MB, quick)</option>
         </select>
       </label>
       <button id="run" class="btn btn-primary" type="button">Run GPU check</button>

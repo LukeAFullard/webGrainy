@@ -1,3 +1,4 @@
+import { orientationFromMoments } from './orientationGeometry.js';
 import type {
   CalibrationResult,
   GrainMorphometrics,
@@ -71,7 +72,8 @@ function finalizeMorphometrics(
   const aAxisPx = 4 * Math.sqrt(l1);
   const bAxisPx = 4 * Math.sqrt(l2);
   const dEqPx = Math.sqrt((4 * area) / Math.PI);
-  const orientationRad = 0.5 * Math.atan2(2 * mu11, mu20 - mu02);
+  // skimage convention (angle from the vertical row axis), as in postprocessCore.
+  const orientationRad = orientationFromMoments(mu20, mu02, mu11);
 
   const grain: GrainMorphometrics = {
     id,

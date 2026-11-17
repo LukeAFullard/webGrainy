@@ -13,14 +13,14 @@ All image preprocessing, neural inference (`onnxruntime-web` via WebGPU or SIMD 
 ## Features
 
 - **Zero Server-Side Processing & Zero External CDNs:** All ONNX Runtime WASM/WebGPU binaries and TypeScript modules are bundled locally (`dist/ort/`).
-- **Pinned, Integrity-Verified Model Caching (`modelCache.ts`):** Streams `.onnx` weights from a **pinned Hugging Face commit** (`inYourOwnBrowser/imagegrains-2.0-onnx@7773328a`), verifies each file's **size and SHA-256** with WebCrypto before use, and persists the verified buffer in **IndexedDB** (`imagegrains-onnx-cache-v1`). Cache entries with a missing or mismatched hash are re-downloaded. This network request (to `huggingface.co` and its `*.hf.co` CDN) is the app's only one.
+- **Pinned, Integrity-Verified Model Caching (`modelCache.ts`):** Streams `.onnx` weights from a **pinned Hugging Face commit** (`inYourOwnBrowser/imagegrains-2.0-onnx@98e76b13`), verifies each file's **size and SHA-256** with WebCrypto before use, and persists the verified buffer in **IndexedDB** (`imagegrains-onnx-cache-v1`). Cache entries with a missing or mismatched hash are re-downloaded. This network request (to `huggingface.co` and its `*.hf.co` CDN) is the app's only one.
 - **Adaptive Preprocessing & Complexity Router (`imagePreprocess.ts`):**
   - Optional pure-TypedArray **CLAHE** luminance normalization for harsh shadows and wet-stone glare.
   - **Adaptive Input Scaling** (`'auto' | '1.0x' | '0.5x' | '0.25x'`) to prevent large boulders (`> 350 px`) from being under-predicted in `256×256` tiles, while tracking `effectiveScaleFactor` so all morphometrics scale back to original image pixels and millimeters.
   - **Complexity Router (`recommendModel`)**, nominally ~5 ms on a 256×256 thumbnail on desktop hardware and slower on mobile or under load. It combines Sobel gradient entropy, multi-scale contrast variance, shadow/glare dynamic range, and hardware capability (WebGPU adapter, `shader-f16` support for FP16 CP-SAM, `deviceMemory`) to recommend U-Net vs. Cellpose-SAM. The recommendation is a heuristic; check the masks.
 - **WebGPU / WASM Inference (`onnxInference.ts`):**
   - **Fast Model (`ig2_unet_fp32.onnx`, 25.3 MiB / 26.5 MB):** 16-px reflection padding, `[1, 2, H, W]` FP32 inference.
-  - **High-Accuracy Model (`ig2_cpsam_fp16.onnx`, 588.8 MiB / 617.4 MB):** `256×256` overlapping tiles (`64 px` overlap / `192 px` stride), 2D clipped Hanning taper blending, zero-dependency IEEE-754 `Float32 <-> Float16` conversion, WebGPU `shader-f16` capability gating with explicit CPU WASM fallback warning, WebGPU `device.lost` recovery (evicting poisoned sessions), and `AbortSignal` cancellation.
+  - **High-Accuracy Model (Cellpose-SAM; `ig2_cpsam_fp16.onnx` 617 MB, or the quantized `ig2_cpsam_int8_wo_fp32scale.onnx` 316 MB / `ig2_cpsam_fp4_e2m1_lut.onnx` 183 MB with the same benchmark accuracy; INT8 is used automatically on the CPU):** `256×256` overlapping tiles (`64 px` overlap / `192 px` stride), 2D clipped Hanning taper blending, zero-dependency IEEE-754 `Float32 <-> Float16` conversion, WebGPU `shader-f16` capability gating with explicit CPU WASM fallback warning, WebGPU `device.lost` recovery (evicting poisoned sessions), and `AbortSignal` cancellation.
 - **Browser Engine v4.1 Web Worker (`grainPostprocess.worker.ts` & `postprocessCore.ts`):**
   - Zero-copy `ArrayBuffer` transfer.
   - Two-phase bilinear Euler flow integration (`100` coarse + `150` `1.0 px` steps).
@@ -43,7 +43,7 @@ All image preprocessing, neural inference (`onnxruntime-web` via WebGPU or SIMD 
 
 ## Hosted ONNX Models & Benchmark Accuracy
 
-Models are hosted at [`inYourOwnBrowser/imagegrains-2.0-onnx`](https://huggingface.co/inYourOwnBrowser/imagegrains-2.0-onnx) (pinned revision `7773328a544ac050b7820667e68cbfb02a2e954a`).
+Models are hosted at [`inYourOwnBrowser/imagegrains-2.0-onnx`](https://huggingface.co/inYourOwnBrowser/imagegrains-2.0-onnx) (pinned revision `98e76b1374dc22cfff8193aca71c308f2b4dd3b3`).
 
 ### Within-Site Held-Out Test Split (`IG2_data.zip`, `official_split == 'test'`, `n = 40` across 13 sites)
 

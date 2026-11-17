@@ -64,12 +64,12 @@ analyse a photo. They do not change photos that are already analysed.
 ### Model
 | | |
 |---|---|
-| **Options** | `Auto (Router)` · `U-Net (25MB)` · `CP-SAM (588MB)` |
+| **Options** | `Auto (Router)` · `U-Net (25 MB)` · `CP-SAM` |
 | **Default** | `Auto` |
 | **What it does** | Chooses which neural network finds the grains. |
 
 - **CP-SAM (Cellpose-SAM)** is the **more accurate** model. On the test set its median D50
-  error was about 3%. It is a large download (about 617 MB) and needs a computer with a
+  error was about 3%. It is a larger download (183–617 MB, see *CP-SAM weights*) and needs a computer with a
   reasonably modern graphics card for good speed. Without a suitable graphics card it
   still works, but runs on the processor and takes **several minutes per photo**.
 - **U-Net** is **small and fast** and works on almost any device, including phones. It is
@@ -80,6 +80,36 @@ analyse a photo. They do not change photos that are already analysed.
 **When to change it:** choose **CP-SAM** for any result you will report or publish. Use
 **U-Net** for a quick first look, on a phone, or when you just need a rough estimate.
 Use the same model for all photos you want to compare.
+
+### CP-SAM weights
+| | |
+|---|---|
+| **Options** | `Auto` (GPU: FP16, CPU: INT8) · `FP16 (617 MB)` · `INT8 (316 MB)` · `FP4 (183 MB)` |
+| **Default** | `Auto` |
+| **What it does** | Chooses which copy of the Cellpose-SAM network to download and run. Only used when the model is CP-SAM. |
+
+FP16 is the original network. INT8 and FP4 store the same network in compressed form.
+On the 40-photo benchmark all three gave **the same accuracy** (outline score 0.652–0.653,
+median D50 error 2.8–2.9%; the differences are within measurement noise).
+
+| | FP16 | INT8 | FP4 |
+|---|---|---|---|
+| Download | 617 MB | 316 MB | 183 MB |
+| Memory while running (CPU) | about 3.8 GB | **about 2.1 GB** | about 3.7 GB |
+| Speed on the CPU | baseline | same to about 2× faster | same to about 2× faster |
+| Loading time | slowest | **fastest** | middle |
+
+- **Auto** uses FP16 on a graphics card that supports WebGPU float16, and INT8 otherwise.
+- **INT8** is the best choice on the processor (no suitable graphics card). It needs about
+  half the memory and half the download of FP16. Its speed is the same or better: up to
+  about 2× faster in the benchmark, but the same on a 4-core test machine.
+- **FP4** has the smallest download, for slow or metered connections. It needs about as much
+  memory as FP16 while running, so use it on computers with at least 8 GB of memory.
+
+**When to change it:** usually never. On a graphics card, FP16 has been checked against the
+processor on real hardware; INT8 and FP4 have not yet. You can check yours on the GPU check
+page. Keep the same choice for all photos you compare. The weight file used is recorded in
+every export.
 
 ### Scale Mode
 | | |

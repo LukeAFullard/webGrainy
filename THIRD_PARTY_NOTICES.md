@@ -46,12 +46,14 @@ published at <https://github.com/microsoft/onnxruntime/blob/main/ThirdPartyNotic
 ## Model weights (downloaded at runtime, not bundled)
 
 At runtime, `webGrainy` fetches ONNX-converted model weights from Hugging Face
-(pinned commit `7773328a544ac050b7820667e68cbfb02a2e954a`, verified by SHA-256).
+(pinned commit `98e76b1374dc22cfff8193aca71c308f2b4dd3b3`, verified by SHA-256).
 
 | Artifact | Source | License |
 | :--- | :--- | :--- |
 | `ig2_unet_fp32.onnx` (`26,489,665` B / `25.3 MiB` / `26.5 MB`; SHA-256 `5e692c5593ac15e614b77602e1d4f8c2f84dd939f4386b1f7e5641dbcd62053c`) | <https://huggingface.co/inYourOwnBrowser/imagegrains-2.0-onnx> | **CC BY 4.0** |
 | `ig2_cpsam_fp16.onnx` (`617,364,567` B / `588.8 MiB` / `617.4 MB`; SHA-256 `944a114a0cb1a3a215c11affefe7211caac6da2b74895c496d5a7b5a23b6230d`) | <https://huggingface.co/inYourOwnBrowser/imagegrains-2.0-onnx> | **CC BY 4.0** |
+| `ig2_cpsam_int8_wo_fp32scale.onnx` (`316,272,029` B; SHA-256 `2cda0be5b81f1d0c0ac36998beb9f741e11833aacd089c4f5cee92488bab6f43`) | <https://huggingface.co/inYourOwnBrowser/imagegrains-2.0-onnx> | **CC BY 4.0** |
+| `ig2_cpsam_fp4_e2m1_lut.onnx` (`183,292,650` B; SHA-256 `d49d8f0779af3956b45b506719702bc3f9b7e0044a2d2a0a6842751544320c99`) | <https://huggingface.co/inYourOwnBrowser/imagegrains-2.0-onnx> | **CC BY 4.0** |
 | ImageGrains 2.0 pretrained weights (`IG2_full_set.200525`, `IG2_full_set_cp_SAM`) | Zenodo, [`doi:10.5281/zenodo.15728186`](https://zenodo.org/records/15728186) | **CC BY 4.0** |
 | ImageGrains 2.0 training & inference software | <https://github.com/dmair1989/imagegrains/blob/main/LICENSE.md> | **BSD 3-Clause** (`Copyright (c) 2023, David Mair`) |
 | Cellpose & Cellpose-SAM architecture and weights (`mouseland/cellpose-sam`) | <https://github.com/MouseLand/cellpose/blob/main/LICENSE> | **BSD 3-Clause** (`Copyright © 2020–2025 Howard Hughes Medical Institute`) |
@@ -64,6 +66,8 @@ At runtime, `webGrainy` fetches ONNX-converted model weights from Hugging Face
 - **Statement of Changes:**
   1. **`ig2_unet_fp32.onnx`** (from `IG2_full_set.200525`): Exported from PyTorch (`cellpose==3.1.1.1`) to ONNX (opset 17, FP32) and packed into a single protobuf file; replaced `CPnet.make_style` dynamic-kernel `avg_pool2d` with an equivalent `ReduceMean` (`x.mean(dim=(-2, -1))`) to support dynamic spatial input dimensions.
   2. **`ig2_cpsam_fp16.onnx`** (from `IG2_full_set_cp_SAM`, which fine-tunes `mouseland/cellpose-sam` incorporating Meta's SAM ViT-L image encoder): Exported from PyTorch (`cellpose==4.1.x`) via `torch.export.export` and the PyTorch Dynamo ONNX exporter (opset 18); cast natively to `torch.float16` prior to tracing to fit within browser memory/protobuf limits and consolidated into a single protobuf file.
+  3. **`ig2_cpsam_int8_wo_fp32scale.onnx`** (derived from `ig2_cpsam_fp16.onnx`): weight-only symmetric per-channel INT8 quantization of the 96 transformer/MLP `MatMul` weight tensors (98.16% of parameters), dequantized with `DequantizeLinear` (float32 scales) and `Cast` to float16; other layers unchanged (FP16).
+  4. **`ig2_cpsam_fp4_e2m1_lut.onnx`** (derived from `ig2_cpsam_fp16.onnx`): block-32 FP4 (E2M1) weight-only quantization of the same 96 `MatMul` weight tensors, stored as packed 4-bit indices decoded at runtime with a float16 lookup table and block scales; other layers unchanged (FP16).
 
 The app displays the attribution and citation notice in **"About & Citations"** and embeds it in every export.
 
