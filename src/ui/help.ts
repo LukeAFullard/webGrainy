@@ -142,6 +142,13 @@ export const HELP_TOPICS = {
     default: '2',
     when: 'Rarely needed. Increase (e.g. 4–6) if noise creates many tiny fragment grains. Decrease to 1 only for very small grains. The default is the tested value.',
   },
+  compareSites: {
+    title: 'Compare sites',
+    group: 'Site statistics',
+    what: 'Overlays the grain-size curves and size distributions of the sites you tick, in different colours, with a table of D16, D50 (with its confidence interval), D84, geometric mean and spread, Sauter mean, sorting and gravel/cobble share. All sites are computed with the same statistics settings (pooling mode, size metric, cutoffs), so the comparison is like for like. For each pair of sites it gives the ratio of their D50s with a 95% interval and a p-value.',
+    default: 'All sites ticked',
+    when: 'Use it to compare reaches, surveys or dates. The D50 test is approximate: it combines each site\'s bootstrap interval on a log scale (z-test). Treat p < 0.05 as "likely different" and check the curves; for a formal test use a full two-sample method such as GSDtools (Eaton et al. 2019). Sites must be calibrated (mm) to be plotted together; uncalibrated sites are listed but not plotted with calibrated ones.',
+  },
   moreStats: {
     title: 'More statistics',
     group: 'Site statistics',

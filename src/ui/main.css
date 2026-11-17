@@ -1255,3 +1255,34 @@ details.settings-block > summary {
   top: 0;
   z-index: 5;
 }
+
+/* Compare sites */
+.compare-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  margin: 0.25rem 0 0.5rem;
+}
+.swatch {
+  display: inline-block;
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 2px;
+  margin-right: 0.35rem;
+  vertical-align: -1px;
+  border: 1px solid var(--border);
+}
+.table-scroll {
+  overflow-x: auto;
+  margin-top: 6px;
+}
+.compare-table {
+  table-layout: auto;
+  min-width: 34rem;
+}
+.compare-table th,
+.compare-table td {
+  white-space: nowrap;
+  text-align: left;
+  font-family: inherit;
+}

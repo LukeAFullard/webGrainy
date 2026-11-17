@@ -1,3 +1,4 @@
+import type { ComparedSite } from '../modules/siteComparison.js';
 import type { HelpKey } from './help.js';
 import { DEFAULT_POSTPROCESS_OPTIONS } from '../modules/postprocessCore.js';
 import type {
@@ -90,7 +91,11 @@ export interface AppState {
   singlePhotoStats: SedimentStatsReport | null;
   /** Why site pooling failed (e.g. uncalibrated photos), shown in the dashboard. */
   siteReportError: string | null;
-  dashboardScope: 'site' | 'photo';
+  dashboardScope: 'site' | 'photo' | 'compare';
+  /** Sites chosen for comparison (null = all sites). */
+  compareSiteIds: string[] | null;
+  /** Comparison results for the chosen sites (computed asynchronously). */
+  comparison: { loading: boolean; sites: ComparedSite[]; error: string | null } | null;
   dashboardTab: DashboardTab;
   psdXAxis: 'mm' | 'phi';
   histogramStepPhi: 0.5 | 1.0;
@@ -152,6 +157,8 @@ export function createInitialState(): AppState {
     siteReportError: null,
     // Start with the photo being looked at; the user can switch to the whole site.
     dashboardScope: 'photo',
+    compareSiteIds: null,
+    comparison: null,
     dashboardTab: 'psd',
     psdXAxis: 'mm',
     histogramStepPhi: 0.5,
