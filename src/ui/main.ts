@@ -49,6 +49,8 @@ import { CanvasViewport } from './canvasViewport.js';
 import { parseJpegExifMetadata } from './exif.js';
 import { helpButton, isHelpKey, renderHelpModalHtml } from './help.js';
 import { logicalCores, wasmThreadsFor } from '../modules/onnxInference.js';
+import { GUIDE_HIDDEN_KEY, guideSteps, renderGuideHtml } from './onboarding.js';
+import { applyEvent, describeActivity, newActivity, startPhoto, type ActivityState } from './progress.js';
 import { CPU_THREADS_KEY, readCpuThreadPref } from './cpuThreads.js';
 import {
   handleExportAction,
@@ -143,6 +145,89 @@ engine.onProgress((stage, detail) => {
       void refreshCapabilities();
     }
   }
+});
+
+// ---- Getting-started guide (hidden flag and "exported once" are per browser) ----
+const EXPORTED_KEY = 'webgrainy-exported-once';
+function readFlag(key: string): boolean {
+  try {
+    return localStorage.getItem(key) === '1';
+  } catch {
+    return false;
+  }
+}
+function writeFlag(key: string, on: boolean): void {
+  try {
+    if (on) localStorage.setItem(key, '1');
+    else localStorage.removeItem(key);
+  } catch {
+    /* storage blocked */
+  }
+}
+let guideHidden = readFlag(GUIDE_HIDDEN_KEY);
+let exportedOnce = readFlag(EXPORTED_KEY);
+
+function guideHtml(state: AppState): string {
+  if (guideHidden) return '';
+  const hasExclusions = (ph: PhotoRecord): boolean =>
+    ph.roiConfig !== undefined &&
+    (ph.roiConfig.roiPolygon !== undefined || ph.roiConfig.exclusionPolygons.length > 0 || ph.roiConfig.exclusionStrokes.length > 0);
+  return renderGuideHtml(
+    guideSteps({
+      photoCount: state.photos.length,
+      calibratedCount: state.photos.filter((ph) => ph.calibration !== undefined).length,
+      exclusionCount: state.photos.filter(hasExclusions).length,
+      analysedCount: state.photos.filter((ph) => state.photoStatuses.get(ph.photoId) === 'done').length,
+      exported: exportedOnce,
+      isMobile: state.capabilities?.isMobile === true,
+      batchRunning: state.batchRunning,
+    }),
+  );
+}
+
+// ---- Analysis activity bar (stage, tiles, time left, cancel) ----
+let activity: ActivityState | null = null;
+let activityRaf: number | null = null;
+function scheduleActivityRender(): void {
+  if (activityRaf !== null) return;
+  activityRaf = requestAnimationFrame(() => {
+    activityRaf = null;
+    renderActivityBar();
+  });
+}
+function renderActivityBar(): void {
+  const el = document.getElementById('activity-bar');
+  if (!el) return;
+  if (activity === null) {
+    el.hidden = true;
+    el.innerHTML = '';
+    document.body.classList.remove('has-activity');
+    return;
+  }
+  const v = describeActivity(activity);
+  el.hidden = false;
+  document.body.classList.add('has-activity');
+  const pct = v.fraction !== null ? Math.round(v.fraction * 100) : null;
+  el.innerHTML = `
+    <div class="activity-text">
+      <div class="activity-title">${esc(v.title)}</div>
+      <div class="activity-detail">${esc(v.detail)}</div>
+    </div>
+    <div class="activity-bars">
+      ${
+        pct !== null
+          ? `<progress class="native-progress" value="${pct}" max="100" aria-label="Current step progress"></progress>`
+          : `<progress class="native-progress" aria-label="Current step in progress"></progress>`
+      }
+      ${activity.photoTotal > 1 ? `<progress class="native-progress batch" value="${Math.round(v.batchFraction * 100)}" max="100" aria-label="All photos progress"></progress>` : ''}
+    </div>
+    <button type="button" class="btn btn-sm btn-danger" data-action="cancel-batch">Cancel</button>
+  `;
+}
+engine.onProgress((stage, detail) => {
+  if (activity === null) return;
+  activity = applyEvent(activity, stage, detail, performance.now());
+  scheduleActivityRender();
 });
 
 let viewport: CanvasViewport | null = null;
@@ -404,6 +489,9 @@ async function runBatch(photoIds?: string[]): Promise<void> {
 
   batchAbortController = new AbortController();
   const analysisConfig = toAnalysisConfig(state.analysisParams);
+  activity = newActivity(photoIds?.length ?? state.photos.length);
+  let photoCounter = 0;
+  renderActivityBar();
   store.setState({
     batchRunning: true,
     batchProgress: {
@@ -424,8 +512,17 @@ async function runBatch(photoIds?: string[]): Promise<void> {
       signal: batchAbortController.signal,
       onProgress: (p) => {
         store.setState({ batchProgress: p });
+        if (activity && p.total > 0 && activity.photoTotal !== p.total) {
+          activity = { ...activity, photoTotal: p.total };
+          scheduleActivityRender();
+        }
       },
       onPhotoStart: (photo) => {
+        photoCounter += 1;
+        if (activity) {
+          activity = startPhoto(activity, photoCounter, photo.label);
+          scheduleActivityRender();
+        }
         const nextStatuses = new Map(store.getState().photoStatuses);
         nextStatuses.set(photo.photoId, 'running');
         store.setState({ photoStatuses: nextStatuses });
@@ -483,6 +580,8 @@ async function runBatch(photoIds?: string[]): Promise<void> {
   } finally {
     batchAbortController = null;
     store.setState({ batchRunning: false, batchProgress: null });
+    activity = null;
+    renderActivityBar();
     recomputeReports();
     await refreshCapabilities();
   }
@@ -651,30 +750,33 @@ function renderTopbar(state: AppState): void {
         ? 'SW Registering'
         : 'SW Local/File';
 
+  // One compact engine chip (details on hover/long-press), plus Offline only when offline.
+  const engineShort = engine.getWebGpuDisabledReason() !== null
+    ? 'CPU (GPU reset)'
+    : caps
+      ? caps.hasWebGPU && caps.hasShaderF16 !== false
+        ? 'GPU'
+        : `CPU · ${cpuThreads ?? 1} thread${(cpuThreads ?? 1) === 1 ? '' : 's'}`
+      : 'Starting…';
+  const engineTitle = `Engine: ${gpuLabel}. ${swLabel.replace('SW', 'Offline cache:')}. ${state.isOnline ? 'Online' : 'Offline'}.`;
   topbarEl.innerHTML = `
     <div class="topbar-left">
       <div class="brand">
         <span>webGrainy</span>
-        <span class="brand-sub">ImageGrains 2.0 Web</span>
+        <span class="brand-sub">Grain sizes from photos · runs on your device</span>
       </div>
-      <span class="privacy-badge">100% Local Processing — No Data Leaves Your Device</span>
     </div>
     <div class="topbar-center">
-      <span class="status-pill ${caps?.hasWebGPU || caps?.hasWasmSimd ? 'ok' : ''}">
-        <span class="dot" aria-hidden="true"></span>${gpuLabel}
+      <span class="status-pill ${caps?.hasWebGPU || caps?.hasWasmSimd ? 'ok' : ''}" title="${esc(engineTitle)}">
+        <span class="dot" aria-hidden="true"></span>${esc(engineShort)}<span class="sr-only"> — ${esc(engineTitle)}</span>
       </span>
-      <span class="status-pill ${state.swStatus === 'ready' ? 'ok' : ''}">
-        <span class="dot" aria-hidden="true"></span>${swLabel}
-      </span>
-      <span class="status-pill ${state.isOnline ? '' : 'warn'}">
-        <span class="dot" aria-hidden="true"></span>${state.isOnline ? 'Online (HF Ready)' : 'Offline Mode'}
-      </span>
+      ${state.isOnline ? '' : `<span class="status-pill warn" title="Analysis still works with models already downloaded."><span class="dot" aria-hidden="true"></span>Offline</span>`}
     </div>
     <div class="topbar-right">
-      <button type="button" class="btn btn-sm" data-open-modal="models">Models (${caps?.cachedModels.length ?? 0} cached)</button>
+      <button type="button" class="btn btn-sm" data-open-modal="models">Models</button>
       <button type="button" class="btn btn-sm" data-open-modal="export">Export</button>
       <button type="button" class="btn btn-sm" data-open-help="">Help</button>
-      <button type="button" class="btn btn-sm" data-open-modal="about">About &amp; Citations</button>
+      <button type="button" class="btn btn-sm" data-open-modal="about">About</button>
     </div>
   `;
 }
@@ -686,19 +788,26 @@ function renderSidebar(state: AppState): void {
     const st = state.photoStatuses.get(ph.photoId);
     return !st || st === 'pending' || st === 'error';
   }).length;
-  // Collapsed by default on narrow screens, so the photo is reachable without scrolling past every setting.
-  const prevDetailsOpen =
-    sidebarEl.querySelector('details')?.open ?? !window.matchMedia('(max-width: 960px)').matches;
+  // Settings start collapsed (progressive disclosure); the summary says what is in use.
+  const prevDetailsOpen = sidebarEl.querySelector<HTMLDetailsElement>('details.settings-block')?.open ?? false;
+  const defaults = defaultAnalysisParams();
+  const changedCount = (Object.keys(defaults) as Array<keyof typeof defaults>).filter((k) => p[k] !== defaults[k]).length;
+  const modelSummary =
+    p.model === 'auto' ? 'Auto model' : p.model === 'unet' ? 'U-Net' : `CP-SAM${p.cpsamWeights === 'auto' ? '' : ` ${p.cpsamWeights.toUpperCase()}`}`;
+  const settingsSummary = `${modelSummary} · ${changedCount === 0 ? 'tested defaults' : `${changedCount} setting${changedCount === 1 ? '' : 's'} changed`}`;
+  const analysedCount = state.photos.filter((ph) => state.photoStatuses.get(ph.photoId) === 'done').length;
   const prevPhotoScroll = sidebarEl.querySelector('.photo-list')?.scrollTop ?? 0;
 
   const keptOpenSidebar = captureOpenDetails(sidebarEl);
+  const guide = guideHtml(state);
   sidebarEl.innerHTML = `
+    ${guide ? `<div class="panel-section">${guide}</div>` : ''}
     <div class="panel-section">
       <div class="panel-header">
-        <span class="panel-title">Site Workspace</span>
+        <span class="panel-title">Site</span>
         <div class="row">
-          <button type="button" class="btn btn-sm" data-action="new-site">+ Site</button>
-          <button type="button" class="btn btn-sm" data-action="import-archive">Import</button>
+          <button type="button" class="btn btn-sm" data-action="new-site" title="Create a new site">+ New</button>
+          <button type="button" class="btn btn-sm" data-action="import-archive" title="Open a saved .webgrainy.json project">Open</button>
         </div>
       </div>
       <select class="select" id="site-select" aria-label="Select active field site">
@@ -713,37 +822,28 @@ function renderSidebar(state: AppState): void {
 
     <div class="panel-section">
       <div class="panel-header">
-        <span class="panel-title">Photos (${state.photos.length})</span>
+        <span class="panel-title">Photos (${state.photos.length}${analysedCount > 0 ? ` · ${analysedCount} analysed` : ''})</span>
         <div class="row">
           ${
             state.batchRunning
               ? `<button type="button" class="btn btn-sm btn-danger" data-action="cancel-batch">Cancel</button>`
-              : `<button type="button" class="btn btn-sm btn-primary" data-action="run-batch" ${state.photos.length === 0 ? 'disabled' : ''}>Run Pending (${pendingCount})</button>`
+              : pendingCount > 0
+                ? `<button type="button" class="btn btn-sm btn-primary" data-action="run-batch">Analyse ${pendingCount === state.photos.length ? (pendingCount === 1 ? 'photo' : `all ${pendingCount}`) : `${pendingCount} new`}</button>`
+                : ''
           }
         </div>
       </div>
 
       <button type="button" class="dropzone" id="photo-dropzone">
-        <span class="dropzone-text">Drop gravel photos here or <strong>click to browse</strong></span>
-        <span style="display:block;font-size:0.65rem;color:var(--text-muted);margin-top:2px;">Local-only EXIF &amp; dimension parsing</span>
+        <span class="dropzone-text">${state.photos.length === 0 ? '<strong>Add photos</strong> — tap to choose, or drop them here' : 'Add more photos — tap or drop here'}</span>
+        <span style="display:block;font-size:0.65rem;color:var(--text-muted);margin-top:2px;">Photos stay on your device</span>
       </button>
 
-      ${
-        state.batchRunning && state.batchProgress
-          ? `<div style="margin-top:8px;">
-              <div class="row-between" style="font-size:0.7rem;margin-bottom:3px;">
-                <span>${esc(state.batchProgress.currentLabel)}</span>
-                <span>${state.batchProgress.completed}/${state.batchProgress.total}</span>
-              </div>
-              <progress class="native-progress" value="${state.batchProgress.completed}" max="${Math.max(1, state.batchProgress.total)}" aria-label="Batch segmentation progress"></progress>
-            </div>`
-          : ''
-      }
 
       <div class="photo-list" style="margin-top:8px;">
         ${
           state.photos.length === 0
-            ? `<div style="font-size:0.7rem;color:var(--text-muted);padding:8px 0;">No photos in this site yet.</div>`
+            ? ''
             : state.photos
                 .map((ph) => {
                   const status = state.photoStatuses.get(ph.photoId) ?? 'pending';
@@ -783,22 +883,25 @@ function renderSidebar(state: AppState): void {
     </div>
 
     <div class="panel-section">
-      <details ${prevDetailsOpen ? 'open' : ''}>
-        <summary>Inference &amp; Post-Processing Controls</summary>
+      <details class="settings-block" ${prevDetailsOpen ? 'open' : ''}>
+        <summary>Analysis settings <span class="summary-note">${esc(settingsSummary)}</span></summary>
         <div class="row-between" style="margin-top:6px;">
-          <span class="field-hint">Defaults are the tested settings.</span>
+          <span class="field-hint">The defaults are the tested settings. Changes apply to the next analysis.</span>
           <button type="button" class="btn btn-sm" data-open-help="">Settings help</button>
         </div>
         <div class="grid-2" style="margin-top:8px;">
           <label class="field-label">
             <span class="label-row">Model ${helpButton('model')}</span>
             <select class="select" data-param="model">
-              <option value="auto" ${p.model === 'auto' ? 'selected' : ''}>Auto (Router)</option>
-              <option value="unet" ${p.model === 'unet' ? 'selected' : ''}>U-Net (25 MB)</option>
-              <option value="cpsam" ${p.model === 'cpsam' ? 'selected' : ''}>CP-SAM${state.capabilities?.isMobile ? ' (not for phones)' : ''}</option>
+              <option value="auto" ${p.model === 'auto' ? 'selected' : ''}>Auto</option>
+              <option value="unet" ${p.model === 'unet' ? 'selected' : ''}>U-Net (fast)</option>
+              <option value="cpsam" ${p.model === 'cpsam' ? 'selected' : ''}>CP-SAM (accurate)${state.capabilities?.isMobile ? ' – not for phones' : ''}</option>
             </select>
           </label>
-          <label class="field-label">
+          ${
+            p.model === 'unet'
+              ? ''
+              : `<label class="field-label">
             <span class="label-row">CP-SAM weights ${helpButton('cpsamWeights')}</span>
             <select class="select" data-param="cpsamWeights">
               <option value="auto" ${p.cpsamWeights === 'auto' ? 'selected' : ''}>Auto</option>
@@ -806,7 +909,8 @@ function renderSidebar(state: AppState): void {
               <option value="int8" ${p.cpsamWeights === 'int8' ? 'selected' : ''}>INT8 (316 MB)</option>
               <option value="fp4" ${p.cpsamWeights === 'fp4' ? 'selected' : ''}>FP4 (183 MB)</option>
             </select>
-          </label>
+          </label>`
+          }
           <label class="field-label">
             <span class="label-row">Scale Mode ${helpButton('scaleMode')}</span>
             <select class="select" data-param="scaleMode">
@@ -816,6 +920,13 @@ function renderSidebar(state: AppState): void {
               <option value="0.25x" ${p.scaleMode === '0.25x' ? 'selected' : ''}>0.25x</option>
             </select>
           </label>
+        </div>
+        <label class="checkbox-label" style="margin-top:8px;">
+          <input type="checkbox" data-param="excludeBorder" ${p.excludeBorder ? 'checked' : ''} /> Exclude border grains ${helpButton('excludeBorder')}
+        </label>
+        <details class="advanced-block" style="margin-top:8px;" data-keep-open="fine-tuning">
+          <summary>Fine-tuning</summary>
+          <div class="grid-2" style="margin-top:6px;">
           <label class="field-label">
             <span class="label-row">Flow Threshold ${helpButton('flowThreshold')}</span>
             <input class="input" type="number" step="0.05" min="0.05" max="1" value="${p.flowThreshold}" data-param="flowThreshold" />
@@ -840,15 +951,11 @@ function renderSidebar(state: AppState): void {
             <span class="label-row">CLAHE Clip ${helpButton('claheClipLimit')}</span>
             <input class="input" type="number" step="0.5" min="1" max="8" value="${p.claheClipLimit}" data-param="claheClipLimit" />
           </label>
-        </div>
-        <div class="row" style="margin-top:8px;gap:12px;flex-wrap:wrap;">
-          <label class="checkbox-label">
+          </div>
+          <label class="checkbox-label" style="margin-top:8px;">
             <input type="checkbox" data-param="applyClahe" ${p.applyClahe ? 'checked' : ''} /> Apply CLAHE ${helpButton('applyClahe')}
           </label>
-          <label class="checkbox-label">
-            <input type="checkbox" data-param="excludeBorder" ${p.excludeBorder ? 'checked' : ''} /> Exclude border grains ${helpButton('excludeBorder')}
-          </label>
-        </div>
+        </details>
         <details class="advanced-block" style="margin-top:8px;" data-keep-open="advanced-analysis">
           <summary>Advanced (rarely needed)</summary>
           <div class="grid-2" style="margin-top:6px;">
@@ -886,10 +993,7 @@ function renderSidebar(state: AppState): void {
           </label>
           <button type="button" class="btn btn-sm" data-action="reset-analysis-params" style="margin-top:6px;">Reset analysis settings to defaults</button>
         </details>
-        <div class="row-between" style="margin-top:8px;">
-          <span class="field-hint">Changes apply to the next analysis.</span>
-          <button type="button" class="btn btn-sm" data-action="run-active" ${!state.activePhotoId || state.batchRunning ? 'disabled' : ''}>Analyze Active Photo</button>
-        </div>
+        <button type="button" class="btn btn-sm" data-action="run-active" style="margin-top:8px;" ${!state.activePhotoId || state.batchRunning ? 'disabled' : ''} title="Re-analyse the photo shown in the middle with these settings">Re-analyse this photo</button>
       </details>
     </div>
   `;
@@ -905,23 +1009,47 @@ function renderToolbarAndOverlays(state: AppState): void {
   const activePhoto = getActivePhoto(state);
   const session = activePhoto ? state.sessions.get(activePhoto.photoId) ?? null : null;
 
-  const tools: Array<{ id: EditorToolMode; label: string }> = [
-    { id: 'inspect', label: 'Inspect' },
-    { id: 'split', label: 'Split' },
-    { id: 'merge', label: 'Merge' },
-    { id: 'delete', label: 'Delete' },
-    { id: 'addPolygon', label: '+ Polygon' },
-    { id: 'excludePoly', label: 'Excl Poly' },
-    { id: 'excludeBrush', label: 'Excl Brush' },
-    { id: 'calibrate', label: 'Calibrate' },
-    { id: 'rectify', label: '4-Pt Rectify' },
+  // Tools grouped by task; grain-editing tools only appear once the photo has results.
+  const groups: Array<{ label: string; tools: Array<{ id: EditorToolMode; label: string; title: string }> }> = [
+    { label: '', tools: [{ id: 'inspect', label: 'Inspect', title: 'Tap or click a grain to see its measurements' }] },
+    {
+      label: 'Scale',
+      tools: [
+        { id: 'calibrate', label: 'Calibrate', title: 'Mark two points a known distance apart (ruler, quadrat) to get sizes in mm' },
+        { id: 'rectify', label: 'Rectify', title: 'Correct a photo taken at an angle using four corners of a rectangle' },
+      ],
+    },
+    {
+      label: 'Exclude',
+      tools: [
+        { id: 'excludePoly', label: 'Area', title: 'Draw a polygon around things to leave out (rulers, boots, water)' },
+        { id: 'excludeBrush', label: 'Brush', title: 'Paint over things to leave out' },
+      ],
+    },
+    ...(session
+      ? [
+          {
+            label: 'Edit grains',
+            tools: [
+              { id: 'split' as EditorToolMode, label: 'Split', title: 'Draw a line across a grain to split it in two' },
+              { id: 'merge' as EditorToolMode, label: 'Merge', title: 'Select grains that are really one stone, then press Merge' },
+              { id: 'delete' as EditorToolMode, label: 'Delete', title: 'Tap or click a wrong outline to remove it' },
+              { id: 'addPolygon' as EditorToolMode, label: 'Add', title: 'Draw the outline of a missed grain' },
+            ],
+          },
+        ]
+      : []),
   ];
 
   toolbarEl.innerHTML = `
-    ${tools
+    ${groups
       .map(
-        (t) =>
-          `<button type="button" class="btn btn-sm ${state.activeTool === t.id ? 'active' : ''}" aria-pressed="${state.activeTool === t.id ? 'true' : 'false'}" data-tool="${t.id}">${t.label}</button>`,
+        (g) => `<span class="tool-group" role="group" ${g.label ? `aria-label="${g.label}"` : ''}>${g.label ? `<span class="tool-group-label">${g.label}</span>` : ''}${g.tools
+          .map(
+            (t) =>
+              `<button type="button" class="btn btn-sm ${state.activeTool === t.id ? 'active' : ''}" aria-pressed="${state.activeTool === t.id ? 'true' : 'false'}" data-tool="${t.id}" title="${esc(t.title)}">${t.label}</button>`,
+          )
+          .join('')}</span>`,
       )
       .join('')}
     ${helpButton('editing')}
@@ -936,10 +1064,11 @@ function renderToolbarAndOverlays(state: AppState): void {
            <button type="button" class="btn btn-sm" data-action="cancel-shape" title="Same as Esc">Cancel shape</button>`
         : ''
     }
-    <span class="toolbar-sep" aria-hidden="true"></span>
-    <button type="button" class="btn btn-sm" data-action="undo" ${session?.canUndo ? '' : 'disabled'}>Undo</button>
-    <button type="button" class="btn btn-sm" data-action="redo" ${session?.canRedo ? '' : 'disabled'}>Redo</button>
-    <button type="button" class="btn btn-sm" data-action="fit-view" ${activePhoto ? '' : 'disabled'}>Fit</button>
+    <span class="tool-group">
+      ${session ? `<button type="button" class="btn btn-sm" data-action="undo" ${session.canUndo ? '' : 'disabled'}>Undo</button>
+      <button type="button" class="btn btn-sm" data-action="redo" ${session.canRedo ? '' : 'disabled'}>Redo</button>` : ''}
+      <button type="button" class="btn btn-sm" data-action="fit-view" ${activePhoto ? '' : 'disabled'} title="Fit the photo to the view">Fit</button>
+    </span>
   `;
 
   const ov = state.overlays;
@@ -970,16 +1099,24 @@ function renderToolbarAndOverlays(state: AppState): void {
     `;
   }
 
+  const keptOpen = captureOpenDetails(subToolbarEl);
+  const onCount = [ov.instanceIds, ov.wentworthColors, ov.ellipses, ov.orientations, ov.borderTruncated, ov.loupe].filter(Boolean).length;
   subToolbarEl.innerHTML = `
-    <label class="checkbox-label"><input type="checkbox" data-ov="instanceIds" ${ov.instanceIds ? 'checked' : ''} /> IDs</label>
-    <label class="checkbox-label"><input type="checkbox" data-ov="wentworthColors" ${ov.wentworthColors ? 'checked' : ''} /> Wentworth</label>
-    <label class="checkbox-label"><input type="checkbox" data-ov="ellipses" ${ov.ellipses ? 'checked' : ''} /> a/b Ellipses</label>
-    <label class="checkbox-label"><input type="checkbox" data-ov="orientations" ${ov.orientations ? 'checked' : ''} /> Vectors</label>
-    <label class="checkbox-label"><input type="checkbox" data-ov="borderTruncated" ${ov.borderTruncated ? 'checked' : ''} /> Border/Trunc</label>
-    <label class="checkbox-label">Opacity <input type="range" min="0" max="1" step="0.05" value="${ov.opacity}" data-ov="opacity" style="width:65px;" /></label>
-    <label class="checkbox-label"><input type="checkbox" data-ov="loupe" ${ov.loupe ? 'checked' : ''} /> Loupe (${ov.loupeZoom}×)</label>
+    <details class="display-menu" data-keep-open="display">
+      <summary>Display <span class="summary-note">${onCount} on</span></summary>
+      <div class="display-options">
+        <label class="checkbox-label"><input type="checkbox" data-ov="instanceIds" ${ov.instanceIds ? 'checked' : ''} /> Grain IDs</label>
+        <label class="checkbox-label"><input type="checkbox" data-ov="wentworthColors" ${ov.wentworthColors ? 'checked' : ''} /> Size colours (Wentworth)</label>
+        <label class="checkbox-label"><input type="checkbox" data-ov="ellipses" ${ov.ellipses ? 'checked' : ''} /> Ellipses (a/b axes)</label>
+        <label class="checkbox-label"><input type="checkbox" data-ov="orientations" ${ov.orientations ? 'checked' : ''} /> Orientation lines</label>
+        <label class="checkbox-label"><input type="checkbox" data-ov="borderTruncated" ${ov.borderTruncated ? 'checked' : ''} /> Mark edge/too-small grains</label>
+        <label class="checkbox-label"><input type="checkbox" data-ov="loupe" ${ov.loupe ? 'checked' : ''} /> Magnifier (${ov.loupeZoom}×)</label>
+        <label class="checkbox-label">Outline opacity <input type="range" min="0" max="1" step="0.05" value="${ov.opacity}" data-ov="opacity" style="width:80px;" /></label>
+      </div>
+    </details>
     ${toolPrompt}
   `;
+  restoreOpenDetails(subToolbarEl, keptOpen);
 }
 
 function renderViewportExtras(state: AppState): void {
@@ -1198,12 +1335,43 @@ function renderDashboard(state: AppState): void {
   dashboardEl.innerHTML = `
     <div class="panel-section">
       <div class="row-between" style="margin-bottom:6px;">
-        <span class="panel-title">Scientific Dashboard</span>
+        <span class="panel-title">Results</span>
         <div class="row">
-          <button type="button" class="btn btn-sm ${isSite ? 'active' : ''}" aria-pressed="${isSite ? 'true' : 'false'}" data-scope="site">Pooled Site</button>
-          <button type="button" class="btn btn-sm ${!isSite ? 'active' : ''}" aria-pressed="${!isSite ? 'true' : 'false'}" data-scope="photo">Active Photo</button>
+          <button type="button" class="btn btn-sm ${isSite ? 'active' : ''}" aria-pressed="${isSite ? 'true' : 'false'}" data-scope="site">Whole site</button>
+          <button type="button" class="btn btn-sm ${!isSite ? 'active' : ''}" aria-pressed="${!isSite ? 'true' : 'false'}" data-scope="photo">This photo</button>
         </div>
       </div>
+      <div class="basis-banner">${esc(basisLabel)}${
+        !isSite && single
+          ? ` · n = ${single.includedGrains}${activeSession && activeSession.getRoiExcludedGrainCount() > 0 ? ` (${activeSession.getRoiExcludedGrainCount()} excluded by ROI)` : ''}`
+          : ''
+      }</div>
+      ${(() => {
+        const warns = [...(isSite ? report?.warnings ?? [] : single?.warnings ?? [])];
+        // ROI enlarged after an analysis that skipped tiles outside the old ROI.
+        const stale = (isSite ? state.photos.filter((p) => p.included) : activePhoto ? [activePhoto] : [])
+          .map((p) => ({ p, f: state.sessions.get(p.photoId)?.getUnanalysedRoiFraction() ?? 0 }))
+          .filter((x) => x.f > 0.001);
+        if (stale.length > 0) {
+          warns.unshift(
+            isSite
+              ? `${stale.length} photo(s) have ROI areas that were not analysed (the ROI was enlarged or an exclusion removed after analysis): ${stale.map((x) => x.p.label).join(', ')}. Re-analyse them.`
+              : `${(stale[0]!.f * 100).toFixed(1)}% of this photo's ROI was not analysed (the ROI was enlarged or an exclusion removed after analysis). Re-analyse this photo to include it.`,
+          );
+        }
+        return warns.length > 0
+          ? `<div class="warning-banner" role="alert">${warns.map(esc).join('<br/>')}</div>`
+          : '';
+      })()}
+      <div class="stat-grid" style="margin-top:8px;">
+        <div class="stat-card"><div class="stat-label">D₁₆</div><div class="stat-value">${psd ? psd.D16.toFixed(1) : '—'}</div><div class="stat-sub">${unit}</div></div>
+        <div class="stat-card"><div class="stat-label">D₅₀ (Median)</div><div class="stat-value">${psd ? psd.D50.toFixed(1) : '—'}</div><div class="stat-sub">${unit}</div></div>
+        <div class="stat-card"><div class="stat-label">D₈₄</div><div class="stat-value">${psd ? psd.D84.toFixed(1) : '—'}</div><div class="stat-sub">${unit}</div></div>
+      </div>
+      <p class="metric-note">${esc(metricNoteText)}</p>
+      <details class="advanced-block stats-settings" style="margin-top:8px;" data-keep-open="stats-settings">
+        <summary>Statistics settings <span class="summary-note">${({ 'physical-area': 'area-weighted', 'equal-photo': 'equal-photo', 'virtual-wolman-grid': 'Wolman grid', 'number-weighted': 'number-weighted', 'facies-weighted': 'facies-weighted' } as Record<string, string>)[state.siteOptions.poolingMode] ?? state.siteOptions.poolingMode} · ${activeMetric === 'bAxis' ? 'b-axis' : activeMetric}</span></summary>
+        <div style="margin-top:6px;">
       <div class="grid-2">
         <label class="field-label">
           <span class="label-row">Pooling Mode ${helpButton('poolingMode')}</span>
@@ -1268,34 +1436,8 @@ function renderDashboard(state: AppState): void {
           <input type="checkbox" data-site-opt="bootstrapTwoStage" ${state.siteOptions.bootstrapTwoStage ? 'checked' : ''} /> Two-stage bootstrap ${helpButton('bootstrapTwoStage')}
         </label>
       </details>
-      <div class="basis-banner">${esc(basisLabel)}${
-        !isSite && single
-          ? ` · n = ${single.includedGrains}${activeSession && activeSession.getRoiExcludedGrainCount() > 0 ? ` (${activeSession.getRoiExcludedGrainCount()} excluded by ROI)` : ''}`
-          : ''
-      }</div>
-      ${(() => {
-        const warns = [...(isSite ? report?.warnings ?? [] : single?.warnings ?? [])];
-        // ROI enlarged after an analysis that skipped tiles outside the old ROI.
-        const stale = (isSite ? state.photos.filter((p) => p.included) : activePhoto ? [activePhoto] : [])
-          .map((p) => ({ p, f: state.sessions.get(p.photoId)?.getUnanalysedRoiFraction() ?? 0 }))
-          .filter((x) => x.f > 0.001);
-        if (stale.length > 0) {
-          warns.unshift(
-            isSite
-              ? `${stale.length} photo(s) have ROI areas that were not analysed (the ROI was enlarged or an exclusion removed after analysis): ${stale.map((x) => x.p.label).join(', ')}. Re-analyse them.`
-              : `${(stale[0]!.f * 100).toFixed(1)}% of this photo's ROI was not analysed (the ROI was enlarged or an exclusion removed after analysis). Re-analyse this photo to include it.`,
-          );
-        }
-        return warns.length > 0
-          ? `<div class="warning-banner" role="alert">${warns.map(esc).join('<br/>')}</div>`
-          : '';
-      })()}
-      <div class="stat-grid" style="margin-top:8px;">
-        <div class="stat-card"><div class="stat-label">D₁₆</div><div class="stat-value">${psd ? psd.D16.toFixed(1) : '—'}</div><div class="stat-sub">${unit}</div></div>
-        <div class="stat-card"><div class="stat-label">D₅₀ (Median)</div><div class="stat-value">${psd ? psd.D50.toFixed(1) : '—'}</div><div class="stat-sub">${unit}</div></div>
-        <div class="stat-card"><div class="stat-label">D₈₄</div><div class="stat-value">${psd ? psd.D84.toFixed(1) : '—'}</div><div class="stat-sub">${unit}</div></div>
-      </div>
-      <p class="metric-note">${esc(metricNoteText)}</p>
+        </div>
+      </details>
     </div>
 
     <div class="tabs" role="tablist" aria-label="Dashboard analyses">
@@ -1453,8 +1595,10 @@ function mountShell(): void {
           <svg class="svg-overlay" id="svg-overlay"></svg>
           <canvas class="loupe-canvas" id="loupe-canvas"></canvas>
           <div class="viewport-empty" id="viewport-empty">
-            <div>Drop or select gravel photos in the left sidebar</div>
-            <div style="font-size:0.75rem;">Wheel / ± = Zoom · Arrows / Space / Middle-Drag = Pan · Ctrl+Z/Y = Undo/Redo</div>
+            <div class="empty-title">Measure grain sizes from photos of gravel</div>
+            <div>Add photos to start. Everything runs in your browser; nothing is uploaded.</div>
+            <button type="button" class="btn btn-primary empty-cta" data-action="add-photos">Add photos</button>
+            <div class="empty-hint">Or drop photos anywhere on the left panel. Zoom: pinch or mouse wheel · Move: two fingers, Space+drag or middle mouse.</div>
           </div>
           <div class="inspector-card" id="inspector-card" style="display:none;"></div>
         </div>
@@ -1462,6 +1606,7 @@ function mountShell(): void {
       </section>
       <aside class="dashboard-right" id="dashboard-right" aria-label="Scientific Dashboard"></aside>
     </main>
+    <div class="activity-bar" id="activity-bar" role="status" aria-live="polite" hidden></div>
     <dialog id="app-dialog" class="app-dialog" closedby="any" aria-labelledby="dialog-title"></dialog>
     <div id="sr-announcer" class="sr-only" aria-live="polite" aria-atomic="true"></div>
     <input type="file" id="photo-file-input" accept="image/*" multiple style="display:none;" />
@@ -1659,6 +1804,11 @@ function attachDelegatedHandlers(): void {
     if (modalBtn) {
       const m = modalBtn.dataset['openModal'] as AppState['activeModal'];
       store.setState({ activeModal: m });
+      if (m === 'export' && !exportedOnce) {
+        exportedOnce = true;
+        writeFlag(EXPORTED_KEY, true);
+        renderSidebar(store.getState());
+      }
       return;
     }
 
@@ -1671,6 +1821,18 @@ function attachDelegatedHandlers(): void {
     if (actionEl) {
       const act = actionEl.dataset['action'];
       const state = store.getState();
+      if (act === 'add-photos') {
+        fileInputEl.click();
+        return;
+      }
+      if (act === 'hide-guide' || act === 'show-guide') {
+        guideHidden = act === 'hide-guide';
+        writeFlag(GUIDE_HIDDEN_KEY, guideHidden);
+        if (act === 'show-guide') store.setState({ activeModal: null });
+        renderSidebar(store.getState());
+        if (act === 'show-guide') sidebarEl.scrollTop = 0;
+        return;
+      }
       if (act === 'reset-analysis-params') {
         store.setState({ analysisParams: defaultAnalysisParams(), statusMessage: 'Analysis settings reset to the tested defaults.' });
         return;

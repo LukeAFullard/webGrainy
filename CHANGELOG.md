@@ -30,6 +30,16 @@ All notable changes to webGrainy are recorded here. The format follows
   lost device. The UI shows "GPU reset · CPU mode (reload for GPU)".
 
 ### Changed
+- **Simpler layout (progressive disclosure).** One status chip instead of three; settings
+  folded into *Analysis settings* (with *Fine-tuning* and *Advanced*), *Statistics
+  settings* and a *Display* menu, each showing a one-line summary; toolbar grouped into
+  Scale / Exclude / Edit grains, with editing tools shown only after analysis; results
+  (D16/D50/D84, charts) first in the right-hand panel; clearer button labels.
+- **Getting started checklist** (left panel; ticks itself off; hide/show from Help) and
+  an empty photo area with an *Add photos* button.
+- **Progress bar for analyses**: a bar at the bottom of the screen shows the photo
+  (n of N), the step (model download in MB, loading the model, tiles done of total with
+  time left, tracing outlines), progress across all photos, and Cancel.
 - **Phones and tablets:** Auto always picks U-Net; Cellpose-SAM stays selectable
   (labelled "not for phones"), uses the INT8 weights, and warns that it needs about
   1.5 GB of memory and can take 10+ minutes per photo. The settings panel starts
