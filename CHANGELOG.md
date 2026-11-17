@@ -7,6 +7,9 @@ All notable changes to webGrainy are recorded here. The format follows
 ## [Unreleased]
 
 ### Fixed
+- **Calibration messages are in plain language** and name the photos (not internal IDs),
+  e.g. "No scale yet: 1 photo is not calibrated (K1_C2.jpg) … Calibrate each photo with
+  Scale → Calibrate …". The old message mentioned an internal setting (`unit='px'`).
 - **Dashboard tabs could become unclickable** on shorter windows: the side panels are
   scrolling flex columns, and a tall section was squashed so its content painted over the
   tabs. Sections now keep their height, the tab bar stays visible while scrolling (sticky),
@@ -19,6 +22,12 @@ All notable changes to webGrainy are recorded here. The format follows
   orientation lines, and the grain inspector marks them "not counted".
 
 ### Added
+- **Analyse all sites** (under the site selector when there is more than one site):
+  analyses every not-yet-analysed photo in every site, the open site first; Cancel stops
+  the whole job.
+- **Compare sites:** an *Open* button next to each site that needs attention, and a
+  *Compare in pixels* option for uncalibrated sites (with a note that this is only
+  meaningful for the same camera at the same height).
 - **Compare sites** (Results → *Compare sites*): pick sites; overlaid cumulative curves
   with confidence bands and outlined size distributions (fixed colour per site,
   colour-blind-safe palette); comparison table (D16, D50 with CI, D84, Dg/σg, Sauter,
