@@ -31,6 +31,7 @@ export function buildAnalysisProvenance(params: {
   applyClahe?: boolean;
   claheClipLimit?: number;
   postProcess?: Record<string, number>;
+  tileSkipping?: AnalysisProvenance['tileSkipping'];
   now?: Date;
 }): AnalysisProvenance {
   return {
@@ -50,6 +51,14 @@ export function buildAnalysisProvenance(params: {
     ...(params.applyClahe !== undefined ? { applyClahe: params.applyClahe } : {}),
     ...(params.claheClipLimit !== undefined ? { claheClipLimit: params.claheClipLimit } : {}),
     ...(params.postProcess !== undefined ? { postProcess: { ...params.postProcess } } : {}),
+    ...(params.tileSkipping !== undefined
+      ? {
+          tileSkipping: {
+            ...params.tileSkipping,
+            analysedRects: params.tileSkipping.analysedRects.map((r) => [...r] as [number, number, number, number]),
+          },
+        }
+      : {}),
   };
 }
 

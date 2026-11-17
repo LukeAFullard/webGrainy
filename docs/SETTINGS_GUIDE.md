@@ -233,6 +233,35 @@ outlines and D50 than Legacy (median D50 error 3.3 % vs 8.6 % for Cellpose-SAM).
 Leave both at the defaults otherwise. **Reset analysis settings to defaults** restores
 every analysis setting to the tested values.
 
+### Advanced: CPU threads
+| | |
+|---|---|
+| **Options** | `Auto` · `1` … all processor threads |
+| **Default** | `Auto`: one fewer than the processor threads, at most 8 (e.g. 3 on a 4-thread computer or phone) |
+| **What it does** | How many processor threads the network uses when it runs on the CPU (no graphics card). Saved in this browser. **Takes effect after you reload the page.** |
+
+**When to change it:** lower it if the device becomes unresponsive or hot during analysis.
+Raise it (up to all threads) on a computer you aren't using for anything else, for a little
+more speed. More threads than physical cores rarely helps. It has no effect when a graphics
+card runs the model. Multi-threading also needs a cross-origin isolated page, which the app
+sets up automatically (the top bar shows the thread count).
+
+### Advanced: Skip areas outside the ROI
+| | |
+|---|---|
+| **Default** | **On** |
+| **What it does** | When a photo has a region of interest (ROI) or exclusion areas (section 6), the network only runs near the area that is counted, plus a 128-pixel safety margin. |
+
+Grains inside the ROI get **exactly the same outlines** as a full analysis, unless they reach
+more than 128 pixels outside the ROI. The time saved is roughly the share of the photo that
+is far (more than 128 pixels plus one tile) from the ROI, so it helps most on large photos
+with small ROIs or large exclusions.
+
+**Draw the ROI before analysing.** If you enlarge the ROI or remove an exclusion afterwards,
+the dashboard warns that part of the new area was not analysed; re-analyse that photo. Turn
+the option off if you expect to change ROIs a lot after analysing, or if grains much larger
+than 256 pixels cross the ROI edge.
+
 ---
 
 ## 4. Scale and geometry tools (toolbar)

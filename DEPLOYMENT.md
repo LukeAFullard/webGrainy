@@ -53,8 +53,9 @@ makes the very first load isolated too and avoids that reload. Verified in Chrom
 the real Hugging Face model download (`audit/review/sw_isolation_check.cjs`).
 
 Without cross-origin isolation, the WASM backend (the fallback when no WebGPU adapter is
-available) runs **single-threaded**. When the page is isolated, the app uses all logical
-cores (capped at 8). Measured in headless Chromium on a 4-core machine (`audit/perf/`):
+available) runs **single-threaded**. When the page is isolated, the app uses one fewer than
+the logical cores by default (at least 1, at most 8), leaving a core free for the page and the
+device; users can change this (*Advanced → CPU threads*, applied on reload). Measured in headless Chromium on a 4-core machine (`audit/perf/`):
 
 | Workload (CPU / WASM) | Not isolated (1 thread) | Isolated, ORT default (2 threads) | Isolated, all cores (4 threads) |
 |---|---|---|---|

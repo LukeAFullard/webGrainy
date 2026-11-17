@@ -897,6 +897,10 @@ export async function runSiteBatch(
       const mergedConfig: AnalysisConfig = {
         ...opts.analysisConfig,
         ...photo.analysisConfig,
+        // Skip inference tiles outside this photo's ROI / exclusions (default on).
+        ...(opts.analysisConfig?.skipTilesOutsideRoi !== false && photo.roiConfig !== undefined
+          ? { inferenceRoi: photo.roiConfig }
+          : {}),
         ...(photo.calibration !== undefined
           ? { calibration: photo.calibration }
           : {}),

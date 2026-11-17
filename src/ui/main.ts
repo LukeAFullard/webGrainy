@@ -48,7 +48,8 @@ import {
 import { CanvasViewport } from './canvasViewport.js';
 import { parseJpegExifMetadata } from './exif.js';
 import { helpButton, isHelpKey, renderHelpModalHtml } from './help.js';
-import { defaultWasmThreads } from '../modules/onnxInference.js';
+import { logicalCores, wasmThreadsFor } from '../modules/onnxInference.js';
+import { CPU_THREADS_KEY, readCpuThreadPref } from './cpuThreads.js';
 import {
   handleExportAction,
   renderAboutModalHtml,
@@ -115,11 +116,18 @@ function makeId(prefix: string): string {
 
 const store = new AppStore();
 
+// CPU thread preference ('auto' = cores − 1), saved per browser; applies on page load.
+const cpuThreadPref = readCpuThreadPref();
+const cpuThreads = wasmThreadsFor(cpuThreadPref);
+
 const engine = new ImageGrainsEngine({
   useWorker: true,
   workerFactory: () =>
     new Worker('./workers/grainPostprocess.worker.js', { type: 'module' }),
-  sessionCreateOptions: { wasmPaths: './ort/' },
+  sessionCreateOptions: {
+    wasmPaths: './ort/',
+    ...(cpuThreads !== undefined ? { numThreads: cpuThreads } : {}),
+  },
 });
 
 engine.onProgress((stage, detail) => {
@@ -633,8 +641,8 @@ function renderTopbar(state: AppState): void {
           ? 'WebGPU (No FP16)'
           : 'WebGPU Ready'
       : `${caps.hasWasmSimd ? 'WASM SIMD' : 'WASM Basic'} · ${
-          defaultWasmThreads() ?? 1
-        } CPU thread${(defaultWasmThreads() ?? 1) === 1 ? '' : 's'}`
+          cpuThreads ?? 1
+        } CPU thread${(cpuThreads ?? 1) === 1 ? '' : 's'}`
     : 'Initializing…';
   const swLabel =
     state.swStatus === 'ready'
@@ -858,6 +866,22 @@ function renderSidebar(state: AppState): void {
               <input class="input" type="number" step="1" min="1" max="20" value="${p.minSeedDensity}" data-param="minSeedDensity" />
             </label>
           </div>
+          ${(() => {
+            const cores = logicalCores();
+            const auto = wasmThreadsFor('auto');
+            const opts = cores === undefined ? [] : Array.from({ length: cores }, (_, i) => i + 1);
+            return `<label class="field-label" style="margin-top:6px;">
+              <span class="label-row">CPU threads ${helpButton('cpuThreads')}</span>
+              <select class="select" data-cpu-threads="">
+                <option value="auto" ${cpuThreadPref === 'auto' ? 'selected' : ''}>Auto${auto !== undefined ? ` (${auto} of ${cores})` : ''}</option>
+                ${opts.map((n) => `<option value="${n}" ${cpuThreadPref === n ? 'selected' : ''}>${n}</option>`).join('')}
+              </select>
+              ${self.crossOriginIsolated ? '' : '<span class="field-hint">Multi-threading is unavailable on this page (not cross-origin isolated): the CPU uses 1 thread.</span>'}
+            </label>`;
+          })()}
+          <label class="checkbox-label" style="margin-top:6px;">
+            <input type="checkbox" data-param="skipTilesOutsideRoi" ${p.skipTilesOutsideRoi ? 'checked' : ''} /> Skip areas outside the ROI (faster) ${helpButton('skipTilesOutsideRoi')}
+          </label>
           <button type="button" class="btn btn-sm" data-action="reset-analysis-params" style="margin-top:6px;">Reset analysis settings to defaults</button>
         </details>
         <div class="row-between" style="margin-top:8px;">
@@ -1242,7 +1266,18 @@ function renderDashboard(state: AppState): void {
           : ''
       }</div>
       ${(() => {
-        const warns = isSite ? report?.warnings ?? [] : single?.warnings ?? [];
+        const warns = [...(isSite ? report?.warnings ?? [] : single?.warnings ?? [])];
+        // ROI enlarged after an analysis that skipped tiles outside the old ROI.
+        const stale = (isSite ? state.photos.filter((p) => p.included) : activePhoto ? [activePhoto] : [])
+          .map((p) => ({ p, f: state.sessions.get(p.photoId)?.getUnanalysedRoiFraction() ?? 0 }))
+          .filter((x) => x.f > 0.001);
+        if (stale.length > 0) {
+          warns.unshift(
+            isSite
+              ? `${stale.length} photo(s) have ROI areas that were not analysed (the ROI was enlarged or an exclusion removed after analysis): ${stale.map((x) => x.p.label).join(', ')}. Re-analyse them.`
+              : `${(stale[0]!.f * 100).toFixed(1)}% of this photo's ROI was not analysed (the ROI was enlarged or an exclusion removed after analysis). Re-analyse this photo to include it.`,
+          );
+        }
         return warns.length > 0
           ? `<div class="warning-banner" role="alert">${warns.map(esc).join('<br/>')}</div>`
           : '';
@@ -1922,6 +1957,17 @@ function attachDelegatedHandlers(): void {
       }
       store.setState({ overlays: nextOv });
       void syncViewport(false);
+      return;
+    }
+
+    if (target instanceof HTMLSelectElement && target.dataset['cpuThreads'] !== undefined) {
+      try {
+        if (target.value === 'auto') localStorage.removeItem(CPU_THREADS_KEY);
+        else localStorage.setItem(CPU_THREADS_KEY, target.value);
+      } catch {
+        /* storage blocked: the choice lasts for this view only */
+      }
+      store.setState({ statusMessage: 'CPU threads saved. Reload the page to apply (the CPU runtime fixes its thread count when it starts).' });
       return;
     }
 

@@ -131,7 +131,19 @@ export interface CellposeTilingOptions {
   nout?: number;
   signal?: AbortSignal;
   onTile?: (done: number, total: number) => void;
+  /**
+   * Optional tile filter. Receives the tile's extent in (unpadded) image coordinates,
+   * end-exclusive, and returns false to skip it. Pixels covered only by skipped tiles get
+   * flows 0 and cellprob `SKIPPED_CELLPROB` (background). Pixels covered by at least one
+   * run tile are averaged over the run tiles only.
+   */
+  needTile?: (y0: number, x0: number, y1: number, x1: number) => boolean;
+  /** Called once before inference with the tiles that will run (image coords) and the total. */
+  onPlan?: (plan: { run: Array<[number, number, number, number]>; total: number }) => void;
 }
+
+/** Cellprob given to pixels no tile was run on (confident background). */
+export const SKIPPED_CELLPROB = -20;
 
 /**
  * Runs `runTile` over Cellpose-style tiles of a normalised CHW image and blends the
@@ -169,10 +181,27 @@ export async function runCellposeTiled(
   const acc = new Float32Array(nout * Ly * Lx);
   const navg = new Float64Array(Ly * Lx);
   const tile = new Float32Array(C * th * tw);
-  const total = ys.length * xs.length;
-  let done = 0;
+  // Decide which tiles to run (extent in unpadded image coordinates, end-exclusive).
+  const plan: Array<[number, number]> = [];
+  const runRects: Array<[number, number, number, number]> = [];
   for (const ty of ys) {
     for (const tx of xs) {
+      const r: [number, number, number, number] = [
+        Math.max(0, ty - y1),
+        Math.max(0, tx - x1),
+        Math.min(H, ty - y1 + th),
+        Math.min(W, tx - x1 + tw),
+      ];
+      if (opts.needTile && !opts.needTile(r[0], r[1], r[2], r[3])) continue;
+      plan.push([ty, tx]);
+      runRects.push(r);
+    }
+  }
+  opts.onPlan?.({ run: runRects, total: ys.length * xs.length });
+  const total = plan.length;
+  let done = 0;
+  for (const [ty, tx] of plan) {
+    {
       if (opts.signal?.aborted) {
         const err = new Error('The operation was aborted.');
         err.name = 'AbortError';
@@ -205,7 +234,9 @@ export async function runCellposeTiled(
     for (let y = 0; y < H; y++) {
       for (let x = 0; x < W; x++) {
         const p = (y + y1) * Lx + x + x1;
-        result[k * H * W + y * W + x] = acc[k * Ly * Lx + p]! / navg[p]!;
+        const w = navg[p]!;
+        result[k * H * W + y * W + x] =
+          w > 0 ? acc[k * Ly * Lx + p]! / w : k === nout - 1 ? SKIPPED_CELLPROB : 0;
       }
     }
   }

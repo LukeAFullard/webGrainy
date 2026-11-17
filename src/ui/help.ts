@@ -121,6 +121,20 @@ export const HELP_TOPICS = {
     default: 'Cellpose (matches ImageGrains)',
     when: 'Keep "Cellpose". In tests it matched the original software exactly, and gave better outlines than Legacy (outline score 0.445 vs 0.413 for U-Net, 0.561 vs 0.485 for Cellpose-SAM on 7 test photos). Choose "Legacy" only to reproduce results made with an older version.',
   },
+  cpuThreads: {
+    title: 'CPU threads',
+    group: 'Advanced analysis',
+    what: 'How many processor threads the neural network uses when it runs on the CPU (no graphics card). Saved in this browser; takes effect after you reload the page.',
+    default: 'Auto: one fewer than the processor threads, at most 8 (e.g. 3 on a 4-thread computer)',
+    when: 'Lower it if the computer or phone becomes unresponsive or hot during analysis. Raise it (up to all threads) on a computer you are not using for anything else, for a little more speed; more than the number of physical cores rarely helps. Has no effect when a graphics card (WebGPU) runs the model.',
+  },
+  skipTilesOutsideRoi: {
+    title: 'Skip areas outside the ROI',
+    group: 'Advanced analysis',
+    what: 'When a photo has a region of interest (ROI) or exclusion areas, the network only runs on the parts of the photo near the area that is counted, plus a 128-pixel safety margin. Grains inside the ROI get exactly the same outlines as a full analysis, unless they reach more than 128 pixels outside it.',
+    default: 'On',
+    when: 'Keep it on: it saves time in proportion to the area outside the ROI. Draw the ROI before analysing. If you enlarge the ROI or remove an exclusion afterwards, the app warns that part of the new area was not analysed; re-analyse that photo. Turn it off if you expect to change ROIs a lot after analysing, or if grains much larger than 256 pixels cross the ROI edge.',
+  },
   minSeedDensity: {
     title: 'Seed density',
     group: 'Advanced analysis',

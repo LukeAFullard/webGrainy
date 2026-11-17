@@ -19,6 +19,7 @@ import type {
   WorkerResponse,
   WorkingImageResult,
 } from '../types/index.js';
+import { buildRegionNeedTest, ROI_TILE_MARGIN_PX, unanalysedValidFraction } from './roiTileSkip.js';
 import { getCachedModels, getModel, modelKindOf, resolveModelId } from './modelCache.js';
 import {
   applyCLAHE,
@@ -636,6 +637,23 @@ export class AnalysisSession {
 
   getRoiConfig(): RoiExclusionConfig | undefined {
     return this.roiConfig;
+  }
+
+  /**
+   * Fraction of the current ROI's valid area that was not analysed, because tiles outside
+   * the ROI were skipped and the ROI was enlarged (or exclusions removed) afterwards.
+   * 0 when nothing was skipped. Above 0, the photo should be re-analysed.
+   */
+  getUnanalysedRoiFraction(): number {
+    const skip = this.provenance?.tileSkipping;
+    if (skip === undefined) return 0;
+    return unanalysedValidFraction(
+      this.workingImage.width,
+      this.workingImage.height,
+      this.workingImage.effectiveScaleFactor,
+      this.roiConfig,
+      skip.analysedRects,
+    );
   }
 
   /** Number of grains removed from statistics by the ROI / exclusion masks. */
@@ -1609,6 +1627,17 @@ export class ImageGrainsEngine {
     });
 
     const pipeline = config?.inferencePipeline ?? 'cellpose';
+    // Skip tiles that cannot affect grains in the ROI (Cellpose pipeline only).
+    const needRegion =
+      pipeline === 'cellpose' && config?.inferenceRoi !== undefined
+        ? buildRegionNeedTest(
+            workingImage.width,
+            workingImage.height,
+            workingImage.effectiveScaleFactor,
+            config.inferenceRoi,
+          )
+        : null;
+    const skipOpts = needRegion ? { needRegion, needRegionMarginPx: ROI_TILE_MARGIN_PX } : {};
     const runInference = async (
       session: ort.InferenceSession | InferenceSessionLike,
     ): Promise<InferenceOutput> => {
@@ -1621,14 +1650,14 @@ export class ImageGrainsEngine {
               workingImage.data,
               workingImage.width,
               workingImage.height,
-              { ...(signal ? { signal } : {}), onProgress: onTileProgress },
+              { ...(signal ? { signal } : {}), onProgress: onTileProgress, ...skipOpts },
             )
           : runCpsamCellposeInference(
               session as ort.InferenceSession,
               workingImage.data,
               workingImage.width,
               workingImage.height,
-              { ...(signal ? { signal } : {}), onProgress: onTileProgress },
+              { ...(signal ? { signal } : {}), onProgress: onTileProgress, ...skipOpts },
             );
       }
       if (selectedModel === 'unet') {
@@ -1743,6 +1772,7 @@ export class ImageGrainsEngine {
           ? { executionProvider: this.sessionExecutionProviders.get(modelId)! }
           : {}),
         inferencePipeline: pipeline,
+        ...(inferenceOut.tiling !== undefined ? { tileSkipping: inferenceOut.tiling } : {}),
         scaleMode: config?.scaleMode ?? 'auto',
         effectiveScaleFactor: workingImage.effectiveScaleFactor,
         applyClahe: config?.applyClahe ?? false,
