@@ -257,7 +257,8 @@ describe('F-07 ROI / exclusion applies to single-photo statistics', () => {
     expect(cols).toEqual(expect.arrayContaining(['orientation_deg', 'circularity', 'solidity', 'aspect_ratio']));
     const summary = s.exportSummaryCsv();
     expect(summary).toContain('fabric,mean_axial_orientation_deg');
-    expect(summary).toContain('size_class,note,"Not available: size classes need a calibrated photo (mm)"');
+    // Uncalibrated: pixel size classes (as in the dashboard histogram).
+    expect(summary).toMatch(/\nsize_class_px_x2,\d/);
     // Only the grain inside the ROI counts in the photo's fabric statistics.
     expect(summary).toContain('fabric,grain_count,1,count');
   });

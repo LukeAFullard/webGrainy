@@ -1,9 +1,6 @@
 import type { PsdPercentiles } from '../types/index.js';
-import type {
-  ExtendedGrainMorphometrics,
-  FabricRoseStats,
-  WentworthBin,
-} from '../modules/morphometricsExt.js';
+import type { FabricRoseStats } from '../modules/morphometricsExt.js';
+import type { SizeHistogram } from '../modules/histograms.js';
 import type {
   ConvergencePoint,
   JackknifeSensitivityReport,
@@ -348,54 +345,58 @@ export function renderJackknifeChartSvg(
   return parts.join('');
 }
 
-export function renderWentworthHistogramSvg(
-  bins: readonly WentworthBin[],
-  lightTheme = false,
-): string {
+function fmtEdge(v: number): string {
+  return v >= 10 ? v.toFixed(0) : v >= 1 ? v.toFixed(v % 1 === 0 ? 0 : 1) : v.toPrecision(2);
+}
+
+/** Area-weighted size distribution (small to large), φ classes in mm or power-of-two px classes. */
+export function renderSizeHistogramSvg(hist: SizeHistogram, lightTheme = false, title?: string): string {
   const W = 400;
-  const H = 180;
+  const H = 190;
   const padL = 38;
   const padR = 12;
-  const padT = 22;
-  const padB = 34;
+  const padT = 24;
+  const padB = 40;
   const plotW = W - padL - padR;
   const plotH = H - padT - padB;
   const bg = lightTheme ? '#ffffff' : '#0c1014';
   const fg = lightTheme ? '#1a202c' : '#e8eef4';
   const muted = lightTheme ? '#4a5568' : '#8fa0b2';
-
-  if (bins.length === 0) {
-    return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg"><rect width="${W}" height="${H}" fill="${bg}"/><text x="${W / 2}" y="${H / 2}" text-anchor="middle" fill="${muted}" font-size="11" font-family="system-ui, sans-serif">Calibrate in mm to view Wentworth φ histogram</text></svg>`;
+  const heading = title ?? 'Size Distribution (area-weighted %)';
+  if (hist.bins.length === 0) {
+    return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg"><rect width="${W}" height="${H}" fill="${bg}"/><text x="${W / 2}" y="${H / 2}" text-anchor="middle" fill="${muted}" font-size="11" font-family="system-ui, sans-serif">No grains yet</text></svg>`;
   }
-
-  const maxPct = Math.max(10, ...bins.map((b) => b.weightPct));
-  const bw = plotW / bins.length;
-
+  const maxPct = Math.max(10, Math.ceil(Math.max(...hist.bins.map((b) => b.weightPct)) / 10) * 10);
+  const bw = plotW / hist.bins.length;
   const parts: string[] = [];
   parts.push(`<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`);
   parts.push(`<rect width="${W}" height="${H}" fill="${bg}" />`);
-  parts.push(`<text x="${padL}" y="14" fill="${fg}" font-size="10.5" font-weight="700" font-family="system-ui, sans-serif">Wentworth Size Histogram (Weight %)</text>`);
-
-  bins.forEach((b, i) => {
+  parts.push(`<text x="${padL}" y="15" fill="${fg}" font-size="10.5" font-weight="700" font-family="system-ui, sans-serif">${esc(heading)} · n=${hist.n}</text>`);
+  for (const f of [0.5, 1]) {
+    const y = padT + plotH - f * plotH;
+    parts.push(`<line x1="${padL}" x2="${padL + plotW}" y1="${y.toFixed(1)}" y2="${y.toFixed(1)}" stroke="${muted}" stroke-opacity="0.25" />`);
+    parts.push(`<text x="${padL - 4}" y="${(y + 3).toFixed(1)}" text-anchor="end" fill="${muted}" font-size="8.5" font-family="ui-monospace, monospace">${(maxPct * f).toFixed(0)}%</text>`);
+  }
+  const labelEvery = hist.bins.length > 14 ? 2 : 1;
+  hist.bins.forEach((b, i) => {
     const h = (b.weightPct / maxPct) * plotH;
-    const x = padL + i * bw + 1;
+    const x = padL + i * bw;
     const y = padT + plotH - h;
-    parts.push(`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${Math.max(2, bw - 2).toFixed(1)}" height="${h.toFixed(1)}" fill="#2b7de9" rx="1" />`);
-    if (bins.length <= 16 || i % 2 === 0) {
-      parts.push(`<text x="${(x + bw / 2 - 1).toFixed(1)}" y="${padT + plotH + 12}" text-anchor="middle" fill="${muted}" font-size="8" font-family="ui-monospace, monospace">${b.phiMin.toFixed(1)}</text>`);
+    parts.push(`<rect x="${(x + 1).toFixed(1)}" y="${y.toFixed(1)}" width="${Math.max(2, bw - 2).toFixed(1)}" height="${h.toFixed(1)}" fill="#2b7de9" rx="1"><title>${fmtEdge(b.lo)}–${fmtEdge(b.hi)} ${hist.unit}${b.className ? ` (${esc(b.className)})` : ''}: ${b.weightPct.toFixed(1)}%, ${b.count} grains</title></rect>`);
+    if (i % labelEvery === 0) {
+      parts.push(`<text x="${x.toFixed(1)}" y="${padT + plotH + 12}" text-anchor="middle" fill="${muted}" font-size="8" font-family="ui-monospace, monospace">${fmtEdge(b.lo)}</text>`);
     }
   });
-
-  parts.push(`<text x="${padL - 4}" y="${padT + 8}" text-anchor="end" fill="${muted}" font-size="8.5" font-family="ui-monospace, monospace">${maxPct.toFixed(0)}%</text>`);
-  parts.push(`<text x="${padL + plotW / 2}" y="${H - 4}" text-anchor="middle" fill="${muted}" font-size="9.5" font-family="system-ui, sans-serif">φ Size Class (lower bound)</text>`);
+  const last = hist.bins[hist.bins.length - 1]!;
+  parts.push(`<text x="${(padL + plotW).toFixed(1)}" y="${padT + plotH + 12}" text-anchor="middle" fill="${muted}" font-size="8" font-family="ui-monospace, monospace">${fmtEdge(last.hi)}</text>`);
+  const axis = hist.unit === 'mm' ? `Grain size (mm, ${hist.step} φ classes)` : `Grain size (px, ${hist.step === 1 ? '×2' : '×√2'} classes; calibrate for mm)`;
+  parts.push(`<text x="${padL + plotW / 2}" y="${H - 6}" text-anchor="middle" fill="${muted}" font-size="9.5" font-family="system-ui, sans-serif">${axis}</text>`);
   parts.push('</svg>');
   return parts.join('');
 }
 
-export function renderAspectRatioHistogramSvg(
-  grains: readonly ExtendedGrainMorphometrics[],
-  lightTheme = false,
-): string {
+/** b/a aspect-ratio counts in equal bins over [0, 1] (see histograms.aspectRatioCounts). */
+export function renderAspectRatioHistogramSvg(counts: readonly number[], lightTheme = false): string {
   const W = 400;
   const H = 145;
   const padL = 38;
@@ -407,33 +408,24 @@ export function renderAspectRatioHistogramSvg(
   const bg = lightTheme ? '#ffffff' : '#0c1014';
   const fg = lightTheme ? '#1a202c' : '#e8eef4';
   const muted = lightTheme ? '#4a5568' : '#8fa0b2';
-
-  if (grains.length === 0) {
+  const n = counts.reduce((s, c) => s + c, 0);
+  if (n === 0) {
     return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg"><rect width="${W}" height="${H}" fill="${bg}"/><text x="${W / 2}" y="${H / 2}" text-anchor="middle" fill="${muted}" font-size="11" font-family="system-ui, sans-serif">No grains for Aspect Ratio (b/a) distribution</text></svg>`;
   }
-
-  const numBins = 10;
-  const counts = new Array<number>(numBins).fill(0);
-  for (const g of grains) {
-    const idx = Math.min(numBins - 1, Math.max(0, Math.floor(g.aspectRatio * numBins)));
-    counts[idx] = (counts[idx] ?? 0) + 1;
-  }
+  const numBins = counts.length;
   const maxC = Math.max(1, ...counts);
   const bw = plotW / numBins;
-
   const parts: string[] = [];
   parts.push(`<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`);
   parts.push(`<rect width="${W}" height="${H}" fill="${bg}" />`);
-  parts.push(`<text x="${padL}" y="14" fill="${fg}" font-size="10.5" font-weight="700" font-family="system-ui, sans-serif">Aspect Ratio (b / a) Distribution (n=${grains.length})</text>`);
-
+  parts.push(`<text x="${padL}" y="14" fill="${fg}" font-size="10.5" font-weight="700" font-family="system-ui, sans-serif">Aspect Ratio (b / a) Distribution (n=${n})</text>`);
   counts.forEach((c, i) => {
     const h = (c / maxC) * plotH;
     const x = padL + i * bw + 2;
     const y = padT + plotH - h;
-    parts.push(`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${Math.max(4, bw - 4).toFixed(1)}" height="${h.toFixed(1)}" fill="#23a85c" rx="1" />`);
+    parts.push(`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${Math.max(4, bw - 4).toFixed(1)}" height="${h.toFixed(1)}" fill="#23a85c" rx="1"><title>${(i / numBins).toFixed(1)}–${((i + 1) / numBins).toFixed(1)}: ${c} grains</title></rect>`);
     parts.push(`<text x="${(x + bw / 2 - 2).toFixed(1)}" y="${padT + plotH + 11}" text-anchor="middle" fill="${muted}" font-size="8" font-family="ui-monospace, monospace">${(i / numBins).toFixed(1)}</text>`);
   });
-
   parts.push('</svg>');
   return parts.join('');
 }

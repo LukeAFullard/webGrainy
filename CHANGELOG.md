@@ -51,6 +51,14 @@ All notable changes to webGrainy are recorded here. The format follows
   Fabric tab now uses the grains that count in the statistics, like its export.
 
 ### Added
+- **Size distribution histogram on the PSD tab** for *This photo* and *Whole site*
+  (area-weighted %, small to large; Wentworth φ classes in mm, or ×2 / ×√2 pixel classes
+  before calibration). Previously the size histogram sat on the Shape tab, always showed
+  the site, and was blank until photos were calibrated. Photo summary CSVs now include
+  the pixel size classes too.
+- **Download any chart as SVG or PNG** (buttons under each chart; light background, PNG
+  at 3×, provenance metadata embedded).
+- Histogram binning lives in `modules/histograms.ts`; `ui/charts.ts` only draws.
 - **More grain-size statistics** (Results → PSD → *More statistics*, and in all summary
   exports): Sauter mean D[3,2], De Brouckère mean D[4,3], arithmetic mean D[1,0]
   (moment ratios over all grains, ISO 9276-2); geometric mean Dg and geometric standard
