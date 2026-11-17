@@ -18,6 +18,15 @@ All notable changes to webGrainy are recorded here. The format follows
   (the model sees the whole photo) but are now drawn grey and hatched, without ellipses or
   orientation lines, and the grain inspector marks them "not counted".
 
+### Added
+- **Compare sites** (Results → *Compare sites*): pick sites; overlaid cumulative curves
+  with confidence bands and outlined size distributions (fixed colour per site,
+  colour-blind-safe palette); comparison table (D16, D50 with CI, D84, Dg/σg, Sauter,
+  sorting, gravel/cobble %); approximate pairwise D50 ratio with 95% interval and p-value;
+  comparison CSV; SVG/PNG chart downloads. Other sites' saved results are loaded on
+  demand and computed with the current statistics settings (`modules/siteComparison.ts`,
+  tested).
+
 ### Changed
 - **Results open on *This photo*;** switch to *Whole site* for the pooled statistics.
 - **Cellpose-SAM failed with "The serialized keys and/or value are too large".** Chromium

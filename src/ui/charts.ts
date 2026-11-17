@@ -515,3 +515,150 @@ export function renderPrintablePsdSvg(
     lightTheme: true,
   });
 }
+
+export interface CompareSeries {
+  name: string;
+  color: string;
+  psd: PsdPercentiles;
+  ciLower?: PsdPercentiles;
+  ciUpper?: PsdPercentiles;
+}
+
+/** Cumulative PSD curves of several sites overlaid, with their bootstrap CI bands and a legend. */
+export function renderComparePsdSvg(
+  series: readonly CompareSeries[],
+  unit: 'mm' | 'px',
+  xAxis: 'mm' | 'phi',
+  lightTheme = false,
+): string {
+  const W = 400;
+  const legendRows = Math.ceil(series.length / 2);
+  const H = 230 + legendRows * 13;
+  const padL = 44;
+  const padR = 14;
+  const padT = 24;
+  const padB = 34 + legendRows * 13;
+  const plotW = W - padL - padR;
+  const plotH = H - padT - padB;
+  const fg = lightTheme ? '#1a202c' : '#e8eef4';
+  const muted = lightTheme ? '#4a5568' : '#8fa0b2';
+  const gridCol = lightTheme ? '#e2e8f0' : '#26323e';
+  const bg = lightTheme ? '#ffffff' : '#0c1014';
+  const usePhi = unit === 'mm' && xAxis === 'phi';
+  const toX = (d: number): number => (usePhi ? -Math.log2(Math.max(1e-6, d)) : Math.log10(Math.max(1e-6, d)));
+  const vals: number[] = [];
+  for (const s of series) {
+    for (const { key } of PCT_KEYS) {
+      for (const v of [s.psd[key], s.ciLower?.[key], s.ciUpper?.[key]]) if (v !== undefined && v > 0 && Number.isFinite(v)) vals.push(toX(v));
+    }
+  }
+  if (vals.length === 0) {
+    return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg"><rect width="${W}" height="${H}" fill="${bg}"/><text x="${W / 2}" y="${H / 2}" text-anchor="middle" fill="${muted}" font-size="12" font-family="system-ui, sans-serif">Choose at least one analysed, calibrated site</text></svg>`;
+  }
+  let xMin = Math.min(...vals);
+  let xMax = Math.max(...vals);
+  const span = Math.max(0.4, xMax - xMin);
+  xMin -= span * 0.06;
+  xMax += span * 0.06;
+  // φ: coarse (negative) on the right, so size still increases to the right.
+  const xPx = (x: number): number => padL + (usePhi ? (xMax - x) / (xMax - xMin) : (x - xMin) / (xMax - xMin)) * plotW;
+  const yPx = (pct: number): number => padT + plotH - (pct / 100) * plotH;
+  const parts: string[] = [];
+  parts.push(`<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`);
+  parts.push(`<rect width="${W}" height="${H}" fill="${bg}" />`);
+  parts.push(`<text x="${padL}" y="15" fill="${fg}" font-size="10.5" font-weight="700" font-family="system-ui, sans-serif">Cumulative Grain-Size Distributions (${series.length} sites)</text>`);
+  for (const pct of [0, 16, 50, 84, 100]) {
+    const y = yPx(pct);
+    parts.push(`<line x1="${padL}" y1="${y.toFixed(1)}" x2="${padL + plotW}" y2="${y.toFixed(1)}" stroke="${gridCol}" stroke-dasharray="${pct === 0 || pct === 100 ? 'none' : '2,3'}" />`);
+    parts.push(`<text x="${padL - 5}" y="${(y + 3).toFixed(1)}" text-anchor="end" fill="${muted}" font-size="9" font-family="ui-monospace, monospace">${pct}%</text>`);
+  }
+  for (let i = 0; i <= 4; i++) {
+    const xv = xMin + ((xMax - xMin) * i) / 4;
+    const label = usePhi ? xv.toFixed(1) : (10 ** xv >= 10 ? (10 ** xv).toFixed(0) : (10 ** xv).toPrecision(2));
+    parts.push(`<text x="${xPx(xv).toFixed(1)}" y="${padT + plotH + 13}" text-anchor="middle" fill="${muted}" font-size="9" font-family="ui-monospace, monospace">${label}</text>`);
+  }
+  parts.push(`<text x="${padL + plotW / 2}" y="${padT + plotH + 27}" text-anchor="middle" fill="${muted}" font-size="9.5" font-family="system-ui, sans-serif">${usePhi ? 'Grain size (φ, coarse to the right)' : `Grain size (${unit}, log scale)`}</text>`);
+  for (const s of series) {
+    if (s.ciLower && s.ciUpper) {
+      const upper = PCT_KEYS.filter(({ key }) => s.ciUpper![key] > 0).map(({ key, pct }) => `${xPx(toX(s.ciUpper![key])).toFixed(1)},${yPx(pct).toFixed(1)}`);
+      const lower = PCT_KEYS.filter(({ key }) => s.ciLower![key] > 0).map(({ key, pct }) => `${xPx(toX(s.ciLower![key])).toFixed(1)},${yPx(pct).toFixed(1)}`).reverse();
+      if (upper.length > 1 && lower.length > 1) parts.push(`<polygon points="${[...upper, ...lower].join(' ')}" fill="${s.color}" fill-opacity="0.13" stroke="none" />`);
+    }
+  }
+  for (const s of series) {
+    const pts = PCT_KEYS.filter(({ key }) => s.psd[key] > 0 && Number.isFinite(s.psd[key])).map(({ key, pct }) => `${xPx(toX(s.psd[key])).toFixed(1)},${yPx(pct).toFixed(1)}`);
+    if (pts.length > 1) parts.push(`<polyline points="${pts.join(' ')}" fill="none" stroke="${s.color}" stroke-width="2.2" stroke-linejoin="round"><title>${esc(s.name)}: D16 ${s.psd.D16.toFixed(1)}, D50 ${s.psd.D50.toFixed(1)}, D84 ${s.psd.D84.toFixed(1)} ${unit}</title></polyline>`);
+  }
+  series.forEach((s, i) => {
+    const lx = padL + (i % 2) * (plotW / 2);
+    const ly = padT + plotH + 40 + Math.floor(i / 2) * 13;
+    parts.push(`<rect x="${lx}" y="${ly - 7}" width="14" height="3" fill="${s.color}" />`);
+    parts.push(`<text x="${lx + 18}" y="${ly - 3}" fill="${fg}" font-size="9" font-family="system-ui, sans-serif">${esc(s.name.length > 30 ? `${s.name.slice(0, 29)}…` : s.name)}</text>`);
+  });
+  parts.push('</svg>');
+  return parts.join('');
+}
+
+/** Size distributions of several sites as outlined step histograms on a shared axis (small to large). */
+export function renderCompareSizeHistogramSvg(
+  series: ReadonlyArray<{ name: string; color: string; hist: SizeHistogram }>,
+  lightTheme = false,
+): string {
+  const W = 400;
+  const legendRows = Math.ceil(series.length / 2);
+  const H = 190 + legendRows * 13;
+  const padL = 38;
+  const padR = 12;
+  const padT = 24;
+  const padB = 40 + legendRows * 13;
+  const plotW = W - padL - padR;
+  const plotH = H - padT - padB;
+  const bg = lightTheme ? '#ffffff' : '#0c1014';
+  const fg = lightTheme ? '#1a202c' : '#e8eef4';
+  const muted = lightTheme ? '#4a5568' : '#8fa0b2';
+  const all = series.flatMap((s) => s.hist.bins);
+  if (all.length === 0) {
+    return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg"><rect width="${W}" height="${H}" fill="${bg}"/><text x="${W / 2}" y="${H / 2}" text-anchor="middle" fill="${muted}" font-size="11" font-family="system-ui, sans-serif">No size distributions to compare</text></svg>`;
+  }
+  const unit = series[0]!.hist.unit;
+  const lo = Math.log2(Math.min(...all.map((b) => b.lo)));
+  const hi = Math.log2(Math.max(...all.map((b) => b.hi)));
+  const maxPct = Math.max(10, Math.ceil(Math.max(...all.map((b) => b.weightPct)) / 10) * 10);
+  const xPx = (d: number): number => padL + ((Math.log2(d) - lo) / Math.max(1e-9, hi - lo)) * plotW;
+  const yPx = (pct: number): number => padT + plotH - (pct / maxPct) * plotH;
+  const parts: string[] = [];
+  parts.push(`<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`);
+  parts.push(`<rect width="${W}" height="${H}" fill="${bg}" />`);
+  parts.push(`<text x="${padL}" y="15" fill="${fg}" font-size="10.5" font-weight="700" font-family="system-ui, sans-serif">Size Distributions (area-weighted %)</text>`);
+  for (const f of [0.5, 1]) {
+    const y = yPx(maxPct * f);
+    parts.push(`<line x1="${padL}" x2="${padL + plotW}" y1="${y.toFixed(1)}" y2="${y.toFixed(1)}" stroke="${muted}" stroke-opacity="0.25" />`);
+    parts.push(`<text x="${padL - 4}" y="${(y + 3).toFixed(1)}" text-anchor="end" fill="${muted}" font-size="8.5" font-family="ui-monospace, monospace">${(maxPct * f).toFixed(0)}%</text>`);
+  }
+  const edges = [...new Set(all.flatMap((b) => [b.lo, b.hi]).map((v) => +v.toPrecision(6)))].sort((a, b) => a - b);
+  const every = Math.max(1, Math.ceil(edges.length / 9));
+  edges.forEach((e, i) => {
+    if (i % every !== 0) return;
+    parts.push(`<text x="${xPx(e).toFixed(1)}" y="${padT + plotH + 12}" text-anchor="middle" fill="${muted}" font-size="8" font-family="ui-monospace, monospace">${e >= 10 ? e.toFixed(0) : e.toPrecision(2)}</text>`);
+  });
+  for (const s of series) {
+    if (s.hist.bins.length === 0) continue;
+    const pts: string[] = [];
+    const b0 = s.hist.bins[0]!;
+    pts.push(`${xPx(b0.lo).toFixed(1)},${yPx(0).toFixed(1)}`);
+    for (const b of s.hist.bins) {
+      pts.push(`${xPx(b.lo).toFixed(1)},${yPx(b.weightPct).toFixed(1)}`, `${xPx(b.hi).toFixed(1)},${yPx(b.weightPct).toFixed(1)}`);
+    }
+    pts.push(`${xPx(s.hist.bins[s.hist.bins.length - 1]!.hi).toFixed(1)},${yPx(0).toFixed(1)}`);
+    parts.push(`<polyline points="${pts.join(' ')}" fill="${s.color}" fill-opacity="0.08" stroke="${s.color}" stroke-width="1.8" stroke-linejoin="round"><title>${esc(s.name)}</title></polyline>`);
+  }
+  parts.push(`<text x="${padL + plotW / 2}" y="${padT + plotH + 26}" text-anchor="middle" fill="${muted}" font-size="9.5" font-family="system-ui, sans-serif">Grain size (${unit}${unit === 'mm' ? `, ${series[0]!.hist.step} φ classes` : ''})</text>`);
+  series.forEach((s, i) => {
+    const lx = padL + (i % 2) * (plotW / 2);
+    const ly = padT + plotH + 40 + Math.floor(i / 2) * 13;
+    parts.push(`<rect x="${lx}" y="${ly - 7}" width="14" height="3" fill="${s.color}" />`);
+    parts.push(`<text x="${lx + 18}" y="${ly - 3}" fill="${fg}" font-size="9" font-family="system-ui, sans-serif">${esc(s.name.length > 30 ? `${s.name.slice(0, 29)}…` : s.name)}</text>`);
+  });
+  parts.push('</svg>');
+  return parts.join('');
+}

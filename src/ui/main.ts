@@ -29,6 +29,15 @@ import {
   computeWorkspaceReports,
   effectiveRoi,
 } from '../modules/siteWorkspace.js';
+import type { SitePhotoInput } from '../modules/siteAnalysis.js';
+import {
+  COMPARE_COLORS,
+  compareD50,
+  comparisonCsv,
+  computeComparedSites,
+  loadStoredSiteInputs,
+  type SiteForComparison,
+} from '../modules/siteComparison.js';
 import { ScaleCalibrator } from '../modules/interactiveEditor.js';
 import {
   renderAspectRatioHistogramSvg,
@@ -37,6 +46,8 @@ import {
   renderJackknifeChartSvg,
   renderPsdChartSvg,
   renderSizeHistogramSvg,
+  renderComparePsdSvg,
+  renderCompareSizeHistogramSvg,
 } from './charts.js';
 import { CanvasViewport } from './canvasViewport.js';
 import { parseJpegExifMetadata } from './exif.js';
@@ -226,6 +237,8 @@ function getActivePhoto(state: AppState): PhotoRecord | null {
 function recomputeReports(): void {
   const state = store.getState();
   store.setState(computeWorkspaceReports(state));
+  // The comparison includes the active site, so keep it in step.
+  if (state.dashboardScope === 'compare') void refreshComparison();
 }
 
 async function refreshCapabilities(): Promise<void> {
@@ -247,6 +260,8 @@ async function loadSiteData(siteId: string): Promise<void> {
   // sidebar during the awaits below (net::ERR_FILE_NOT_FOUND).
   const staleThumbUrls = [...state.thumbUrls.values()];
 
+  // The previously active site may have new results: reload sites for comparison when needed.
+  storedSiteInputsCache.clear();
   const photos = await listSitePhotos(siteId);
   const sessions = new Map<string, AnalysisSession>();
   const photoStatuses = new Map<string, 'pending' | 'running' | 'done' | 'error'>();
@@ -1130,8 +1145,148 @@ async function downloadChart(id: string, format: 'svg' | 'png'): Promise<void> {
   }
 }
 
+function scopeButtonsHtml(scope: AppState['dashboardScope']): string {
+  const b = (id: AppState['dashboardScope'], label: string, title: string): string =>
+    `<button type="button" class="btn btn-sm ${scope === id ? 'active' : ''}" aria-pressed="${scope === id ? 'true' : 'false'}" data-scope="${id}" title="${title}">${label}</button>`;
+  return (
+    b('photo', 'This photo', 'Results for the photo shown') +
+    b('site', 'Whole site', 'Pooled results for all included photos of this site') +
+    b('compare', 'Compare sites', 'Overlay and compare the results of several sites')
+  );
+}
+
+// ---- Compare sites: other sites' saved results are loaded once and cached until the site changes ----
+const storedSiteInputsCache = new Map<string, SitePhotoInput[]>();
+let comparisonRun = 0;
+
+async function refreshComparison(): Promise<void> {
+  const run = ++comparisonRun;
+  const state = store.getState();
+  const chosen = state.sites.filter((s) => state.compareSiteIds === null || state.compareSiteIds.includes(s.siteId));
+  store.setState({ comparison: { loading: true, sites: state.comparison?.sites ?? [], error: null } });
+  try {
+    const entries: SiteForComparison[] = [];
+    for (const site of chosen) {
+      let inputs: SitePhotoInput[];
+      if (site.siteId === state.activeSiteId) {
+        inputs = buildSiteInputs(store.getState());
+      } else {
+        inputs = storedSiteInputsCache.get(site.siteId) ?? (await loadStoredSiteInputs(site.siteId, state.siteOptions));
+        storedSiteInputsCache.set(site.siteId, inputs);
+      }
+      // Colour by the site's position in the full list, so it does not change with the selection.
+      const color = COMPARE_COLORS[state.sites.indexOf(site) % COMPARE_COLORS.length]!;
+      entries.push({ siteId: site.siteId, name: site.name, inputs, color });
+    }
+    if (run !== comparisonRun) return;
+    // Same settings for every site, so the comparison is like for like.
+    const sites = computeComparedSites(entries, store.getState().siteOptions);
+    store.setState({ comparison: { loading: false, sites, error: null } });
+  } catch (err) {
+    if (run !== comparisonRun) return;
+    store.setState({ comparison: { loading: false, sites: [], error: err instanceof Error ? err.message : String(err) } });
+  }
+}
+
+function renderCompareHtml(state: AppState, lightTheme: boolean): string {
+  const cmp = state.comparison;
+  const chosen = new Set(state.compareSiteIds ?? state.sites.map((s) => s.siteId));
+  const colorOf = new Map((cmp?.sites ?? []).map((s) => [s.siteId, s.color]));
+  const picker = state.sites
+    .map(
+      (s) => `<label class="checkbox-label compare-site">
+        <input type="checkbox" data-compare-site="${esc(s.siteId)}" ${chosen.has(s.siteId) ? 'checked' : ''} />
+        <span class="swatch" style="background:${colorOf.get(s.siteId) ?? 'transparent'}"></span>${esc(s.name)} <span class="summary-note">(${s.photoOrder.length} photos)</span>
+      </label>`,
+    )
+    .join('');
+  const withReport = (cmp?.sites ?? []).filter((s) => s.report !== null);
+  const units = new Set(withReport.map((s) => s.report!.unit));
+  const mixedUnits = units.size > 1;
+  const plotted = mixedUnits ? withReport.filter((s) => s.report!.unit === 'mm') : withReport;
+  const unit = (plotted[0]?.report?.unit ?? 'mm') as 'mm' | 'px';
+  const step: 0.5 | 1 = state.histogramStepPhi === 0.5 ? 0.5 : 1;
+  const v = (n: number | undefined | null, d = 1): string => (n === undefined || n === null || !Number.isFinite(n) ? '—' : n.toFixed(d));
+  const table = withReport.length
+    ? `<div class="table-scroll"><table class="stats-table compare-table">
+        <thead><tr><th>Site</th><th>Photos / grains</th><th>D16</th><th>D50 (95% CI)</th><th>D84</th><th>Dg / σg</th><th>Sauter</th><th>Sorting φ</th><th>Gravel / cobble %</th></tr></thead>
+        <tbody>${withReport
+          .map((s) => {
+            const r = s.report!;
+            return `<tr><th scope="row"><span class="swatch" style="background:${s.color}"></span>${esc(s.name)}</th>
+              <td>${r.includedPhotoCount} / ${r.validGrainCount}</td><td>${v(r.psd.D16)}</td>
+              <td>${v(r.psd.D50)} (${v(r.bootstrapCi.lower.D50)}–${v(r.bootstrapCi.upper.D50)})</td><td>${v(r.psd.D84)}</td>
+              <td>${v(r.extra?.geometricMean)} / ${v(r.extra?.geometricSd, 2)}</td><td>${v(r.extra?.sauterMeanD32)}</td>
+              <td>${v(r.folkWard?.sortingPhi, 2)}</td><td>${r.wentworth ? `${v(r.wentworth.gravelPct, 0)} / ${v(r.wentworth.cobblePct, 0)}` : '—'}</td></tr>`;
+          })
+          .join('')}</tbody></table></div>
+        <p class="field-hint">Sizes in ${unit}. All sites use the same statistics settings (${esc(state.siteOptions.poolingMode)}, ${esc(state.siteOptions.sizeMetric ?? 'bAxis')}).</p>`
+    : '';
+  const pairs = compareD50(plotted);
+  const pairHtml = pairs.length
+    ? `<details class="advanced-block" data-keep-open="compare-pairs" open>
+        <summary>D50 differences between sites <span class="summary-note">approximate</span></summary>
+        <table class="stats-table"><tbody>${pairs
+          .map(
+            (c) => `<tr><th scope="row">${esc(c.a)} ÷ ${esc(c.b)}<span class="stats-note">${c.p < 0.05 ? 'likely different (p &lt; 0.05)' : 'no clear difference'}</span></th>
+              <td>${c.ratio.toFixed(2)}× (${c.ratioLo.toFixed(2)}–${c.ratioHi.toFixed(2)})<br/>p ${c.p < 0.001 ? '&lt; 0.001' : `= ${c.p.toFixed(3)}`}</td></tr>`,
+          )
+          .join('')}</tbody></table>
+        <p class="field-hint">Ratio of D50s with a 95% interval, from each site's bootstrap interval on a log scale (z-test). A screening check, not a formal two-sample test. ${helpButton('compareSites')}</p>
+      </details>`
+    : '';
+  const problems = (cmp?.sites ?? []).filter((s) => s.report === null || (mixedUnits && s.report.unit !== 'mm'));
+  const problemHtml = problems.length
+    ? `<div class="warning-banner">${problems
+        .map((s) => `${esc(s.name)}: ${esc(s.report === null ? s.error ?? 'no results' : 'not calibrated (sizes in px), so it cannot be plotted with calibrated sites')}`)
+        .join('<br/>')}</div>`
+    : '';
+  const psdSeries = plotted.map((s) => ({ name: s.name, color: s.color, psd: s.report!.psd, ciLower: s.report!.bootstrapCi.lower, ciUpper: s.report!.bootstrapCi.upper }));
+  const histSeries = plotted.map((s) => ({
+    name: s.name,
+    color: s.color,
+    hist: sizeHistogramFromWentworth((step === 0.5 ? s.report!.wentworthHistogram05Phi : s.report!.wentworthHistogram10Phi) ?? [], step),
+  }));
+  return `
+    <div class="panel-section">
+      <div class="row-between" style="margin-bottom:6px;">
+        <span class="panel-title">Results</span>
+        <div class="row">${scopeButtonsHtml('compare')}</div>
+      </div>
+      <div class="compare-picker">${picker || '<span class="field-hint">Create more sites (Site → + New) to compare them.</span>'}</div>
+      ${cmp?.loading ? '<div class="basis-banner">Loading the chosen sites…</div>' : ''}
+      ${cmp?.error ? `<div class="warning-banner">${esc(cmp.error)}</div>` : ''}
+      ${problemHtml}
+      ${table}
+      ${
+        plotted.length
+          ? `<div class="row" style="margin-top:8px;">
+              <button type="button" class="btn btn-sm ${state.psdXAxis === 'mm' ? 'active' : ''}" data-psd-x="mm">${unit} (log)</button>
+              ${unit === 'mm' ? `<button type="button" class="btn btn-sm ${state.psdXAxis === 'phi' ? 'active' : ''}" data-psd-x="phi">phi (φ)</button>` : ''}
+              <button type="button" class="btn btn-sm" data-action="export-comparison" style="margin-left:auto;">Download comparison CSV</button>
+            </div>
+            ${chartBox('compare-psd', 'Cumulative grain-size distributions by site', (light) => renderComparePsdSvg(psdSeries, unit, state.psdXAxis, light), lightTheme)}
+            ${unit === 'mm' ? `<div class="row" style="margin-top:8px;">
+              <button type="button" class="btn btn-sm ${step === 0.5 ? 'active' : ''}" data-phi-step="0.5">Narrow classes (0.5 φ)</button>
+              <button type="button" class="btn btn-sm ${step === 1 ? 'active' : ''}" data-phi-step="1.0">Wide classes (1 φ)</button>
+            </div>
+            ${chartBox('compare-size', 'Size distributions by site', (light) => renderCompareSizeHistogramSvg(histSeries, light), lightTheme)}` : ''}
+            ${pairHtml}`
+          : ''
+      }
+    </div>`;
+}
+
 function renderDashboard(state: AppState): void {
   chartRenderers.clear();
+  if (state.dashboardScope === 'compare') {
+    const kept = captureOpenDetails(dashboardEl);
+    const scroll = dashboardEl.scrollTop;
+    dashboardEl.innerHTML = renderCompareHtml(state, isLightColorScheme());
+    restoreOpenDetails(dashboardEl, kept);
+    dashboardEl.scrollTop = scroll;
+    return;
+  }
   const report = state.siteReport;
   const single = state.singlePhotoStats;
   const activePhoto = getActivePhoto(state);
@@ -1308,8 +1463,7 @@ function renderDashboard(state: AppState): void {
       <div class="row-between" style="margin-bottom:6px;">
         <span class="panel-title">Results</span>
         <div class="row">
-          <button type="button" class="btn btn-sm ${isSite ? 'active' : ''}" aria-pressed="${isSite ? 'true' : 'false'}" data-scope="site">Whole site</button>
-          <button type="button" class="btn btn-sm ${!isSite ? 'active' : ''}" aria-pressed="${!isSite ? 'true' : 'false'}" data-scope="photo">This photo</button>
+          ${scopeButtonsHtml(state.dashboardScope)}
         </div>
       </div>
       <div class="basis-banner">${esc(basisLabel)}${
@@ -1518,6 +1672,9 @@ function renderAll(state: AppState): void {
     prev.siteReportError !== state.siteReportError ||
     prev.singlePhotoStats !== state.singlePhotoStats ||
     prev.dashboardScope !== state.dashboardScope ||
+    prev.comparison !== state.comparison ||
+    prev.compareSiteIds !== state.compareSiteIds ||
+    prev.sites !== state.sites ||
     prev.dashboardTab !== state.dashboardTab ||
     prev.psdXAxis !== state.psdXAxis ||
     prev.histogramStepPhi !== state.histogramStepPhi ||
@@ -1792,6 +1949,19 @@ function attachDelegatedHandlers(): void {
     if (actionEl) {
       const act = actionEl.dataset['action'];
       const state = store.getState();
+      if (act === 'export-comparison') {
+        const cmp = state.comparison;
+        if (cmp && cmp.sites.length > 0) {
+          const csv = comparisonCsv(cmp.sites, {
+            ...baseExportMetadata(),
+            poolingMode: state.siteOptions.poolingMode,
+            sizeMetric: state.siteOptions.sizeMetric ?? 'bAxis',
+            sites: cmp.sites.map((s) => s.name).join('; '),
+          });
+          triggerBlobDownload(new Blob([csv], { type: 'text/csv' }), 'site_comparison.csv');
+        }
+        return;
+      }
       if (act === 'add-photos') {
         fileInputEl.click();
         return;
@@ -1832,6 +2002,7 @@ function attachDelegatedHandlers(): void {
         const renamed: SiteRecord = { ...site, name, updatedAt: Date.now() };
         void saveSite(renamed).then(async () => {
           store.setState({ sites: await listSites(), statusMessage: `Site renamed to "${name}".` });
+          if (store.getState().dashboardScope === 'compare') void refreshComparison();
         });
       } else if (act === 'import-archive') {
         archiveInputEl.click();
@@ -1988,7 +2159,9 @@ function attachDelegatedHandlers(): void {
 
     const scopeBtn = target.closest<HTMLElement>('[data-scope]');
     if (scopeBtn) {
-      store.setState({ dashboardScope: scopeBtn.dataset['scope'] as 'site' | 'photo' });
+      const scope = scopeBtn.dataset['scope'] as 'site' | 'photo' | 'compare';
+      store.setState({ dashboardScope: scope });
+      if (scope === 'compare') void refreshComparison();
       return;
     }
 
@@ -2155,6 +2328,17 @@ function attachDelegatedHandlers(): void {
       return;
     }
 
+    const compareSite = target instanceof HTMLInputElement ? target.dataset['compareSite'] : undefined;
+    if (compareSite !== undefined) {
+      const st = store.getState();
+      const current = new Set(st.compareSiteIds ?? st.sites.map((s) => s.siteId));
+      if ((target as HTMLInputElement).checked) current.add(compareSite);
+      else current.delete(compareSite);
+      store.setState({ compareSiteIds: st.sites.map((s) => s.siteId).filter((id) => current.has(id)) });
+      void refreshComparison();
+      return;
+    }
+
     const siteOptKey = target.dataset['siteOpt'];
     if (siteOptKey) {
       const st = store.getState();
@@ -2173,6 +2357,7 @@ function attachDelegatedHandlers(): void {
       }
       store.setState({ siteOptions: nextOpts });
       if (siteOptKey === 'maxExcludedFraction') {
+        storedSiteInputsCache.clear(); // other sites' ROIs use the tolerance too
         for (const ph of st.photos) {
           if (ph.roiConfig) st.sessions.get(ph.photoId)?.setRoiConfig(effectiveRoi(ph, nextOpts));
         }

@@ -406,6 +406,21 @@ Leave it at **0** if you want to describe everything visible down to the detecti
 
 Changes apply immediately.
 
+### Compare sites (Results → Compare sites)
+
+Tick the sites to compare. Their cumulative grain-size curves (with confidence bands) and
+size distributions are overlaid in different colours, and a table lists photos and grains,
+D16, D50 with its 95% interval, D84, geometric mean and spread, Sauter mean, sorting and
+gravel/cobble share. **All sites use the current statistics settings** (pooling mode, size
+metric, cutoffs), so the comparison is like for like. Sites must be calibrated to be
+plotted together.
+
+For each pair of sites, *D50 differences* gives the ratio of their D50s with a 95% interval
+and a p-value. This is approximate: it combines each site's bootstrap interval on a log
+scale (z-test). Treat p < 0.05 as "likely different" and look at the curves; for a formal
+test use a full two-sample method such as GSDtools (Eaton et al. 2019). *Download
+comparison CSV* saves the table and the pairwise results; each chart has SVG/PNG buttons.
+
 ### Uncertainty & sampling (expandable section)
 | Setting | Default | What it does | When to change it |
 |---|---|---|---|
