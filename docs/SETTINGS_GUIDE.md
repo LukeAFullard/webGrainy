@@ -580,6 +580,19 @@ pixel classes before calibration); the Shape tab shows the aspect-ratio distribu
 | **16/32-bit PNG mask** | The grain label image (each grain a different value), for GIS or Python. |
 | **GeoJSON / SVG contours** | Grain outlines in original photo coordinates. |
 
+### Printable report
+
+**Export → Printable report** opens a one- or two-page summary of the open site in a new tab.
+Use its button, or Ctrl+P / ⌘P, to print it or save it as a PDF. It contains:
+- the cumulative curve and the size distribution;
+- D16/D50/D84 with bootstrap intervals, Dg, σg, Sauter mean, D65, Cu, Folk & Ward, and Wentworth %;
+- sample adequacy and photos to check;
+- a thumbnail of each photo with its outlines;
+- the settings, software and model versions, warnings and citations.
+
+Its numbers are the same as in the Site Summary CSV. If pop-ups are blocked, the report is
+downloaded as an HTML file instead: open it and print it from the browser.
+
 ### Backups: your work lives only in this browser
 
 Photos and results are stored in this browser's storage on this computer, not online.
@@ -635,6 +648,16 @@ Shortcuts are off while you type in a field.
 - **Analysis settings are remembered** in this browser for your next visit. **Reset analysis
   settings to defaults** returns to the tested configuration. Settings saved by an older
   version that no longer apply fall back to their defaults.
+
+### Comparing sites over time
+
+Each site can have a **survey date** (Site panel). If you leave it empty, the earliest camera
+date of its photos is used. In **Compare sites**, tick **Order by survey date and plot sizes over
+time**. The table is then ordered oldest first with a *Survey date* column, and a chart shows
+D16, D50 and D84 over time with bootstrap interval bars. Sites without a date are listed under
+the chart and not plotted. The comparison CSV includes each site's date. Use the same
+statistics settings and the same kind of sampling area at each survey; otherwise changes
+over time may come from the method rather than the riverbed.
 
 ### The extra statistics (Results → PSD → More statistics)
 

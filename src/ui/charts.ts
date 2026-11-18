@@ -662,3 +662,123 @@ export function renderCompareSizeHistogramSvg(
   parts.push('</svg>');
   return parts.join('');
 }
+
+export interface TimeSeriesPoint {
+  date: string;
+  name: string;
+  color: string;
+  D16: number;
+  D50: number;
+  D84: number;
+  /** Bootstrap CI of each percentile. */
+  ci?: { D16: [number, number]; D50: [number, number]; D84: [number, number] };
+}
+
+/**
+ * D16 / D50 / D84 of sites over time, oldest first, with bootstrap CI error bars. The x axis is
+ * calendar time; the y axis is log-scaled grain size.
+ */
+export function renderTimeSeriesSvg(points: readonly TimeSeriesPoint[], unit: 'mm' | 'px', lightTheme = false): string {
+  const W = 400;
+  const H = 240;
+  const padL = 44;
+  const padR = 14;
+  const padT = 26;
+  const padB = 46;
+  const plotW = W - padL - padR;
+  const plotH = H - padT - padB;
+  const fg = lightTheme ? '#1a202c' : '#e8eef4';
+  const muted = lightTheme ? '#4a5568' : '#8fa0b2';
+  const gridCol = lightTheme ? '#e2e8f0' : '#26323e';
+  const bg = lightTheme ? '#ffffff' : '#0c1014';
+  const font = 'font-family="system-ui, sans-serif"';
+  if (points.length === 0) {
+    return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg"><rect width="${W}" height="${H}" fill="${bg}"/><text x="${W / 2}" y="${H / 2}" text-anchor="middle" fill="${muted}" font-size="12" ${font}>Give at least one compared site a survey date</text></svg>`;
+  }
+  const t = points.map((p) => Date.parse(`${p.date}T00:00:00Z`));
+  let tMin = Math.min(...t);
+  let tMax = Math.max(...t);
+  if (tMax - tMin < 864e5) {
+    tMin -= 15 * 864e5;
+    tMax += 15 * 864e5;
+  } else {
+    const padT2 = (tMax - tMin) * 0.06;
+    tMin -= padT2;
+    tMax += padT2;
+  }
+  const vals: number[] = [];
+  for (const p of points) {
+    for (const v of [p.D16, p.D50, p.D84, ...(p.ci ? [...p.ci.D16, ...p.ci.D84] : [])]) if (v > 0 && Number.isFinite(v)) vals.push(Math.log10(v));
+  }
+  let yMin = Math.min(...vals);
+  let yMax = Math.max(...vals);
+  if (yMax - yMin < 0.1) {
+    yMin -= 0.1;
+    yMax += 0.1;
+  }
+  const yPad = (yMax - yMin) * 0.08;
+  yMin -= yPad;
+  yMax += yPad;
+  const X = (ms: number): number => padL + ((ms - tMin) / (tMax - tMin)) * plotW;
+  const Y = (v: number): number => padT + plotH - ((Math.log10(Math.max(1e-9, v)) - yMin) / (yMax - yMin)) * plotH;
+  const series: Array<{ key: 'D16' | 'D50' | 'D84'; color: string; dash: string }> = [
+    { key: 'D84', color: '#D55E00', dash: '4 3' },
+    { key: 'D50', color: lightTheme ? '#1a202c' : '#e8eef4', dash: '' },
+    { key: 'D16', color: '#0072B2', dash: '4 3' },
+  ];
+  // y ticks at 1-2-5 steps
+  const ticksFor = (mults: readonly number[]): number[] => {
+    const out: number[] = [];
+    for (let e = Math.floor(yMin) - 1; e <= Math.ceil(yMax); e++) {
+      for (const m of mults) {
+        const lv = Math.log10(m * 10 ** e);
+        if (lv >= yMin && lv <= yMax) out.push(m * 10 ** e);
+      }
+    }
+    return out;
+  };
+  // 1-2-5 steps; finer steps when the size range is narrow.
+  let ticks = ticksFor([1, 2, 5]);
+  if (ticks.length < 3) ticks = ticksFor([1, 1.5, 2, 2.5, 3, 4, 5, 6, 7, 8, 9]);
+  const fmtTick = (v: number): string => (v >= 1 ? String(Math.round(v * 10) / 10) : v.toPrecision(2));
+  const parts: string[] = [];
+  parts.push(`<rect width="${W}" height="${H}" fill="${bg}"/>`);
+  parts.push(`<text x="${padL}" y="15" fill="${fg}" font-size="11" font-weight="600" ${font}>Grain size over time</text>`);
+  for (const v of ticks) {
+    const y = Y(v).toFixed(1);
+    parts.push(`<line x1="${padL}" x2="${W - padR}" y1="${y}" y2="${y}" stroke="${gridCol}" stroke-width="1"/>`);
+    parts.push(`<text x="${padL - 4}" y="${y}" dy="3" text-anchor="end" fill="${muted}" font-size="9" ${font}>${fmtTick(v)}</text>`);
+  }
+  parts.push(`<text transform="translate(11 ${padT + plotH / 2}) rotate(-90)" text-anchor="middle" fill="${muted}" font-size="9" ${font}>Grain size (${unit}, log scale)</text>`);
+  // x labels: each point's date (thinned when crowded)
+  const step = Math.max(1, Math.ceil(points.length / 6));
+  points.forEach((p, i) => {
+    if (i % step !== 0 && i !== points.length - 1) return;
+    parts.push(`<text x="${X(t[i]!).toFixed(1)}" y="${padT + plotH + 13}" text-anchor="middle" fill="${muted}" font-size="9" ${font}>${p.date}</text>`);
+  });
+  parts.push(`<line x1="${padL}" x2="${W - padR}" y1="${padT + plotH}" y2="${padT + plotH}" stroke="${muted}" stroke-width="1"/>`);
+  for (const s of series) {
+    const pts = points.map((p, i) => `${X(t[i]!).toFixed(1)},${Y(p[s.key]).toFixed(1)}`).join(' ');
+    if (points.length > 1) parts.push(`<polyline points="${pts}" fill="none" stroke="${s.color}" stroke-width="${s.key === 'D50' ? 2 : 1.3}" ${s.dash ? `stroke-dasharray="${s.dash}"` : ''}/>`);
+    points.forEach((p, i) => {
+      const x = X(t[i]!);
+      const ci = p.ci?.[s.key];
+      if (ci && ci[0] > 0 && ci[1] > 0) {
+        parts.push(`<line x1="${x.toFixed(1)}" x2="${x.toFixed(1)}" y1="${Y(ci[0]).toFixed(1)}" y2="${Y(ci[1]).toFixed(1)}" stroke="${s.color}" stroke-width="1.2"/>`);
+      }
+      parts.push(`<circle cx="${x.toFixed(1)}" cy="${Y(p[s.key]).toFixed(1)}" r="${s.key === 'D50' ? 3.5 : 2.5}" fill="${p.color}" stroke="${s.color}" stroke-width="1.2"><title>${esc(p.name)} (${p.date}): ${s.key} ${p[s.key].toFixed(1)} ${unit}</title></circle>`);
+    });
+  }
+  // legend
+  const ly = H - 10;
+  series
+    .slice()
+    .reverse()
+    .forEach((s, i) => {
+      const lx = padL + i * 82;
+      parts.push(`<line x1="${lx}" x2="${lx + 16}" y1="${ly - 3}" y2="${ly - 3}" stroke="${s.color}" stroke-width="${s.key === 'D50' ? 2 : 1.3}" ${s.dash ? `stroke-dasharray="${s.dash}"` : ''}/>`);
+      parts.push(`<text x="${lx + 20}" y="${ly}" fill="${fg}" font-size="9" ${font}>${s.key}</text>`);
+    });
+  parts.push(`<text x="${W - padR}" y="${ly}" text-anchor="end" fill="${muted}" font-size="9" ${font}>bars: bootstrap CI</text>`);
+  return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="D16, D50 and D84 of the compared sites by survey date">${parts.join('')}</svg>`;
+}

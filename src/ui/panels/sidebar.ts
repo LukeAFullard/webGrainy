@@ -5,6 +5,7 @@ import type { readCpuThreadPref } from '../cpuThreads.js';
 import { helpButton } from '../help.js';
 import { defaultAnalysisParams, type AppState } from '../state.js';
 import { getActiveSite } from '../workspaceActions.js';
+import { earliestPhotoDate } from '../../modules/surveyDate.js';
 import { photoSummary, visiblePhotos } from '../photoList.js';
 import { esc } from './html.js';
 
@@ -66,6 +67,7 @@ export function renderSidebarHtml(state: AppState, view: SidebarView): string {
           )
           .join('')}
       </select>
+      ${surveyDateHtml(state)}
       ${backupLineHtml(state, analysedCount, view.storageInfo)}
       ${state.sites.length > 1 ? `<button type="button" class="btn btn-sm" style="margin-top:6px;width:100%;" data-action="analyse-all-sites" title="Analyse every photo that is not analysed yet, in all ${state.sites.length} sites" ${state.batchRunning ? 'disabled' : ''}>Analyse all sites (${state.sites.length})</button>` : ''}
     </div>
@@ -330,4 +332,16 @@ export function bulkBarHtml(state: AppState): string {
     <button type="button" class="btn btn-xs" data-action="photo-bulk" data-bulk="reanalyse" ${dis}>Re-analyse</button>
     <button type="button" class="btn btn-xs btn-danger" data-action="photo-bulk" data-bulk="delete" ${dis}>Delete…</button>
   </div>`;
+}
+
+/** Survey date of the open site: entered, or the earliest photo date as a placeholder. */
+export function surveyDateHtml(state: AppState): string {
+  const site = getActiveSite(state);
+  if (!site) return '';
+  const fromPhotos = earliestPhotoDate(state.photos.map((p) => p.metadata?.timestamp));
+  return `<label class="field-label survey-date" style="margin-top:6px;">
+    <span class="label-row">Survey date ${helpButton('surveyDate')}</span>
+    <input class="input" type="date" data-site-date="" value="${esc(site.surveyDate ?? '')}" aria-label="Survey date of this site" />
+    <span class="field-hint">${site.surveyDate ? 'Entered by you.' : fromPhotos ? `Not set: the photos' date (${esc(fromPhotos)}) is used.` : 'Not set (the photos have no camera date).'}</span>
+  </label>`;
 }

@@ -108,6 +108,8 @@ export interface AppState {
   selectedGrainIds: Set<number>;
   /** Which photos the photo list shows. */
   photoFilter: PhotoFilter;
+  /** Compare sites: order by survey date and show the time-series chart. */
+  compareByDate: boolean;
   /** Photo list in select mode (checkboxes for bulk actions). */
   photoSelectMode: boolean;
   selectedPhotoIds: Set<string>;
@@ -185,6 +187,7 @@ export function createInitialState(): AppState {
     },
     selectedGrainIds: new Set(),
     photoFilter: 'all',
+    compareByDate: false,
     photoSelectMode: false,
     selectedPhotoIds: new Set(),
     inspectedGrainId: null,

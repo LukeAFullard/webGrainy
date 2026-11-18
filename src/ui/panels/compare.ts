@@ -1,7 +1,9 @@
 /** Compare sites view: site picker, overlaid PSD and size histograms, D50 table. */
 import { compareD50 } from '../../modules/siteComparison.js';
 import { sizeHistogramFromWentworth } from '../../modules/histograms.js';
-import { renderComparePsdSvg, renderCompareSizeHistogramSvg } from '../charts.js';
+import { renderComparePsdSvg, renderCompareSizeHistogramSvg, renderTimeSeriesSvg, type TimeSeriesPoint } from '../charts.js';
+import { orderByDate } from '../../modules/surveyDate.js';
+import type { ComparedSite } from '../../modules/siteComparison.js';
 import { helpButton } from '../help.js';
 import type { AppState } from '../state.js';
 import { chartBoxFor, esc, type ChartRegistry } from './html.js';
@@ -30,7 +32,11 @@ export function renderCompareHtml(state: AppState, lightTheme: boolean, charts: 
       </label>`,
     )
     .join('');
-  const withReport = (cmp?.sites ?? []).filter((s) => s.report !== null);
+  const byDate = state.compareByDate;
+  const ordered = byDate ? (() => { const o = orderByDate(cmp?.sites ?? []); return [...o.dated, ...o.undated]; })() : cmp?.sites ?? [];
+  const withReport = ordered.filter((s) => s.report !== null);
+  const dateCell = (s: ComparedSite): string =>
+    s.date ? `${esc(s.date)}${s.dateSource === 'photos' ? '<span class="stats-note">from photos</span>' : ''}` : '<span class="stats-note">no date</span>';
   const units = new Set(withReport.map((s) => s.report!.unit));
   const mixedUnits = units.size > 1;
   const plotted = mixedUnits ? withReport.filter((s) => s.report!.unit === 'mm') : withReport;
@@ -39,12 +45,12 @@ export function renderCompareHtml(state: AppState, lightTheme: boolean, charts: 
   const v = (n: number | undefined | null, d = 1): string => (n === undefined || n === null || !Number.isFinite(n) ? '—' : n.toFixed(d));
   const table = withReport.length
     ? `<div class="table-scroll"><table class="stats-table compare-table">
-        <thead><tr><th>Site</th><th>Photos / grains</th><th>D16</th><th>D50 (95% CI)</th><th>D84</th><th>Dg / σg</th><th>Sauter</th><th>Sorting φ</th><th>Gravel / cobble %</th></tr></thead>
+        <thead><tr><th>Site</th><th>Survey date</th><th>Photos / grains</th><th>D16</th><th>D50 (95% CI)</th><th>D84</th><th>Dg / σg</th><th>Sauter</th><th>Sorting φ</th><th>Gravel / cobble %</th></tr></thead>
         <tbody>${withReport
           .map((s) => {
             const r = s.report!;
             return `<tr><th scope="row"><span class="swatch" style="background:${s.color}"></span>${esc(s.name)}</th>
-              <td>${r.includedPhotoCount} / ${r.validGrainCount}</td><td>${v(r.psd.D16)}</td>
+              <td>${dateCell(s)}</td><td>${r.includedPhotoCount} / ${r.validGrainCount}</td><td>${v(r.psd.D16)}</td>
               <td>${v(r.psd.D50)} (${v(r.bootstrapCi.lower.D50)}–${v(r.bootstrapCi.upper.D50)})</td><td>${v(r.psd.D84)}</td>
               <td>${v(r.extra?.geometricMean)} / ${v(r.extra?.geometricSd, 2)}</td><td>${v(r.extra?.sauterMeanD32)}</td>
               <td>${v(r.folkWard?.sortingPhi, 2)}</td><td>${r.wentworth ? `${v(r.wentworth.gravelPct, 0)} / ${v(r.wentworth.cobblePct, 0)}` : '—'}</td></tr>`;
@@ -84,6 +90,23 @@ export function renderCompareHtml(state: AppState, lightTheme: boolean, charts: 
           Compare in pixels instead of mm <span class="summary-note">only meaningful if all photos were taken with the same camera at the same height</span>
         </label>`
       : '';
+  const timeOrder = orderByDate(plotted);
+  const timePoints: TimeSeriesPoint[] = timeOrder.dated.map((s) => {
+    const r = s.report!;
+    const ci = (k: 'D16' | 'D50' | 'D84'): [number, number] => [r.bootstrapCi.lower[k], r.bootstrapCi.upper[k]];
+    return { date: s.date!, name: s.name, color: s.color, D16: r.psd.D16, D50: r.psd.D50, D84: r.psd.D84, ci: { D16: ci('D16'), D50: ci('D50'), D84: ci('D84') } };
+  });
+  const dateToggle =
+    plotted.length > 0
+      ? `<label class="checkbox-label" style="margin-top:6px;">
+          <input type="checkbox" data-action="toggle-compare-date" ${byDate ? 'checked' : ''} />
+          Order by survey date and plot sizes over time ${helpButton('surveyDate')}
+        </label>`
+      : '';
+  const timeHtml = byDate
+    ? `${chartBox('compare-time', 'Grain size over time', (light) => renderTimeSeriesSvg(timePoints, unit, light), lightTheme)}
+       ${timeOrder.undated.length > 0 ? `<p class="field-hint">No survey date (not plotted): ${timeOrder.undated.map((s) => esc(s.name)).join(', ')}. Set one in the Site panel, or add photos with a camera date.</p>` : ''}`
+    : '';
   const psdSeries = plotted.map((s) => ({ name: s.name, color: s.color, psd: s.report!.psd, ciLower: s.report!.bootstrapCi.lower, ciUpper: s.report!.bootstrapCi.upper }));
   const histSeries = plotted.map((s) => ({
     name: s.name,
@@ -101,7 +124,9 @@ export function renderCompareHtml(state: AppState, lightTheme: boolean, charts: 
       ${cmp?.error ? `<div class="warning-banner">${esc(cmp.error)}</div>` : ''}
       ${problemHtml}
       ${pixelsToggle}
+      ${dateToggle}
       ${table}
+      ${timeHtml}
       ${
         plotted.length
           ? `<div class="row" style="margin-top:8px;">

@@ -142,6 +142,13 @@ export const HELP_TOPICS = {
     default: 'Off',
     when: 'Turn it on for long batches (CP-SAM, many photos) so you can work elsewhere. The screen is kept awake during an analysis where the browser allows it, but switching tabs or minimising can still slow it down on some devices.',
   },
+  surveyDate: {
+    title: 'Survey date',
+    group: 'Site statistics',
+    what: 'The date the site was surveyed, used to order sites and plot D16/D50/D84 over time in Compare sites. If you leave it empty, the earliest camera date of the site\'s photos is used (when the photos have one). Saved with the site and in project files.',
+    default: 'Empty: the earliest photo date',
+    when: 'Set it when the photos have no camera date, when the camera clock was wrong, or when photos from several days belong to one survey.',
+  },
   backup: {
     title: 'Backups and browser storage',
     group: 'Site statistics',

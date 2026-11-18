@@ -36,6 +36,9 @@ import { routeChange, routeClick } from './events/router.js';
 import { handleDashboardKey } from './events/dashboard.js';
 import { handleShortcutKey } from './events/shortcuts.js';
 import { renderShortcutsModalHtml } from './shortcuts.js';
+import { buildSiteReportHtml, type ReportPhoto } from './report.js';
+import { renderPsdChartSvg, renderSizeHistogramSvg } from './charts.js';
+import { sizeHistogramFromWentworth } from '../modules/histograms.js';
 import { countFlagged, grainFlags, navGrainsFor } from './grainNav.js';
 import { createWorkspaceActions, getActivePhoto, getActiveSite, rectifyWithCanvas } from './workspaceActions.js';
 import { applyEvent, newActivity, renderActivityHtml, startPhoto, type ActivityState } from './progress.js';
@@ -552,6 +555,7 @@ function renderAll(state: AppState): void {
     prev.batchRunning !== state.batchRunning ||
     prev.comparison !== state.comparison ||
     prev.compareSiteIds !== state.compareSiteIds ||
+    prev.compareByDate !== state.compareByDate ||
     prev.sites !== state.sites ||
     prev.dashboardTab !== state.dashboardTab ||
     prev.psdXAxis !== state.psdXAxis ||
@@ -812,6 +816,7 @@ function eventContext(): EventContext {
       downloadChart,
       download: triggerBlobDownload,
       runExport,
+      openReport,
       setFieldValue: (id, value) => {
         const el = document.getElementById(id) as HTMLInputElement | HTMLSelectElement | null;
         if (el) el.value = value;
@@ -849,6 +854,104 @@ function eventContext(): EventContext {
     },
     makeId,
   };
+}
+
+/** A small JPEG of a photo for the printable report. */
+async function photoThumbDataUrl(blob: Blob, maxSide: number): Promise<string | undefined> {
+  try {
+    const bmp = await createImageBitmap(blob);
+    const k = Math.min(1, maxSide / Math.max(bmp.width, bmp.height));
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(bmp.width * k));
+    c.height = Math.max(1, Math.round(bmp.height * k));
+    c.getContext('2d')?.drawImage(bmp, 0, 0, c.width, c.height);
+    bmp.close();
+    return c.toDataURL('image/jpeg', 0.82);
+  } catch {
+    return undefined;
+  }
+}
+
+/** Opens the printable site report. The tab is opened right away (pop-up blockers allow that) and filled in when ready. */
+function openReport(): void {
+  const win = window.open('', '_blank');
+  void buildReport().then((html) => {
+    if (!html) {
+      win?.close();
+      return;
+    }
+    const site = getActiveSite(store.getState());
+    if (win && !win.closed) {
+      win.document.open();
+      win.document.write(html);
+      win.document.close();
+      win.document.querySelector('[data-print]')?.addEventListener('click', () => win.print());
+    } else {
+      const name = (site?.name ?? 'site').replace(/[^a-zA-Z0-9_-]+/g, '_');
+      triggerBlobDownload(new Blob([html], { type: 'text/html' }), `${name}_report.html`);
+      store.setState({ statusMessage: 'Pop-ups are blocked, so the report was downloaded instead: open it and print it from the browser.' });
+    }
+  });
+}
+
+async function buildReport(): Promise<string | null> {
+  const st = store.getState();
+  const site = getActiveSite(st);
+  const report = st.siteReport;
+  if (!site || !report) {
+    store.setState({ statusMessage: 'Analyse photos first: the report needs site results.' });
+    return null;
+  }
+  store.setState({ statusMessage: 'Preparing the printable report…' });
+  const photos: ReportPhoto[] = [];
+  for (const p of report.perPhoto) {
+    const rec = st.photos.find((x) => x.photoId === p.photoId);
+    const thumb = rec ? await photoThumbDataUrl(rec.imageBlob, 480) : undefined;
+    const sess = st.sessions.get(p.photoId);
+    photos.push({
+      label: p.label,
+      ...(thumb ? { imageDataUrl: thumb } : {}),
+      ...(sess ? { outlineSvg: sess.exportSvg() } : {}),
+      validGrainCount: p.validGrainCount,
+      D50: p.D50,
+      ...(p.mmPerPx !== undefined ? { mmPerPx: p.mmPerPx } : {}),
+      outlierReasons: p.outlierReasons,
+    });
+  }
+  const firstSession = [...st.sessions.values()][0];
+  const prov = firstSession?.getProvenance();
+  const ap = st.analysisParams;
+  const so = st.siteOptions;
+  const hist = report.unit === 'mm' ? sizeHistogramFromWentworth(report.wentworthHistogram10Phi, 1) : null;
+  const html = buildSiteReportHtml({
+    site,
+    report,
+    generatedAt: new Date().toISOString(),
+    metadata: { ...baseExportMetadata(), ...(prov ?? {}) },
+    settings: [
+      ['Model', ap.model === 'auto' ? 'Auto (per photo)' : ap.model === 'unet' ? 'U-Net' : `Cellpose-SAM (${ap.cpsamWeights})`],
+      ['Pooling', report.statisticalBasisLabel],
+      ['Size metric', so.sizeMetric ?? 'bAxis'],
+      ['Smallest grain counted', `${so.minBaxisPx ?? 15} px${so.minSizeMm ? ` and ${so.minSizeMm} mm` : ''}`],
+      ['Flow threshold / cell probability', `${ap.flowThreshold} / ${ap.cellprobThreshold}`],
+      ['Grains touching the photo edge', ap.excludeBorder ? 'left out' : 'counted'],
+    ],
+    psdSvg: renderPsdChartSvg({
+      psd: report.psd,
+      unit: report.unit,
+      xAxis: st.psdXAxis,
+      title: 'Cumulative grain-size distribution',
+      subtitle: `${report.includedPhotoCount} photos, n=${report.validGrainCount}`,
+      ciLower: report.bootstrapCi.lower,
+      ciUpper: report.bootstrapCi.upper,
+      perPhotoCurves: report.perPhoto,
+      lightTheme: true,
+    }),
+    histogramSvg: hist && hist.bins.length > 0 ? renderSizeHistogramSvg(hist, true, 'Size distribution (area-weighted %, 1 φ classes)') : null,
+    photos,
+  });
+  store.setState({ statusMessage: 'Printable report ready.' });
+  return html;
 }
 
 /** Runs an export; a saved project file counts as a backup of the site. */
