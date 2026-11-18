@@ -34,6 +34,23 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(line_buffering=True)
+
+
+def _fmt_dur(seconds: float) -> str:
+    if not math.isfinite(seconds) or seconds < 0:
+        return "?"
+    s = int(round(seconds))
+    h, rem = divmod(s, 3600)
+    m, sec = divmod(rem, 60)
+    if h > 0:
+        return f"{h}h{m:02d}m"
+    if m > 0:
+        return f"{m}m{sec:02d}s"
+    return f"{sec}s"
+
+
 import cv2
 import numpy as np
 import onnxruntime as ort
@@ -485,7 +502,7 @@ class PersistentTSWorker:
                 self.ready_info = json.loads(s[len("__WORKER_READY__:"):])
                 break
 
-    def run_job(self, job: dict[str, Any]) -> dict[str, Any]:
+    def run_job(self, job: dict[str, Any], progress_label: str | None = None) -> dict[str, Any]:
         self.proc.stdin.write(json.dumps(job) + "\n")
         self.proc.stdin.flush()
         while True:
@@ -493,6 +510,20 @@ class PersistentTSWorker:
             if line == "":
                 raise RuntimeError(f"Worker closed stdout mid-job (rc={self.proc.poll()})")
             s = line.strip()
+            if s.startswith("__WORKER_PROG__:"):
+                if progress_label:
+                    prog = json.loads(s[len("__WORKER_PROG__:"):])
+                    done = int(prog.get("completedTiles", 0))
+                    tot = int(prog.get("totalTiles", 0))
+                    pct = int(prog.get("percent", 0))
+                    el_s = float(prog.get("elapsedMs", 0.0)) / 1000.0
+                    per_t = el_s / max(1, done)
+                    eta_s = per_t * max(0, tot - done)
+                    print(
+                        f"      {progress_label} | tile {done}/{tot} ({pct}%, {per_t:.1f}s/tile, elapsed {_fmt_dur(el_s)}, img ETA ~{_fmt_dur(eta_s)})",
+                        flush=True,
+                    )
+                continue
             if s.startswith("__WORKER_RESP__:"):
                 resp = json.loads(s[len("__WORKER_RESP__:"):])
                 if not resp.get("ok"):
@@ -517,6 +548,7 @@ def run_image_variant(
     data_dir: Path,
     mask_out_path: Path | None = None,
     guard: float = 0.40,
+    progress_label: str | None = None,
 ) -> dict[str, Any]:
     rgb = load_rgb(data_dir / row["image_relpath"])
     H, W = rgb.shape[:2]
@@ -533,6 +565,7 @@ def run_image_variant(
             "variant": variant,
             "guard": float(guard),
             "outMaskPath": str(mask_p),
+            "reportProgress": bool(progress_label),
         }
         if variant == "H_bilateral":
             # Prepare working image to <= 1024 px matching prepareWorkingImage('auto')
@@ -554,7 +587,7 @@ def run_image_variant(
             rgba.tofile(raw_p)
             job["origRgbaPath"] = str(raw_p)
 
-        resp = worker.run_job(job)
+        resp = worker.run_job(job, progress_label=progress_label)
         inf_h, inf_w = int(resp["infHeight"]), int(resp["infWidth"])
         pred_inf = np.fromfile(mask_p, dtype="<i4").reshape((inf_h, inf_w)).copy()
 
@@ -879,18 +912,25 @@ def choose_adaptive_threshold_on_train(
 
     need_write = False
     for v in ("A", "D", "E"):
+        n_cached = sum(1 for r in train_rows if r["uid"] in records[v])
+        print(f"    [train/{model_key}/{v}] cached={n_cached}/{len(train_rows)}, remaining={len(train_rows) - n_cached}", flush=True)
         for idx, r in enumerate(train_rows, 1):
             uid = r["uid"]
             if uid in records[v]:
                 continue
-            out = run_image_variant(worker, r, v, data_dir)
+            plabel = f"[train/{model_key}/{v} {idx}/{len(train_rows)}] {uid}"
+            out = run_image_variant(worker, r, v, data_dir, progress_label=plabel)
             rec = evaluate_prediction_vs_gt(r, out, gt_cache, data_dir)
             rec["model_key"] = model_key
             rec["variant"] = v
             records[v][uid] = rec
             need_write = True
-            print(f"    [train/{model_key}/{v} {idx}/{len(train_rows)}] {uid}: PQ={rec['pq_vs_gt']:.3f}, work_med_b={rec['working_med_b_px']:.1f}, tiles={rec['total_tiles']}, ms={rec['infer_ms']:.0f}")
-            if idx % 5 == 0:
+            print(
+                f"    [train/{model_key}/{v} {idx}/{len(train_rows)}] {uid}: PQ={rec['pq_vs_gt']:.3f}, "
+                f"work_med_b={rec['working_med_b_px']:.1f}, tiles={rec['total_tiles']}, infer={_fmt_dur(rec['infer_ms']/1000.0)}",
+                flush=True,
+            )
+            if idx % 5 == 0 or "cpsam" in model_key:
                 all_recs = [records[vv][uu] for vv in ("A", "D", "E") for uu in sorted(records[vv].keys())]
                 pd.DataFrame(all_recs).to_csv(cache_csv, index=False)
                 need_write = False
@@ -1015,6 +1055,87 @@ def measure_wasm_wall_times(
     return out_stats
 
 
+def _estimate_tiles_for_image(img_path: Path, variant: str, model_kind: str) -> int:
+    """Fast header-only tile count estimate matching cellposeTiling.ts for pre-flight ETA planning."""
+    with Image.open(img_path) as im:
+        w, h = im.size
+    ww, wh = prepare_working_dimensions(w, h)
+    scale = 1.5 if variant == "D" else (2.0 if variant == "E" else 1.0)
+    iw, ih = max(1, round(ww * scale)), max(1, round(wh * scale))
+    if model_kind == "unet":
+        h2, w2 = max(1, int(ih * 17.0 / 30.0)), max(1, int(iw * 17.0 / 30.0))
+        def u_n(L: int) -> int:
+            lp = 16 * math.ceil(L / 16) - L
+            padL = L + 16 + lp
+            return 1 if padL <= 224 else math.ceil(1.2 * padL / 224)
+        return u_n(h2) * u_n(w2)
+    else:
+        def cp_n(L: int) -> int:
+            lp = max(0, 256 - L - 16) if L < 256 else (16 * math.ceil(L / 16) - L)
+            padL = L + 16 + lp
+            return 1 if padL <= 256 else math.ceil(1.5 * padL / 256)
+        return cp_n(ih) * cp_n(iw)
+
+
+def _write_outputs(
+    out_dir: Path,
+    summary: dict[str, Any],
+    new_csv_rows: list[dict],
+    merge_existing: Path | None,
+) -> None:
+    """Writes results_per_image.csv and results.json, optionally preserving previously completed models."""
+    merged_summary = json.loads(json.dumps(summary))
+    df_new = pd.DataFrame(new_csv_rows) if new_csv_rows else pd.DataFrame()
+    df_all = df_new
+
+    if merge_existing and merge_existing.exists():
+        prev_json = json.loads(merge_existing.read_text(encoding="utf-8"))
+        prev_csv_p = merge_existing.parent / "results_per_image.csv"
+        if prev_csv_p.exists():
+            df_prev = pd.read_csv(prev_csv_p)
+            active_models = set(df_new["model_key"].unique()) if len(df_new) else set()
+            if active_models and len(df_prev):
+                df_prev = df_prev[~df_prev["model_key"].isin(active_models)]
+            df_all = pd.concat([df_prev, df_new], ignore_index=True) if len(df_new) else df_prev
+        for field in ("parity_5tile", "wasm_timing", "adaptive_threshold_train", "models"):
+            prev_map = prev_json.get(field, {})
+            cur_map = merged_summary.get(field, {})
+            comb = dict(prev_map)
+            comb.update(cur_map)
+            merged_summary[field] = comb
+        merged_summary["n_test_images"] = max(
+            int(prev_json.get("n_test_images", 0)),
+            int(merged_summary.get("n_test_images", 0)),
+        )
+        if len(prev_json.get("g_sanity_uids", [])) > len(merged_summary.get("g_sanity_uids", [])):
+            merged_summary["g_sanity_uids"] = prev_json["g_sanity_uids"]
+        if len(prev_json.get("fp16_spot_uids", [])) > len(merged_summary.get("fp16_spot_uids", [])):
+            merged_summary["fp16_spot_uids"] = prev_json["fp16_spot_uids"]
+        if not merged_summary.get("h_noisiest_10") and prev_json.get("h_noisiest_10"):
+            merged_summary["h_noisiest_10"] = prev_json["h_noisiest_10"]
+
+    if len(df_all):
+        df_all.to_csv(out_dir / "results_per_image.csv", index=False)
+        for mkey in sorted(df_all["model_key"].unique()):
+            sub_m = df_all[df_all["model_key"] == mkey]
+            # Only recompute model summary if we actually touched it or it wasn't already loaded from prev
+            if mkey not in merged_summary["models"] or (len(df_new) and mkey in set(df_new["model_key"].unique())):
+                wasm_t_ms = merged_summary["parity_5tile"].get(mkey, {}).get("wasm_tile_ms_median")
+                m_sum: dict[str, Any] = {"variants": {}, "paired_vs_A": {}, "subset_paired_vs_A": {}}
+                for var in sorted(sub_m["variant"].unique()):
+                    sub_v = sub_m[sub_m["variant"] == var]
+                    m_sum["variants"][var] = summarize_variant(sub_v, wasm_tile_ms_median=wasm_t_ms)
+                    if var != "A":
+                        if var in SANITY_G_VARIANTS or var in DENOISE_H_VARIANTS:
+                            m_sum["subset_paired_vs_A"][var] = paired_vs_baseline(df_all, mkey, var, "A")
+                        else:
+                            m_sum["paired_vs_A"][var] = paired_vs_baseline(df_all, mkey, var, "A")
+                merged_summary["models"][mkey] = m_sum
+
+    with (out_dir / "results.json").open("w", encoding="utf-8") as f:
+        json.dump(merged_summary, f, indent=2)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run webGrainy preprocessing benchmark.")
     parser.add_argument("--data-dir", type=Path, required=True)
@@ -1025,13 +1146,18 @@ def main() -> None:
     parser.add_argument("--parity-only-models", nargs="*", default=[], choices=list(MODEL_SPECS.keys()), help="Only run SHA-256 verification and 5-tile WASM vs PyCPU parity check")
     parser.add_argument("--variants", nargs="+", default=CORE_VARIANTS + ["F"] + SANITY_G_VARIANTS + DENOISE_H_VARIANTS)
     parser.add_argument("--max-test", type=int, default=40)
+    parser.add_argument("--stratified-test", action="store_true", help="When --max-test < 40, select stratified cross-site images prioritizing CT, NB2, DV_4, NZ2, APF_2")
     parser.add_argument("--train-t-max", type=int, default=203)
     parser.add_argument("--train-t-max-cpsam", type=int, default=13, help="Stratified train images for CP-SAM T selection (avoids multi-day WASM on 203 images)")
-    parser.add_argument("--wasm-threads", type=int, default=2)
+    parser.add_argument("--wasm-threads", type=int, default=0, help="0 = auto (min(8, max(2, cpu_count)))")
     parser.add_argument("--bridge-tol", type=float, default=0.05)
     parser.add_argument("--fixed-T", type=float, default=None, help="Optional fixed T override (else selected on train split)")
     parser.add_argument("--fixed-up", type=str, default=None, help="Optional fixed F upscale variant D or E")
+    parser.add_argument("--merge-existing", type=Path, default=None, help="Optional existing results.json to preserve/merge completed models with")
     args = parser.parse_args()
+
+    if args.wasm_threads <= 0:
+        args.wasm_threads = min(8, max(2, os.cpu_count() or 4))
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
     args.cache_dir.mkdir(parents=True, exist_ok=True)
@@ -1039,7 +1165,10 @@ def main() -> None:
     manifest = list(csv.DictReader(MANIFEST_PATH.open()))
     test_rows_all = sorted([r for r in manifest if r["official_split"] == "test"], key=lambda x: x["uid"])
     train_rows_all = sorted([r for r in manifest if r["official_split"] == "train"], key=lambda x: x["uid"])
-    test_rows = test_rows_all[: args.max_test]
+    if args.stratified_test and args.max_test < len(test_rows_all):
+        test_rows = select_stratified_rows(test_rows_all, args.max_test, priority_sites=HIGHLIGHT_SITES)
+    else:
+        test_rows = test_rows_all[: args.max_test]
 
     # Select 10 stratified images for sanity check G, 10 noisiest for H, 5 diverse for FP16 spot check
     g_rows = select_stratified_rows(test_rows, min(10, len(test_rows)), priority_sites=HIGHLIGHT_SITES)
@@ -1049,7 +1178,7 @@ def main() -> None:
     else:
         h_rows, noise_ranking = [], []
     h_uids = {r["uid"] for r in h_rows}
-    fp16_spot_rows = select_stratified_rows(test_rows, min(5, len(test_rows)), priority_sites=HIGHLIGHT_SITES)
+    fp16_spot_rows = select_stratified_rows(test_rows_all, min(5, len(test_rows_all)), priority_sites=HIGHLIGHT_SITES)
 
     # Train split rows that exist locally on disk (allows fast stratified run or full 203 when full dataset extracted)
     avail_train_all = [
@@ -1074,6 +1203,12 @@ def main() -> None:
         "models": {},
     }
 
+    print(
+        f"Config: models={args.models} | variants={args.variants} | test_n={len(test_rows)} "
+        f"({'stratified' if args.stratified_test else 'prefix'}) | wasm_threads={args.wasm_threads}",
+        flush=True,
+    )
+
     for mkey in args.parity_only_models:
         if mkey in args.models:
             continue
@@ -1085,11 +1220,11 @@ def main() -> None:
         if p_cache.exists():
             parity = json.loads(p_cache.read_text())
         else:
-            print(f"\n=== [{mkey}] Running 5-tile WASM vs PyCPU parity check (parity-only) ===")
-            parity = check_5tile_parity(mkey, mpath, test_rows, args.data_dir, args.wasm_threads, tol=args.bridge_tol)
+            print(f"\n=== [{mkey}] Running 5-tile WASM vs PyCPU parity check (parity-only) ===", flush=True)
+            parity = check_5tile_parity(mkey, mpath, test_rows_all, args.data_dir, args.wasm_threads, tol=args.bridge_tol)
             p_cache.write_text(json.dumps(parity, indent=2))
         summary["parity_5tile"][mkey] = parity
-        print(f"  5-tile max_abs={parity['overall_max_abs']:.6f} (tol={args.bridge_tol}) -> bridge_allowed={parity['bridge_allowed']}, wasm_tile_ms_median={parity['wasm_tile_ms_median']:.1f}")
+        print(f"  5-tile max_abs={parity['overall_max_abs']:.6f} (tol={args.bridge_tol}) -> bridge_allowed={parity['bridge_allowed']}, wasm_tile_ms_median={parity['wasm_tile_ms_median']:.1f}", flush=True)
 
     for mkey in args.models:
         spec = MODEL_SPECS[mkey]
@@ -1106,13 +1241,57 @@ def main() -> None:
         if p_cache.exists():
             parity = json.loads(p_cache.read_text())
         else:
-            print(f"\n=== [{mkey}] Running 5-tile WASM vs PyCPU parity check ===")
-            parity = check_5tile_parity(mkey, mpath, test_rows, args.data_dir, args.wasm_threads, tol=args.bridge_tol)
+            print(f"\n=== [{mkey}] Running 5-tile WASM vs PyCPU parity check ===", flush=True)
+            parity = check_5tile_parity(mkey, mpath, test_rows_all, args.data_dir, args.wasm_threads, tol=args.bridge_tol)
             p_cache.write_text(json.dumps(parity, indent=2))
         summary["parity_5tile"][mkey] = parity
         use_bridge = parity["bridge_allowed"]
         backend = "ort_cpu_bridge(wasm_verified)" if use_bridge else "ort_web_wasm"
-        print(f"  5-tile max_abs={parity['overall_max_abs']:.6f} (tol={args.bridge_tol}) -> backend={backend}")
+        tile_ms_est = float(parity["py_cpu_tile_ms_median"] if use_bridge else parity["wasm_tile_ms_median"])
+        print(
+            f"  5-tile max_abs={parity['overall_max_abs']:.6f} (tol={args.bridge_tol}) -> backend={backend} "
+            f"(~{tile_ms_est/1000.0:.2f}s/tile)",
+            flush=True,
+        )
+
+        eval_rows = fp16_spot_rows if mkey == "cpsam_fp16" else test_rows
+        active_variants = [v for v in args.variants if v != "F"]
+        if mkey == "cpsam_fp16":
+            active_variants = [v for v in active_variants if v in CORE_VARIANTS]
+
+        # Pre-flight execution & ETA plan
+        need_train_T = "F" in args.variants and args.fixed_T is None and mkey != "cpsam_fp16"
+        avail_train: list[dict] = []
+        if need_train_T:
+            t_cap = args.train_t_max if spec["model_kind"] == "unet" else args.train_t_max_cpsam
+            avail_train = (
+                select_stratified_rows(avail_train_all, t_cap, priority_sites=HIGHLIGHT_SITES)
+                if t_cap < len(avail_train_all)
+                else avail_train_all
+            )
+
+        rem_tiles_total = 0
+        print(f"\n  [{mkey}] Pre-flight cache & runtime estimate:", flush=True)
+        if need_train_T:
+            tr_csv = args.cache_dir / f"train_T_eval_{mkey}.csv"
+            tr_done = defaultdict(set)
+            if tr_csv.exists():
+                for _, trr in pd.read_csv(tr_csv).iterrows():
+                    tr_done[str(trr["variant"])].add(str(trr["uid"]))
+            for vv in ("A", "D", "E"):
+                rem_r = [r for r in avail_train if r["uid"] not in tr_done[vv]]
+                rt = sum(_estimate_tiles_for_image(args.data_dir / r["image_relpath"], vv, spec["model_kind"]) for r in rem_r)
+                rem_tiles_total += rt
+                print(f"    train/{vv:12s}: cached {len(avail_train)-len(rem_r)}/{len(avail_train)} | rem {len(rem_r)} imgs (~{rt} tiles, ~{_fmt_dur(rt*tile_ms_est/1000.0)})", flush=True)
+        for var in active_variants:
+            target_rows = g_rows if var in SANITY_G_VARIANTS else (h_rows if var in DENOISE_H_VARIANTS else eval_rows)
+            var_csv = args.cache_dir / f"{mkey}_{var}.csv"
+            done_u = set(pd.read_csv(var_csv)["uid"].astype(str)) if var_csv.exists() else set()
+            rem_r = [r for r in target_rows if r["uid"] not in done_u]
+            rt = sum(_estimate_tiles_for_image(args.data_dir / r["image_relpath"], var, spec["model_kind"]) for r in rem_r)
+            rem_tiles_total += rt
+            print(f"    test/{var:13s}: cached {len(target_rows)-len(rem_r)}/{len(target_rows)} | rem {len(rem_r)} imgs (~{rt} tiles, ~{_fmt_dur(rt*tile_ms_est/1000.0)})", flush=True)
+        print(f"    >>> TOTAL REMAINING FOR {mkey}: ~{rem_tiles_total} tiles -> estimated wall time ~{_fmt_dur(rem_tiles_total*tile_ms_est/1000.0)}\n", flush=True)
 
         srv, bridge_url = None, None
         if use_bridge:
@@ -1127,35 +1306,25 @@ def main() -> None:
             args.wasm_threads,
             args.cache_dir / f"worker_{mkey}.stderr.log",
         )
-        eval_rows = fp16_spot_rows if mkey == "cpsam_fp16" else test_rows
+        t_model_start = time.perf_counter()
+        tiles_done_so_far = 0
         try:
             # 1) Determine adaptive T on train split BEFORE evaluating F on test
-            t_info = None
-            if "F" in args.variants and args.fixed_T is None and mkey != "cpsam_fp16":
-                t_cap = args.train_t_max if spec["model_kind"] == "unet" else args.train_t_max_cpsam
-                avail_train = (
-                    select_stratified_rows(avail_train_all, t_cap, priority_sites=HIGHLIGHT_SITES)
-                    if t_cap < len(avail_train_all)
-                    else avail_train_all
-                )
+            if need_train_T:
                 if not avail_train:
                     raise RuntimeError("No training images+masks available on disk to select adaptive T!")
-                print(f"  Selecting adaptive T on {len(avail_train)} train images...")
+                print(f"  Selecting adaptive T on {len(avail_train)} train images...", flush=True)
                 t_info = choose_adaptive_threshold_on_train(worker, avail_train, args.data_dir, args.cache_dir, mkey)
                 summary["adaptive_threshold_train"][mkey] = t_info
                 chosen_T = t_info["chosen"]["T_px"]
                 chosen_up = t_info["chosen"]["upscale_variant"]
-                print(f"  Chosen on train: rescale={chosen_up} when working_med_b_px < {chosen_T} px (train dPQ={t_info['chosen']['mean_dPQ_train']:+.4f})")
+                print(f"  Chosen on train: rescale={chosen_up} when working_med_b_px < {chosen_T} px (train dPQ={t_info['chosen']['mean_dPQ_train']:+.4f})", flush=True)
             else:
                 chosen_T = float(args.fixed_T if args.fixed_T is not None else 12.0)
                 chosen_up = str(args.fixed_up if args.fixed_up else "D")
 
             # 2) Run all requested variants
             model_records: dict[str, dict[str, dict]] = defaultdict(dict)
-            active_variants = [v for v in args.variants if v != "F"]
-            if mkey == "cpsam_fp16":
-                active_variants = [v for v in active_variants if v in CORE_VARIANTS]
-
             for var in active_variants:
                 if var in SANITY_G_VARIANTS:
                     target_rows = g_rows
@@ -1177,7 +1346,9 @@ def main() -> None:
                         rec = cached[uid]
                         model_records[var][uid] = rec
                         continue
-                    out = run_image_variant(worker, r, var, args.data_dir)
+                    plabel = f"[{mkey}/{var} {idx}/{len(target_rows)}] {uid}"
+                    print(f"    Starting {plabel}...", flush=True)
+                    out = run_image_variant(worker, r, var, args.data_dir, progress_label=plabel)
                     rec = evaluate_prediction_vs_gt(r, out, gt_cache, args.data_dir)
                     rec["model_key"] = mkey
                     rec["variant"] = var
@@ -1185,13 +1356,26 @@ def main() -> None:
                     model_records[var][uid] = rec
                     cached[uid] = rec
                     new_added = True
-                    print(f"    [{mkey}/{var} {idx}/{len(target_rows)}] {uid}: PQ={rec['pq_vs_gt']:.3f}, D50={rec['pred_b_D50']:.1f}/{rec['gt_b_D50']:.1f}, work_med_b={rec['working_med_b_px']:.1f}, tiles={rec['total_tiles']}, ms={rec['infer_ms']:.0f}")
+                    tiles_done_so_far += int(rec["total_tiles"])
+                    elapsed_m = time.perf_counter() - t_model_start
+                    rem_est_s = max(0, rem_tiles_total - tiles_done_so_far) * (elapsed_m / max(1, tiles_done_so_far)) if tiles_done_so_far else 0.0
+                    print(
+                        f"    DONE {plabel}: PQ={rec['pq_vs_gt']:.3f}, D50={rec['pred_b_D50']:.1f}/{rec['gt_b_D50']:.1f}, "
+                        f"work_med_b={rec['working_med_b_px']:.1f}, tiles={rec['total_tiles']}, infer={_fmt_dur(rec['infer_ms']/1000.0)} "
+                        f"| model elapsed {_fmt_dur(elapsed_m)}, remaining ETA ~{_fmt_dur(rem_est_s)}",
+                        flush=True,
+                    )
                     if idx % 5 == 0 or "cpsam" in mkey:
                         pd.DataFrame([cached[uu] for uu in sorted(cached.keys())]).to_csv(var_cache_csv, index=False)
                         new_added = False
 
                 if new_added or not var_cache_csv.exists():
                     pd.DataFrame([model_records[var][r["uid"]] for r in target_rows]).to_csv(var_cache_csv, index=False)
+
+                # Incremental results checkpoint after each completed variant
+                partial_rows = [rec for vmap in model_records.values() for rec in vmap.values()]
+                _write_outputs(args.out_dir, summary, all_csv_rows + partial_rows, args.merge_existing)
+                print(f"  [checkpoint] Saved incremental {mkey}/{var} results to {args.out_dir}", flush=True)
 
             # 3) Compose F_adaptive on test images using A + chosen_up when working_med_b_px < chosen_T
             if "F" in args.variants and "A" in model_records and chosen_up in model_records and mkey != "cpsam_fp16":
@@ -1239,29 +1423,8 @@ def main() -> None:
                 wt_cache.write_text(json.dumps(wt, indent=2))
                 summary["wasm_timing"][mkey] = wt
 
-    df_all = pd.DataFrame(all_csv_rows)
-    df_all.to_csv(args.out_dir / "results_per_image.csv", index=False)
-
-    # Summarize all models x variants + paired comparisons vs A
-    for mkey in args.models:
-        sub_m = df_all[df_all["model_key"] == mkey]
-        if len(sub_m) == 0:
-            continue
-        wasm_t_ms = summary["parity_5tile"][mkey]["wasm_tile_ms_median"]
-        m_sum: dict[str, Any] = {"variants": {}, "paired_vs_A": {}, "subset_paired_vs_A": {}}
-        for var in sorted(sub_m["variant"].unique()):
-            sub_v = sub_m[sub_m["variant"] == var]
-            m_sum["variants"][var] = summarize_variant(sub_v, wasm_tile_ms_median=wasm_t_ms)
-            if var != "A":
-                if var in SANITY_G_VARIANTS or var in DENOISE_H_VARIANTS:
-                    m_sum["subset_paired_vs_A"][var] = paired_vs_baseline(df_all, mkey, var, "A")
-                else:
-                    m_sum["paired_vs_A"][var] = paired_vs_baseline(df_all, mkey, var, "A")
-        summary["models"][mkey] = m_sum
-
-    with (args.out_dir / "results.json").open("w", encoding="utf-8") as f:
-        json.dump(summary, f, indent=2)
-    print(f"\nSaved {args.out_dir / 'results.json'} and {args.out_dir / 'results_per_image.csv'}")
+    _write_outputs(args.out_dir, summary, all_csv_rows, args.merge_existing)
+    print(f"\nSaved {args.out_dir / 'results.json'} and {args.out_dir / 'results_per_image.csv'}", flush=True)
 
 
 if __name__ == "__main__":

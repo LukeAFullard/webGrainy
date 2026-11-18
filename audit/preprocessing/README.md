@@ -24,7 +24,7 @@
 | `cpsam_int8` | **`0.607422`** | `0.008198` | `0.05` | **No (Native WASM required)** | `5,978 ms` | **`15,508 ms`** | **`~34–35 h`** across all variants (`~7,500+` tiles on 2 vCPUs) |
 
 > [!NOTE]
-> **Compute Status for `cpsam_int8`:** Because `ig2_cpsam_int8_wo_fp32scale.onnx` diverges from Python ORT CPU by `max_abs = 0.607 > 0.05` on 5 tiles, the Python ORT bridge is **disallowed** and native `ort_web_wasm` must execute every tile (`15.51 s/tile` at 2 threads). On a 2-vCPU VM that takes `~35 hours` for a full sweep, so `audit/preprocessing/results.json` stores the executed `unet_fp32` full benchmark, `cpsam_fp16` 5-image spot check, and `cpsam_int8` 5-tile parity/speed check. Run [`preprocessing_benchmark_colab.ipynb`](preprocessing_benchmark_colab.ipynb) on High-RAM Colab with `WASM_NUM_THREADS = 4` and Google Drive caching to complete the full `cpsam_int8` WASM sweep.
+> **Compute Status for `cpsam_int8`:** Because `ig2_cpsam_int8_wo_fp32scale.onnx` diverges from Python ORT CPU by `max_abs = 0.607 > 0.05` on 5 tiles, the Python ORT bridge is **disallowed** and native `ort_web_wasm` must execute every tile (`15.51 s/tile` at 2 threads, `~14.5 s/tile` at 4 threads). Running all 40 test images × all variants (`~6,505` core test tiles + train `T` selection) takes `~26–42+ hours`, so `audit/preprocessing/results.json` stores the executed `unet_fp32` full benchmark, `cpsam_fp16` 5-image spot check, and `cpsam_int8` 5-tile parity/speed check. [`preprocessing_benchmark_colab.ipynb`](preprocessing_benchmark_colab.ipynb) now defaults to `PRESET = "fast_cpsam_int8_spotcheck"` (`~1.5 h` on 4-thread Colab CPU with live tile/ETA streaming and Drive resume) and supports `cpsam_int8_13sites` (`~3.8 h`), `cpsam_int8_core_40` (`~12.3 h`), and `full_from_scratch` (`~42+ h`).
 
 ---
 
@@ -163,6 +163,14 @@ python3 audit/preprocessing/run_benchmark.py \
 python3 audit/preprocessing/generate_charts.py
 ```
 
-### Google Colab (Full Benchmark Including Native WASM `cpsam_int8`)
+### Google Colab (`cpsam_int8` Native WASM & Multi-Session Drive Resume)
 
-Open [`preprocessing_benchmark_colab.ipynb`](preprocessing_benchmark_colab.ipynb) on a **High-RAM CPU** runtime, mount Google Drive (`DRIVE_CACHE_DIR` caches per-image CSVs incrementally), verify the `CONFIG` cell (`MODELS = ["unet_fp32", "cpsam_int8", "cpsam_fp16"]`, `WASM_NUM_THREADS = 4`, `SEED = 42`), and **Run all**.
+Open [`preprocessing_benchmark_colab.ipynb`](preprocessing_benchmark_colab.ipynb) on a **High-RAM CPU** runtime, mount Google Drive (`DRIVE_CACHE_DIR` flushes per-image CSVs after every CP-SAM image and backs up `results.json` after every variant or interruption), pick `PRESET` in the `CONFIG` cell, and **Run all** (`PYTHONUNBUFFERED=1` streams a pre-flight tile/ETA table plus live per-tile & per-image progress):
+
+| `PRESET` | Scope | Est. Tiles | Est. Time (4-thr WASM) | Merges Repo `unet_fp32` + `cpsam_fp16`? |
+|---|---|---:|---:|:---:|
+| **`fast_cpsam_int8_spotcheck`** *(default)* | `cpsam_int8` on `5` key sites (`CT, NB2, DV_4, NZ2, APF_2`), `A, B, C, D` | `~368` | **`~1.5 h`** | Yes |
+| `cpsam_int8_13sites` | `cpsam_int8` on `13` sites (`1/site`), `A, B, D` | `~950` | `~3.8 h` | Yes |
+| `cpsam_int8_core_40` | `cpsam_int8` on all `40` test images, `A, B, D` | `~3,056` | `~12.3 h` *(Drive-resumable)* | Yes |
+| `full_from_scratch` | All 3 models + all variants (`A..F, G, H`) + train `T` | `~10,000+` | `~42+ h` *(multi-session Drive resume)* | Recomputed |
+

@@ -364,13 +364,25 @@ async function runWorker(cfgPath) {
       const preprocessMs = performance.now() - tPre0;
 
       let totalTiles = 0;
+      let lastProgEmit = 0;
+      const tInf0 = performance.now();
       const onProgress = (p) => {
         if (p && typeof p.totalTiles === 'number' && p.totalTiles > 0) {
           totalTiles = p.totalTiles;
+          const done = Number(p.completedTiles || 0);
+          const now = performance.now();
+          if (job.reportProgress && done > 0 && (done === totalTiles || cfg.modelKind === 'cpsam' || (now - lastProgEmit) >= 2000)) {
+            lastProgEmit = now;
+            console.log('__WORKER_PROG__:' + JSON.stringify({
+              completedTiles: done,
+              totalTiles,
+              percent: Number(p.percent ?? Math.round((done / totalTiles) * 100)),
+              elapsedMs: now - tInf0,
+            }));
+          }
         }
       };
 
-      const tInf0 = performance.now();
       const inferOut = cfg.modelKind === 'unet'
         ? await runUnetCellposeInference(session, preImg.data, preImg.width, preImg.height, { onProgress })
         : await runCpsamCellposeInference(session, preImg.data, preImg.width, preImg.height, { onProgress });
