@@ -111,8 +111,10 @@ describe('panel renderers', () => {
     expect(html).toContain('Models (1)');
     expect(html).toContain('Runs on Your Device');
     expect(html).toContain('No External Server');
+    expect(html).toContain('ONNX-converted and quantized');
+    expect(html).toContain('Quantized ONNX INT8');
     expect(html).toContain('data-help="calibrate"');
-    expect(html).toContain('ig2_cpsam_fp16.onnx');
+    expect(html).not.toContain('ig2_cpsam_fp16.onnx');
     expect(html).not.toContain('Zero Uploads');
     expect(html).not.toContain('SHA-256 Pinned');
     expect(html).not.toContain('2.87%');
