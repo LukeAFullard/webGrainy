@@ -37,7 +37,7 @@ through a small context object instead of module globals, so tests can pass fake
 (status maps, cancel stops all sites, fine-grain choice saved) with a fake engine and the
 existing mock IndexedDB.
 
-## Step 2 — Panel rendering → `src/ui/panels/` ☐
+## Step 2 — Panel rendering → `src/ui/panels/` ☑
 
 Pure "state → HTML string" functions, one file per panel:
 
