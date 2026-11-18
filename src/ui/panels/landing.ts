@@ -604,7 +604,6 @@ export function renderLandingHtml(state: AppState, view: LandingView): string {
         <div class="landing-brand">
           <img src="./icon.svg" alt="" width="26" height="26" class="landing-brand-icon" />
           <span class="landing-brand-name">webGrainy</span>
-          <span class="brand-sub">Grain sizes from photos · runs on your device</span>
         </div>
 
         <nav class="landing-nav" aria-label="Landing page sections">
@@ -624,7 +623,6 @@ export function renderLandingHtml(state: AppState, view: LandingView): string {
               : ''
           }
           <button type="button" class="btn btn-sm" data-open-modal="models">Models${cachedCount > 0 ? ` (${cachedCount})` : ''}</button>
-          <a class="btn btn-sm" href="./gpucheck.html">GPU Check</a>
           <button type="button" class="btn btn-sm" data-open-help="">Help</button>
           <button type="button" class="btn btn-sm btn-primary" data-action="enter-workspace">Launch Workspace</button>
         </div>
@@ -635,12 +633,12 @@ export function renderLandingHtml(state: AppState, view: LandingView): string {
       <!-- Hero Section -->
       <section class="landing-hero" aria-labelledby="landing-heading">
         <div class="landing-hero-copy">
-          <p class="landing-eyebrow">RUNS ON YOUR DEVICE · WORKS OFFLINE</p>
+          <p class="landing-eyebrow">LOCAL BROWSER ANALYSIS · OFFLINE CAPABLE</p>
           <h1 id="landing-heading" class="landing-title" tabindex="-1">
             Measure gravel and sediment grain sizes from field photos
           </h1>
           <p class="landing-lead">
-            <strong>webGrainy</strong> runs the pretrained <strong>ImageGrains 2.0</strong> segmentation models (U-Net and Cellpose-SAM) directly in your browser. Load your photos, set the millimeter scale from a ruler or quadrat, check and edit the grain outlines, and calculate grain-size distributions (D<sub>16</sub>, D<sub>50</sub>, D<sub>84</sub>) with confidence intervals — all locally on your computer or phone, without sending photos to an external server.
+            <strong>webGrainy</strong> runs ONNX-converted and quantized versions of the pretrained <strong>ImageGrains 2.0</strong> models (U-Net and Cellpose-SAM) directly in your browser. Load your gravel photos, calibrate the millimeter scale from a ruler or quadrat, refine the outlines, and export grain-size distributions (D<sub>16</sub>, D<sub>50</sub>, D<sub>84</sub>) — all locally on your computer or phone.
           </p>
 
           <div class="landing-cta-row">
@@ -654,14 +652,11 @@ export function renderLandingHtml(state: AppState, view: LandingView): string {
                   : 'Open Workspace'
               }
             </button>
-            <button type="button" class="btn landing-btn-lg" data-action="import-archive">
-              Open .webgrainy.json Project
-            </button>
           </div>
 
           <div class="landing-drop-callout" id="landing-dropzone" data-action="add-photos" role="button" tabindex="0" aria-label="Add or drop gravel photos or a .webgrainy.json project archive to start">
             <strong>Drop gravel photos or a <code>.webgrainy.json</code> project file anywhere on this page</strong>
-            <span>Supports JPEG, PNG, and WebP · Stored only in this browser on your device${siteCount > 0 ? ` · ${siteCount} saved site${siteCount === 1 ? '' : 's'} in this browser` : ''}</span>
+            <span>Supports JPEG, PNG, and WebP · Stored only in this browser${siteCount > 0 ? ` · ${siteCount} saved site${siteCount === 1 ? '' : 's'} here` : ''}</span>
           </div>
 
           <div class="landing-pref-row">
@@ -672,15 +667,18 @@ export function renderLandingHtml(state: AppState, view: LandingView): string {
                 data-landing-skip=""
                 ${view.skipLanding ? 'checked' : ''}
               />
-              <span>Skip this overview next time and go straight to the workspace (re-open anytime from <strong>Overview</strong> in the top bar)</span>
+              <span>Skip this overview next time (re-open from <strong>Overview</strong> in the top bar)</span>
             </label>
+            <button type="button" class="btn btn-sm" data-action="import-archive">
+              Open .webgrainy.json Project
+            </button>
           </div>
         </div>
 
         <figure class="landing-hero-figure">
           ${renderHeroFigureSvg()}
           <figcaption class="landing-hero-caption">
-            Automated grain outlines with millimeter ruler calibration, excluded non-gravel areas, fitted grain axes, and cumulative grain-size distribution curve.
+            Illustrative example: automated grain outlines with millimeter ruler calibration, excluded non-gravel areas, fitted grain axes, and cumulative grain-size distribution curve.
           </figcaption>
         </figure>
       </section>
@@ -700,7 +698,7 @@ export function renderLandingHtml(state: AppState, view: LandingView): string {
         <div class="landing-pillar">
           <div class="landing-pillar-value">Two Model Options</div>
           <div class="landing-pillar-label">Fast Preview or Detailed Outlines</div>
-          <p class="landing-pillar-desc">Use the compact U-Net model for quick checks and mobile devices, or Cellpose-SAM on a computer for more detailed outlines when reporting results.</p>
+          <p class="landing-pillar-desc">Use the compact U-Net model for quick checks and mobile devices, or quantized Cellpose-SAM on a computer for more detailed outlines when reporting results.</p>
         </div>
         <div class="landing-pillar">
           <div class="landing-pillar-value">Check, Edit &amp; Export</div>
@@ -726,7 +724,7 @@ export function renderLandingHtml(state: AppState, view: LandingView): string {
           <article class="capability-card">
             <h3>Grain-Size Curves &amp; Percentiles</h3>
             <p>
-              Computes area-weighted and number-weighted cumulative curves, key percentiles (D<sub>5</sub> to D<sub>95</sub>, including D<sub>16</sub>, D<sub>50</sub>, and D<sub>84</sub>), Wentworth size-class histograms, Folk &amp; Ward sorting and skewness, Sauter and geometric means, and Cu/Cc gradation indices.
+              Calculates area- and number-weighted cumulative curves, D<sub>5</sub>–D<sub>95</sub> percentiles (including D<sub>16</sub>, D<sub>50</sub>, and D<sub>84</sub>), Wentworth size classes, Folk &amp; Ward sorting and skewness, and Cu/Cc gradation indices.
             </p>
             <footer>D<sub>16</sub> / D<sub>50</sub> / D<sub>84</sub> · Wentworth Classes · Folk &amp; Ward (&phi;)</footer>
           </article>
@@ -734,7 +732,7 @@ export function renderLandingHtml(state: AppState, view: LandingView): string {
           <article class="capability-card">
             <h3>Flexible Size Metrics &amp; Cutoffs</h3>
             <p>
-              Measure each grain by the short axis of its fitted ellipse (<code>b-axis</code>, standard for photo-sieving), its narrowest caliper width (<code>min-Feret</code>), or its equal-area circle diameter (<code>d_eq</code>). Set a Field-count cutoff (mm) to match your hand pebble-count threshold.
+              Report grain size by fitted ellipse minor axis (<code>b-axis</code>), narrowest caliper width (<code>min-Feret</code>), or equal-area diameter (<code>d_eq</code>). Set a Field-count cutoff (mm) when comparing with hand pebble counts.
             </p>
             <footer>b-axis · min-Feret · d_eq · Field-Count Cutoff (mm)</footer>
           </article>
@@ -742,7 +740,7 @@ export function renderLandingHtml(state: AppState, view: LandingView): string {
           <article class="capability-card">
             <h3>Multi-Photo Site Pooling</h3>
             <p>
-              Combine several calibrated photos from the same gravel bar using physical area-weighting (the photo equivalent of a Wolman pebble count), virtual Wolman grid sampling, equal-photo weighting, or facies weights, with 95% confidence intervals and sample adequacy checks.
+              Pool multiple calibrated photos from a gravel bar using area-weighting, virtual Wolman grid sampling, equal-photo weighting, or facies weights — complete with 95% confidence intervals and sample adequacy checks.
             </p>
             <footer>Area-Weighted Pooling · 95% Confidence Intervals · Sample Adequacy</footer>
           </article>
@@ -750,7 +748,7 @@ export function renderLandingHtml(state: AppState, view: LandingView): string {
           <article class="capability-card">
             <h3>Interactive Outline Editor</h3>
             <p>
-              Inspect individual stones with a 2&times;/4&times; magnifier, jump directly to the largest or flagged grains, split touching stones that were joined together, merge pieces of one stone, delete false outlines, or draw missed grains with Undo and Redo.
+              Review stones with an optional 2&times;/4&times; magnifier, jump straight to the largest or flagged grains, and split, merge, delete, or draw outlines with instant Undo and Redo.
             </p>
             <footer>Split · Merge · Delete · Add · Largest / Flagged Review</footer>
           </article>
@@ -758,7 +756,7 @@ export function renderLandingHtml(state: AppState, view: LandingView): string {
           <article class="capability-card">
             <h3>Shape, Orientation &amp; Site Comparison</h3>
             <p>
-              Examine grain elongation (b/a), clast packing vs. exposed matrix, and axial orientation rose diagrams. In Compare sites, overlay grain-size curves from different reaches or plot D<sub>16</sub>, D<sub>50</sub>, and D<sub>84</sub> across survey dates to track changes over time.
+              Inspect grain elongation (b/a), clast packing vs. matrix, and orientation rose diagrams. In Compare sites, overlay curves from different reaches or plot D<sub>16</sub>, D<sub>50</sub>, and D<sub>84</sub> across survey dates.
             </p>
             <footer>Shape &amp; Packing · Orientation Rose · Compare Sites &amp; Dates</footer>
           </article>
@@ -766,7 +764,7 @@ export function renderLandingHtml(state: AppState, view: LandingView): string {
           <article class="capability-card">
             <h3>Tables, Vector Outlines &amp; Project Backups</h3>
             <p>
-              Download per-grain and summary CSV/JSON tables, GeoJSON and SVG grain outlines, 16-bit and 32-bit PNG label masks, SVG/PNG charts, a printable one-page HTML report, or a <code>.webgrainy.json</code> project file that saves all photos, scales, and edits.
+              Export per-grain and summary CSV/JSON tables, GeoJSON and SVG outlines, 16-bit and 32-bit PNG label masks, SVG/PNG charts, a printable one-page report, or a <code>.webgrainy.json</code> project archive.
             </p>
             <footer>CSV · JSON · GeoJSON · SVG · PNG Masks · Printable Report</footer>
           </article>
@@ -779,14 +777,14 @@ export function renderLandingHtml(state: AppState, view: LandingView): string {
           <p class="landing-eyebrow">NEURAL NETWORK OPTIONS</p>
           <h2 id="models-heading" class="landing-h2">Choose the right model for your device and survey</h2>
           <p class="landing-section-sub">
-            By default, <strong>Auto</strong> picks a model based on your photo and hardware (always U-Net on phones and tablets). You can also pick a specific model in Analysis settings or pre-download weights in the Models dialog before going offline.
+            webGrainy runs ONNX-converted and quantized builds of the pretrained ImageGrains 2.0 weights prepared specifically for browser execution. By default, <strong>Auto</strong> picks a model for your hardware (always U-Net on phones and tablets), or you can pre-download a specific model in the Models dialog.
           </p>
         </div>
 
         <div tabindex="0" role="region" aria-labelledby="models-table-caption" class="landing-table-wrapper">
           <table class="landing-models-table">
             <caption id="models-table-caption">
-              ImageGrains 2.0 models available in webGrainy
+              ONNX-converted and quantized ImageGrains 2.0 models available in webGrainy
             </caption>
             <thead>
               <tr>
@@ -801,42 +799,42 @@ export function renderLandingHtml(state: AppState, view: LandingView): string {
               <tr>
                 <th scope="row">
                   <strong>Cellpose-SAM (FP16)</strong>
-                  <span class="table-sub"><code>ig2_cpsam_fp16.onnx</code></span>
+                  <span class="table-sub">ONNX FP16</span>
                 </th>
                 <td>617 MB</td>
                 <td>Desktop or laptop with a supported graphics card</td>
-                <td>Used automatically on a graphics card with WebGPU float16 (<code>shader-f16</code>)</td>
-                <td>Original Cellpose-SAM weights; high outline accuracy for results you will report or publish</td>
+                <td>Used automatically on a graphics card with WebGPU float16 support</td>
+                <td>FP16 ONNX conversion of Cellpose-SAM; high outline accuracy for results you will report or publish</td>
               </tr>
               <tr>
                 <th scope="row">
                   <strong>Cellpose-SAM (INT8)</strong>
-                  <span class="table-sub"><code>ig2_cpsam_int8_wo_fp32scale.onnx</code></span>
+                  <span class="table-sub">Quantized ONNX INT8</span>
                 </th>
                 <td>316 MB</td>
                 <td>Desktop or laptop running on the CPU</td>
                 <td>Used automatically on the CPU (about 2 GB memory, half of FP16)</td>
-                <td>Compressed copy of Cellpose-SAM; gave the same accuracy as FP16 in testing and loads faster on CPU</td>
+                <td>Quantized ONNX (INT8) build of Cellpose-SAM; matches FP16 accuracy in testing and loads faster on CPU</td>
               </tr>
               <tr>
                 <th scope="row">
                   <strong>Cellpose-SAM (FP4)</strong>
-                  <span class="table-sub"><code>ig2_cpsam_fp4_e2m1_lut.onnx</code></span>
+                  <span class="table-sub">Quantized ONNX FP4</span>
                 </th>
                 <td>183 MB</td>
                 <td>Slower or metered internet connections</td>
                 <td>Smallest CP-SAM download (needs about 3.7 GB memory while running)</td>
-                <td>Compressed copy of Cellpose-SAM; gave the same accuracy as FP16 in testing with a smaller download</td>
+                <td>Quantized ONNX (FP4) build of Cellpose-SAM; matches FP16 accuracy in testing with a smaller download</td>
               </tr>
               <tr>
                 <th scope="row">
                   <strong>U-Net (Fast)</strong>
-                  <span class="table-sub"><code>ig2_unet_fp32.onnx</code></span>
+                  <span class="table-sub">ONNX FP32</span>
                 </th>
                 <td>26 MB</td>
                 <td>Phones, tablets, or quick field previews</td>
                 <td>Works almost anywhere with low memory use</td>
-                <td>Small and fast; ideal for quick checks or mobile use, though less accurate than Cellpose-SAM</td>
+                <td>Small and fast; ideal for quick checks or mobile use, though less detailed than Cellpose-SAM</td>
               </tr>
             </tbody>
           </table>
@@ -880,10 +878,10 @@ export function renderLandingHtml(state: AppState, view: LandingView): string {
           <article class="validity-card">
             <h3>3. Citations &amp; Independent Implementation</h3>
             <p>
-              <strong>webGrainy</strong> is an independent, unofficial browser application and is not affiliated with or endorsed by the original ImageGrains or Cellpose authors. When publishing results obtained with these models, please cite <strong>Mair et al. (2026)</strong> (<em>ImageGrains 2.0</em>) and <strong>Pachitariu et al. (2025)</strong> (<em>Cellpose-SAM</em>), and keep the same model and settings across all photos you compare.
+              <strong>webGrainy</strong> is an independent, unofficial browser application and is not affiliated with or endorsed by the original ImageGrains or Cellpose authors; the ONNX conversions and INT8/FP4 quantizations used here were created independently for this app. When publishing results, please cite <strong>Mair et al. (2026)</strong> (<em>ImageGrains 2.0</em>) and <strong>Pachitariu et al. (2025)</strong> (<em>Cellpose-SAM</em>), and keep the same model and settings across all photos you compare.
             </p>
             <div class="validity-card-actions">
-              <button type="button" class="btn btn-sm" data-open-modal="about">About &amp; All 16 Citations</button>
+              <button type="button" class="btn btn-sm" data-open-modal="about">About &amp; Citations</button>
               <button type="button" class="btn btn-sm" data-open-help="">Settings Help</button>
               <button type="button" class="btn btn-sm" data-open-modal="shortcuts">Keyboard Shortcuts</button>
             </div>
