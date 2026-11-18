@@ -49,6 +49,7 @@ export const dialogActions: Record<string, ActionHandler> = {
   'delete-model': (el, ctx) => {
     void deleteCachedModel(el.dataset['modelId'] as ModelId).then(() => ctx.actions.refreshCapabilities());
   },
+  'printable-report': (_el, ctx) => ctx.ui.openReport(),
   'clear-model-cache': (_el, ctx) => {
     void clearModelCache().then(() => ctx.actions.refreshCapabilities());
   },

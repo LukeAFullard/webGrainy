@@ -1,6 +1,7 @@
 /** Left panel events: sites, photos, the guide, batch buttons and analysis settings. */
 import type { PhotoRecord, SiteRecord } from '../../modules/projectStorage.js';
 import { defaultAnalysisParams } from '../state.js';
+import { isIsoDate } from '../../modules/surveyDate.js';
 import { visiblePhotos, type PhotoFilter } from '../photoList.js';
 import { getActiveSite } from '../workspaceActions.js';
 import { isInput, isSelect, type ActionHandler, type ControlLike, type ElementLike, type EventContext } from './context.js';
@@ -126,6 +127,18 @@ export function handleSidebarChange(target: ControlLike, ctx: EventContext): boo
   if (isInput(target) && target.dataset['photoFacies']) {
     const w = Number(target.value);
     if (Number.isFinite(w) && w >= 0) updatePhoto(ctx, target.dataset['photoFacies'], { faciesWeight: w });
+    return true;
+  }
+  if (isInput(target) && target.dataset['siteDate'] !== undefined) {
+    const st = ctx.store.getState();
+    const site = getActiveSite(st);
+    if (!site) return true;
+    const { surveyDate: _old, ...rest } = site;
+    const updated: SiteRecord = isIsoDate(target.value) ? { ...rest, surveyDate: target.value, updatedAt: Date.now() } : { ...rest, updatedAt: Date.now() };
+    void ctx.storage.saveSite(updated).then(async () => {
+      ctx.store.setState({ sites: await ctx.storage.listSites(), statusMessage: updated.surveyDate ? `Survey date set to ${updated.surveyDate}.` : 'Survey date cleared.' });
+      if (ctx.store.getState().dashboardScope === 'compare') void ctx.actions.refreshComparison();
+    });
     return true;
   }
   if (isInput(target) && target.dataset['selectPhoto']) {

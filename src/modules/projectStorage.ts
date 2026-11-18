@@ -3,6 +3,7 @@ import type {
   CalibrationResult,
   SerializedAnalysisSession,
 } from '../types/index.js';
+import { isIsoDate } from './surveyDate.js';
 import type { ImageBufferLike } from './imagePreprocess.js';
 import type { AnalysisSession, ImageGrainsEngine } from './pipelineController.js';
 import type { RoiExclusionConfig } from './roiAndRectify.js';
@@ -25,6 +26,8 @@ export interface SiteRecord {
   updatedAt: number;
   options: SiteAnalysisOptions;
   photoOrder: string[];
+  /** Survey date (YYYY-MM-DD) set by the user; otherwise the earliest photo date is used. */
+  surveyDate?: string;
 }
 
 export interface PhotoRecord {
@@ -669,6 +672,9 @@ export async function importProjectArchive(
   }
   if (typeof arch.site.name !== 'string' || !Array.isArray(arch.site.photoOrder) || !isObj(arch.site.options)) {
     throw new ArchiveValidationError('site requires name, photoOrder[] and options{}.');
+  }
+  if (arch.site.surveyDate !== undefined && !isIsoDate(arch.site.surveyDate)) {
+    delete (arch.site as { surveyDate?: unknown }).surveyDate; // unreadable date: fall back to photo dates
   }
 
   // ---- Phase 1: validate + decode everything in memory --------------------------

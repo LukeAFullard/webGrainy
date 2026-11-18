@@ -29,6 +29,9 @@ export const dashboardActions: Record<string, ActionHandler> = {
     ctx.store.setState({ compareInPixels: (el as ControlLike).checked === true });
     void ctx.actions.refreshComparison();
   },
+  'toggle-compare-date': (el, ctx) => {
+    ctx.store.setState({ compareByDate: (el as ControlLike).checked === true });
+  },
   'export-comparison': (_el, ctx) => {
     const state = ctx.store.getState();
     const cmp = state.comparison;

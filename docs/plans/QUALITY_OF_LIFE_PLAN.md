@@ -61,7 +61,7 @@ to defaults" also clears the saved copy.
 **Done when.** Settings survive a reload; corrupted or old saved values cannot break the app
 (tests).
 
-## 5. One-page printable site report ☐
+## 5. One-page printable site report ☑ (batch 2)
 
 **Problem.** Most users need a single summary for a field report, not several CSV files.
 
@@ -101,7 +101,7 @@ previous/next photo, `1`–`9` for tools).
 **Done when.** Overlay lists every shortcut that actually works (test derives the list from the
 same table the key handler uses).
 
-## 9. Compare sites over time ☐
+## 9. Compare sites over time ☑ (batch 2)
 
 **Build.** An optional survey date per site (defaulting to the earliest photo date from EXIF).
 In *Compare sites*: "Order by date" and a time-series chart of D16/D50/D84 with confidence

@@ -8,6 +8,7 @@
  * screening tool in the spirit of Eaton et al. (2019, GSDtools), not a replacement for a
  * full two-sample bootstrap.
  */
+import { siteSurveyDate } from './surveyDate.js';
 import { AnalysisSession } from './analysisSession.js';
 import { getPhotoResult, listSitePhotos, type ProjectStorageOptions } from './projectStorage.js';
 import { csvCell } from './provenance.js';
@@ -47,6 +48,8 @@ export interface SiteForComparison {
   inputs: readonly SitePhotoInput[];
   /** Fixed colour for this site (so it keeps its colour when others are added or removed). */
   color?: string;
+  /** Survey date the user set (YYYY-MM-DD); otherwise the earliest photo date is used. */
+  surveyDate?: string;
 }
 
 export interface ComparedSite {
@@ -56,19 +59,24 @@ export interface ComparedSite {
   report: SiteAnalysisReport | null;
   /** Why the site has no report (no analysed photos, uncalibrated, …). */
   error: string | null;
+  /** Survey date (YYYY-MM-DD), set by the user or taken from the photos; null if unknown. */
+  date: string | null;
+  dateSource: 'set' | 'photos' | null;
 }
 
 /** Site reports for each site, computed with the same options. */
 export function computeComparedSites(sites: readonly SiteForComparison[], options: SiteAnalysisOptions): ComparedSite[] {
   return sites.map((s, i) => {
     const color = s.color ?? COMPARE_COLORS[i % COMPARE_COLORS.length]!;
+    const { date, source: dateSource } = siteSurveyDate(s.surveyDate, s.inputs.map((p) => p.metadata?.timestamp));
+    const base = { siteId: s.siteId, name: s.name, color, date, dateSource };
     if (!s.inputs.some((p) => p.included)) {
-      return { siteId: s.siteId, name: s.name, color, report: null, error: 'No analysed photos' };
+      return { ...base, report: null, error: 'No analysed photos' };
     }
     try {
-      return { siteId: s.siteId, name: s.name, color, report: analyzeSite(s.inputs, options), error: null };
+      return { ...base, report: analyzeSite(s.inputs, options), error: null };
     } catch (err) {
-      return { siteId: s.siteId, name: s.name, color, report: null, error: err instanceof Error ? err.message : String(err) };
+      return { ...base, report: null, error: err instanceof Error ? err.message : String(err) };
     }
   });
 }
@@ -130,6 +138,7 @@ export function comparisonCsv(sites: readonly ComparedSite[], metadata: Record<s
   for (const s of sites) {
     const name = csvCell(s.name);
     const r = s.report;
+    if (s.date) lines.push(`site,${name},survey_date,${s.date},${s.dateSource === 'set' ? 'date (entered)' : 'date (earliest photo)'}`);
     if (!r) {
       lines.push(`site,${name},status,${csvCell(s.error ?? 'no report')},text`);
       continue;

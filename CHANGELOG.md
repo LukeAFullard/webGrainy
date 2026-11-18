@@ -6,6 +6,18 @@ All notable changes to webGrainy are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added (quality of life, batch 2: items 5 and 9)
+- **Printable site report** (Export → Printable report, `ui/report.ts`). It fits on 1–2 A4 pages and contains:
+  - the charts and key statistics with confidence intervals;
+  - adequacy, and photo thumbnails with outlines;
+  - settings, versions, warnings and citations.
+
+  Every number is tied to its Site Summary CSV row, and a test checks they match. The report opens in a new tab with a Print / Save as PDF button; if pop-ups are blocked it is downloaded instead.
+- **Comparing sites over time.**
+  - Each site has an optional survey date, which defaults to the earliest EXIF photo date (`modules/surveyDate.ts`). It is validated when importing a project.
+  - Compare sites can order by date, adds a *Survey date* column, and draws a D16/D50/D84 time-series chart with bootstrap CI bars (`renderTimeSeriesSvg`).
+  - Undated sites are listed separately, and the comparison CSV has a `survey_date` row.
+
 ### Added (quality of life, batch 2: items 6–8)
 - **Photo list tools.**
   - A summary line ("8 photos · 6 analysed · 2 not calibrated · 1 failed") whose parts filter the list.
