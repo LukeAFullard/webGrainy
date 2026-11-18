@@ -53,7 +53,7 @@ chart registry (`chartBox`) moves with the dashboard.
 **Done when.** Each panel has snapshot-style tests for its key states (empty, analysing,
 analysed, errors); the smoke test and screenshots are unchanged.
 
-## Step 3 — Event handling split by area ☐
+## Step 3 — Event handling split by area ☑
 
 The ~600-line delegated click/change handler becomes a small router plus handlers per area:
 `events/toolbar.ts`, `events/sidebar.ts`, `events/dashboard.ts`, `events/dialogs.ts`, each
