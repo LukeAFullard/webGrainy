@@ -1,5 +1,11 @@
 // In-app settings help and the newly exposed settings.
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
+
+/** Source of every UI module (main.ts and the panel renderers). */
+function uiSource(): string {
+  const files = ['src/ui/main.ts', ...readdirSync('src/ui/panels').map((f) => `src/ui/panels/${f}`)];
+  return files.map((f) => readFileSync(f, 'utf8')).join('\n');
+}
 import { describe, expect, it } from 'vitest';
 import { HELP_GROUP_ORDER, HELP_TOPICS, helpButton, isHelpKey, renderHelpModalHtml } from '../src/ui/help.js';
 import { defaultAnalysisParams, toAnalysisConfig } from '../src/ui/state.js';
@@ -17,14 +23,14 @@ describe('settings help content', () => {
   });
 
   it('every help button used in the UI refers to an existing topic', () => {
-    const src = readFileSync('src/ui/main.ts', 'utf8');
+    const src = uiSource();
     const used = [...src.matchAll(/helpButton\('([A-Za-z0-9]+)'\)/g)].map((m) => m[1]!);
     expect(used.length).toBeGreaterThan(20);
     for (const k of used) expect(isHelpKey(k), k).toBe(true);
   });
 
   it('every user-facing setting control has a help button next to it', () => {
-    const src = readFileSync('src/ui/main.ts', 'utf8');
+    const src = uiSource();
     const params = [...src.matchAll(/data-(?:param|site-opt)="([A-Za-z0-9]+)"/g)].map((m) => m[1]!);
     const helped = new Set([...src.matchAll(/helpButton\('([A-Za-z0-9]+)'\)/g)].map((m) => m[1]!));
     for (const p of new Set(params)) expect(helped.has(p), `missing help for ${p}`).toBe(true);

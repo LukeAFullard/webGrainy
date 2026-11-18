@@ -15,37 +15,30 @@ import {
   type PhotoRecord,
   type SiteRecord,
 } from '../modules/projectStorage.js';
-import { computeFabricRoseStats } from '../modules/morphometricsExt.js';
-import { aspectRatioCounts, sizeHistogramFromWentworth } from '../modules/histograms.js';
 import { rectifyPerspective } from '../modules/roiAndRectify.js';
 import {
   buildSiteInputs,
   effectiveRoi,
 } from '../modules/siteWorkspace.js';
 import {
-  compareD50,
   comparisonCsv,
 } from '../modules/siteComparison.js';
-import {
-  renderAspectRatioHistogramSvg,
-  renderConvergenceChartSvg,
-  renderFabricRoseSvg,
-  renderJackknifeChartSvg,
-  renderPsdChartSvg,
-  renderSizeHistogramSvg,
-  renderComparePsdSvg,
-  renderCompareSizeHistogramSvg,
-} from './charts.js';
 import { CanvasViewport } from './canvasViewport.js';
 import { parseJpegExifMetadata } from './exif.js';
-import { helpButton, isHelpKey, renderHelpModalHtml } from './help.js';
-import { logicalCores, wasmThreadsFor } from '../modules/onnxInference.js';
+import { isHelpKey, renderHelpModalHtml } from './help.js';
+import { wasmThreadsFor } from '../modules/onnxInference.js';
 import { GUIDE_HIDDEN_KEY, guideInputFrom, guideSteps, renderGuideHtml } from './onboarding.js';
 import { EXPORTED_ONCE_KEY, readFlag, writeFlag } from './prefs.js';
-import { backupStatus, markSiteBackedUp, markSiteChanged, readBackupRecords } from './backup.js';
+import { markSiteBackedUp, markSiteChanged } from './backup.js';
 import { ScreenWakeLock } from './wakeLock.js';
 import { DoneSignal, NOTIFY_PREF_KEY, requestNotifyPermission } from './doneSignal.js';
 import { loadAnalysisParams, saveAnalysisParams } from './savedSettings.js';
+import { renderTopbarHtml } from './panels/topbar.js';
+import { renderSidebarHtml, type StorageInfo } from './panels/sidebar.js';
+import { renderToolbarHtml } from './panels/toolbar.js';
+import { renderDashboardHtml } from './panels/dashboard.js';
+import { renderCompareHtml } from './panels/compare.js';
+import { esc, type ChartRegistry } from './panels/html.js';
 import { createWorkspaceActions, getActivePhoto, getActiveSite, rectifyWithCanvas } from './workspaceActions.js';
 import { applyEvent, newActivity, renderActivityHtml, startPhoto, type ActivityState } from './progress.js';
 import { CPU_THREADS_KEY, readCpuThreadPref } from './cpuThreads.js';
@@ -82,14 +75,6 @@ function restoreOpenDetails(root: HTMLElement, open: Set<string>): void {
   });
 }
 
-function esc(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
 
 async function yieldToMain(): Promise<void> {
   const w = window as unknown as { scheduler?: { yield?: () => Promise<void> } };
@@ -132,7 +117,7 @@ const wakeLock = new ScreenWakeLock();
 const doneSignal = new DoneSignal();
 
 // Browser storage use, refreshed after jobs; shown in the Site panel.
-let storageInfo: { usage: number; quota: number; persisted: boolean } | null = null;
+let storageInfo: StorageInfo | null = null;
 async function refreshStorageInfo(): Promise<void> {
   try {
     if (!navigator.storage?.estimate) return;
@@ -327,293 +312,23 @@ async function syncViewport(fitToView = false): Promise<void> {
 }
 
 function renderTopbar(state: AppState): void {
-  const caps = state.capabilities;
-  const gpuLabel = engine.getWebGpuDisabledReason() !== null
-    ? 'GPU reset · CPU mode (reload for GPU)'
-    : caps
-    ? caps.hasWebGPU
-      ? caps.hasShaderF16 === true
-        ? 'WebGPU FP16'
-        : caps.hasShaderF16 === false
-          ? 'WebGPU (No FP16)'
-          : 'WebGPU Ready'
-      : `${caps.hasWasmSimd ? 'WASM SIMD' : 'WASM Basic'} · ${
-          cpuThreads ?? 1
-        } CPU thread${(cpuThreads ?? 1) === 1 ? '' : 's'}`
-    : 'Initializing…';
-  const swLabel =
-    state.swStatus === 'ready'
-      ? 'SW Offline Ready'
-      : state.swStatus === 'registering'
-        ? 'SW Registering'
-        : 'SW Local/File';
-
-  // One compact engine chip (details on hover/long-press), plus Offline only when offline.
-  const engineShort = engine.getWebGpuDisabledReason() !== null
-    ? 'CPU (GPU reset)'
-    : caps
-      ? caps.hasWebGPU && caps.hasShaderF16 !== false
-        ? 'GPU'
-        : `CPU · ${cpuThreads ?? 1} thread${(cpuThreads ?? 1) === 1 ? '' : 's'}`
-      : 'Starting…';
-  const engineTitle = `Engine: ${gpuLabel}. ${swLabel.replace('SW', 'Offline cache:')}. ${state.isOnline ? 'Online' : 'Offline'}.`;
-  topbarEl.innerHTML = `
-    <div class="topbar-left">
-      <div class="brand">
-        <span>webGrainy</span>
-        <span class="brand-sub">Grain sizes from photos · runs on your device</span>
-      </div>
-    </div>
-    <div class="topbar-center">
-      <span class="status-pill ${caps?.hasWebGPU || caps?.hasWasmSimd ? 'ok' : ''}" title="${esc(engineTitle)}">
-        <span class="dot" aria-hidden="true"></span>${esc(engineShort)}<span class="sr-only"> — ${esc(engineTitle)}</span>
-      </span>
-      ${state.isOnline ? '' : `<span class="status-pill warn" title="Analysis still works with models already downloaded."><span class="dot" aria-hidden="true"></span>Offline</span>`}
-    </div>
-    <div class="topbar-right">
-      <button type="button" class="btn btn-sm" data-open-modal="models">Models</button>
-      <button type="button" class="btn btn-sm" data-open-modal="export">Export</button>
-      <button type="button" class="btn btn-sm" data-open-help="">Help</button>
-      <button type="button" class="btn btn-sm" data-open-modal="about">About</button>
-    </div>
-  `;
+  topbarEl.innerHTML = renderTopbarHtml(state, { gpuReset: engine.getWebGpuDisabledReason() !== null, cpuThreads });
 }
 
 function renderSidebar(state: AppState): void {
-  const activeSite = getActiveSite(state);
-  const p = state.analysisParams;
-  const pendingCount = state.photos.filter((ph) => {
-    const st = state.photoStatuses.get(ph.photoId);
-    return !st || st === 'pending' || st === 'error';
-  }).length;
-  // Settings start collapsed (progressive disclosure); the summary says what is in use.
-  const prevDetailsOpen = sidebarEl.querySelector<HTMLDetailsElement>('details.settings-block')?.open ?? false;
-  const defaults = defaultAnalysisParams();
-  const changedCount = (Object.keys(defaults) as Array<keyof typeof defaults>).filter((k) => p[k] !== defaults[k]).length;
-  const modelSummary =
-    p.model === 'auto' ? 'Auto model' : p.model === 'unet' ? 'U-Net' : `CP-SAM${p.cpsamWeights === 'auto' ? '' : ` ${p.cpsamWeights.toUpperCase()}`}`;
-  const settingsSummary = `${modelSummary} · ${changedCount === 0 ? 'tested defaults' : `${changedCount} setting${changedCount === 1 ? '' : 's'} changed`}`;
-  const analysedCount = state.photos.filter((ph) => state.photoStatuses.get(ph.photoId) === 'done').length;
+  const settingsOpen = sidebarEl.querySelector<HTMLDetailsElement>('details.settings-block')?.open ?? false;
   const prevPhotoScroll = sidebarEl.querySelector('.photo-list')?.scrollTop ?? 0;
-
   const keptOpenSidebar = captureOpenDetails(sidebarEl);
-  const guide = guideHtml(state);
-  sidebarEl.innerHTML = `
-    ${guide ? `<div class="panel-section">${guide}</div>` : ''}
-    <div class="panel-section">
-      <div class="panel-header">
-        <span class="panel-title">Site</span>
-        <div class="row">
-          <button type="button" class="btn btn-sm" data-action="rename-site" title="Rename this site" ${activeSite ? '' : 'disabled'}>Rename</button>
-          <button type="button" class="btn btn-sm" data-action="new-site" title="Create a new site">+ New</button>
-
-          <button type="button" class="btn btn-sm" data-action="import-archive" title="Open a saved .webgrainy.json project">Open</button>
-        </div>
-      </div>
-      <select class="select" id="site-select" aria-label="Select active field site">
-        ${state.sites
-          .map(
-            (s) =>
-              `<option value="${esc(s.siteId)}" ${s.siteId === activeSite?.siteId ? 'selected' : ''}>${esc(s.name)} (${s.photoOrder.length})</option>`,
-          )
-          .join('')}
-      </select>
-      ${backupLineHtml(state, analysedCount)}
-      ${state.sites.length > 1 ? `<button type="button" class="btn btn-sm" style="margin-top:6px;width:100%;" data-action="analyse-all-sites" title="Analyse every photo that is not analysed yet, in all ${state.sites.length} sites" ${state.batchRunning ? 'disabled' : ''}>Analyse all sites (${state.sites.length})</button>` : ''}
-    </div>
-
-    <div class="panel-section">
-      <div class="panel-header">
-        <span class="panel-title">Photos (${state.photos.length}${analysedCount > 0 ? ` · ${analysedCount} analysed` : ''})</span>
-        <div class="row">
-          ${
-            state.batchRunning
-              ? `<button type="button" class="btn btn-sm btn-danger" data-action="cancel-batch">Cancel</button>`
-              : pendingCount > 0
-                ? `<button type="button" class="btn btn-sm btn-primary" data-action="run-batch">Analyse ${pendingCount === state.photos.length ? (pendingCount === 1 ? 'photo' : `all ${pendingCount}`) : `${pendingCount} new`}</button>`
-                : ''
-          }
-        </div>
-      </div>
-
-      <button type="button" class="dropzone" id="photo-dropzone">
-        <span class="dropzone-text">${state.photos.length === 0 ? '<strong>Add photos</strong> — tap to choose, or drop them here' : 'Add more photos — tap or drop here'}</span>
-        <span style="display:block;font-size:0.65rem;color:var(--text-muted);margin-top:2px;">Photos stay on your device</span>
-      </button>
-
-
-      <div class="photo-list" style="margin-top:8px;">
-        ${
-          state.photos.length === 0
-            ? ''
-            : state.photos
-                .map((ph) => {
-                  const status = state.photoStatuses.get(ph.photoId) ?? 'pending';
-                  const sess = state.sessions.get(ph.photoId);
-                  const recModel = sess?.recommendation.model;
-                  const thumb = state.thumbUrls.get(ph.photoId) ?? '';
-                  const isActive = ph.photoId === state.activePhotoId;
-                  const errMsg = status === 'error' ? state.photoErrors.get(ph.photoId) ?? 'Analysis failed (no details reported).' : '';
-                  return `
-                    <div class="photo-item ${isActive ? 'active' : ''}">
-                      <input type="checkbox" data-toggle-include="${esc(ph.photoId)}" ${ph.included ? 'checked' : ''} aria-label="Include ${esc(ph.label)} in site aggregate" title="Include in site aggregate" />
-                      <button type="button" class="photo-select-btn" data-photo-id="${esc(ph.photoId)}" aria-current="${isActive ? 'true' : 'false'}">
-                        <img class="photo-thumb" src="${thumb}" alt="" />
-                        <span class="photo-meta">
-                          <span class="photo-name" title="${esc(ph.label)}">${esc(ph.label)}</span>
-                          <span class="photo-sub">
-                            ${ph.width}×${ph.height}${ph.calibration ? ` · ${ph.calibration.mmPerPx.toFixed(3)}mm/px` : ' · uncal'}
-                            ${recModel ? ` · ${recModel}` : ''}
-                          </span>
-                        </span>
-                        <span class="badge ${status}"${errMsg ? ` title="${esc(errMsg)}"` : ''}>${status}</span>
-                      </button>
-                      ${errMsg ? `<div class="photo-error" role="alert">${esc(errMsg)}</div>` : ''}
-                      ${
-                        state.siteOptions.poolingMode === 'facies-weighted'
-                          ? `<label class="photo-facies">Facies weight ${helpButton('faciesWeight')}
-                              <input class="input" type="number" step="0.05" min="0" max="100" value="${ph.faciesWeight ?? 1}" data-photo-facies="${esc(ph.photoId)}" aria-label="Facies weight for ${esc(ph.label)}" />
-                            </label>`
-                          : ''
-                      }
-                    </div>
-                  `;
-                })
-                .join('')
-        }
-      </div>
-    </div>
-
-    <div class="panel-section">
-      <details class="settings-block" ${prevDetailsOpen ? 'open' : ''}>
-        <summary>Analysis settings <span class="summary-note">${esc(settingsSummary)}</span></summary>
-        <div class="row-between" style="margin-top:6px;">
-          <span class="field-hint">The defaults are the tested settings. Changes apply to the next analysis.</span>
-          <button type="button" class="btn btn-sm" data-open-help="">Settings help</button>
-        </div>
-        <div class="grid-2" style="margin-top:8px;">
-          <label class="field-label">
-            <span class="label-row">Model ${helpButton('model')}</span>
-            <select class="select" data-param="model">
-              <option value="auto" ${p.model === 'auto' ? 'selected' : ''}>Auto</option>
-              <option value="unet" ${p.model === 'unet' ? 'selected' : ''}>U-Net (fast)</option>
-              <option value="cpsam" ${p.model === 'cpsam' ? 'selected' : ''}>CP-SAM (accurate)${state.capabilities?.isMobile ? ' – not for phones' : ''}</option>
-            </select>
-          </label>
-          ${
-            p.model === 'unet'
-              ? ''
-              : `<label class="field-label">
-            <span class="label-row">CP-SAM weights ${helpButton('cpsamWeights')}</span>
-            <select class="select" data-param="cpsamWeights">
-              <option value="auto" ${p.cpsamWeights === 'auto' ? 'selected' : ''}>Auto</option>
-              <option value="fp16" ${p.cpsamWeights === 'fp16' ? 'selected' : ''}>FP16 (617 MB)</option>
-              <option value="int8" ${p.cpsamWeights === 'int8' ? 'selected' : ''}>INT8 (316 MB)</option>
-              <option value="fp4" ${p.cpsamWeights === 'fp4' ? 'selected' : ''}>FP4 (183 MB)</option>
-            </select>
-          </label>`
-          }
-          <label class="field-label">
-            <span class="label-row">Scale Mode ${helpButton('scaleMode')}</span>
-            <select class="select" data-param="scaleMode">
-              <option value="auto" ${p.scaleMode === 'auto' ? 'selected' : ''}>Auto (≤1024px)</option>
-              <option value="1.0x" ${p.scaleMode === '1.0x' ? 'selected' : ''}>1.0x Full</option>
-              <option value="0.5x" ${p.scaleMode === '0.5x' ? 'selected' : ''}>0.5x</option>
-              <option value="0.25x" ${p.scaleMode === '0.25x' ? 'selected' : ''}>0.25x</option>
-            </select>
-          </label>
-        </div>
-        <label class="checkbox-label" style="margin-top:8px;">
-          <input type="checkbox" data-param="excludeBorder" ${p.excludeBorder ? 'checked' : ''} /> Exclude border grains ${helpButton('excludeBorder')}
-        </label>
-        <details class="advanced-block" style="margin-top:8px;" data-keep-open="fine-tuning">
-          <summary>Fine-tuning</summary>
-          <div class="grid-2" style="margin-top:6px;">
-          <label class="field-label">
-            <span class="label-row">Flow Threshold ${helpButton('flowThreshold')}</span>
-            <input class="input" type="number" step="0.05" min="0.05" max="1" value="${p.flowThreshold}" data-param="flowThreshold" />
-          </label>
-          <label class="field-label">
-            <span class="label-row">Cellprob Thresh ${helpButton('cellprobThreshold')}</span>
-            <input class="input" type="number" step="0.1" min="-4" max="4" value="${p.cellprobThreshold}" data-param="cellprobThreshold" />
-          </label>
-          <label class="field-label">
-            <span class="label-row">Min Size (px²) ${helpButton('minSize')}</span>
-            <input class="input" type="number" step="1" min="4" max="500" value="${p.minSize}" data-param="minSize" />
-          </label>
-          <label class="field-label">
-            <span class="label-row">Max Area Frac ${helpButton('maxGrainAreaFraction')}</span>
-            <input class="input" type="number" step="0.01" min="0.01" max="1" value="${p.maxGrainAreaFraction}" data-param="maxGrainAreaFraction" />
-          </label>
-          <label class="field-label">
-            <span class="label-row">Border margin (px) ${helpButton('excludeBorderMargin')}</span>
-            <input class="input" type="number" step="1" min="0" max="100" value="${p.excludeBorderMargin}" data-param="excludeBorderMargin" />
-          </label>
-          </div>
-        </details>
-        <details class="advanced-block" style="margin-top:8px;" data-keep-open="advanced-analysis">
-          <summary>Advanced (rarely needed)</summary>
-          <div class="grid-2" style="margin-top:6px;">
-            <label class="field-label">
-              <span class="label-row">Flow steps ${helpButton('niter')}</span>
-              <input class="input" type="number" step="10" min="50" max="1000" value="${p.niter}" data-param="niter" />
-            </label>
-            <label class="field-label" style="grid-column: 1 / -1;">
-              <span class="label-row">Inference pipeline ${helpButton('inferencePipeline')}</span>
-              <select class="select" data-param="inferencePipeline">
-                <option value="cellpose" ${p.inferencePipeline === 'cellpose' ? 'selected' : ''}>Cellpose (matches ImageGrains)</option>
-                <option value="legacy" ${p.inferencePipeline === 'legacy' ? 'selected' : ''}>Legacy (webGrainy ≤ v1.1)</option>
-              </select>
-            </label>
-            <label class="field-label">
-              <span class="label-row">Seed density ${helpButton('minSeedDensity')}</span>
-              <input class="input" type="number" step="1" min="1" max="20" value="${p.minSeedDensity}" data-param="minSeedDensity" />
-            </label>
-          </div>
-          ${(() => {
-            const cores = logicalCores();
-            const auto = wasmThreadsFor('auto');
-            const opts = cores === undefined ? [] : Array.from({ length: cores }, (_, i) => i + 1);
-            return `<label class="field-label" style="margin-top:6px;">
-              <span class="label-row">CPU threads ${helpButton('cpuThreads')}</span>
-              <select class="select" data-cpu-threads="">
-                <option value="auto" ${cpuThreadPref === 'auto' ? 'selected' : ''}>Auto${auto !== undefined ? ` (${auto} of ${cores})` : ''}</option>
-                ${opts.map((n) => `<option value="${n}" ${cpuThreadPref === n ? 'selected' : ''}>${n}</option>`).join('')}
-              </select>
-              ${self.crossOriginIsolated ? '' : '<span class="field-hint">Multi-threading is unavailable on this page (not cross-origin isolated): the CPU uses 1 thread.</span>'}
-            </label>`;
-          })()}
-          ${
-            typeof Notification !== 'undefined'
-              ? `<label class="checkbox-label" style="margin-top:6px;">
-                  <input type="checkbox" data-notify-done="" ${notifyWhenDone() ? 'checked' : ''} /> Notify me when a long analysis finishes ${helpButton('notifyWhenDone')}
-                </label>`
-              : ''
-          }
-          <label class="checkbox-label" style="margin-top:6px;">
-            <input type="checkbox" data-param="skipTilesOutsideRoi" ${p.skipTilesOutsideRoi ? 'checked' : ''} /> Skip areas outside the ROI (faster) ${helpButton('skipTilesOutsideRoi')}
-          </label>
-          <div class="clahe-block" style="margin-top:8px;">
-            <label class="checkbox-label">
-              <input type="checkbox" data-param="applyClahe" ${p.applyClahe ? 'checked' : ''} /> Apply CLAHE (contrast boost) ${helpButton('applyClahe')}
-            </label>
-            <span class="field-hint">Not recommended: it lowered accuracy with both models in testing.</span>
-            ${
-              p.applyClahe
-                ? `<label class="field-label" style="margin-top:4px;">
-                    <span class="label-row">CLAHE clip ${helpButton('claheClipLimit')}</span>
-                    <input class="input" type="number" step="0.5" min="1" max="8" value="${p.claheClipLimit}" data-param="claheClipLimit" />
-                  </label>`
-                : ''
-            }
-          </div>
-          <span class="field-hint" style="margin-top:6px;">Settings are remembered in this browser for your next visit.</span>
-          <button type="button" class="btn btn-sm" data-action="reset-analysis-params" style="margin-top:6px;">Reset analysis settings to defaults</button>
-        </details>
-        <button type="button" class="btn btn-sm" data-action="run-active" style="margin-top:8px;" ${!state.activePhotoId || state.batchRunning ? 'disabled' : ''} title="Re-analyse the photo shown in the middle with these settings">Re-analyse this photo</button>
-      </details>
-    </div>
-  `;
+  sidebarEl.innerHTML = renderSidebarHtml(state, {
+    guideHtml: guideHtml(state),
+    settingsOpen,
+    cpuThreadPref,
+    cpuThreads,
+    crossOriginIsolated: self.crossOriginIsolated,
+    canNotify: typeof Notification !== 'undefined',
+    notifyWhenDone: notifyWhenDone(),
+    storageInfo,
+  });
   restoreOpenDetails(sidebarEl, keptOpenSidebar);
 
   const photoListEl = sidebarEl.querySelector('.photo-list');
@@ -623,116 +338,10 @@ function renderSidebar(state: AppState): void {
 }
 
 function renderToolbarAndOverlays(state: AppState): void {
-  const activePhoto = getActivePhoto(state);
-  const session = activePhoto ? state.sessions.get(activePhoto.photoId) ?? null : null;
-
-  // Tools grouped by task; grain-editing tools only appear once the photo has results.
-  const groups: Array<{ label: string; tools: Array<{ id: EditorToolMode; label: string; title: string }> }> = [
-    { label: '', tools: [{ id: 'inspect', label: 'Inspect', title: 'Tap or click a grain to see its measurements' }] },
-    {
-      label: 'Scale',
-      tools: [
-        { id: 'calibrate', label: 'Calibrate', title: 'Mark two points a known distance apart (ruler, quadrat) to get sizes in mm' },
-        { id: 'rectify', label: 'Rectify', title: 'Correct a photo taken at an angle using four corners of a rectangle' },
-      ],
-    },
-    {
-      label: 'Exclude',
-      tools: [
-        { id: 'excludePoly', label: 'Area', title: 'Draw a polygon around things to leave out (rulers, boots, water)' },
-        { id: 'excludeBrush', label: 'Brush', title: 'Paint over things to leave out' },
-      ],
-    },
-    ...(session
-      ? [
-          {
-            label: 'Edit grains',
-            tools: [
-              { id: 'split' as EditorToolMode, label: 'Split', title: 'Draw a line across a grain to split it in two' },
-              { id: 'merge' as EditorToolMode, label: 'Merge', title: 'Select grains that are really one stone, then press Merge' },
-              { id: 'delete' as EditorToolMode, label: 'Delete', title: 'Tap or click a wrong outline to remove it' },
-              { id: 'addPolygon' as EditorToolMode, label: 'Add', title: 'Draw the outline of a missed grain' },
-            ],
-          },
-        ]
-      : []),
-  ];
-
-  toolbarEl.innerHTML = `
-    ${groups
-      .map(
-        (g) => `<span class="tool-group" role="group" ${g.label ? `aria-label="${g.label}"` : ''}>${g.label ? `<span class="tool-group-label">${g.label}</span>` : ''}${g.tools
-          .map(
-            (t) =>
-              `<button type="button" class="btn btn-sm ${state.activeTool === t.id ? 'active' : ''}" aria-pressed="${state.activeTool === t.id ? 'true' : 'false'}" data-tool="${t.id}" title="${esc(t.title)}">${t.label}</button>`,
-          )
-          .join('')}</span>`,
-      )
-      .join('')}
-    ${helpButton('editing')}
-    ${
-      state.activeTool === 'merge' && state.selectedGrainIds.size >= 2
-        ? `<button type="button" class="btn btn-sm btn-primary" data-action="commit-merge">Merge (${state.selectedGrainIds.size})</button>`
-        : ''
-    }
-    ${
-      state.activeTool === 'split' || state.activeTool === 'addPolygon' || state.activeTool === 'excludePoly'
-        ? `<button type="button" class="btn btn-sm btn-primary" data-action="finish-shape" title="Same as double-click or Enter">Finish shape</button>
-           <button type="button" class="btn btn-sm" data-action="cancel-shape" title="Same as Esc">Cancel shape</button>`
-        : ''
-    }
-    <span class="tool-group">
-      ${session ? `<button type="button" class="btn btn-sm" data-action="undo" ${session.canUndo ? '' : 'disabled'}>Undo</button>
-      <button type="button" class="btn btn-sm" data-action="redo" ${session.canRedo ? '' : 'disabled'}>Redo</button>` : ''}
-      <button type="button" class="btn btn-sm" data-action="fit-view" ${activePhoto ? '' : 'disabled'} title="Fit the photo to the view">Fit</button>
-    </span>
-  `;
-
-  const ov = state.overlays;
-  let toolPrompt = '';
-  if (state.activeTool === 'calibrate') {
-    toolPrompt = `
-      <span class="toolbar-sep" aria-hidden="true"></span>
-      <span>Calibrate (${state.pendingCalibrationPoints.length}/2 pts):</span>
-      <select class="select" id="cal-preset" aria-label="Calibration reference preset" style="width:auto;padding:2px 6px;">
-        <option value="100|mm">100 mm Ruler</option>
-        <option value="25|mm">25 mm Coin</option>
-        <option value="500|mm">500 mm Quadrat</option>
-        <option value="custom">Custom…</option>
-      </select>
-      <input class="input" id="cal-length" type="number" value="100" step="1" min="0.1" aria-label="Calibration length" style="width:65px;padding:2px 6px;" />
-      <select class="select" id="cal-unit" aria-label="Calibration unit" style="width:auto;padding:2px 6px;">
-        <option value="mm">mm</option>
-        <option value="cm">cm</option>
-      </select>
-      <button type="button" class="btn btn-sm" data-action="copy-scale-all" ${activePhoto?.calibration ? '' : 'disabled'}>Copy Scale to Site</button>
-    `;
-  } else if (state.activeTool === 'rectify') {
-    toolPrompt = `
-      <span class="toolbar-sep" aria-hidden="true"></span>
-      <span>4-Pt Rectify (${state.pendingRectifyPoints.length}/4 TL→TR→BR→BL):</span>
-      <input class="input" id="rect-w" type="number" value="500" step="10" min="10" aria-label="Rectification physical width in mm" style="width:60px;padding:2px 6px;" title="Width (mm)" />×
-      <input class="input" id="rect-h" type="number" value="500" step="10" min="10" aria-label="Rectification physical height in mm" style="width:60px;padding:2px 6px;" title="Height (mm)" />mm
-    `;
-  }
-
+  const html = renderToolbarHtml(state);
+  toolbarEl.innerHTML = html.toolbar;
   const keptOpen = captureOpenDetails(subToolbarEl);
-  const onCount = [ov.instanceIds, ov.wentworthColors, ov.ellipses, ov.orientations, ov.borderTruncated, ov.loupe].filter(Boolean).length;
-  subToolbarEl.innerHTML = `
-    <details class="display-menu" data-keep-open="display">
-      <summary>Display <span class="summary-note">${onCount} on</span></summary>
-      <div class="display-options">
-        <label class="checkbox-label"><input type="checkbox" data-ov="instanceIds" ${ov.instanceIds ? 'checked' : ''} /> Grain IDs</label>
-        <label class="checkbox-label"><input type="checkbox" data-ov="wentworthColors" ${ov.wentworthColors ? 'checked' : ''} /> Size colours (Wentworth)</label>
-        <label class="checkbox-label"><input type="checkbox" data-ov="ellipses" ${ov.ellipses ? 'checked' : ''} /> Ellipses (a/b axes)</label>
-        <label class="checkbox-label"><input type="checkbox" data-ov="orientations" ${ov.orientations ? 'checked' : ''} /> Orientation lines</label>
-        <label class="checkbox-label"><input type="checkbox" data-ov="borderTruncated" ${ov.borderTruncated ? 'checked' : ''} /> Mark edge/too-small grains</label>
-        <label class="checkbox-label"><input type="checkbox" data-ov="loupe" ${ov.loupe ? 'checked' : ''} /> Magnifier (${ov.loupeZoom}×)</label>
-        <label class="checkbox-label">Outline opacity <input type="range" min="0" max="1" step="0.05" value="${ov.opacity}" data-ov="opacity" style="width:80px;" /></label>
-      </div>
-    </details>
-    ${toolPrompt}
-  `;
+  subToolbarEl.innerHTML = html.subToolbar;
   restoreOpenDetails(subToolbarEl, keptOpen);
 }
 
@@ -793,17 +402,8 @@ function renderViewportExtras(state: AppState): void {
 }
 
 // ---- Charts: each chart can be downloaded as SVG or PNG (rendered in the light theme) ----
-const chartRenderers = new Map<string, { title: string; render: (light: boolean) => string }>();
+const chartRenderers: ChartRegistry = new Map();
 
-function chartBox(id: string, title: string, render: (light: boolean) => string, light: boolean): string {
-  chartRenderers.set(id, { title, render });
-  return `<div class="chart-box" data-chart-id="${esc(id)}">${render(light)}
-    <div class="chart-actions">
-      <button type="button" class="btn btn-xs" data-chart-dl="${esc(id)}" data-fmt="svg" title="Download as SVG (vector, for reports)" aria-label="Download ${esc(title)} as SVG">SVG</button>
-      <button type="button" class="btn btn-xs" data-chart-dl="${esc(id)}" data-fmt="png" title="Download as PNG image" aria-label="Download ${esc(title)} as PNG">PNG</button>
-    </div>
-  </div>`;
-}
 
 /** Saves a dashboard chart (light theme, with provenance metadata) as SVG or PNG. */
 async function downloadChart(id: string, format: 'svg' | 'png'): Promise<void> {
@@ -834,447 +434,18 @@ async function downloadChart(id: string, format: 'svg' | 'png'): Promise<void> {
   }
 }
 
-function scopeButtonsHtml(scope: AppState['dashboardScope']): string {
-  const b = (id: AppState['dashboardScope'], label: string, title: string): string =>
-    `<button type="button" class="btn btn-sm ${scope === id ? 'active' : ''}" aria-pressed="${scope === id ? 'true' : 'false'}" data-scope="${id}" title="${title}">${label}</button>`;
-  return (
-    b('photo', 'This photo', 'Results for the photo shown') +
-    b('site', 'Whole site', 'Pooled results for all included photos of this site') +
-    b('compare', 'Compare sites', 'Overlay and compare the results of several sites')
-  );
-}
 
-// ---- Compare sites: other sites' saved results are loaded once and cached until the site changes ----
-function renderCompareHtml(state: AppState, lightTheme: boolean): string {
-  const cmp = state.comparison;
-  const chosen = new Set(state.compareSiteIds ?? state.sites.map((s) => s.siteId));
-  const colorOf = new Map((cmp?.sites ?? []).map((s) => [s.siteId, s.color]));
-  const picker = state.sites
-    .map(
-      (s) => `<label class="checkbox-label compare-site">
-        <input type="checkbox" data-compare-site="${esc(s.siteId)}" ${chosen.has(s.siteId) ? 'checked' : ''} />
-        <span class="swatch" style="background:${colorOf.get(s.siteId) ?? 'transparent'}"></span>${esc(s.name)} <span class="summary-note">(${s.photoOrder.length} photos)</span>
-      </label>`,
-    )
-    .join('');
-  const withReport = (cmp?.sites ?? []).filter((s) => s.report !== null);
-  const units = new Set(withReport.map((s) => s.report!.unit));
-  const mixedUnits = units.size > 1;
-  const plotted = mixedUnits ? withReport.filter((s) => s.report!.unit === 'mm') : withReport;
-  const unit = (plotted[0]?.report?.unit ?? 'mm') as 'mm' | 'px';
-  const step: 0.5 | 1 = state.histogramStepPhi === 0.5 ? 0.5 : 1;
-  const v = (n: number | undefined | null, d = 1): string => (n === undefined || n === null || !Number.isFinite(n) ? '—' : n.toFixed(d));
-  const table = withReport.length
-    ? `<div class="table-scroll"><table class="stats-table compare-table">
-        <thead><tr><th>Site</th><th>Photos / grains</th><th>D16</th><th>D50 (95% CI)</th><th>D84</th><th>Dg / σg</th><th>Sauter</th><th>Sorting φ</th><th>Gravel / cobble %</th></tr></thead>
-        <tbody>${withReport
-          .map((s) => {
-            const r = s.report!;
-            return `<tr><th scope="row"><span class="swatch" style="background:${s.color}"></span>${esc(s.name)}</th>
-              <td>${r.includedPhotoCount} / ${r.validGrainCount}</td><td>${v(r.psd.D16)}</td>
-              <td>${v(r.psd.D50)} (${v(r.bootstrapCi.lower.D50)}–${v(r.bootstrapCi.upper.D50)})</td><td>${v(r.psd.D84)}</td>
-              <td>${v(r.extra?.geometricMean)} / ${v(r.extra?.geometricSd, 2)}</td><td>${v(r.extra?.sauterMeanD32)}</td>
-              <td>${v(r.folkWard?.sortingPhi, 2)}</td><td>${r.wentworth ? `${v(r.wentworth.gravelPct, 0)} / ${v(r.wentworth.cobblePct, 0)}` : '—'}</td></tr>`;
-          })
-          .join('')}</tbody></table></div>
-        <p class="field-hint">Sizes in ${unit}. All sites use the same statistics settings (${esc(state.siteOptions.poolingMode)}, ${esc(state.siteOptions.sizeMetric ?? 'bAxis')}).</p>`
-    : '';
-  const pairs = compareD50(plotted);
-  const pairHtml = pairs.length
-    ? `<details class="advanced-block" data-keep-open="compare-pairs" open>
-        <summary>D50 differences between sites <span class="summary-note">approximate</span></summary>
-        <table class="stats-table"><tbody>${pairs
-          .map(
-            (c) => `<tr><th scope="row">${esc(c.a)} ÷ ${esc(c.b)}<span class="stats-note">${c.p < 0.05 ? 'likely different (p &lt; 0.05)' : 'no clear difference'}</span></th>
-              <td>${c.ratio.toFixed(2)}× (${c.ratioLo.toFixed(2)}–${c.ratioHi.toFixed(2)})<br/>p ${c.p < 0.001 ? '&lt; 0.001' : `= ${c.p.toFixed(3)}`}</td></tr>`,
-          )
-          .join('')}</tbody></table>
-        <p class="field-hint">Ratio of D50s with a 95% interval, from each site's bootstrap interval on a log scale (z-test). A screening check, not a formal two-sample test. ${helpButton('compareSites')}</p>
-      </details>`
-    : '';
-  const problems = (cmp?.sites ?? []).filter((s) => s.report === null || (mixedUnits && s.report.unit !== 'mm'));
-  const problemHtml = problems.length
-    ? `<div class="warning-banner compare-problems">${problems
-        .map(
-          (s) => `<div class="row-between" style="gap:8px;align-items:flex-start;">
-            <span><strong>${esc(s.name)}:</strong> ${esc(s.report === null ? s.error ?? 'no results' : 'not calibrated (sizes in px), so it cannot be plotted with calibrated sites')}</span>
-            ${s.siteId !== state.activeSiteId ? `<button type="button" class="btn btn-sm" data-action="open-site" data-site-id="${esc(s.siteId)}" title="Open this site to calibrate or analyse its photos">Open</button>` : ''}
-          </div>`,
-        )
-        .join('')}</div>`
-    : '';
-  const anyUncalibrated = (cmp?.sites ?? []).some((s) => (s.error ?? '').includes('No scale yet') || s.report?.unit === 'px');
-  const pixelsToggle =
-    anyUncalibrated || state.compareInPixels
-      ? `<label class="checkbox-label" style="margin-top:6px;">
-          <input type="checkbox" data-action="toggle-compare-px" ${state.compareInPixels ? 'checked' : ''} />
-          Compare in pixels instead of mm <span class="summary-note">only meaningful if all photos were taken with the same camera at the same height</span>
-        </label>`
-      : '';
-  const psdSeries = plotted.map((s) => ({ name: s.name, color: s.color, psd: s.report!.psd, ciLower: s.report!.bootstrapCi.lower, ciUpper: s.report!.bootstrapCi.upper }));
-  const histSeries = plotted.map((s) => ({
-    name: s.name,
-    color: s.color,
-    hist: sizeHistogramFromWentworth((step === 0.5 ? s.report!.wentworthHistogram05Phi : s.report!.wentworthHistogram10Phi) ?? [], step),
-  }));
-  return `
-    <div class="panel-section">
-      <div class="row-between" style="margin-bottom:6px;">
-        <span class="panel-title">Results</span>
-        <div class="row">${scopeButtonsHtml('compare')}</div>
-      </div>
-      <div class="compare-picker">${picker || '<span class="field-hint">Create more sites (Site → + New) to compare them.</span>'}</div>
-      ${cmp?.loading ? '<div class="basis-banner">Loading the chosen sites…</div>' : ''}
-      ${cmp?.error ? `<div class="warning-banner">${esc(cmp.error)}</div>` : ''}
-      ${problemHtml}
-      ${pixelsToggle}
-      ${table}
-      ${
-        plotted.length
-          ? `<div class="row" style="margin-top:8px;">
-              <button type="button" class="btn btn-sm ${state.psdXAxis === 'mm' ? 'active' : ''}" data-psd-x="mm">${unit} (log)</button>
-              ${unit === 'mm' ? `<button type="button" class="btn btn-sm ${state.psdXAxis === 'phi' ? 'active' : ''}" data-psd-x="phi">phi (φ)</button>` : ''}
-              <button type="button" class="btn btn-sm" data-action="export-comparison" style="margin-left:auto;">Download comparison CSV</button>
-            </div>
-            ${chartBox('compare-psd', 'Cumulative grain-size distributions by site', (light) => renderComparePsdSvg(psdSeries, unit, state.psdXAxis, light), lightTheme)}
-            ${unit === 'mm' ? `<div class="row" style="margin-top:8px;">
-              <button type="button" class="btn btn-sm ${step === 0.5 ? 'active' : ''}" data-phi-step="0.5">Narrow classes (0.5 φ)</button>
-              <button type="button" class="btn btn-sm ${step === 1 ? 'active' : ''}" data-phi-step="1.0">Wide classes (1 φ)</button>
-            </div>
-            ${chartBox('compare-size', 'Size distributions by site', (light) => renderCompareSizeHistogramSvg(histSeries, light), lightTheme)}` : ''}
-            ${pairHtml}`
-          : ''
-      }
-    </div>`;
-}
 
 function renderDashboard(state: AppState): void {
   chartRenderers.clear();
-  if (state.dashboardScope === 'compare') {
-    const kept = captureOpenDetails(dashboardEl);
-    const scroll = dashboardEl.scrollTop;
-    dashboardEl.innerHTML = renderCompareHtml(state, isLightColorScheme());
-    restoreOpenDetails(dashboardEl, kept);
-    dashboardEl.scrollTop = scroll;
-    return;
-  }
-  const report = state.siteReport;
-  const single = state.singlePhotoStats;
-  const activePhoto = getActivePhoto(state);
-  const activeSession = activePhoto ? state.sessions.get(activePhoto.photoId) ?? null : null;
-  const isSite = state.dashboardScope === 'site';
-  const lightTheme = isLightColorScheme();
-
-  const activeMetric = state.siteOptions.sizeMetric ?? 'bAxis';
-  const psd = isSite
-    ? report?.psd
-    : activeMetric === 'minFeret'
-      ? single?.areaWeightedMinFeret ?? single?.areaWeightedB
-      : activeMetric === 'dEq'
-        ? single?.areaWeightedDEq
-        : single?.areaWeightedB;
-  const unit = isSite ? (report?.unit ?? 'px') : (single?.unit ?? 'px');
-  const fw = isSite ? report?.folkWard : single?.folkWard;
-  const basisLabel = isSite
-    ? report?.statisticalBasisLabel ??
-      (state.siteReportError
-        ? `Site statistics unavailable: ${state.siteReportError}`
-        : 'Add & analyze photos to compute site statistics')
-    : 'Single-Photo Area-Weighted (Grid-by-Number Equivalent)';
-
-  let tabContent = '';
-  if (state.dashboardTab === 'psd') {
-    const psdSvg = (light: boolean): string => psd
-      ? renderPsdChartSvg({
-          psd,
-          unit,
-          xAxis: state.psdXAxis,
-          title: isSite ? 'Pooled Site Cumulative PSD' : 'Active Photo Cumulative PSD',
-          subtitle: isSite && report ? `${report.includedPhotoCount} photos, n=${report.validGrainCount}` : undefined,
-          ciLower: isSite ? report?.bootstrapCi.lower : undefined,
-          ciUpper: isSite ? report?.bootstrapCi.upper : undefined,
-          perPhotoCurves: isSite ? report?.perPhoto : undefined,
-          lightTheme: light,
-        })
-      : `<svg viewBox="0 0 400 220" xmlns="http://www.w3.org/2000/svg"><rect width="400" height="220" fill="${light ? '#ffffff' : '#0c1014'}"/><text x="200" y="110" text-anchor="middle" fill="${light ? '#4a5568' : '#8fa0b2'}" font-size="12" font-family="system-ui, sans-serif">No segmented grains yet</text></svg>`;
-
-    const step: 0.5 | 1 = state.histogramStepPhi === 0.5 ? 0.5 : 1;
-    const sizeHist = isSite
-      ? sizeHistogramFromWentworth((step === 0.5 ? report?.wentworthHistogram05Phi : report?.wentworthHistogram10Phi) ?? [], step)
-      : activeSession
-        ? activeSession.getSizeHistogram(step, activeMetric)
-        : sizeHistogramFromWentworth([], step);
-    tabContent = `
-      <div class="row-between" style="margin-top:8px;">
-        <div class="row">
-          <button type="button" class="btn btn-sm ${state.psdXAxis === 'mm' ? 'active' : ''}" aria-pressed="${state.psdXAxis === 'mm' ? 'true' : 'false'}" data-psd-x="mm">mm (log₁₀)</button>
-          <button type="button" class="btn btn-sm ${state.psdXAxis === 'phi' ? 'active' : ''}" aria-pressed="${state.psdXAxis === 'phi' ? 'true' : 'false'}" data-psd-x="phi">phi (φ)</button>
-        </div>
-        ${
-          isSite && report
-            ? `<span style="font-size:0.65rem;color:var(--text-secondary);">${Math.round(report.bootstrapCi.confidenceLevel * 100)}% CI: [${report.bootstrapCi.lower.D50.toFixed(1)}, ${report.bootstrapCi.upper.D50.toFixed(1)}] ${unit}</span>`
-            : ''
-        }
-      </div>
-      ${chartBox('cumulative-psd', 'Cumulative grain-size distribution', psdSvg, lightTheme)}
-      <div class="row" style="margin-top:8px;">
-        <button type="button" class="btn btn-sm ${step === 0.5 ? 'active' : ''}" aria-pressed="${step === 0.5 ? 'true' : 'false'}" data-phi-step="0.5">Narrow classes (${sizeHist.unit === 'mm' ? '0.5 φ' : '×√2'})</button>
-        <button type="button" class="btn btn-sm ${step === 1 ? 'active' : ''}" aria-pressed="${step === 1 ? 'true' : 'false'}" data-phi-step="1.0">Wide classes (${sizeHist.unit === 'mm' ? '1 φ' : '×2'})</button>
-      </div>
-      ${chartBox('size-distribution', 'Grain-size distribution histogram', (light) => renderSizeHistogramSvg(sizeHist, light, isSite ? 'Site Size Distribution (area-weighted %)' : 'Photo Size Distribution (area-weighted %)'), lightTheme)}
-      ${
-        fw
-          ? `<div class="stat-grid" style="margin-top:8px;">
-              <div class="stat-card"><div class="stat-label">Folk &amp; Ward Mean</div><div class="stat-value">${fw.meanMm.toFixed(1)} mm</div><div class="stat-sub">${fw.meanPhi.toFixed(2)} φ</div></div>
-              <div class="stat-card"><div class="stat-label">Sorting (σ_I)</div><div class="stat-value">${fw.sortingPhi.toFixed(2)} φ</div><div class="stat-sub">${esc(fw.sortingLabel)}</div></div>
-              <div class="stat-card"><div class="stat-label">Skew / Kurt</div><div class="stat-value">${fw.skewnessPhi.toFixed(2)}</div><div class="stat-sub">${esc(fw.skewnessLabel)} · K=${fw.kurtosisPhi.toFixed(2)}</div></div>
-            </div>`
-          : ''
-      }
-      ${(() => {
-        const x = isSite ? report?.extra ?? null : single?.extra ?? null;
-        if (!x || x.n === 0) return '';
-        const v = (n: number | null, d = 1): string => (n === null || !Number.isFinite(n) ? '—' : n.toFixed(d));
-        const row = (label: string, val: string, note: string): string =>
-          `<tr><th scope="row">${label}<span class="stats-note">${note}</span></th><td>${val}</td></tr>`;
-        return `<details class="advanced-block more-stats" style="margin-top:8px;" data-keep-open="more-stats">
-          <summary>More statistics <span class="summary-note">Sauter mean ${v(x.sauterMeanD32)} ${unit} · Dg ${v(x.geometricMean)} ${unit}</span></summary>
-          <table class="stats-table">
-            <tbody>
-              ${row('Sauter mean D[3,2]', `${v(x.sauterMeanD32)} ${unit}`, 'Σd³/Σd², each grain once; = area-weighted mean size')}
-              ${row('De Brouckère mean D[4,3]', `${v(x.deBrouckereMeanD43)} ${unit}`, 'Σd⁴/Σd³, each grain once')}
-              ${row('Arithmetic mean D[1,0]', `${v(x.arithmeticMeanD10)} ${unit}`, 'each grain once')}
-              ${row('Geometric mean Dg', `${v(x.geometricMean)} ${unit}`, 'same weighting as the PSD')}
-              ${row('Geometric SD σg', v(x.geometricSd, 2), '1 = uniform; larger = wider spread')}
-              ${row('D30 / D60 / D65', `${v(x.D30)} / ${v(x.D60)} / ${v(x.D65)} ${unit}`, 'D65: Einstein roughness')}
-              ${row('Uniformity Cu', v(x.uniformityCu, 2), 'D60/D10')}
-              ${row('Curvature Cc', v(x.curvatureCc, 2), 'D30²/(D10·D60)')}
-              ${row('Trask sorting So', v(x.traskSorting, 2), '√(D75/D25)')}
-              ${row('Span', v(x.span, 2), '(D90−D10)/D50')}
-              ${row('Fredle index', v(x.fredleIndex, 1), 'Dg/So (spawning-gravel quality)')}
-              ${
-                x.momentMeanPhi !== null
-                  ? row('Moments (φ)', `${v(x.momentMeanPhi, 2)} / ${v(x.momentSortingPhi, 2)} / ${v(x.momentSkewness, 2)} / ${v(x.momentKurtosis, 2)}`, 'mean / sorting / skewness / kurtosis (method of moments)')
-                  : ''
-              }
-            </tbody>
-          </table>
-          <p class="field-hint">Included in the summary CSV and JSON exports. ${helpButton('moreStats')}</p>
-        </details>`;
-      })()}
-    `;
-  } else if (state.dashboardTab === 'adequacy') {
-    const adeq = report?.adequacy;
-
-    tabContent = `
-      ${
-        adeq
-          ? `<div class="stat-grid" style="margin-top:8px;">
-              <div class="stat-card"><div class="stat-label">Adequacy</div><div class="stat-value">${esc(adeq.rating)}</div><div class="stat-sub">n_eff = ${Math.round(adeq.effectiveGrainCount)} (100/200/400)</div></div>
-              <div class="stat-card"><div class="stat-label">Max Clast Ratio</div><div class="stat-value">${(adeq.largestClastAreaRatio * 100).toFixed(1)}%</div><div class="stat-sub">${adeq.largestClastWarning === 'none' ? 'OK (<5%)' : esc(adeq.largestClastWarning.toUpperCase())}</div></div>
-              <div class="stat-card"><div class="stat-label">Cutoff (mm)</div><div class="stat-value">${report?.dCutoffCommonMm !== null && report?.dCutoffCommonMm !== undefined ? report.dCutoffCommonMm.toFixed(2) : '—'}</div><div class="stat-sub">${report?.excludedTruncationCount ?? 0} trunc excl</div></div>
-            </div>`
-          : ''
-      }
-      ${chartBox('convergence', 'D50 convergence with number of photos', (light) => renderConvergenceChartSvg(report?.convergence ?? [], light), lightTheme)}
-      ${chartBox('jackknife', 'Leave-one-photo-out influence on D50', (light) => renderJackknifeChartSvg(report?.jackknife ?? null, light), lightTheme)}
-    `;
-  } else if (state.dashboardTab === 'shape') {
-    // Cached on the session (recomputed only when its results change).
-    // Same grains as the statistics (inside the ROI, border rule applied), so n matches.
-    const ratios = activeSession ? activeSession.getExtendedStatsGrains().map((g) => g.aspectRatio) : [];
-    const arCounts = aspectRatioCounts(ratios, 10);
-    const packingInfo = activeSession ? activeSession.getRoiFilterResult() : null;
-
-    tabContent = `
-      ${
-        packingInfo
-          ? `<div class="basis-banner" style="margin-top:8px;">Clast packing: ${packingInfo.clastPackingPct.toFixed(1)}% · Exposed matrix: ${packingInfo.exposedMatrixPct.toFixed(1)}% (inside the ROI)</div>`
-          : ''
-      }
-      ${chartBox('aspect-ratio', 'Aspect ratio (b/a) distribution', (light) => renderAspectRatioHistogramSvg(arCounts, light), lightTheme)}
-      <p class="field-hint">Grain shape for this photo. The size distribution is on the PSD tab.</p>
-    `;
-  } else {
-    const rose =
-      isSite && report
-        ? report.fabricRose
-        : activeSession
-          ? activeSession.getFabricRose()
-          : computeFabricRoseStats([], { weighted: true, binCount: 12 });
-    tabContent = `
-      ${chartBox('fabric-rose', 'Grain orientation (fabric) rose', (light) => renderFabricRoseSvg(rose, light), lightTheme)}
-      ${
-        rose.grainCount > 0
-          ? `<div class="stat-grid" style="margin-top:8px;">
-              <div class="stat-card"><div class="stat-label">Mean orientation</div><div class="stat-value">${rose.meanAxialDeg.toFixed(0)}°</div><div class="stat-sub">0° = up–down in the photo</div></div>
-              <div class="stat-card"><div class="stat-label">Alignment (R)</div><div class="stat-value">${rose.resultantLength.toFixed(2)}</div><div class="stat-sub">0 = random, 1 = all parallel</div></div>
-              <div class="stat-card"><div class="stat-label">Rayleigh p</div><div class="stat-value">${rose.rayleighP === null ? '—' : rose.rayleighP < 0.001 ? '&lt;0.001' : rose.rayleighP.toFixed(3)}</div><div class="stat-sub">${rose.rayleighP !== null && rose.rayleighP < 0.05 ? 'preferred direction' : 'no clear direction'} · n = ${rose.grainCount}</div></div>
-            </div>`
-          : ''
-      }
-      <div class="basis-banner">
-        Axial 180° double-angle statistics (Curray 1956; Mardia &amp; Jupp 2000). 0° = Image Vertical (Top/Bottom), 90° = Image Horizontal.
-      </div>
-    `;
-  }
-
-  const prevDashScroll = dashboardEl.scrollTop;
-
-  const metricNoteText =
-    activeMetric === 'minFeret'
-      ? 'Size metric: minimum Feret (rotating-calipers) width of the pixel-edge convex hull — closest 2D analogue of a caliper b-axis.'
-      : activeMetric === 'dEq'
-        ? "Size metric: equal-area circle diameter (d_eq = sqrt(4*Area/pi)) of each grain's visible 2D outline."
-        : "Size metric: minor axis of the moment-equivalent ellipse of each grain's visible outline — not a sieve or caliper b-axis.";
-
-  const keptOpenDashboard = captureOpenDetails(dashboardEl);
-  dashboardEl.innerHTML = `
-    <div class="panel-section">
-      <div class="row-between" style="margin-bottom:6px;">
-        <span class="panel-title">Results</span>
-        <div class="row">
-          ${scopeButtonsHtml(state.dashboardScope)}
-        </div>
-      </div>
-      <div class="basis-banner">${esc(basisLabel)}${
-        !isSite && single
-          ? ` · n = ${single.includedGrains}${activeSession && activeSession.getRoiExcludedGrainCount() > 0 ? ` (${activeSession.getRoiExcludedGrainCount()} excluded by ROI)` : ''}`
-          : ''
-      }</div>
-      ${(() => {
-        const warns = [...(isSite ? report?.warnings ?? [] : single?.warnings ?? [])];
-        // ROI enlarged after an analysis that skipped tiles outside the old ROI.
-        const stale = (isSite ? state.photos.filter((p) => p.included) : activePhoto ? [activePhoto] : [])
-          .map((p) => ({ p, f: state.sessions.get(p.photoId)?.getUnanalysedRoiFraction() ?? 0 }))
-          .filter((x) => x.f > 0.001);
-        if (stale.length > 0) {
-          warns.unshift(
-            isSite
-              ? `${stale.length} photo(s) have ROI areas that were not analysed (the ROI was enlarged or an exclusion removed after analysis): ${stale.map((x) => x.p.label).join(', ')}. Re-analyse them.`
-              : `${(stale[0]!.f * 100).toFixed(1)}% of this photo's ROI was not analysed (the ROI was enlarged or an exclusion removed after analysis). Re-analyse this photo to include it.`,
-          );
-        }
-        return warns.length > 0
-          ? `<div class="warning-banner" role="alert">${warns.map(esc).join('<br/>')}</div>`
-          : '';
-      })()}
-      ${(() => {
-        if (isSite || !activeSession || !activePhoto) return '';
-        const hint = activeSession.getFineGrainHint();
-        if (hint.enlarged !== null) {
-          return `<div class="basis-banner row-between" style="gap:8px;">
-            <span>Analysed enlarged ×${hint.enlarged} for fine grains.</span>
-            <button type="button" class="btn btn-sm" data-action="fine-grain-undo" ${state.batchRunning ? 'disabled' : ''}>Undo</button>
-          </div>`;
-        }
-        if (!hint.suggest) return '';
-        return `<div class="info-banner">
-          <strong>Fine grains detected</strong> (median about ${hint.medianWorkingBPx!.toFixed(0)} px). U-Net finds more of them if the photo is enlarged ×1.5 first: in testing on 40 photos this gave better outlines with no site getting worse, and takes about 20–50% longer. ${helpButton('fineGrainUpscale')}
-          <div style="margin-top:6px;"><button type="button" class="btn btn-sm btn-primary" data-action="fine-grain-rerun" ${state.batchRunning ? 'disabled' : ''}>Re-analyse enlarged ×1.5</button></div>
-        </div>`;
-      })()}
-      <div class="stat-grid" style="margin-top:8px;">
-        <div class="stat-card"><div class="stat-label">D<sub>16</sub></div><div class="stat-value">${psd ? psd.D16.toFixed(1) : '—'}</div><div class="stat-sub">${unit}</div></div>
-        <div class="stat-card"><div class="stat-label">D<sub>50</sub> (median)</div><div class="stat-value">${psd ? psd.D50.toFixed(1) : '—'}</div><div class="stat-sub">${unit}</div></div>
-        <div class="stat-card"><div class="stat-label">D<sub>84</sub></div><div class="stat-value">${psd ? psd.D84.toFixed(1) : '—'}</div><div class="stat-sub">${unit}</div></div>
-      </div>
-      <p class="metric-note">${esc(metricNoteText)}</p>
-      <details class="advanced-block stats-settings" style="margin-top:8px;" data-keep-open="stats-settings">
-        <summary>Statistics settings <span class="summary-note">${({ 'physical-area': 'area-weighted', 'equal-photo': 'equal-photo', 'virtual-wolman-grid': 'Wolman grid', 'number-weighted': 'number-weighted', 'facies-weighted': 'facies-weighted' } as Record<string, string>)[state.siteOptions.poolingMode] ?? state.siteOptions.poolingMode} · ${activeMetric === 'bAxis' ? 'b-axis' : activeMetric}</span></summary>
-        <div style="margin-top:6px;">
-      <div class="grid-2">
-        <label class="field-label">
-          <span class="label-row">Pooling Mode ${helpButton('poolingMode')}</span>
-          <select class="select" data-site-opt="poolingMode">
-            <option value="physical-area" ${state.siteOptions.poolingMode === 'physical-area' ? 'selected' : ''}>Physical Area-Weighted</option>
-            <option value="equal-photo" ${state.siteOptions.poolingMode === 'equal-photo' ? 'selected' : ''}>Equal-Photo Weighted</option>
-            <option value="virtual-wolman-grid" ${state.siteOptions.poolingMode === 'virtual-wolman-grid' ? 'selected' : ''}>Virtual Wolman Grid</option>
-            <option value="number-weighted" ${state.siteOptions.poolingMode === 'number-weighted' ? 'selected' : ''}>Number-Weighted</option>
-            <option value="facies-weighted" ${state.siteOptions.poolingMode === 'facies-weighted' ? 'selected' : ''}>Facies-Weighted</option>
-          </select>
-        </label>
-        <label class="field-label">
-          <span class="label-row">Size Metric ${helpButton('sizeMetric')}</span>
-          <select class="select" data-site-opt="sizeMetric">
-            <option value="bAxis" ${activeMetric === 'bAxis' ? 'selected' : ''}>b-axis (ellipse minor)</option>
-            <option value="minFeret" ${activeMetric === 'minFeret' ? 'selected' : ''}>min-Feret (caliper width)</option>
-            <option value="dEq" ${activeMetric === 'dEq' ? 'selected' : ''}>d_eq (equal-area circle)</option>
-          </select>
-        </label>
-        <label class="field-label">
-          <span class="label-row">Field-count cutoff (mm) ${helpButton('minSizeMm')}</span>
-          <input class="input" type="number" step="0.5" min="0" max="256" value="${state.siteOptions.minSizeMm ?? 0}" data-site-opt="minSizeMm" />
-        </label>
-        <label class="field-label">
-          <span class="label-row">Min b-axis (px) ${helpButton('minBaxisPx')}</span>
-          <input class="input" type="number" step="1" min="0" max="50" value="${state.siteOptions.minBaxisPx ?? 15}" data-site-opt="minBaxisPx" />
-        </label>
-        <label class="field-label">
-          <span class="label-row">Exclusion overlap ${helpButton('maxExcludedFraction')}</span>
-          <input class="input" type="number" step="0.05" min="0" max="1" value="${state.siteOptions.maxExcludedFraction ?? 0.1}" data-site-opt="maxExcludedFraction" />
-        </label>
-      </div>
-      <div style="margin-top:6px;">
-        <label class="checkbox-label">
-          <input type="checkbox" data-site-opt="harmonizePhysicalCutoff" ${state.siteOptions.harmonizePhysicalCutoff !== false ? 'checked' : ''} /> Harmonize Cutoff ${helpButton('harmonizePhysicalCutoff')}
-        </label>
-      </div>
-      <details class="advanced-block" style="margin-top:6px;" data-keep-open="uncertainty">
-        <summary>Uncertainty &amp; sampling</summary>
-        <div class="grid-2" style="margin-top:6px;">
-          <label class="field-label">
-            <span class="label-row">Confidence level ${helpButton('confidenceLevel')}</span>
-            <select class="select" data-site-opt="confidenceLevel" data-numeric="true">
-              <option value="0.95" ${(state.siteOptions.confidenceLevel ?? 0.95) === 0.95 ? 'selected' : ''}>95%</option>
-              <option value="0.9" ${state.siteOptions.confidenceLevel === 0.9 ? 'selected' : ''}>90%</option>
-            </select>
-          </label>
-          <label class="field-label">
-            <span class="label-row">Bootstrap repeats ${helpButton('bootstrapReplicates')}</span>
-            <input class="input" type="number" step="50" min="50" max="5000" value="${state.siteOptions.bootstrapReplicates ?? 500}" data-site-opt="bootstrapReplicates" />
-          </label>
-          <label class="field-label">
-            <span class="label-row">Bootstrap seed ${helpButton('bootstrapSeed')}</span>
-            <input class="input" type="number" step="1" min="0" max="2147483647" value="${state.siteOptions.bootstrapSeed ?? 42}" data-site-opt="bootstrapSeed" />
-          </label>
-          <label class="field-label">
-            <span class="label-row">Virtual Wolman points ${helpButton('wolmanPointsPerPhoto')}</span>
-            <input class="input" type="number" step="10" min="10" max="2000" value="${state.siteOptions.wolmanPointsPerPhoto ?? 100}" data-site-opt="wolmanPointsPerPhoto" />
-          </label>
-        </div>
-        <label class="checkbox-label" style="margin-top:6px;">
-          <input type="checkbox" data-site-opt="bootstrapTwoStage" ${state.siteOptions.bootstrapTwoStage ? 'checked' : ''} /> Two-stage bootstrap ${helpButton('bootstrapTwoStage')}
-        </label>
-      </details>
-        </div>
-      </details>
-    </div>
-
-    <div class="tabs" role="tablist" aria-label="Dashboard analyses">
-      ${(['psd', 'adequacy', 'shape', 'fabric'] as DashboardTab[])
-        .map((tab) => {
-          const selected = state.dashboardTab === tab;
-          const label =
-            tab === 'psd'
-              ? 'PSD'
-              : tab === 'adequacy'
-                ? 'Adequacy'
-                : tab === 'shape'
-                  ? 'Shape'
-                  : 'Fabric';
-          return `<button type="button" class="tab-btn" role="tab" id="tab-${tab}" aria-selected="${selected ? 'true' : 'false'}" aria-controls="dashboard-tabpanel" tabindex="${selected ? '0' : '-1'}" data-tab="${tab}">${label}</button>`;
-        })
-        .join('')}
-    </div>
-
-    <div class="panel-section" id="dashboard-tabpanel" role="tabpanel" aria-labelledby="tab-${state.dashboardTab}" style="border-bottom:none;">
-      ${tabContent}
-    </div>
-  `;
-  restoreOpenDetails(dashboardEl, keptOpenDashboard);
-
-  dashboardEl.scrollTop = prevDashScroll;
+  const kept = captureOpenDetails(dashboardEl);
+  const scroll = dashboardEl.scrollTop;
+  dashboardEl.innerHTML =
+    state.dashboardScope === 'compare'
+      ? renderCompareHtml(state, isLightColorScheme(), chartRenderers)
+      : renderDashboardHtml(state, { lightTheme: isLightColorScheme(), charts: chartRenderers });
+  restoreOpenDetails(dashboardEl, kept);
+  dashboardEl.scrollTop = scroll;
 }
 
 function renderModals(state: AppState): void {
@@ -1306,32 +477,7 @@ function notifyWhenDone(): boolean {
   return readFlag(NOTIFY_PREF_KEY) && typeof Notification !== 'undefined' && Notification.permission === 'granted';
 }
 
-function formatBytes(n: number): string {
-  if (n >= 1e9) return `${(n / 1e9).toFixed(1)} GB`;
-  if (n >= 1e6) return `${Math.round(n / 1e6)} MB`;
-  return `${Math.round(n / 1e3)} kB`;
-}
 
-/** "Last backed up" line with a Back up now button, and the browser storage status. */
-function backupLineHtml(state: AppState, analysedCount: number): string {
-  const site = getActiveSite(state);
-  if (!site) return '';
-  const status = backupStatus(readBackupRecords()[site.siteId], analysedCount > 0);
-  const storage = storageInfo
-    ? `<span class="field-hint">Browser storage: ${formatBytes(storageInfo.usage)} used${storageInfo.quota > 0 ? ` of ${formatBytes(storageInfo.quota)}` : ''} · ${
-        storageInfo.persisted ? 'protected from automatic clearing' : 'the browser may clear it if space runs low'
-      } ${helpButton('backup')}</span>`
-    : '';
-  if (analysedCount === 0 && status.backedUpAt === null) return storage ? `<div class="backup-line">${storage}</div>` : '';
-  return `<div class="backup-line ${status.needsBackup ? 'needs-backup' : ''}">
-    <div class="row" style="justify-content:space-between;gap:6px;">
-      <span>${status.needsBackup ? '⚠ ' : ''}Last backed up: ${esc(status.ago)}${status.needsBackup && status.backedUpAt !== null ? ' (changed since)' : ''}</span>
-      <button type="button" class="btn btn-sm ${status.needsBackup ? 'btn-primary' : ''}" data-export="site-archive" title="Save this site (photos and results) as a .webgrainy.json project file">Back up now</button>
-    </div>
-    ${status.needsBackup ? '<span class="field-hint">Your work is stored only in this browser. Save a project file to keep it safe or move it to another computer.</span>' : ''}
-    ${storage}
-  </div>`;
-}
 
 function renderAll(state: AppState): void {
   const prev = prevRenderState;
