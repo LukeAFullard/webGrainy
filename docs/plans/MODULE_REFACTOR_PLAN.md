@@ -16,7 +16,7 @@ app actions impossible to unit-test without a browser and the file hard to chang
 `src/modules/siteAnalysis.ts` (~1,970 lines) similarly mixes pooling, uncertainty, adequacy and
 CSV writing.
 
-## Step 1 — App actions → `src/ui/workspaceActions.ts` ☐
+## Step 1 — App actions → `src/ui/workspaceActions.ts` ☑
 
 Move the operations that change data, not the screen:
 

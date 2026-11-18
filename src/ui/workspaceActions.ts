@@ -1,0 +1,696 @@
+/**
+ * App actions: the operations that change data (storage, engine, app state), not the screen.
+ * Everything they need comes in through `WorkspaceDeps`, so tests can pass a fake engine,
+ * in-memory storage and no-op UI hooks. `main.ts` owns the DOM and calls these.
+ */
+import type { CalibrationResult, Point2D, StorageQuotaInfo } from '../types/index.js';
+import { AnalysisSession } from '../modules/analysisSession.js';
+import type { ImageGrainsEngine } from '../modules/engine.js';
+import * as projectStorage from '../modules/projectStorage.js';
+import type { PhotoRecord, SiteRecord } from '../modules/projectStorage.js';
+import { buildSiteInputs, computeWorkspaceReports, effectiveRoi } from '../modules/siteWorkspace.js';
+import type { SitePhotoInput } from '../modules/siteAnalysis.js';
+import {
+  COMPARE_COLORS,
+  computeComparedSites,
+  loadStoredSiteInputs,
+  type SiteForComparison,
+} from '../modules/siteComparison.js';
+import { ScaleCalibrator } from '../modules/interactiveEditor.js';
+import { toAnalysisConfig, type AppState, type AppStore } from './state.js';
+
+/** The storage functions the actions use (projectStorage by default). */
+export type WorkspaceStorage = Pick<
+  typeof projectStorage,
+  'listSitePhotos' | 'listSites' | 'getPhotoResult' | 'runSiteBatch' | 'savePhoto' | 'savePhotoResult' | 'saveSite'
+>;
+
+/** The engine methods the actions use. */
+export type WorkspaceEngine = Pick<ImageGrainsEngine, 'initialize' | 'getWebGpuDisabledReason'>;
+
+/** Activity bar (stages, tiles, time left) shown while a batch runs. */
+export interface ActivityHooks {
+  begin(totalPhotos: number): void;
+  photoStarted(index: number, label: string): void;
+  setTotal(totalPhotos: number): void;
+  end(): void;
+}
+
+/** Long-job signals: screen wake lock and the tab-title / notification "done" signal. */
+export interface JobHooks {
+  acquireWakeLock(): void;
+  releaseWakeLock(): void;
+  start(total: number): void;
+  progress(completed: number, total: number): void;
+  finish(cancelled: boolean, body: string): void;
+}
+
+export interface ImageIo {
+  /** Pixel size of an image file. */
+  imageSize(file: Blob): Promise<{ width: number; height: number }>;
+  /** Optional camera metadata (EXIF) of an image file. */
+  metadata(file: File): Promise<PhotoRecord['metadata'] | undefined>;
+  /** Perspective-corrects a photo; returns the new PNG and its size and scale. */
+  rectify(
+    image: Blob,
+    corners: [Point2D, Point2D, Point2D, Point2D],
+    physWidthMm: number,
+    physHeightMm: number,
+  ): Promise<{ blob: Blob; width: number; height: number; calibration: CalibrationResult } | null>;
+}
+
+export interface WorkspaceDeps {
+  store: AppStore;
+  engine: WorkspaceEngine;
+  /** Engine passed to the batch runner (the real one in the app). */
+  batchEngine: Parameters<WorkspaceStorage['runSiteBatch']>[0]['engine'];
+  storage?: WorkspaceStorage;
+  loadStoredSiteInputs?: typeof loadStoredSiteInputs;
+  checkStorageQuota?: () => Promise<StorageQuotaInfo>;
+  images: ImageIo;
+  /** Redraws the photo viewport (optionally fitting the photo to view). */
+  syncViewport(fitToView: boolean): Promise<void>;
+  activity: ActivityHooks;
+  job: JobHooks;
+  /** Records that a site has changes not yet backed up. */
+  markSiteChanged(siteId: string): void;
+  /** Called after jobs that may change how much browser storage is used. */
+  onStorageChanged(): void;
+  makeId(prefix: string): string;
+  yieldToMain(): Promise<void>;
+  createObjectUrl?(blob: Blob): string;
+  revokeObjectUrl?(url: string): void;
+}
+
+export function getActiveSite(state: AppState): SiteRecord | null {
+  return state.sites.find((s) => s.siteId === state.activeSiteId) ?? null;
+}
+
+export function getActivePhoto(state: AppState): PhotoRecord | null {
+  return state.photos.find((p) => p.photoId === state.activePhotoId) ?? null;
+}
+
+export type WorkspaceActions = ReturnType<typeof createWorkspaceActions>;
+
+export function createWorkspaceActions(deps: WorkspaceDeps) {
+  const { store, engine, images, activity, job } = deps;
+  const storage = deps.storage ?? projectStorage;
+  const loadStored = deps.loadStoredSiteInputs ?? loadStoredSiteInputs;
+  const createUrl = deps.createObjectUrl ?? ((b: Blob) => URL.createObjectURL(b));
+  const revokeUrl = deps.revokeObjectUrl ?? ((u: string) => URL.revokeObjectURL(u));
+
+  let batchAbortController: AbortController | null = null;
+  let lastBatchCancelled = false;
+  /** True while "Analyse all sites" runs, so the inner open-site batch does not end the job signals. */
+  let allSitesJobActive = false;
+  let cachedQuota: StorageQuotaInfo | null = null;
+  const storedSiteInputsCache = new Map<string, SitePhotoInput[]>();
+  let comparisonRun = 0;
+
+  /** Saves a photo record and notes that its site has changes not yet backed up. */
+  async function savePhoto(photo: PhotoRecord): Promise<void> {
+    deps.markSiteChanged(photo.siteId);
+    await storage.savePhoto(photo);
+  }
+
+  function recomputeReports(): void {
+    const state = store.getState();
+    store.setState(computeWorkspaceReports(state));
+    // The comparison includes the active site, so keep it in step.
+    if (state.dashboardScope === 'compare') void refreshComparison();
+  }
+
+  async function refreshCapabilities(): Promise<void> {
+    try {
+      const capabilities = await engine.initialize();
+      cachedQuota = deps.checkStorageQuota ? await deps.checkStorageQuota().catch(() => null) : null;
+      store.setState({ capabilities });
+    } catch (err) {
+      store.setState({
+        statusMessage: `Engine init warning: ${err instanceof Error ? err.message : String(err)}`,
+      });
+    }
+  }
+
+  async function loadSiteData(siteId: string): Promise<void> {
+    const state = store.getState();
+    // Revoke the previous thumbnails only after the new ones are in state: revoking them
+    // up front left <img> elements pointing at dead blob: URLs if anything re-rendered the
+    // sidebar during the awaits below (net::ERR_FILE_NOT_FOUND).
+    const staleThumbUrls = [...state.thumbUrls.values()];
+
+    // The previously active site may have new results: reload sites for comparison when needed.
+    storedSiteInputsCache.clear();
+    const photos = await storage.listSitePhotos(siteId);
+    const sessions = new Map<string, AnalysisSession>();
+    const photoStatuses = new Map<string, 'pending' | 'running' | 'done' | 'error'>();
+    const photoErrors = new Map<string, string>();
+    const thumbUrls = new Map<string, string>();
+
+    for (const p of photos) {
+      thumbUrls.set(p.photoId, createUrl(p.imageBlob));
+      const res = await storage.getPhotoResult(p.photoId);
+      if (res) {
+        photoStatuses.set(p.photoId, res.status === 'running' ? 'pending' : res.status);
+        if (res.errorMessage) photoErrors.set(p.photoId, res.errorMessage);
+        if (res.serializedSession) {
+          try {
+            const sess = AnalysisSession.fromSerialized(res.serializedSession);
+            if (p.calibration) sess.setCalibration(p.calibration);
+            if (p.roiConfig) sess.setRoiConfig(effectiveRoi(p, store.getState().siteOptions));
+            sessions.set(p.photoId, sess);
+          } catch {
+            photoStatuses.set(p.photoId, 'pending');
+          }
+        }
+      } else {
+        photoStatuses.set(p.photoId, 'pending');
+      }
+    }
+
+    const site = state.sites.find((s) => s.siteId === siteId);
+    store.setState({
+      activeSiteId: siteId,
+      photos,
+      activePhotoId: photos[0]?.photoId ?? null,
+      sessions,
+      photoStatuses,
+      photoErrors,
+      thumbUrls,
+      siteOptions: site ? { ...site.options } : state.siteOptions,
+      selectedGrainIds: new Set(),
+      inspectedGrainId: null,
+    });
+    for (const url of staleThumbUrls) revokeUrl(url);
+
+    recomputeReports();
+    await deps.syncViewport(true);
+  }
+
+  async function createDefaultOrLoadSites(): Promise<void> {
+    let sites = await storage.listSites();
+    if (sites.length === 0) {
+      const defaultSite: SiteRecord = {
+        siteId: deps.makeId('site'),
+        name: 'Field Site 1',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        options: store.getState().siteOptions,
+        photoOrder: [],
+      };
+      await storage.saveSite(defaultSite);
+      sites = [defaultSite];
+    }
+    store.setState({ sites });
+    const first = sites[0];
+    if (first) {
+      await loadSiteData(first.siteId);
+    }
+  }
+
+  async function handleFilesAdded(files: FileList | File[]): Promise<void> {
+    const state = store.getState();
+    const site = getActiveSite(state);
+    if (!site) return;
+
+    const added: PhotoRecord[] = [];
+    let taskDeadline = performance.now() + 50;
+    for (const file of Array.from(files)) {
+      if (!file.type.startsWith('image/')) continue;
+      try {
+        const { width, height } = await images.imageSize(file);
+        const metadata = await images.metadata(file).catch(() => undefined);
+        const photo: PhotoRecord = {
+          photoId: deps.makeId('photo'),
+          siteId: site.siteId,
+          label: file.name,
+          imageBlob: file,
+          width,
+          height,
+          addedAt: Date.now(),
+          included: true,
+          ...(metadata !== undefined ? { metadata } : {}),
+        };
+        await savePhoto(photo);
+        await storage.savePhotoResult({
+          photoId: photo.photoId,
+          status: 'pending',
+          updatedAt: Date.now(),
+        });
+        added.push(photo);
+      } catch (err) {
+        store.setState({
+          statusMessage: `Failed to import ${file.name}: ${err instanceof Error ? err.message : String(err)}`,
+        });
+      }
+      if (performance.now() >= taskDeadline) {
+        await deps.yieldToMain();
+        taskDeadline = performance.now() + 50;
+      }
+    }
+
+    if (added.length > 0) {
+      const updatedSite: SiteRecord = {
+        ...site,
+        photoOrder: [...site.photoOrder, ...added.map((p) => p.photoId)],
+        updatedAt: Date.now(),
+      };
+      await storage.saveSite(updatedSite);
+      const sites = await storage.listSites();
+      store.setState({ sites, statusMessage: `Added ${added.length} photo(s) locally` });
+      await loadSiteData(site.siteId);
+      const lastAdded = added[added.length - 1];
+      if (lastAdded) {
+        store.setState({ activePhotoId: lastAdded.photoId });
+        await deps.syncViewport(true);
+      }
+    }
+  }
+
+  /**
+   * Analyses every not-yet-analysed photo in every site: the open site first (so its results
+   * appear as usual), then the others, whose results are saved for when they are opened or
+   * compared.
+   */
+  async function runAllSites(): Promise<void> {
+    const start = store.getState();
+    if (start.batchRunning) return;
+    const activeId = start.activeSiteId;
+    allSitesJobActive = true;
+    job.acquireWakeLock();
+    try {
+      await runAllSitesInner(activeId);
+    } finally {
+      allSitesJobActive = false;
+      job.releaseWakeLock();
+    }
+  }
+
+  async function runAllSitesInner(activeId: string | null): Promise<void> {
+    job.start(store.getState().photos.length);
+    await runBatch();
+    if (lastBatchCancelled) {
+      job.finish(true, '');
+      return; // Cancel stops the whole job, not just the open site.
+    }
+    const others = store.getState().sites.filter((s) => s.siteId !== activeId);
+    // Count pending photos per site, so the progress bar can show the whole job.
+    const pendingBySite: Array<{ siteId: string; name: string; count: number }> = [];
+    for (const site of others) {
+      let count = 0;
+      for (const p of await storage.listSitePhotos(site.siteId)) {
+        const r = await storage.getPhotoResult(p.photoId);
+        if (!r || r.status === 'pending' || r.status === 'error' || r.status === 'running') count++;
+      }
+      if (count > 0) pendingBySite.push({ siteId: site.siteId, name: site.name, count });
+    }
+    const total = pendingBySite.reduce((n, s) => n + s.count, 0);
+    if (total === 0) {
+      store.setState({ statusMessage: 'All photos in all sites are analysed.' });
+      job.finish(false, 'All photos in all sites are analysed.');
+      return;
+    }
+    job.start(total);
+    const controller = new AbortController();
+    batchAbortController = controller;
+    const analysisConfig = toAnalysisConfig(store.getState().analysisParams);
+    activity.begin(total);
+    store.setState({ batchRunning: true, statusMessage: `Analysing ${total} photo(s) in ${pendingBySite.length} other site(s)…` });
+    let counter = 0;
+    let done = 0;
+    let failed = 0;
+    try {
+      for (const site of pendingBySite) {
+        if (controller.signal.aborted) break;
+        const res = await storage.runSiteBatch({
+          siteId: site.siteId,
+          engine: deps.batchEngine,
+          analysisConfig,
+          signal: controller.signal,
+          onPhotoStart: (photo) => {
+            counter += 1;
+            job.progress(counter - 1, total);
+            activity.photoStarted(counter, `${site.name} · ${photo.label}`);
+          },
+        });
+        done += res.completed;
+        failed += res.failed;
+        if (res.completed > 0) deps.markSiteChanged(site.siteId);
+      }
+      const aborted = controller.signal.aborted;
+      store.setState({
+        statusMessage: aborted
+          ? `Cancelled: ${done} of ${total} photos in other sites analysed.`
+          : `All sites analysed: ${done} done, ${failed} failed in other sites.`,
+      });
+      job.finish(aborted, `All sites: ${done} photos analysed${failed > 0 ? `, ${failed} failed` : ''}.`);
+    } catch (err) {
+      store.setState({ statusMessage: `Batch error: ${err instanceof Error ? err.message : String(err)}` });
+    } finally {
+      batchAbortController = null;
+      store.setState({ batchRunning: false, batchProgress: null });
+      activity.end();
+      storedSiteInputsCache.clear();
+      job.finish(true, ''); // no-op unless an error ended the job early
+      deps.onStorageChanged();
+      if (store.getState().dashboardScope === 'compare') void refreshComparison();
+    }
+  }
+
+  /** Saves the photo's fine-grain enlargement choice and re-analyses it. */
+  async function setFineGrainUpscale(photo: PhotoRecord, factor: number | undefined): Promise<void> {
+    const { fineGrainUpscale: _old, ...rest } = photo.analysisConfig ?? {};
+    const updated: PhotoRecord = {
+      ...photo,
+      analysisConfig: factor !== undefined ? { ...rest, fineGrainUpscale: factor } : rest,
+    };
+    await savePhoto(updated);
+    store.setState({ photos: store.getState().photos.map((p) => (p.photoId === photo.photoId ? updated : p)) });
+    await runBatch([photo.photoId]);
+  }
+
+  async function runBatch(photoIds?: string[]): Promise<void> {
+    lastBatchCancelled = false;
+    const state = store.getState();
+    const site = getActiveSite(state);
+    if (!site || state.batchRunning) return;
+
+    const controller = new AbortController();
+    batchAbortController = controller;
+    const analysisConfig = toAnalysisConfig(state.analysisParams);
+    const plannedTotal = photoIds?.length ?? state.photos.length;
+    activity.begin(plannedTotal);
+    let photoCounter = 0;
+    job.acquireWakeLock();
+    if (!allSitesJobActive) job.start(plannedTotal);
+    store.setState({
+      batchRunning: true,
+      batchProgress: {
+        completed: 0,
+        total: plannedTotal,
+        currentPhotoId: '',
+        currentLabel: 'Starting…',
+      },
+      statusMessage: 'Running local segmentation…',
+    });
+
+    try {
+      const result = await storage.runSiteBatch({
+        siteId: site.siteId,
+        engine: deps.batchEngine,
+        ...(photoIds !== undefined ? { photoIds } : {}),
+        analysisConfig,
+        signal: controller.signal,
+        onProgress: (p) => {
+          store.setState({ batchProgress: p });
+          if (!allSitesJobActive) job.progress(p.completed, p.total);
+          if (p.total > 0) activity.setTotal(p.total);
+        },
+        onPhotoStart: (photo) => {
+          photoCounter += 1;
+          activity.photoStarted(photoCounter, photo.label);
+          const nextStatuses = new Map(store.getState().photoStatuses);
+          nextStatuses.set(photo.photoId, 'running');
+          store.setState({ photoStatuses: nextStatuses });
+        },
+        onPhotoComplete: (photo, session) => {
+          const prev = store.getState();
+          const roi = effectiveRoi(prev.photos.find((p) => p.photoId === photo.photoId) ?? photo, prev.siteOptions);
+          if (roi) session.setRoiConfig(roi);
+          const nextSessions = new Map(prev.sessions);
+          nextSessions.set(photo.photoId, session);
+          const nextStatuses = new Map(prev.photoStatuses);
+          nextStatuses.set(photo.photoId, 'done');
+          deps.markSiteChanged(site.siteId);
+          const nextErrors = new Map(prev.photoErrors);
+          nextErrors.delete(photo.photoId);
+          store.setState({
+            sessions: nextSessions,
+            photoStatuses: nextStatuses,
+            photoErrors: nextErrors,
+          });
+          recomputeReports();
+          if (store.getState().activePhotoId === photo.photoId) {
+            void deps.syncViewport(false);
+          }
+        },
+        onPhotoError: (photo, err) => {
+          const prev = store.getState();
+          const nextStatuses = new Map(prev.photoStatuses);
+          nextStatuses.set(photo.photoId, 'error');
+          const nextErrors = new Map(prev.photoErrors);
+          nextErrors.set(photo.photoId, err.message);
+          store.setState({
+            photoStatuses: nextStatuses,
+            photoErrors: nextErrors,
+          });
+        },
+      });
+
+      lastBatchCancelled = result.aborted;
+      if (!allSitesJobActive) {
+        job.finish(
+          result.aborted,
+          `${site.name}: ${result.completed} photo${result.completed === 1 ? '' : 's'} analysed${result.failed > 0 ? `, ${result.failed} failed` : ''}.`,
+        );
+      }
+      const errs = store.getState().photoErrors;
+      const firstFailure = result.failedPhotoIds
+        .map((id) => errs.get(id))
+        .find((m): m is string => typeof m === 'string' && m.length > 0);
+      store.setState({
+        statusMessage: result.aborted
+          ? `Batch cancelled (${result.completed}/${result.total} completed)`
+          : `Batch complete: ${result.completed} done, ${result.failed} failed` +
+            (firstFailure ? ` — ${firstFailure}` : '') +
+            (engine.getWebGpuDisabledReason() !== null
+              ? ' · GPU was reset: running on CPU; reload the page to use the GPU again'
+              : ''),
+      });
+    } catch (err) {
+      store.setState({
+        statusMessage: `Batch error: ${err instanceof Error ? err.message : String(err)}`,
+      });
+    } finally {
+      batchAbortController = null;
+      store.setState({ batchRunning: false, batchProgress: null });
+      activity.end();
+      job.releaseWakeLock();
+      if (!allSitesJobActive) job.finish(true, ''); // no-op unless an error ended the job early
+      recomputeReports();
+      await refreshCapabilities();
+      if (!allSitesJobActive) deps.onStorageChanged();
+    }
+  }
+
+  /** Stops the running batch (and, for "Analyse all sites", the whole job). */
+  function cancelBatch(): void {
+    batchAbortController?.abort();
+  }
+
+  async function persistActiveSession(photoId: string, session: AnalysisSession): Promise<void> {
+    const owner = store.getState().photos.find((p) => p.photoId === photoId);
+    if (owner) deps.markSiteChanged(owner.siteId);
+    await storage.savePhotoResult({
+      photoId,
+      status: 'done',
+      serializedSession: session.toSerialized(),
+      updatedAt: Date.now(),
+    });
+  }
+
+  async function applyCalibrationToActive(
+    ptA: Point2D,
+    ptB: Point2D,
+    lengthVal: number,
+    unit: 'mm' | 'cm',
+  ): Promise<void> {
+    const state = store.getState();
+    const photo = getActivePhoto(state);
+    if (!photo) return;
+    const cal = ScaleCalibrator.calibrate(ptA, ptB, lengthVal, unit);
+    const updatedPhoto: PhotoRecord = { ...photo, calibration: cal };
+    await savePhoto(updatedPhoto);
+
+    const session = state.sessions.get(photo.photoId);
+    if (session) {
+      session.setCalibration(cal);
+      await persistActiveSession(photo.photoId, session);
+    }
+
+    const photos = state.photos.map((p) => (p.photoId === photo.photoId ? updatedPhoto : p));
+    store.setState({
+      photos,
+      pendingCalibrationPoints: [],
+      statusMessage: `Calibrated ${photo.label}: ${cal.mmPerPx.toFixed(4)} mm/px`,
+    });
+    recomputeReports();
+    await deps.syncViewport(false);
+  }
+
+  async function applyRectificationToActive(
+    corners: [Point2D, Point2D, Point2D, Point2D],
+    physWidthMm: number,
+    physHeightMm: number,
+  ): Promise<void> {
+    const state = store.getState();
+    const photo = getActivePhoto(state);
+    if (!photo) return;
+
+    const rectified = await images.rectify(photo.imageBlob, corners, physWidthMm, physHeightMm);
+    if (!rectified) return;
+    const cal = rectified.calibration;
+
+    const updatedPhoto: PhotoRecord = {
+      ...photo,
+      imageBlob: rectified.blob,
+      width: rectified.width,
+      height: rectified.height,
+      calibration: cal,
+    };
+    await savePhoto(updatedPhoto);
+    await storage.savePhotoResult({
+      photoId: photo.photoId,
+      status: 'pending',
+      updatedAt: Date.now(),
+    });
+
+    const oldUrl = state.thumbUrls.get(photo.photoId);
+    if (oldUrl) revokeUrl(oldUrl);
+    const nextThumbs = new Map(state.thumbUrls);
+    nextThumbs.set(photo.photoId, createUrl(rectified.blob));
+
+    const nextSessions = new Map(state.sessions);
+    nextSessions.delete(photo.photoId);
+    const nextStatuses = new Map(state.photoStatuses);
+    nextStatuses.set(photo.photoId, 'pending');
+
+    store.setState({
+      photos: state.photos.map((p) => (p.photoId === photo.photoId ? updatedPhoto : p)),
+      thumbUrls: nextThumbs,
+      sessions: nextSessions,
+      photoStatuses: nextStatuses,
+      pendingRectifyPoints: [],
+      activeTool: 'inspect',
+      statusMessage: `Rectified ${photo.label} (${rectified.width}×${rectified.height}px, ${cal.mmPerPx.toFixed(4)} mm/px). Ready to re-analyze.`,
+    });
+    recomputeReports();
+    await deps.syncViewport(true);
+  }
+
+  async function refreshComparison(): Promise<void> {
+    const run = ++comparisonRun;
+    const state = store.getState();
+    const chosen = state.sites.filter((s) => state.compareSiteIds === null || state.compareSiteIds.includes(s.siteId));
+    store.setState({ comparison: { loading: true, sites: state.comparison?.sites ?? [], error: null } });
+    try {
+      const entries: SiteForComparison[] = [];
+      for (const site of chosen) {
+        let inputs: SitePhotoInput[];
+        if (site.siteId === state.activeSiteId) {
+          inputs = buildSiteInputs(store.getState());
+        } else {
+          inputs = storedSiteInputsCache.get(site.siteId) ?? (await loadStored(site.siteId, state.siteOptions));
+          storedSiteInputsCache.set(site.siteId, inputs);
+        }
+        // Colour by the site's position in the full list, so it does not change with the selection.
+        const color = COMPARE_COLORS[state.sites.indexOf(site) % COMPARE_COLORS.length]!;
+        entries.push({ siteId: site.siteId, name: site.name, inputs, color });
+      }
+      if (run !== comparisonRun) return;
+      // Same settings for every site, so the comparison is like for like.
+      const opts = store.getState();
+      const sites = computeComparedSites(
+        entries,
+        opts.compareInPixels ? { ...opts.siteOptions, unit: 'px' } : opts.siteOptions,
+      );
+      store.setState({ comparison: { loading: false, sites, error: null } });
+    } catch (err) {
+      if (run !== comparisonRun) return;
+      store.setState({ comparison: { loading: false, sites: [], error: err instanceof Error ? err.message : String(err) } });
+    }
+  }
+
+  return {
+    savePhoto,
+    recomputeReports,
+    refreshCapabilities,
+    loadSiteData,
+    createDefaultOrLoadSites,
+    handleFilesAdded,
+    runBatch,
+    runAllSites,
+    setFineGrainUpscale,
+    cancelBatch,
+    persistActiveSession,
+    applyCalibrationToActive,
+    applyRectificationToActive,
+    refreshComparison,
+    /** Forget other sites' cached inputs (e.g. after a setting that changes them). */
+    clearStoredSiteInputs(): void {
+      storedSiteInputsCache.clear();
+    },
+    /** Storage quota from the last capability refresh (for the Models dialog). */
+    getCachedQuota(): StorageQuotaInfo | null {
+      return cachedQuota;
+    },
+  };
+}
+
+/** Browser implementation of `ImageIo.rectify` (canvas + perspective correction). */
+export async function rectifyWithCanvas(
+  image: Blob,
+  corners: [Point2D, Point2D, Point2D, Point2D],
+  physWidthMm: number,
+  physHeightMm: number,
+  rectifyPerspective: typeof import('../modules/roiAndRectify.js').rectifyPerspective,
+): Promise<{ blob: Blob; width: number; height: number; calibration: CalibrationResult } | null> {
+  const bmp = await createImageBitmap(image);
+  const off = document.createElement('canvas');
+  off.width = bmp.width;
+  off.height = bmp.height;
+  const ctx = off.getContext('2d');
+  if (!ctx) {
+    bmp.close();
+    return null;
+  }
+  ctx.drawImage(bmp, 0, 0);
+  const imgData = ctx.getImageData(0, 0, bmp.width, bmp.height);
+  bmp.close();
+
+  const rectified = rectifyPerspective(
+    { data: imgData.data, width: imgData.width, height: imgData.height },
+    {
+      srcCorners: corners,
+      physicalWidthMm: physWidthMm,
+      physicalHeightMm: physHeightMm,
+      paddingPx: 40,
+      maxOutputDimPx: 2048,
+    },
+  );
+
+  const outCanvas = document.createElement('canvas');
+  outCanvas.width = rectified.width;
+  outCanvas.height = rectified.height;
+  const outCtx = outCanvas.getContext('2d');
+  if (!outCtx) return null;
+  outCtx.putImageData(new ImageData(new Uint8ClampedArray(rectified.data), rectified.width, rectified.height), 0, 0);
+
+  const blob = await new Promise<Blob>((resolve, reject) => {
+    outCanvas.toBlob(
+      (b) => (b ? resolve(b) : reject(new Error('Failed to encode rectified PNG'))),
+      'image/png',
+    );
+  });
+
+  const calibration = ScaleCalibrator.calibrate(
+    { x: rectified.roiRectInOutput[0], y: rectified.roiRectInOutput[1] },
+    {
+      x: rectified.roiRectInOutput[0] + rectified.roiRectInOutput[2],
+      y: rectified.roiRectInOutput[1],
+    },
+    physWidthMm,
+    'mm',
+  );
+  return { blob, width: rectified.width, height: rectified.height, calibration };
+}
