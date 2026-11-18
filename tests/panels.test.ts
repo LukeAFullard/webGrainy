@@ -9,6 +9,13 @@ import { renderSidebarHtml, backupLineHtml, formatBytes, type SidebarView } from
 import { renderToolbarHtml } from '../src/ui/panels/toolbar.js';
 import { renderDashboardHtml } from '../src/ui/panels/dashboard.js';
 import { renderCompareHtml } from '../src/ui/panels/compare.js';
+import {
+  renderLandingHtml,
+  renderWorkflowSectionHtml,
+  isWorkflowStepId,
+  nextWorkflowStepForKey,
+  WORKFLOW_STEP_ORDER,
+} from '../src/ui/panels/landing.js';
 import { esc, type ChartRegistry } from '../src/ui/panels/html.js';
 
 function session(): AnalysisSession {
@@ -67,10 +74,44 @@ describe('panel renderers', () => {
   it('topbar shows the engine state', () => {
     const st = emptyState();
     expect(renderTopbarHtml(st, { gpuReset: false, cpuThreads: 3 })).toContain('Starting…');
+    expect(renderTopbarHtml(st, { gpuReset: false, cpuThreads: 3 })).toContain('data-action="show-landing"');
     const cpu = renderTopbarHtml({ ...st, capabilities: { hasWebGPU: false, hasWasmSimd: true } as never }, { gpuReset: false, cpuThreads: 3 });
     expect(cpu).toContain('CPU · 3 threads');
     expect(renderTopbarHtml({ ...st, capabilities: { hasWebGPU: true, hasShaderF16: true } as never }, { gpuReset: true, cpuThreads: 3 })).toContain('CPU (GPU reset)');
     expect(renderTopbarHtml({ ...st, isOnline: false }, { gpuReset: false, cpuThreads: 1 })).toContain('Offline');
+  });
+
+  it('landing page renders workflow tabs, capabilities, models table and runtime status', () => {
+    expect(isWorkflowStepId('calibrate')).toBe(true);
+    expect(isWorkflowStepId('export')).toBe(true);
+    expect(isWorkflowStepId('unknown')).toBe(false);
+    expect(isWorkflowStepId(undefined)).toBe(false);
+
+    expect(nextWorkflowStepForKey('calibrate', 'ArrowRight')).toBe('exclude');
+    expect(nextWorkflowStepForKey('calibrate', 'ArrowLeft')).toBe('export');
+    expect(nextWorkflowStepForKey('segment', 'Home')).toBe('calibrate');
+    expect(nextWorkflowStepForKey('segment', 'End')).toBe('export');
+    expect(nextWorkflowStepForKey('segment', 'Enter')).toBeNull();
+
+    for (const step of WORKFLOW_STEP_ORDER) {
+      const wf = renderWorkflowSectionHtml(step);
+      expect(wf).toContain(`id="wf-tab-${step}"`);
+      expect(wf).toContain('focusgroup="tablist nomemory"');
+      expect(wf).toContain('hidden="until-found"');
+    }
+
+    const st = analysedState();
+    const html = renderLandingHtml(
+      { ...st, landingStep: 'segment', swStatus: 'ready', capabilities: { hasWebGPU: true, hasShaderF16: true, cachedModels: ['ig2_unet_fp32'] } as never },
+      { gpuReset: false, cpuThreads: 4, skipLanding: true },
+    );
+    expect(html).toContain('WebGPU FP16 Ready');
+    expect(html).toContain('Offline Ready');
+    expect(html).toContain('Resume Workspace (2 photos)');
+    expect(html).toContain('Models (1)');
+    expect(html).toContain('ig2_cpsam_fp16.onnx');
+    expect(html).toContain('data-landing-skip=""');
+    expect(html).toContain('checked');
   });
 
   it('sidebar: empty site', () => {

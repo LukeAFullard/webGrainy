@@ -54,6 +54,7 @@ export function renderTopbarHtml(state: AppState, view: TopbarView): string {
       ${state.isOnline ? '' : `<span class="status-pill warn" title="Analysis still works with models already downloaded."><span class="dot" aria-hidden="true"></span>Offline</span>`}
     </div>
     <div class="topbar-right">
+      <button type="button" class="btn btn-sm" data-action="show-landing">Overview</button>
       <button type="button" class="btn btn-sm" data-open-modal="models">Models</button>
       <button type="button" class="btn btn-sm" data-open-modal="export">Export</button>
       <button type="button" class="btn btn-sm" data-open-help="">Help</button>

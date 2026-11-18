@@ -5,6 +5,7 @@ import { AppStore, createInitialState, defaultAnalysisParams } from '../src/ui/s
 import type { ControlLike, ElementLike, EventContext } from '../src/ui/events/context.js';
 import { ACTIONS, routeChange, routeClick } from '../src/ui/events/router.js';
 import { handleDashboardKey, nextTabForKey } from '../src/ui/events/dashboard.js';
+import { handleLandingKey } from '../src/ui/events/sidebar.js';
 import { handleShortcutKey } from '../src/ui/events/shortcuts.js';
 
 /** Minimal element: attributes, a parent, and `closest` for the selectors the handlers use. */
@@ -76,10 +77,14 @@ function setup() {
     runExport: vi.fn(),
     setFieldValue: vi.fn(),
     focusTab: vi.fn(),
+    focusWorkflowTab: vi.fn(),
+    enterWorkspace: vi.fn(),
+    showLanding: vi.fn(),
     isTyping: vi.fn(() => false),
   };
   const prefs = {
     setGuideHidden: vi.fn(),
+    setSkipLanding: vi.fn(),
     noteExportOpened: vi.fn(),
     setNotifyWhenDone: vi.fn(),
     requestNotifyPermission: vi.fn(async () => true),
@@ -163,6 +168,35 @@ describe('event routing', () => {
     expect(store.getState().histogramStepPhi).toBe(1);
   });
 
+  it('landing page actions: enter-workspace, show-landing, workflow-step and keyboard navigation', () => {
+    const { ctx, store, ui } = setup();
+    click(el({ 'data-action': 'enter-workspace', 'data-launch-tool': 'calibrate' }), ctx);
+    expect(ui.enterWorkspace).toHaveBeenCalledWith('calibrate');
+    click(el({ 'data-action': 'show-landing' }), ctx);
+    expect(ui.showLanding).toHaveBeenCalledTimes(1);
+    click(el({ 'data-action': 'workflow-step', 'data-step': 'edit' }), ctx);
+    expect(store.getState().landingStep).toBe('edit');
+
+    const preventTab = vi.fn();
+    handleLandingKey(
+      el({ role: 'tab', 'data-step': 'edit' }),
+      { key: 'ArrowRight', preventDefault: preventTab },
+      ctx,
+    );
+    expect(preventTab).toHaveBeenCalled();
+    expect(store.getState().landingStep).toBe('export');
+    expect(ui.focusWorkflowTab).toHaveBeenCalledWith('export');
+
+    const preventDrop = vi.fn();
+    handleLandingKey(
+      el({ 'data-action': 'add-photos' }, { id: 'landing-dropzone' }),
+      { key: 'Enter', preventDefault: preventDrop },
+      ctx,
+    );
+    expect(preventDrop).toHaveBeenCalled();
+    expect(ui.openPhotoPicker).toHaveBeenCalledTimes(1);
+  });
+
   it('selects a photo from its row, but not when its checkbox is clicked', () => {
     const { ctx, store, ui } = setup();
     const row = el({ 'data-photo-id': 'p2' });
@@ -215,7 +249,7 @@ describe('form changes', () => {
     expect(actions.clearStoredSiteInputs).toHaveBeenCalled();
   });
 
-  it('compare checkboxes, site switch, CPU threads, notifications, Display menu, calibration preset', async () => {
+  it('compare checkboxes, site switch, CPU threads, notifications, Display menu, calibration preset, skip landing', async () => {
     const { ctx, store, actions, prefs, ui } = setup();
     store.setState({ sites: [site, { ...site, siteId: 's2', name: 'Reach 2' }] });
     routeChange(el({ 'data-compare-site': 's1' }, { tagName: 'INPUT', type: 'checkbox', checked: false }), ctx);
@@ -232,5 +266,7 @@ describe('form changes', () => {
     routeChange(el({}, { tagName: 'SELECT', id: 'cal-preset', value: '300|mm' }), ctx);
     expect(ui.setFieldValue).toHaveBeenCalledWith('cal-length', '300');
     expect(ui.setFieldValue).toHaveBeenCalledWith('cal-unit', 'mm');
+    routeChange(el({ 'data-landing-skip': '' }, { tagName: 'INPUT', type: 'checkbox', checked: true }), ctx);
+    expect(prefs.setSkipLanding).toHaveBeenCalledWith(true);
   });
 });
