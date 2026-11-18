@@ -1960,10 +1960,9 @@ kbd {
 
 .landing-models-table {
   --label-2: "Download Size";
-  --label-3: "Recommended Runtime";
-  --label-4: "D₅₀ Median APE [95% CI]";
-  --label-5: "D₅₀ Mean APE [95% CI]";
-  --label-6: "Panoptic Quality (PQ)";
+  --label-3: "Best For";
+  --label-4: "Hardware & Memory";
+  --label-5: "Speed & Accuracy Trade-off";
   inline-size: 100%;
   border-collapse: collapse;
   font-size: 0.8125rem;
@@ -2075,7 +2074,6 @@ kbd {
   .landing-models-table td:nth-child(3)::before { content: var(--label-3); }
   .landing-models-table td:nth-child(4)::before { content: var(--label-4); }
   .landing-models-table td:nth-child(5)::before { content: var(--label-5); }
-  .landing-models-table td:nth-child(6)::before { content: var(--label-6); }
 }
 
 .landing-section-actions {

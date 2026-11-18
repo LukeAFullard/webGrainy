@@ -109,7 +109,13 @@ describe('panel renderers', () => {
     expect(html).toContain('Offline Ready');
     expect(html).toContain('Resume Workspace (2 photos)');
     expect(html).toContain('Models (1)');
+    expect(html).toContain('Runs on Your Device');
+    expect(html).toContain('No External Server');
+    expect(html).toContain('data-help="calibrate"');
     expect(html).toContain('ig2_cpsam_fp16.onnx');
+    expect(html).not.toContain('Zero Uploads');
+    expect(html).not.toContain('SHA-256 Pinned');
+    expect(html).not.toContain('2.87%');
     expect(html).toContain('data-landing-skip=""');
     expect(html).toContain('checked');
   });
