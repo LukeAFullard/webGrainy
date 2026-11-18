@@ -62,7 +62,7 @@ calling the actions from Step 1.
 **Done when.** Each handler module is tested with synthetic events; no handler exceeds
 ~150 lines.
 
-## Step 4 — Split `siteAnalysis.ts` ☐
+## Step 4 — Split `siteAnalysis.ts` ☑
 
 | New module | Contents |
 |---|---|
