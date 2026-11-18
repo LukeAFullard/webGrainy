@@ -35,6 +35,7 @@ export type EditorToolMode =
   | 'rectify';
 
 export type DashboardTab = 'psd' | 'adequacy' | 'shape' | 'fabric';
+export type WorkflowStepId = 'calibrate' | 'exclude' | 'segment' | 'edit' | 'export';
 export type ModalKind = 'models' | 'export' | 'about' | 'help' | 'shortcuts' | null;
 export type SwStatus = 'unsupported' | 'registering' | 'ready' | 'error';
 
@@ -132,6 +133,10 @@ export interface AppState {
   activeModal: ModalKind;
   /** Topic shown first in the help dialog (null = full settings list). */
   helpTopic: HelpKey | null;
+  /** Whether the full-page product overview / landing page is currently shown. */
+  showLanding: boolean;
+  /** Currently selected step in the landing page 5-step workflow walkthrough. */
+  landingStep: WorkflowStepId;
   modelDownloads: Map<
     ModelId,
     {
@@ -214,6 +219,8 @@ export function createInitialState(): AppState {
 
     activeModal: null,
     helpTopic: null,
+    showLanding: false,
+    landingStep: 'calibrate',
     modelDownloads: new Map(),
     statusMessage: 'Ready — 100% local browser workspace',
   };

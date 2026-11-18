@@ -20,12 +20,13 @@ import { parseJpegExifMetadata } from './exif.js';
 import { renderHelpModalHtml } from './help.js';
 import { wasmThreadsFor } from '../modules/onnxInference.js';
 import { GUIDE_HIDDEN_KEY, guideInputFrom, guideSteps, renderGuideHtml } from './onboarding.js';
-import { EXPORTED_ONCE_KEY, readFlag, writeFlag } from './prefs.js';
+import { EXPORTED_ONCE_KEY, SKIP_LANDING_KEY, readFlag, writeFlag } from './prefs.js';
 import { markSiteBackedUp, markSiteChanged } from './backup.js';
 import { ScreenWakeLock } from './wakeLock.js';
 import { DoneSignal, NOTIFY_PREF_KEY, requestNotifyPermission } from './doneSignal.js';
 import { loadAnalysisParams, saveAnalysisParams } from './savedSettings.js';
 import { renderTopbarHtml } from './panels/topbar.js';
+import { renderLandingHtml, isWorkflowStepId } from './panels/landing.js';
 import { renderSidebarHtml, type StorageInfo } from './panels/sidebar.js';
 import { renderToolbarHtml } from './panels/toolbar.js';
 import { renderDashboardHtml } from './panels/dashboard.js';
@@ -34,6 +35,7 @@ import { esc, type ChartRegistry } from './panels/html.js';
 import type { ControlLike, ElementLike, EventContext } from './events/context.js';
 import { routeChange, routeClick } from './events/router.js';
 import { handleDashboardKey } from './events/dashboard.js';
+import { handleLandingKey } from './events/sidebar.js';
 import { handleShortcutKey } from './events/shortcuts.js';
 import { renderShortcutsModalHtml } from './shortcuts.js';
 import { buildSiteReportHtml, type ReportPhoto } from './report.js';
@@ -99,8 +101,15 @@ function makeId(prefix: string): string {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
 }
 
+// Landing overview preference (saved per browser; defaults to showing overview on first visit).
+let skipLanding = readFlag(SKIP_LANDING_KEY);
+
 // Analysis settings are remembered between visits (this browser only).
-const store = new AppStore({ ...createInitialState(), analysisParams: loadAnalysisParams() });
+const store = new AppStore({
+  ...createInitialState(),
+  analysisParams: loadAnalysisParams(),
+  showLanding: !skipLanding,
+});
 let lastSavedParams = store.getState().analysisParams;
 store.subscribe((st) => {
   if (st.analysisParams !== lastSavedParams) {
@@ -268,7 +277,9 @@ const {
 let lastAnnouncedMsg = '';
 
 // Persistent DOM containers created once
+let landingEl!: HTMLElement;
 let topbarEl!: HTMLElement;
+let workspaceEl!: HTMLElement;
 let sidebarEl!: HTMLElement;
 let toolbarEl!: HTMLElement;
 let subToolbarEl!: HTMLElement;
@@ -301,6 +312,15 @@ async function syncViewport(fitToView = false): Promise<void> {
     minBaxisPx: state.siteOptions.minBaxisPx ?? 15,
     calPoints: state.pendingCalibrationPoints,
     rectifyPoints: state.pendingRectifyPoints,
+  });
+}
+
+function renderLanding(state: AppState): void {
+  if (!landingEl) return;
+  landingEl.innerHTML = renderLandingHtml(state, {
+    gpuReset: engine.getWebGpuDisabledReason() !== null,
+    cpuThreads,
+    skipLanding,
   });
 }
 
@@ -497,6 +517,33 @@ function renderAll(state: AppState): void {
   const prev = prevRenderState;
   prevRenderState = state;
 
+  const appEl = document.getElementById('app');
+  if (appEl) {
+    appEl.classList.toggle('is-landing', state.showLanding);
+  }
+  if (landingEl) {
+    landingEl.hidden = !state.showLanding;
+  }
+  if (topbarEl) {
+    topbarEl.hidden = state.showLanding;
+  }
+  if (workspaceEl) {
+    workspaceEl.hidden = state.showLanding;
+  }
+
+  if (
+    !prev ||
+    prev.showLanding !== state.showLanding ||
+    prev.landingStep !== state.landingStep ||
+    prev.capabilities !== state.capabilities ||
+    prev.isOnline !== state.isOnline ||
+    prev.swStatus !== state.swStatus ||
+    prev.photos.length !== state.photos.length ||
+    prev.sites.length !== state.sites.length
+  ) {
+    renderLanding(state);
+  }
+
   if (
     !prev ||
     prev.capabilities !== state.capabilities ||
@@ -582,6 +629,10 @@ function renderAll(state: AppState): void {
   ) {
     renderModals(state);
   }
+
+  if (prev && prev.showLanding && !state.showLanding) {
+    void syncViewport(true);
+  }
 }
 
 // ============================================================================
@@ -593,8 +644,9 @@ function mountShell(): void {
   if (!app) return;
 
   app.innerHTML = `
+    <div class="landing-shell" id="landing-shell" hidden></div>
     <header class="topbar" id="topbar"></header>
-    <main class="workspace">
+    <main class="workspace" id="workspace-main">
       <aside class="sidebar-left" id="sidebar-left" aria-label="Site and Photo Workspace"></aside>
       <section class="viewport-center" aria-label="Grain Inspection Viewport">
         <div class="toolbar" id="toolbar"></div>
@@ -623,7 +675,9 @@ function mountShell(): void {
     <input type="file" id="archive-file-input" accept=".json,.webgrainy.json" style="display:none;" />
   `;
 
+  landingEl = document.getElementById('landing-shell')!;
   topbarEl = document.getElementById('topbar')!;
+  workspaceEl = document.getElementById('workspace-main')!;
   sidebarEl = document.getElementById('sidebar-left')!;
   toolbarEl = document.getElementById('toolbar')!;
   subToolbarEl = document.getElementById('sub-toolbar')!;
@@ -796,6 +850,31 @@ function mountShell(): void {
   );
 }
 
+function transitionView(update: () => void, focusTargetId?: string): void {
+  const focusAfter = () => {
+    if (focusTargetId) {
+      document.getElementById(focusTargetId)?.focus();
+    }
+  };
+  const doc = document as Document & {
+    startViewTransition?: (cb: () => void) => { finished: Promise<unknown> };
+  };
+  if (!doc.startViewTransition) {
+    update();
+    focusAfter();
+    return;
+  }
+  try {
+    const transition = doc.startViewTransition(() => {
+      update();
+    });
+    void transition.finished.finally(focusAfter);
+  } catch {
+    update();
+    focusAfter();
+  }
+}
+
 /** Screen hooks and preferences the event handlers need (see events/context.ts). */
 function eventContext(): EventContext {
   return {
@@ -822,6 +901,35 @@ function eventContext(): EventContext {
         if (el) el.value = value;
       },
       focusTab: (tab) => document.getElementById(`tab-${tab}`)?.focus(),
+      focusWorkflowTab: (step) => {
+        const el = document.getElementById(`wf-tab-${step}`);
+        if (!el) return;
+        el.focus();
+        try {
+          el.scrollIntoView({
+            block: 'nearest',
+            inline: 'nearest',
+            container: 'nearest',
+          } as ScrollIntoViewOptions);
+        } catch {
+          el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+        }
+      },
+      enterWorkspace: (tool) => {
+        transitionView(() => {
+          store.setState({
+            showLanding: false,
+            ...(tool ? { activeTool: tool } : {}),
+          });
+          window.scrollTo({ top: 0 });
+        }, 'canvas-stage');
+      },
+      showLanding: () => {
+        transitionView(() => {
+          store.setState({ showLanding: true });
+          window.scrollTo({ top: 0 });
+        }, 'landing-heading');
+      },
       focusGrain: (id) => viewport?.focusOnGrain(id),
       isTyping: () => {
         const el = document.activeElement;
@@ -834,6 +942,11 @@ function eventContext(): EventContext {
       setGuideHidden: (hidden) => {
         guideHidden = hidden;
         writeFlag(GUIDE_HIDDEN_KEY, hidden);
+      },
+      setSkipLanding: (skip) => {
+        skipLanding = skip;
+        writeFlag(SKIP_LANDING_KEY, skip);
+        renderLanding(store.getState());
       },
       noteExportOpened: () => {
         if (exportedOnce) return;
@@ -990,6 +1103,31 @@ function attachDelegatedHandlers(): void {
     handleDashboardKey(e.target as unknown as ElementLike | null, e, ctx);
   });
 
+  landingEl.addEventListener('keydown', (e) => {
+    handleLandingKey(e.target as unknown as ElementLike | null, e, ctx);
+  });
+
+  landingEl.addEventListener('beforematch', (e) => {
+    const target = e.target as HTMLElement | null;
+    const panel = target?.closest<HTMLElement>('[data-step-panel]');
+    const step = panel?.dataset['stepPanel'];
+    if (isWorkflowStepId(step)) {
+      store.setState({ landingStep: step });
+      const tab = document.getElementById(`wf-tab-${step}`);
+      if (tab) {
+        try {
+          tab.scrollIntoView({
+            block: 'nearest',
+            inline: 'nearest',
+            container: 'nearest',
+          } as ScrollIntoViewOptions);
+        } catch {
+          tab.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+        }
+      }
+    }
+  });
+
   document.addEventListener('change', (e) => {
     const target = e.target as HTMLElement | null;
     if (!target) return;
@@ -998,6 +1136,9 @@ function attachDelegatedHandlers(): void {
 
   fileInputEl.addEventListener('change', () => {
     if (fileInputEl.files && fileInputEl.files.length > 0) {
+      if (store.getState().showLanding) {
+        store.setState({ showLanding: false });
+      }
       void handleFilesAdded(fileInputEl.files);
       fileInputEl.value = '';
     }
@@ -1006,6 +1147,9 @@ function attachDelegatedHandlers(): void {
   archiveInputEl.addEventListener('change', () => {
     const file = archiveInputEl.files?.[0];
     if (file) {
+      if (store.getState().showLanding) {
+        store.setState({ showLanding: false });
+      }
       void importSiteArchive(file).then(async (siteId) => {
         const sites = await listSites();
         store.setState({ sites, statusMessage: 'Imported .webgrainy.json archive' });
@@ -1028,6 +1172,39 @@ function attachDelegatedHandlers(): void {
     document.getElementById('photo-dropzone')?.classList.remove('dragover');
     if (e.dataTransfer?.files && e.dataTransfer.files.length > 0) {
       void handleFilesAdded(e.dataTransfer.files);
+    }
+  });
+
+  // Drag & drop on landing overview
+  landingEl.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    document.getElementById('landing-dropzone')?.classList.add('dragover');
+  });
+  landingEl.addEventListener('dragleave', () => {
+    document.getElementById('landing-dropzone')?.classList.remove('dragover');
+  });
+  landingEl.addEventListener('drop', (e) => {
+    e.preventDefault();
+    document.getElementById('landing-dropzone')?.classList.remove('dragover');
+    const files = e.dataTransfer?.files;
+    if (!files || files.length === 0) return;
+    const allFiles = Array.from(files);
+    const archive = allFiles.find(
+      (f) => f.name.endsWith('.webgrainy.json') || f.name.endsWith('.json'),
+    );
+    const images = allFiles.filter((f) => !f.name.endsWith('.json'));
+    if (store.getState().showLanding) {
+      store.setState({ showLanding: false });
+    }
+    if (archive) {
+      void importSiteArchive(archive).then(async (siteId) => {
+        const sites = await listSites();
+        store.setState({ sites, statusMessage: 'Imported .webgrainy.json archive' });
+        await loadSiteData(siteId);
+      });
+    }
+    if (images.length > 0) {
+      void handleFilesAdded(images);
     }
   });
 
@@ -1116,6 +1293,9 @@ function setupLaunchQueue(): void {
     const handles = launchParams.files;
     if (!handles || handles.length === 0) return;
     void (async () => {
+      if (store.getState().showLanding) {
+        store.setState({ showLanding: false });
+      }
       const files = await Promise.all(handles.map((h) => h.getFile()));
       const archiveFiles = files.filter(
         (f) => f.name.endsWith('.webgrainy.json') || f.name.endsWith('.json'),

@@ -1,7 +1,8 @@
-/** Left panel events: sites, photos, the guide, batch buttons and analysis settings. */
+/** Left panel & landing page events: sites, photos, the guide, landing workflow tabs, batch buttons and analysis settings. */
 import type { PhotoRecord, SiteRecord } from '../../modules/projectStorage.js';
-import { defaultAnalysisParams } from '../state.js';
+import { defaultAnalysisParams, type EditorToolMode } from '../state.js';
 import { isIsoDate } from '../../modules/surveyDate.js';
+import { isWorkflowStepId, nextWorkflowStepForKey } from '../panels/landing.js';
 import { visiblePhotos, type PhotoFilter } from '../photoList.js';
 import { getActiveSite } from '../workspaceActions.js';
 import { isInput, isSelect, type ActionHandler, type ControlLike, type ElementLike, type EventContext } from './context.js';
@@ -9,6 +10,31 @@ import { isInput, isSelect, type ActionHandler, type ControlLike, type ElementLi
 export const sidebarActions: Record<string, ActionHandler> = {
   'add-photos': (_el, ctx) => ctx.ui.openPhotoPicker(),
   'import-archive': (_el, ctx) => ctx.ui.openArchivePicker(),
+  'enter-workspace': (el, ctx) => {
+    const tool = el.dataset['launchTool'] as EditorToolMode | undefined;
+    if (ctx.ui.enterWorkspace) {
+      ctx.ui.enterWorkspace(tool);
+    } else {
+      ctx.store.setState({
+        showLanding: false,
+        ...(tool ? { activeTool: tool } : {}),
+      });
+    }
+  },
+  'show-landing': (_el, ctx) => {
+    if (ctx.ui.showLanding) {
+      ctx.ui.showLanding();
+    } else {
+      ctx.store.setState({ showLanding: true });
+    }
+  },
+  'workflow-step': (el, ctx) => {
+    const step = el.dataset['step'];
+    if (step && isWorkflowStepId(step)) {
+      ctx.store.setState({ landingStep: step });
+      ctx.ui.focusWorkflowTab?.(step);
+    }
+  },
   'hide-guide': (_el, ctx) => {
     ctx.prefs.setGuideHidden(true);
     ctx.ui.renderSidebar();
@@ -173,6 +199,10 @@ export function handleSidebarChange(target: ControlLike, ctx: EventContext): boo
     ctx.store.setState({ statusMessage: 'CPU threads saved. Reload the page to apply (the CPU runtime fixes its thread count when it starts).' });
     return true;
   }
+  if (isInput(target) && target.dataset['landingSkip'] !== undefined) {
+    ctx.prefs.setSkipLanding?.(target.checked === true);
+    return true;
+  }
   const paramKey = target.dataset['param'];
   if (paramKey) {
     const st = ctx.store.getState();
@@ -191,3 +221,23 @@ export function handleSidebarChange(target: ControlLike, ctx: EventContext): boo
   }
   return false;
 }
+
+/** Keyboard navigation on the landing page (workflow tabs and dropzone activation). */
+export function handleLandingKey(target: ElementLike | null, e: { key: string; preventDefault(): void }, ctx: EventContext): void {
+  const dropzone = target?.closest('#landing-dropzone');
+  if (dropzone && (e.key === 'Enter' || e.key === ' ')) {
+    e.preventDefault();
+    ctx.ui.openPhotoPicker();
+    return;
+  }
+  const tab = target?.closest('[role="tab"][data-step]');
+  if (!tab) return;
+  const current = tab.dataset['step'] ?? '';
+  if (!isWorkflowStepId(current)) return;
+  const next = nextWorkflowStepForKey(current, e.key);
+  if (next === null) return;
+  e.preventDefault();
+  ctx.store.setState({ landingStep: next });
+  ctx.ui.focusWorkflowTab?.(next);
+}
+

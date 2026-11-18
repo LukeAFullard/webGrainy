@@ -1,6 +1,7 @@
 /** Small per-browser on/off preferences (localStorage; silently ignored if storage is blocked). */
 
 export const EXPORTED_ONCE_KEY = 'webgrainy-exported-once';
+export const SKIP_LANDING_KEY = 'webgrainy-skip-landing';
 
 export function readFlag(key: string): boolean {
   try {

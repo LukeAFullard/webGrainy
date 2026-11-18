@@ -4,7 +4,7 @@
  * `value`, …) so they can be tested with plain objects instead of a browser DOM.
  */
 import type { SiteRecord } from '../../modules/projectStorage.js';
-import type { AppStore } from '../state.js';
+import type { AppStore, EditorToolMode, WorkflowStepId } from '../state.js';
 import type { WorkspaceActions } from '../workspaceActions.js';
 
 export interface ElementLike {
@@ -64,6 +64,12 @@ export interface EventContext {
     /** Sets the value of a form field by id (calibration presets). */
     setFieldValue(id: string, value: string): void;
     focusTab(tab: string): void;
+    /** Focuses and scrolls a workflow step tab into view on the landing page. */
+    focusWorkflowTab?(step: WorkflowStepId): void;
+    /** Transitions from the landing page into the main analysis workspace. */
+    enterWorkspace?(tool?: EditorToolMode): void;
+    /** Transitions from the workspace back to the landing page overview. */
+    showLanding?(): void;
     /** Pans (and if needed zooms) the photo so the grain is in view. */
     focusGrain(grainId: number): void;
     /** True while the user is typing in a text field, select or textarea. */
@@ -71,6 +77,8 @@ export interface EventContext {
   };
   prefs: {
     setGuideHidden(hidden: boolean): void;
+    /** Remembers whether to skip the landing page overview on future visits. */
+    setSkipLanding?(skip: boolean): void;
     /** Called when the Export dialog is opened (the guide marks the export step done). */
     noteExportOpened(): void;
     setNotifyWhenDone(on: boolean): void;
