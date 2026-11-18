@@ -2,6 +2,7 @@
 import { helpButton } from '../help.js';
 import type { AppState, EditorToolMode } from '../state.js';
 import { getActivePhoto } from '../workspaceActions.js';
+import { countFlagged, navGrainsFor } from '../grainNav.js';
 import { esc } from './html.js';
 
 export function renderToolbarHtml(state: AppState): { toolbar: string; subToolbar: string } {
@@ -72,6 +73,15 @@ export function renderToolbarHtml(state: AppState): { toolbar: string; subToolba
 
   const ov = state.overlays;
   let toolPrompt = '';
+  if (state.activeTool === 'inspect' && session) {
+    const flagged = countFlagged(navGrainsFor(session));
+    toolPrompt = `
+      <span class="toolbar-sep" aria-hidden="true"></span>
+      <span>Check grains:</span>
+      <button type="button" class="btn btn-sm" data-action="grain-nav" data-nav="largest" title="Show the largest grain">Largest</button>
+      <button type="button" class="btn btn-sm" data-action="grain-nav" data-nav="flagged" title="Grains touching the edge, outside the ROI, or very elongated" ${flagged === 0 ? 'disabled' : ''}>Flagged (${flagged})</button>
+    `;
+  }
   if (state.activeTool === 'calibrate') {
     toolPrompt = `
       <span class="toolbar-sep" aria-hidden="true"></span>

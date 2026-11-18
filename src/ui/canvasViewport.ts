@@ -142,6 +142,8 @@ export class CanvasViewport {
 
     this.stage.addEventListener('pointerdown', (e) => {
       if (!this.photo) return;
+      // The grain inspector card sits on top of the photo: its buttons are not photo taps.
+      if (e.target instanceof Element && e.target.closest('.inspector-card')) return;
       if (e.pointerType === 'touch') {
         this.onTouchDown(e);
         return;
@@ -384,6 +386,7 @@ export class CanvasViewport {
 
   private bindRest(): void {
     this.stage.addEventListener('dblclick', (e) => {
+      if (e.target instanceof Element && e.target.closest('.inspector-card')) return;
       e.preventDefault();
       this.commitActiveShape();
     });
@@ -553,6 +556,24 @@ export class CanvasViewport {
     this.fitZoom = this.zoom;
     this.panX = (rect.width - this.photo.width * this.zoom) / 2;
     this.panY = (rect.height - this.photo.height * this.zoom) / 2;
+    this.render();
+  }
+
+  /** Pans to a grain, zooming in if it would be tiny on screen (keeps the zoom otherwise). */
+  focusOnGrain(grainId: number): void {
+    if (!this.photo || !this.session) return;
+    const g = this.session.getResult().grains.find((x) => x.id === grainId);
+    if (!g) return;
+    const s = this.session.workingImage.effectiveScaleFactor || 1;
+    const [x0, y0, x1, y1] = g.bbox;
+    const cx = (x0 + x1 + 1) / 2 / s;
+    const cy = (y0 + y1 + 1) / 2 / s;
+    const size = Math.max(x1 - x0 + 1, y1 - y0 + 1) / s;
+    const rect = this.stage.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+    if (size * this.zoom < 60) this.zoom = Math.min(4, Math.max(this.zoom, 160 / Math.max(1, size)));
+    this.panX = rect.width / 2 - cx * this.zoom;
+    this.panY = rect.height / 2 - cy * this.zoom;
     this.render();
   }
 

@@ -22,7 +22,7 @@ import { toAnalysisConfig, type AppState, type AppStore } from './state.js';
 /** The storage functions the actions use (projectStorage by default). */
 export type WorkspaceStorage = Pick<
   typeof projectStorage,
-  'listSitePhotos' | 'listSites' | 'getPhotoResult' | 'runSiteBatch' | 'savePhoto' | 'savePhotoResult' | 'saveSite'
+  'listSitePhotos' | 'listSites' | 'getPhotoResult' | 'runSiteBatch' | 'savePhoto' | 'savePhotoResult' | 'saveSite' | 'deletePhoto'
 >;
 
 /** The engine methods the actions use. */
@@ -180,6 +180,9 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
       siteOptions: site ? { ...site.options } : state.siteOptions,
       selectedGrainIds: new Set(),
       inspectedGrainId: null,
+      photoFilter: 'all',
+      photoSelectMode: false,
+      selectedPhotoIds: new Set(),
     });
     for (const url of staleThumbUrls) revokeUrl(url);
 
@@ -483,6 +486,30 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
     }
   }
 
+  /** Includes or leaves out several photos from the site statistics. */
+  async function setPhotosIncluded(photoIds: readonly string[], included: boolean): Promise<void> {
+    const ids = new Set(photoIds);
+    const st = store.getState();
+    const photos = st.photos.map((p) => (ids.has(p.photoId) && p.included !== included ? { ...p, included } : p));
+    for (const p of photos) if (ids.has(p.photoId)) await savePhoto(p);
+    store.setState({ photos, statusMessage: `${included ? 'Included' : 'Left out'} ${ids.size} photo${ids.size === 1 ? '' : 's'}.` });
+    recomputeReports();
+  }
+
+  /** Deletes photos (and their results) from the open site. */
+  async function deletePhotos(photoIds: readonly string[]): Promise<void> {
+    const st = store.getState();
+    const site = getActiveSite(st);
+    if (!site || st.batchRunning) return;
+    const ids = new Set(photoIds);
+    for (const id of ids) await storage.deletePhoto(id);
+    await storage.saveSite({ ...site, photoOrder: site.photoOrder.filter((id) => !ids.has(id)), updatedAt: Date.now() });
+    deps.markSiteChanged(site.siteId);
+    const sites = await storage.listSites();
+    store.setState({ sites, selectedPhotoIds: new Set(), statusMessage: `Deleted ${ids.size} photo${ids.size === 1 ? '' : 's'}.` });
+    await loadSiteData(site.siteId);
+  }
+
   /** Stops the running batch (and, for "Analyse all sites", the whole job). */
   function cancelBatch(): void {
     batchAbortController?.abort();
@@ -622,6 +649,8 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
     runAllSites,
     setFineGrainUpscale,
     cancelBatch,
+    setPhotosIncluded,
+    deletePhotos,
     persistActiveSession,
     applyCalibrationToActive,
     applyRectificationToActive,

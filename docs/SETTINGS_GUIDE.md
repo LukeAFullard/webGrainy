@@ -590,6 +590,39 @@ the site has results that changed since its last backup (or was never backed up)
 archive*). Below it, the storage line shows how much space is used and whether the browser
 agreed to protect it from automatic clearing.
 
+### Working with many photos
+
+- **Photo summary and filters.** Under *Add more photos*, a line such as
+  `8 photos · 6 analysed · 2 not calibrated · 1 failed` counts the photos in each state.
+  Click a part to show only those photos, and **show all** to go back.
+- **Select** (next to the Photos title) turns on checkboxes for bulk actions on the selected photos:
+  - **Include** or **Leave out** of the site statistics;
+  - **Re-analyse**;
+  - **Delete…**, which asks first and tells you how many photos will go.
+  Press **Done** to leave select mode.
+
+### Checking outlines quickly (grain inspector)
+
+With the **Inspect** tool on an analysed photo, the bar above the photo has **Largest** and
+**Flagged (n)**. In the inspector card, **◀ Prev** and **Next ▶** step through the grains,
+and the view pans and zooms to each one. **Next flagged** jumps to grains worth a second look:
+- grains touching the photo edge;
+- grains outside the ROI or in an excluded area;
+- very elongated grains (b/a below 0.35), which are often two stones merged or a stone cut by a shadow.
+
+The card says why a grain was flagged.
+
+### Keyboard shortcuts
+
+Press **?** (or Help → Keyboard shortcuts) to see the full list:
+- **[** and **]** go to the previous / next photo;
+- **1**–**9** pick the tools in toolbar order;
+- **Ctrl+Z** undoes and **Ctrl+Y** redoes (**⌘** on a Mac);
+- **Enter** finishes a shape and **Esc** cancels it;
+- once you click the photo, the arrow keys pan, **+**/**−** zoom and **0** fits the photo.
+
+Shortcuts are off while you type in a field.
+
 ### Long analyses
 
 - **The screen stays awake** during an analysis where the browser supports it, so a phone

@@ -1,6 +1,7 @@
 /** Left panel events: sites, photos, the guide, batch buttons and analysis settings. */
 import type { PhotoRecord, SiteRecord } from '../../modules/projectStorage.js';
 import { defaultAnalysisParams } from '../state.js';
+import { visiblePhotos, type PhotoFilter } from '../photoList.js';
 import { getActiveSite } from '../workspaceActions.js';
 import { isInput, isSelect, type ActionHandler, type ControlLike, type ElementLike, type EventContext } from './context.js';
 
@@ -56,6 +57,35 @@ export const sidebarActions: Record<string, ActionHandler> = {
     if (id) void ctx.actions.runBatch([id]);
   },
   'analyse-all-sites': (_el, ctx) => void ctx.actions.runAllSites(),
+  'photo-filter': (el, ctx) => {
+    const f = el.dataset['filter'] as PhotoFilter | undefined;
+    if (f) ctx.store.setState({ photoFilter: f });
+  },
+  'photo-select-mode': (_el, ctx) => {
+    const on = !ctx.store.getState().photoSelectMode;
+    ctx.store.setState({ photoSelectMode: on, selectedPhotoIds: new Set() });
+  },
+  'photo-select-all': (_el, ctx) => {
+    const st = ctx.store.getState();
+    const shown = visiblePhotos(st).map((p) => p.photoId);
+    const all = st.selectedPhotoIds.size > 0 && st.selectedPhotoIds.size === shown.length;
+    ctx.store.setState({ selectedPhotoIds: new Set(all ? [] : shown) });
+  },
+  'photo-bulk': (el, ctx) => {
+    const st = ctx.store.getState();
+    const ids = st.photos.filter((p) => st.selectedPhotoIds.has(p.photoId)).map((p) => p.photoId);
+    if (ids.length === 0 || st.batchRunning) return;
+    const what = el.dataset['bulk'];
+    const n = `${ids.length} photo${ids.length === 1 ? '' : 's'}`;
+    if (what === 'include' || what === 'exclude') {
+      void ctx.actions.setPhotosIncluded(ids, what === 'include');
+    } else if (what === 'reanalyse') {
+      void ctx.actions.runBatch(ids);
+    } else if (what === 'delete') {
+      if (!ctx.ui.confirm(`Delete ${n} and their results from this site? This cannot be undone (unless you have a backup).`)) return;
+      void ctx.actions.deletePhotos(ids).then(() => ctx.store.setState({ photoSelectMode: false }));
+    }
+  },
 };
 
 /** Clicks outside `data-action` buttons: the drop zone and photo rows. */
@@ -96,6 +126,13 @@ export function handleSidebarChange(target: ControlLike, ctx: EventContext): boo
   if (isInput(target) && target.dataset['photoFacies']) {
     const w = Number(target.value);
     if (Number.isFinite(w) && w >= 0) updatePhoto(ctx, target.dataset['photoFacies'], { faciesWeight: w });
+    return true;
+  }
+  if (isInput(target) && target.dataset['selectPhoto']) {
+    const next = new Set(ctx.store.getState().selectedPhotoIds);
+    if (target.checked) next.add(target.dataset['selectPhoto']);
+    else next.delete(target.dataset['selectPhoto']);
+    ctx.store.setState({ selectedPhotoIds: next });
     return true;
   }
   if (isInput(target) && target.dataset['toggleInclude']) {

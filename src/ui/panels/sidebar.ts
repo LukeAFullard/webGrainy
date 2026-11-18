@@ -5,6 +5,7 @@ import type { readCpuThreadPref } from '../cpuThreads.js';
 import { helpButton } from '../help.js';
 import { defaultAnalysisParams, type AppState } from '../state.js';
 import { getActiveSite } from '../workspaceActions.js';
+import { photoSummary, visiblePhotos } from '../photoList.js';
 import { esc } from './html.js';
 
 export interface StorageInfo {
@@ -74,6 +75,11 @@ export function renderSidebarHtml(state: AppState, view: SidebarView): string {
         <span class="panel-title">Photos (${state.photos.length}${analysedCount > 0 ? ` · ${analysedCount} analysed` : ''})</span>
         <div class="row">
           ${
+            state.photos.length > 1 && !state.batchRunning
+              ? `<button type="button" class="btn btn-sm ${state.photoSelectMode ? 'active' : ''}" data-action="photo-select-mode" aria-pressed="${state.photoSelectMode ? 'true' : 'false'}" title="Select several photos to include, leave out, re-analyse or delete">${state.photoSelectMode ? 'Done' : 'Select'}</button>`
+              : ''
+          }
+          ${
             state.batchRunning
               ? `<button type="button" class="btn btn-sm btn-danger" data-action="cancel-batch">Cancel</button>`
               : pendingCount > 0
@@ -89,11 +95,13 @@ export function renderSidebarHtml(state: AppState, view: SidebarView): string {
       </button>
 
 
+      ${photoSummaryHtml(state)}
+      ${state.photoSelectMode ? bulkBarHtml(state) : ''}
       <div class="photo-list" style="margin-top:8px;">
         ${
           state.photos.length === 0
             ? ''
-            : state.photos
+            : visiblePhotos(state)
                 .map((ph) => {
                   const status = state.photoStatuses.get(ph.photoId) ?? 'pending';
                   const sess = state.sessions.get(ph.photoId);
@@ -102,8 +110,12 @@ export function renderSidebarHtml(state: AppState, view: SidebarView): string {
                   const isActive = ph.photoId === state.activePhotoId;
                   const errMsg = status === 'error' ? state.photoErrors.get(ph.photoId) ?? 'Analysis failed (no details reported).' : '';
                   return `
-                    <div class="photo-item ${isActive ? 'active' : ''}">
-                      <input type="checkbox" data-toggle-include="${esc(ph.photoId)}" ${ph.included ? 'checked' : ''} aria-label="Include ${esc(ph.label)} in site aggregate" title="Include in site aggregate" />
+                    <div class="photo-item ${isActive ? 'active' : ''} ${state.photoSelectMode && state.selectedPhotoIds.has(ph.photoId) ? 'selected' : ''}">
+                      ${
+                        state.photoSelectMode
+                          ? `<input type="checkbox" class="photo-select-box" data-select-photo="${esc(ph.photoId)}" ${state.selectedPhotoIds.has(ph.photoId) ? 'checked' : ''} aria-label="Select ${esc(ph.label)}" title="Select for a bulk action" />`
+                          : `<input type="checkbox" data-toggle-include="${esc(ph.photoId)}" ${ph.included ? 'checked' : ''} aria-label="Include ${esc(ph.label)} in site aggregate" title="Include in site aggregate" />`
+                      }
                       <button type="button" class="photo-select-btn" data-photo-id="${esc(ph.photoId)}" aria-current="${isActive ? 'true' : 'false'}">
                         <img class="photo-thumb" src="${thumb}" alt="" />
                         <span class="photo-meta">
@@ -287,5 +299,35 @@ export function backupLineHtml(state: AppState, analysedCount: number, storageIn
     </div>
     ${status.needsBackup ? '<span class="field-hint">Your work is stored only in this browser. Save a project file to keep it safe or move it to another computer.</span>' : ''}
     ${storage}
+  </div>`;
+}
+
+/** "8 photos · 6 analysed · 2 not calibrated · 1 failed": each part filters the list. */
+export function photoSummaryHtml(state: AppState): string {
+  if (state.photos.length < 2) return '';
+  const parts = photoSummary(state);
+  const shown = visiblePhotos(state).length;
+  return `<div class="photo-summary" role="group" aria-label="Filter photos">
+    ${parts
+      .map(
+        (p) =>
+          `<button type="button" class="link-btn ${state.photoFilter === p.filter ? 'active' : ''} ${p.filter === 'failed' ? 'danger' : ''}" data-action="photo-filter" data-filter="${p.filter}" aria-pressed="${state.photoFilter === p.filter ? 'true' : 'false'}" title="${p.filter === 'all' ? 'Show all photos' : `Show only these photos`}">${esc(p.label)}</button>`,
+      )
+      .join('<span aria-hidden="true"> · </span>')}
+    ${state.photoFilter !== 'all' ? `<span class="summary-note">Showing ${shown} — <button type="button" class="link-btn" data-action="photo-filter" data-filter="all">show all</button></span>` : ''}
+  </div>`;
+}
+
+/** Bulk actions for the photos selected in select mode. */
+export function bulkBarHtml(state: AppState): string {
+  const n = state.selectedPhotoIds.size;
+  const dis = n === 0 || state.batchRunning ? 'disabled' : '';
+  return `<div class="bulk-bar" role="group" aria-label="Actions for selected photos">
+    <span>${n} selected</span>
+    <button type="button" class="btn btn-xs" data-action="photo-select-all">${n > 0 && n === visiblePhotos(state).length ? 'Select none' : 'Select all shown'}</button>
+    <button type="button" class="btn btn-xs" data-action="photo-bulk" data-bulk="include" ${dis}>Include</button>
+    <button type="button" class="btn btn-xs" data-action="photo-bulk" data-bulk="exclude" ${dis}>Leave out</button>
+    <button type="button" class="btn btn-xs" data-action="photo-bulk" data-bulk="reanalyse" ${dis}>Re-analyse</button>
+    <button type="button" class="btn btn-xs btn-danger" data-action="photo-bulk" data-bulk="delete" ${dis}>Delete…</button>
   </div>`;
 }
