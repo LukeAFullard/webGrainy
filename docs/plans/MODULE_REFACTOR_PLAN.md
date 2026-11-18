@@ -76,7 +76,7 @@ calling the actions from Step 1.
 **Done when.** All site tests pass unchanged; site exports are byte-identical to the previous
 build on the comparison fixture.
 
-## Step 5 — Housekeeping ☐
+## Step 5 — Housekeeping ☑
 
 - Remove the now-unused legacy chart helpers and dead code found during the moves.
 - Update the README module map.

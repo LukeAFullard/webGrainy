@@ -6,6 +6,19 @@ All notable changes to webGrainy are recorded here. The format follows
 
 ## [Unreleased]
 
+### Changed (code organisation; no change in results)
+- **App code split into modules** (`docs/plans/MODULE_REFACTOR_PLAN.md`, steps 1–5):
+  - app actions in `ui/workspaceActions.ts`;
+  - pure panel renderers in `ui/panels/`;
+  - event handlers by area in `ui/events/`;
+  - `siteAnalysis.ts` split into `siteTypes`, `siteCalibration`, `sitePooling`, `siteUncertainty`, `siteAdequacy` and `siteExportFormats`, with the public API re-exported.
+- `main.ts` went from 2,850 to about 1,000 lines.
+- Each step was checked against the previous build:
+  - panel HTML was identical in 19 app states;
+  - site reports and exports were identical in 123 cases.
+- New unit tests cover actions, panels and events.
+- The TypeScript checks now reject unused code (`noUnusedLocals`, `noUnusedParameters`). Three unused functions were removed.
+
 ### Added (quality of life, batch 1)
 - **Backup reminder.** The Site panel shows when the open site was last saved as a project
   file. It warns when results changed since then, and has a **Back up now** button. It also

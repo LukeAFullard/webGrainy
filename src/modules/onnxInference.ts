@@ -104,11 +104,6 @@ const watchedDevices = new WeakSet<object>();
 let gpuErrorCount = 0;
 let lastGpuError = '';
 
-/** Number of WebGPU errors seen so far (for tests and diagnostics). */
-export function getWebGpuErrorCount(): number {
-  return gpuErrorCount;
-}
-
 function watchDevice(dev: GpuDeviceLike | undefined): void {
   if (!dev || typeof dev !== 'object' || watchedDevices.has(dev)) return;
   if (typeof dev.addEventListener !== 'function') return;

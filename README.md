@@ -131,8 +131,16 @@ src/
 │   ├── pipelineController.ts       # Compatibility re-export of analysisSession + engine
 │   ├── sedimentStats.ts            # PSD percentiles, Folk & Ward, Wentworth, summary rows
 │   ├── grainStatsExtra.ts          # Sauter/De Brouckère means, Dg/σg, φ moments, Cu/Cc, Trask, Fredle
+│   ├── histograms.ts               # Size-class and aspect-ratio histogram data for the charts
 │   ├── morphometricsExt.ts         # Shape metrics, Feret diameters, fabric statistics, size classes
-│   ├── siteAnalysis.ts             # Multi-photo pooling, bootstrap / binomial CIs, adequacy, site CSV
+│   ├── siteAnalysis.ts             # analyzeSite: pools a site's photos into one report (re-exports the site API)
+│   ├── siteTypes.ts                # Site inputs, options and report types; citations
+│   ├── siteCalibration.ts          # Can photos be pooled in mm? ROI exclusion tolerance
+│   ├── sitePooling.ts              # Grain sizes and weights per pooling mode, virtual Wolman grid, Wentworth
+│   ├── siteUncertainty.ts          # Bootstrap and binomial CIs, jackknife, convergence curve
+│   ├── siteAdequacy.ts             # Sample adequacy, largest clast, per-photo breakdown, outliers
+│   ├── siteExportFormats.ts        # Site summary CSV/JSON and pooled grains CSV
+│   ├── siteComparison.ts           # Comparing sites: stored inputs, D50 differences, comparison CSV
 │   ├── siteWorkspace.ts            # App state -> site inputs and dashboard reports
 │   ├── exportFormats.ts            # PNG mask encoder, outline tracing, GeoJSON/SVG writers
 │   ├── exports.ts                  # Every download: contents, metadata and file name
@@ -140,7 +148,18 @@ src/
 │   ├── roiAndRectify.ts            # ROI/exclusion masks, 4-point homography rectification
 │   ├── projectStorage.ts           # IndexedDB projects, validated archive import/export
 │   └── abort.ts, gpuCheckVerdict.ts
-├── ui/                             # Rendering and interaction (main.ts, canvas, charts, modals, help, …)
+├── ui/                             # The app (browser only)
+│   ├── main.ts                     # Start-up, DOM containers, render loop, screen hooks
+│   ├── state.ts                    # App state store and analysis settings
+│   ├── workspaceActions.ts         # App actions: load sites, add photos, run batches, calibrate, compare
+│   ├── panels/                     # Pure state -> HTML renderers: topbar, sidebar, toolbar, dashboard, compare
+│   ├── events/                     # Click/change/key handlers by area, routed by events/router.ts
+│   ├── canvasViewport.ts           # Photo canvas, overlays, editing gestures
+│   ├── charts.ts, chartExport.ts   # SVG charts and their SVG/PNG export
+│   ├── modals.ts, help.ts          # Dialogs and the settings help text
+│   ├── onboarding.ts, progress.ts  # Getting-started guide; activity bar (stages, tiles, time left)
+│   ├── gpucheck.ts                 # The GPU check page (compares GPU and CPU results)
+│   └── backup.ts, wakeLock.ts, doneSignal.ts, savedSettings.ts, cpuThreads.ts, prefs.ts, exif.ts
 └── workers/
     └── grainPostprocess.worker.ts  # Transferable Web Worker wrapper (v4.1)
 ```

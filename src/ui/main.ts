@@ -256,13 +256,9 @@ const {
   loadSiteData,
   createDefaultOrLoadSites,
   handleFilesAdded,
-  runBatch,
-  runAllSites,
-  setFineGrainUpscale,
   persistActiveSession,
   applyCalibrationToActive,
   applyRectificationToActive,
-  refreshComparison,
 } = actions;
 let lastAnnouncedMsg = '';
 
