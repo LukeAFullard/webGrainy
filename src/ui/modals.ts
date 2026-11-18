@@ -289,15 +289,24 @@ export function renderAboutModalHtml(): string {
   return `
     <div class="modal-card">
       <div class="modal-header">
-        <h2 id="dialog-title" class="modal-title">About webGrainy &amp; Scientific Citations</h2>
+        <h2 id="dialog-title" class="modal-title">About, Privacy &amp; Scientific Citations</h2>
         <button type="button" class="btn btn-sm" data-action="close-modal" autofocus>Close</button>
       </div>
       <div class="modal-body">
         <div class="warning-banner" style="line-height:1.5;">
-          <strong>Disclaimer &amp; Attribution:</strong> This is an <strong>independent, unofficial</strong> browser implementation and is <strong>not affiliated with, endorsed by, or maintained by</strong> the original ImageGrains or Cellpose authors. It is an independent effort to convert and package the pretrained weights into ONNX (<code>inYourOwnBrowser/imagegrains-2.0-onnx</code>) and build a browser-native processing pipeline around them. The architecture, post-processing, and workflows differ from the official Python library at <strong>dmair1989/imagegrains</strong>. Please cite the original authors' work below if you use these models or methods.
+          <strong>Disclaimer &amp; Attribution:</strong> This is an <strong>independent, unofficial</strong> browser implementation and is <strong>not affiliated with, endorsed by, or maintained by</strong> the original ImageGrains or Cellpose authors. It is an independent effort to convert and quantize the pretrained weights into ONNX (<code>inYourOwnBrowser/imagegrains-2.0-onnx</code>) and build a browser-native processing pipeline around them. The architecture, post-processing, and workflows differ from the official Python library at <strong>dmair1989/imagegrains</strong>. Please cite the original authors' work below if you use these models or methods.
         </div>
-        <div class="basis-banner">
-          <strong>Privacy &amp; Architecture:</strong> All image preprocessing, ONNX Runtime WebGPU/WASM inference, gradient flow integration, multigrid PDE post-processing, interactive editing, and multi-image statistical pooling execute 100% locally in your browser. Zero imagery or measurements leave your device.
+        <div class="basis-banner" style="line-height:1.55;">
+          <strong>Privacy, Hosting &amp; Network Connections:</strong>
+          <ul style="margin:6px 0 0;padding-left:18px;">
+            <li><strong>Local processing only:</strong> All photo loading, EXIF reading, grain segmentation, editing, and exports run 100% locally in your browser. Your photos and measurements are never uploaded to any server.</li>
+            <li><strong>No cookies, analytics, or external fonts:</strong> webGrainy sets no cookies, uses no analytics or trackers, and loads no third-party fonts or scripts. Browser storage (<code>localStorage</code> and <code>IndexedDB</code>) is used only for your settings, cached models, and local projects.</li>
+            <li><strong>GitHub Pages (hosting):</strong> This static web app is hosted on <strong>GitHub Pages</strong> (GitHub, Inc.), which processes standard web-server request information (such as your IP address) to deliver the app files to your browser.</li>
+            <li><strong>Hugging Face (model downloads):</strong> Your browser connects to <strong>Hugging Face</strong> (<code>huggingface.co</code> / <code>*.hf.co</code>) <em>only</em> when you choose to download a model or run analysis for the first time (with no cookies or referrer sent). Once downloaded, the model is cached in your browser for offline use.</li>
+          </ul>
+        </div>
+        <div class="stat-card" style="padding:10px;line-height:1.5;font-size:0.85rem;color:var(--text-secondary);">
+          <strong style="color:var(--text-primary);">License &amp; No Warranty (BSD 3-Clause):</strong> webGrainy is free, open-source software provided <strong>"as is"</strong>, without warranty of any kind. Always inspect grain outlines and verify measurements before relying on them for engineering, regulatory, or published work.
         </div>
         <div>
           <div style="font-weight:700;margin-bottom:6px;">Scientific Citations (16 References)</div>
