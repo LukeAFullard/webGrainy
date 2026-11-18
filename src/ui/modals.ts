@@ -321,8 +321,8 @@ export async function handleExportAction(
   psdXAxis: 'mm' | 'phi',
   sizeMetric: SizeMetric = 'bAxis',
   siteOptions?: Partial<SiteAnalysisOptions>,
-): Promise<void> {
-  if (!isExportKind(kind)) return;
+): Promise<boolean> {
+  if (!isExportKind(kind)) return false;
   const file = await buildExport(kind, {
     site,
     photo,
@@ -334,5 +334,7 @@ export async function handleExportAction(
     ...(siteOptions !== undefined ? { siteOptions } : {}),
     renderPsdSvg: renderPrintablePsdSvg,
   });
-  if (file) triggerBlobDownload(file.blob, file.filename);
+  if (!file) return false;
+  triggerBlobDownload(file.blob, file.filename);
+  return true;
 }

@@ -15,7 +15,7 @@ import {
   listSites,
   getPhotoResult,
   runSiteBatch,
-  savePhoto,
+  savePhoto as dbSavePhoto,
   savePhotoResult,
   saveSite,
   type PhotoRecord,
@@ -55,6 +55,10 @@ import { helpButton, isHelpKey, renderHelpModalHtml } from './help.js';
 import { logicalCores, wasmThreadsFor } from '../modules/onnxInference.js';
 import { GUIDE_HIDDEN_KEY, guideInputFrom, guideSteps, renderGuideHtml } from './onboarding.js';
 import { EXPORTED_ONCE_KEY, readFlag, writeFlag } from './prefs.js';
+import { backupStatus, markSiteBackedUp, markSiteChanged, readBackupRecords } from './backup.js';
+import { ScreenWakeLock } from './wakeLock.js';
+import { DoneSignal, NOTIFY_PREF_KEY, requestNotifyPermission } from './doneSignal.js';
+import { loadAnalysisParams, saveAnalysisParams } from './savedSettings.js';
 import { applyEvent, newActivity, renderActivityHtml, startPhoto, type ActivityState } from './progress.js';
 import { CPU_THREADS_KEY, readCpuThreadPref } from './cpuThreads.js';
 import { svgToPngBlob, withSvgMetadata } from './chartExport.js';
@@ -68,6 +72,7 @@ import {
 } from './modals.js';
 import {
   AppStore,
+  createInitialState,
   toAnalysisConfig,
   defaultAnalysisParams,
   type AppState,
@@ -124,7 +129,41 @@ function makeId(prefix: string): string {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
 }
 
-const store = new AppStore();
+// Analysis settings are remembered between visits (this browser only).
+const store = new AppStore({ ...createInitialState(), analysisParams: loadAnalysisParams() });
+let lastSavedParams = store.getState().analysisParams;
+store.subscribe((st) => {
+  if (st.analysisParams !== lastSavedParams) {
+    lastSavedParams = st.analysisParams;
+    saveAnalysisParams(st.analysisParams);
+  }
+});
+
+/** Saves a photo record and notes that its site has changes not yet backed up. */
+async function savePhoto(photo: PhotoRecord): Promise<void> {
+  markSiteChanged(photo.siteId);
+  await dbSavePhoto(photo);
+}
+
+// Long jobs keep the screen awake and say when they are done (tab title, optional notification).
+const wakeLock = new ScreenWakeLock();
+const doneSignal = new DoneSignal();
+/** True while "Analyse all sites" runs, so the inner open-site batch does not end the job signals. */
+let allSitesJobActive = false;
+
+// Browser storage use, refreshed after jobs; shown in the Site panel.
+let storageInfo: { usage: number; quota: number; persisted: boolean } | null = null;
+async function refreshStorageInfo(): Promise<void> {
+  try {
+    if (!navigator.storage?.estimate) return;
+    const est = await navigator.storage.estimate();
+    const persisted = navigator.storage.persisted ? await navigator.storage.persisted() : false;
+    storageInfo = { usage: est.usage ?? 0, quota: est.quota ?? 0, persisted };
+    renderSidebar(store.getState());
+  } catch {
+    /* not available: no storage line */
+  }
+}
 
 // CPU thread preference ('auto' = cores − 1), saved per browser; applies on page load.
 const cpuThreadPref = readCpuThreadPref();
@@ -418,8 +457,23 @@ async function runAllSites(): Promise<void> {
   const start = store.getState();
   if (start.batchRunning) return;
   const activeId = start.activeSiteId;
+  allSitesJobActive = true;
+  void wakeLock.acquire();
+  try {
+    await runAllSitesInner(activeId);
+  } finally {
+    allSitesJobActive = false;
+    void wakeLock.release();
+  }
+}
+
+async function runAllSitesInner(activeId: string | null): Promise<void> {
+  doneSignal.start(store.getState().photos.length);
   await runBatch();
-  if (lastBatchCancelled) return; // Cancel stops the whole job, not just the open site.
+  if (lastBatchCancelled) {
+    doneSignal.finish(true, '', false);
+    return; // Cancel stops the whole job, not just the open site.
+  }
   const others = store.getState().sites.filter((s) => s.siteId !== activeId);
   // Count pending photos per site, so the progress bar can show the whole job.
   const pendingBySite: Array<{ siteId: string; name: string; count: number }> = [];
@@ -434,8 +488,10 @@ async function runAllSites(): Promise<void> {
   const total = pendingBySite.reduce((n, s) => n + s.count, 0);
   if (total === 0) {
     store.setState({ statusMessage: 'All photos in all sites are analysed.' });
+    doneSignal.finish(false, 'All photos in all sites are analysed.', notifyWhenDone());
     return;
   }
+  doneSignal.start(total);
   batchAbortController = new AbortController();
   const analysisConfig = toAnalysisConfig(store.getState().analysisParams);
   activity = newActivity(total);
@@ -454,6 +510,7 @@ async function runAllSites(): Promise<void> {
         signal: batchAbortController.signal,
         onPhotoStart: (photo) => {
           counter += 1;
+          doneSignal.progress(counter - 1, total);
           if (activity) {
             activity = startPhoto(activity, counter, `${site.name} · ${photo.label}`);
             scheduleActivityRender();
@@ -462,12 +519,15 @@ async function runAllSites(): Promise<void> {
       });
       done += res.completed;
       failed += res.failed;
+      if (res.completed > 0) markSiteChanged(site.siteId);
     }
+    const aborted = batchAbortController.signal.aborted;
     store.setState({
-      statusMessage: batchAbortController.signal.aborted
+      statusMessage: aborted
         ? `Cancelled: ${done} of ${total} photos in other sites analysed.`
         : `All sites analysed: ${done} done, ${failed} failed in other sites.`,
     });
+    doneSignal.finish(aborted, `All sites: ${done} photos analysed${failed > 0 ? `, ${failed} failed` : ''}.`, notifyWhenDone());
   } catch (err) {
     store.setState({ statusMessage: `Batch error: ${err instanceof Error ? err.message : String(err)}` });
   } finally {
@@ -476,6 +536,8 @@ async function runAllSites(): Promise<void> {
     activity = null;
     renderActivityBar();
     storedSiteInputsCache.clear();
+    doneSignal.finish(true, '', false); // no-op unless an error ended the job early
+    void refreshStorageInfo();
     if (store.getState().dashboardScope === 'compare') void refreshComparison();
   }
 }
@@ -504,6 +566,8 @@ async function runBatch(photoIds?: string[]): Promise<void> {
   const analysisConfig = toAnalysisConfig(state.analysisParams);
   activity = newActivity(photoIds?.length ?? state.photos.length);
   let photoCounter = 0;
+  void wakeLock.acquire();
+  if (!allSitesJobActive) doneSignal.start(photoIds?.length ?? state.photos.length);
   renderActivityBar();
   store.setState({
     batchRunning: true,
@@ -525,6 +589,7 @@ async function runBatch(photoIds?: string[]): Promise<void> {
       signal: batchAbortController.signal,
       onProgress: (p) => {
         store.setState({ batchProgress: p });
+        if (!allSitesJobActive) doneSignal.progress(p.completed, p.total);
         if (activity && p.total > 0 && activity.photoTotal !== p.total) {
           activity = { ...activity, photoTotal: p.total };
           scheduleActivityRender();
@@ -548,6 +613,7 @@ async function runBatch(photoIds?: string[]): Promise<void> {
         nextSessions.set(photo.photoId, session);
         const nextStatuses = new Map(prev.photoStatuses);
         nextStatuses.set(photo.photoId, 'done');
+        markSiteChanged(site.siteId);
         const nextErrors = new Map(prev.photoErrors);
         nextErrors.delete(photo.photoId);
         store.setState({
@@ -574,6 +640,13 @@ async function runBatch(photoIds?: string[]): Promise<void> {
     });
 
     lastBatchCancelled = result.aborted;
+    if (!allSitesJobActive) {
+      doneSignal.finish(
+        result.aborted,
+        `${site.name}: ${result.completed} photo${result.completed === 1 ? '' : 's'} analysed${result.failed > 0 ? `, ${result.failed} failed` : ''}.`,
+        notifyWhenDone(),
+      );
+    }
     const errs = store.getState().photoErrors;
     const firstFailure = result.failedPhotoIds
       .map((id) => errs.get(id))
@@ -596,12 +669,17 @@ async function runBatch(photoIds?: string[]): Promise<void> {
     store.setState({ batchRunning: false, batchProgress: null });
     activity = null;
     renderActivityBar();
+    void wakeLock.release();
+    if (!allSitesJobActive) doneSignal.finish(true, '', false); // no-op unless an error ended the job early
     recomputeReports();
     await refreshCapabilities();
+    if (!allSitesJobActive) void refreshStorageInfo();
   }
 }
 
 async function persistActiveSession(photoId: string, session: AnalysisSession): Promise<void> {
+  const owner = store.getState().photos.find((p) => p.photoId === photoId);
+  if (owner) markSiteChanged(owner.siteId);
   await savePhotoResult({
     photoId,
     status: 'done',
@@ -834,6 +912,7 @@ function renderSidebar(state: AppState): void {
           )
           .join('')}
       </select>
+      ${backupLineHtml(state, analysedCount)}
       ${state.sites.length > 1 ? `<button type="button" class="btn btn-sm" style="margin-top:6px;width:100%;" data-action="analyse-all-sites" title="Analyse every photo that is not analysed yet, in all ${state.sites.length} sites" ${state.batchRunning ? 'disabled' : ''}>Analyse all sites (${state.sites.length})</button>` : ''}
     </div>
 
@@ -998,6 +1077,13 @@ function renderSidebar(state: AppState): void {
               ${self.crossOriginIsolated ? '' : '<span class="field-hint">Multi-threading is unavailable on this page (not cross-origin isolated): the CPU uses 1 thread.</span>'}
             </label>`;
           })()}
+          ${
+            typeof Notification !== 'undefined'
+              ? `<label class="checkbox-label" style="margin-top:6px;">
+                  <input type="checkbox" data-notify-done="" ${notifyWhenDone() ? 'checked' : ''} /> Notify me when a long analysis finishes ${helpButton('notifyWhenDone')}
+                </label>`
+              : ''
+          }
           <label class="checkbox-label" style="margin-top:6px;">
             <input type="checkbox" data-param="skipTilesOutsideRoi" ${p.skipTilesOutsideRoi ? 'checked' : ''} /> Skip areas outside the ROI (faster) ${helpButton('skipTilesOutsideRoi')}
           </label>
@@ -1015,6 +1101,7 @@ function renderSidebar(state: AppState): void {
                 : ''
             }
           </div>
+          <span class="field-hint" style="margin-top:6px;">Settings are remembered in this browser for your next visit.</span>
           <button type="button" class="btn btn-sm" data-action="reset-analysis-params" style="margin-top:6px;">Reset analysis settings to defaults</button>
         </details>
         <button type="button" class="btn btn-sm" data-action="run-active" style="margin-top:8px;" ${!state.activePhotoId || state.batchRunning ? 'disabled' : ''} title="Re-analyse the photo shown in the middle with these settings">Re-analyse this photo</button>
@@ -1745,6 +1832,37 @@ function renderModals(state: AppState): void {
 
 let prevRenderState: AppState | null = null;
 
+function notifyWhenDone(): boolean {
+  return readFlag(NOTIFY_PREF_KEY) && typeof Notification !== 'undefined' && Notification.permission === 'granted';
+}
+
+function formatBytes(n: number): string {
+  if (n >= 1e9) return `${(n / 1e9).toFixed(1)} GB`;
+  if (n >= 1e6) return `${Math.round(n / 1e6)} MB`;
+  return `${Math.round(n / 1e3)} kB`;
+}
+
+/** "Last backed up" line with a Back up now button, and the browser storage status. */
+function backupLineHtml(state: AppState, analysedCount: number): string {
+  const site = getActiveSite(state);
+  if (!site) return '';
+  const status = backupStatus(readBackupRecords()[site.siteId], analysedCount > 0);
+  const storage = storageInfo
+    ? `<span class="field-hint">Browser storage: ${formatBytes(storageInfo.usage)} used${storageInfo.quota > 0 ? ` of ${formatBytes(storageInfo.quota)}` : ''} · ${
+        storageInfo.persisted ? 'protected from automatic clearing' : 'the browser may clear it if space runs low'
+      } ${helpButton('backup')}</span>`
+    : '';
+  if (analysedCount === 0 && status.backedUpAt === null) return storage ? `<div class="backup-line">${storage}</div>` : '';
+  return `<div class="backup-line ${status.needsBackup ? 'needs-backup' : ''}">
+    <div class="row" style="justify-content:space-between;gap:6px;">
+      <span>${status.needsBackup ? '⚠ ' : ''}Last backed up: ${esc(status.ago)}${status.needsBackup && status.backedUpAt !== null ? ' (changed since)' : ''}</span>
+      <button type="button" class="btn btn-sm ${status.needsBackup ? 'btn-primary' : ''}" data-export="site-archive" title="Save this site (photos and results) as a .webgrainy.json project file">Back up now</button>
+    </div>
+    ${status.needsBackup ? '<span class="field-hint">Your work is stored only in this browser. Save a project file to keep it safe or move it to another computer.</span>' : ''}
+    ${storage}
+  </div>`;
+}
+
 function renderAll(state: AppState): void {
   const prev = prevRenderState;
   prevRenderState = state;
@@ -2275,9 +2393,10 @@ function attachDelegatedHandlers(): void {
         const st = store.getState();
         const activePhoto = getActivePhoto(st);
         const activeSession = activePhoto ? st.sessions.get(activePhoto.photoId) ?? null : null;
+        const exportSite = getActiveSite(st);
         void handleExportAction(
           kind,
-          getActiveSite(st),
+          exportSite,
           activePhoto,
           activeSession,
           st.siteReport,
@@ -2285,7 +2404,12 @@ function attachDelegatedHandlers(): void {
           st.psdXAxis,
           st.siteOptions.sizeMetric ?? 'bAxis',
           st.siteOptions,
-        );
+        ).then((saved) => {
+          if (saved && kind === 'site-archive' && exportSite) {
+            markSiteBackedUp(exportSite.siteId);
+            renderSidebar(store.getState());
+          }
+        });
       }
       return;
     }
@@ -2445,6 +2569,24 @@ function attachDelegatedHandlers(): void {
       }
       store.setState({ overlays: nextOv });
       void syncViewport(false);
+      return;
+    }
+
+    if (target instanceof HTMLInputElement && target.dataset['notifyDone'] !== undefined) {
+      const box = target;
+      if (!box.checked) {
+        writeFlag(NOTIFY_PREF_KEY, false);
+        return;
+      }
+      void requestNotifyPermission().then((ok) => {
+        writeFlag(NOTIFY_PREF_KEY, ok);
+        box.checked = ok;
+        store.setState({
+          statusMessage: ok
+            ? 'You will be notified when an analysis longer than a minute finishes while this tab is in the background.'
+            : 'Notifications are blocked for this site in the browser settings.',
+        });
+      });
       return;
     }
 
@@ -2694,6 +2836,7 @@ async function bootstrap(): Promise<void> {
   mountShell();
   attachDelegatedHandlers();
   store.subscribe(renderAll);
+  void refreshStorageInfo();
   renderAll(store.getState());
 
   await Promise.all([

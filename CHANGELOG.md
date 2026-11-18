@@ -6,6 +6,19 @@ All notable changes to webGrainy are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added (quality of life, batch 1)
+- **Backup reminder.** The Site panel shows when the open site was last saved as a project
+  file. It warns when results changed since then, and has a **Back up now** button. It also
+  shows browser storage use and whether the storage is protected from automatic clearing
+  (`ui/backup.ts`).
+- **Screen kept awake during analyses** (Screen Wake Lock API, re-acquired when the tab
+  becomes visible again; `ui/wakeLock.ts`).
+- **"Done" signal.** While the tab is in the background, its title shows progress
+  (`(3/12) webGrainy`) and then `✓ Done`. Optionally, a system notification fires for
+  analyses over a minute (`ui/doneSignal.ts`).
+- **Analysis settings remembered between visits.** They are checked field by field on load,
+  so stale or corrupt values fall back to the defaults (`ui/savedSettings.ts`).
+
 ### Changed (from the pre-processing benchmark, `audit/preprocessing/`)
 - **CLAHE moved under Advanced with a warning.** It lowered accuracy with both models in
   the 40-photo benchmark (and badly for some sites). Still off by default.
