@@ -30,6 +30,7 @@ import {
   normalizeGray,
   normalizeRgbJoint99,
   prepareWorkingImage,
+  upscaleWorkingImage,
   isMobileDevice,
   recommendModel,
   type ImageBufferLike,
@@ -316,12 +317,11 @@ export class ImageGrainsEngine {
       });
     }
 
-    const workingImage = prepareWorkingImage(
-      preImg.data,
-      preImg.width,
-      preImg.height,
-      config?.scaleMode ?? 'auto',
-    );
+    const fineGrainUpscale = config?.fineGrainUpscale !== undefined && config.fineGrainUpscale > 1 ? config.fineGrainUpscale : undefined;
+    const prepared = prepareWorkingImage(preImg.data, preImg.width, preImg.height, config?.scaleMode ?? 'auto');
+    // Optional enlargement for fine gravel (audit/preprocessing); results are converted back
+    // to original-photo pixels through effectiveScaleFactor, so sizes are unaffected.
+    const workingImage = fineGrainUpscale !== undefined ? upscaleWorkingImage(prepared, fineGrainUpscale) : prepared;
     throwIfAborted(signal);
 
     emit('inference', {
@@ -480,6 +480,7 @@ export class ImageGrainsEngine {
         inferencePipeline: pipeline,
         ...(inferenceOut.tiling !== undefined ? { tileSkipping: inferenceOut.tiling } : {}),
         scaleMode: config?.scaleMode ?? 'auto',
+        ...(fineGrainUpscale !== undefined ? { fineGrainUpscale } : {}),
         effectiveScaleFactor: workingImage.effectiveScaleFactor,
         applyClahe: config?.applyClahe ?? false,
         ...(config?.applyClahe ? { claheClipLimit: config.claheClipLimit ?? 2 } : {}),

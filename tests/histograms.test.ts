@@ -29,3 +29,17 @@ describe('size and shape histograms', () => {
     expect(aspectRatioCounts([0.05, 0.55, 0.99, 1, Number.NaN], 10)).toEqual([1, 0, 0, 0, 0, 1, 0, 0, 0, 2]);
   });
 });
+
+import { prepareWorkingImage, upscaleWorkingImage } from '../src/modules/imagePreprocess.js';
+describe('working image enlargement', () => {
+  it('enlarges ×1.5 and scales effectiveScaleFactor so sizes map back to the photo', () => {
+    const w = 40, h = 20;
+    const rgba = new Uint8ClampedArray(w * h * 4).fill(128);
+    const wi = upscaleWorkingImage(prepareWorkingImage(rgba, w, h, '1.0x'), 1.5);
+    expect([wi.width, wi.height, wi.effectiveScaleFactor]).toEqual([60, 30, 1.5]);
+    expect(wi.data.length).toBe(60 * 30 * 4);
+    expect(wi.data[100]).toBe(128);
+    const shrunk = upscaleWorkingImage(prepareWorkingImage(rgba, w, h, '0.5x'), 1.5);
+    expect(shrunk.effectiveScaleFactor).toBeCloseTo(0.75, 10);
+  });
+});

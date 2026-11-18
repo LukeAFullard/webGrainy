@@ -382,6 +382,27 @@ export function prepareWorkingImage(
 
   const newWidth = Math.max(1, Math.round(width * targetScale));
   const newHeight = Math.max(1, Math.round(height * targetScale));
+  const out = resizeRgbaBilinear(rgba, width, height, newWidth, newHeight);
+
+  return {
+    data: out,
+    width: newWidth,
+    height: newHeight,
+    originalWidth: width,
+    originalHeight: height,
+    effectiveScaleFactor: newWidth / width,
+    scaleModeApplied,
+  };
+}
+
+/** Bilinear resize of an RGBA image (pixel-centre aligned; used to shrink and to enlarge). */
+export function resizeRgbaBilinear(
+  rgba: Uint8ClampedArray,
+  width: number,
+  height: number,
+  newWidth: number,
+  newHeight: number,
+): Uint8ClampedArray {
   const out = new Uint8ClampedArray(newWidth * newHeight * 4);
 
   const x0Arr = new Int32Array(newWidth);
@@ -445,15 +466,25 @@ export function prepareWorkingImage(
       );
     }
   }
+  return out;
+}
 
+/**
+ * Enlarges the working image by `factor` (e.g. 1.5) so that fine grains are larger for the
+ * network. Measurements stay correct because `effectiveScaleFactor` is multiplied by the same
+ * factor (every result is converted back to original-photo pixels with it). Tested in
+ * audit/preprocessing: helps U-Net on fine gravel (working median b-axis < 20 px).
+ */
+export function upscaleWorkingImage(wi: WorkingImageResult, factor: number): WorkingImageResult {
+  if (!(factor > 1) || !Number.isFinite(factor)) return wi;
+  const newWidth = Math.max(1, Math.round(wi.width * factor));
+  const newHeight = Math.max(1, Math.round(wi.height * factor));
   return {
-    data: out,
+    ...wi,
+    data: resizeRgbaBilinear(wi.data, wi.width, wi.height, newWidth, newHeight),
     width: newWidth,
     height: newHeight,
-    originalWidth: width,
-    originalHeight: height,
-    effectiveScaleFactor: newWidth / width,
-    scaleModeApplied,
+    effectiveScaleFactor: wi.effectiveScaleFactor * (newWidth / wi.width),
   };
 }
 

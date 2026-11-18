@@ -45,3 +45,30 @@ describe('session caches', () => {
     expect(s.getExtendedGrains().length).toBe(2);
   });
 });
+
+describe('fine-grain hint', () => {
+  function sessionWith(side: number, modelId: string, fineGrainUpscale?: number): AnalysisSession {
+    const w = 200, h = 200;
+    const masks = new Int32Array(w * h);
+    let id = 0;
+    for (let gy = 0; gy < 6; gy++) for (let gx = 0; gx < 6; gx++) {
+      id++;
+      for (let y = 5 + gy * 30; y < 5 + gy * 30 + side; y++) for (let x = 5 + gx * 30; x < 5 + gx * 30 + side; x++) masks[y * w + x] = id;
+    }
+    return new AnalysisSession({
+      workingImage: { data: new Uint8ClampedArray(w * h * 4), width: w, height: h, originalWidth: w, originalHeight: h, effectiveScaleFactor: 1, scaleModeApplied: 'full' } as never,
+      recommendation: { model: 'unet', confidence: 1, reason: 't', metrics: {} } as never,
+      masks,
+      workingGrains: computeGrainMorphometrics(masks, w, h, 2),
+      provenance: { appVersion: 't', ortVersion: 't', analyzedAt: '', modelId, modelFile: '', modelRevision: '', modelSha256: '', ...(fineGrainUpscale ? { fineGrainUpscale } : {}) } as never,
+    });
+  }
+  it('suggests enlarging only for fine U-Net results that are not enlarged yet', () => {
+    expect(sessionWith(10, 'ig2_unet_fp32').getFineGrainHint().suggest).toBe(true); // b ≈ 11.5 px
+    expect(sessionWith(25, 'ig2_unet_fp32').getFineGrainHint().suggest).toBe(false); // coarse
+    expect(sessionWith(10, 'ig2_cpsam_int8_wo_fp32scale').getFineGrainHint().suggest).toBe(false); // CP-SAM
+    const done = sessionWith(10, 'ig2_unet_fp32', 1.5).getFineGrainHint();
+    expect(done.suggest).toBe(false);
+    expect(done.enlarged).toBe(1.5);
+  });
+});

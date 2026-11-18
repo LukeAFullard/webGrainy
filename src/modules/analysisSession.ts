@@ -83,6 +83,9 @@ function rescaleGrainToOriginal(
  * Reactive analysis session holding segmentation masks, morphometrics,
  * undo/redo edit history, spatial calibration, statistics, and synchronous exports.
  */
+/** Working-image median b-axis (px) below which enlarging ×1.5 helped U-Net (audit/preprocessing). */
+export const FINE_GRAIN_MEDIAN_PX = 20;
+
 export class AnalysisSession {
   readonly workingImage: WorkingImageResult;
   readonly recommendation: ModelRecommendation;
@@ -883,6 +886,26 @@ export class AnalysisSession {
       );
     }
     return this.derivedCache.extended;
+  }
+
+  /**
+   * Whether to suggest re-analysing enlarged ×1.5 for fine gravel. Rule from the
+   * pre-processing benchmark (audit/preprocessing): U-Net results, not already enlarged,
+   * at least 5 grains, and a median b-axis below 20 px in the working image. On the 40-image
+   * benchmark this raised outline accuracy (PQ +0.025, 95% CI +0.007 to +0.049) with no site
+   * getting worse. The threshold was chosen after seeing the test set, so it is offered, not
+   * applied automatically.
+   */
+  getFineGrainHint(): { suggest: boolean; medianWorkingBPx: number | null; enlarged: number | null } {
+    const enlarged = this.provenance?.fineGrainUpscale ?? null;
+    const b = this.workingGrains.filter((g) => !g.touchesBorder).map((g) => g.bAxisPx).sort((x, y) => x - y);
+    const median = b.length > 0 ? (b.length % 2 ? b[(b.length - 1) / 2]! : (b[b.length / 2 - 1]! + b[b.length / 2]!) / 2) : null;
+    const isUnet = this.provenance?.modelId === 'ig2_unet_fp32';
+    return {
+      suggest: isUnet && enlarged === null && b.length >= 5 && median !== null && median < FINE_GRAIN_MEDIAN_PX,
+      medianWorkingBPx: median,
+      enlarged,
+    };
   }
 
   /** Shape measures of the grains that count in the statistics (inside the ROI, border rule). */
