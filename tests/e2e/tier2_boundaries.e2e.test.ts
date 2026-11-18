@@ -29,7 +29,6 @@ import {
 } from '../../src/index.js';
 import type {
   DownloadProgress,
-  ExecutionProvider,
   GrainMorphometrics,
   InferenceProgress,
   ModelKind,

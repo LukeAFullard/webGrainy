@@ -25,9 +25,7 @@ import {
 } from '../../src/index.js';
 import type {
   CachedModelInfo,
-  ExecutionProvider,
   GrainMorphometrics,
-  ModelId,
   ModelKind,
 } from '../../src/types/index.js';
 import {

@@ -53,7 +53,7 @@ chart registry (`chartBox`) moves with the dashboard.
 **Done when.** Each panel has snapshot-style tests for its key states (empty, analysing,
 analysed, errors); the smoke test and screenshots are unchanged.
 
-## Step 3 — Event handling split by area ☐
+## Step 3 — Event handling split by area ☑
 
 The ~600-line delegated click/change handler becomes a small router plus handlers per area:
 `events/toolbar.ts`, `events/sidebar.ts`, `events/dashboard.ts`, `events/dialogs.ts`, each
@@ -62,7 +62,7 @@ calling the actions from Step 1.
 **Done when.** Each handler module is tested with synthetic events; no handler exceeds
 ~150 lines.
 
-## Step 4 — Split `siteAnalysis.ts` ☐
+## Step 4 — Split `siteAnalysis.ts` ☑
 
 | New module | Contents |
 |---|---|
@@ -76,7 +76,7 @@ calling the actions from Step 1.
 **Done when.** All site tests pass unchanged; site exports are byte-identical to the previous
 build on the comparison fixture.
 
-## Step 5 — Housekeeping ☐
+## Step 5 — Housekeeping ☑
 
 - Remove the now-unused legacy chart helpers and dead code found during the moves.
 - Update the README module map.

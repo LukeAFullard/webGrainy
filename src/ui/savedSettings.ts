@@ -64,11 +64,6 @@ export function saveAnalysisParams(params: UiAnalysisParams, store: Pick<Storage
   }
 }
 
-/** True when the remembered settings differ from the tested defaults. */
-export function differsFromDefaults(params: UiAnalysisParams): boolean {
-  return JSON.stringify(sanitizeAnalysisParams(params)) !== JSON.stringify(defaultAnalysisParams());
-}
-
 function safeStorage(): Storage | null {
   try {
     return typeof localStorage !== 'undefined' ? localStorage : null;

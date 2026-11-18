@@ -1,9 +1,5 @@
-import type { ModelId } from '../types/index.js';
 import {
-  clearModelCache,
   checkStorageQuota,
-  deleteCachedModel,
-  downloadModel,
 } from '../modules/modelCache.js';
 import {
   ImageGrainsEngine,
@@ -13,19 +9,15 @@ import {
   listSites,
   saveSite,
   type PhotoRecord,
-  type SiteRecord,
 } from '../modules/projectStorage.js';
 import { rectifyPerspective } from '../modules/roiAndRectify.js';
 import {
   buildSiteInputs,
   effectiveRoi,
 } from '../modules/siteWorkspace.js';
-import {
-  comparisonCsv,
-} from '../modules/siteComparison.js';
 import { CanvasViewport } from './canvasViewport.js';
 import { parseJpegExifMetadata } from './exif.js';
-import { isHelpKey, renderHelpModalHtml } from './help.js';
+import { renderHelpModalHtml } from './help.js';
 import { wasmThreadsFor } from '../modules/onnxInference.js';
 import { GUIDE_HIDDEN_KEY, guideInputFrom, guideSteps, renderGuideHtml } from './onboarding.js';
 import { EXPORTED_ONCE_KEY, readFlag, writeFlag } from './prefs.js';
@@ -39,6 +31,10 @@ import { renderToolbarHtml } from './panels/toolbar.js';
 import { renderDashboardHtml } from './panels/dashboard.js';
 import { renderCompareHtml } from './panels/compare.js';
 import { esc, type ChartRegistry } from './panels/html.js';
+import type { ControlLike, ElementLike, EventContext } from './events/context.js';
+import { routeChange, routeClick } from './events/router.js';
+import { handleDashboardKey } from './events/dashboard.js';
+import { handleUndoRedoKey } from './events/toolbar.js';
 import { createWorkspaceActions, getActivePhoto, getActiveSite, rectifyWithCanvas } from './workspaceActions.js';
 import { applyEvent, newActivity, renderActivityHtml, startPhoto, type ActivityState } from './progress.js';
 import { CPU_THREADS_KEY, readCpuThreadPref } from './cpuThreads.js';
@@ -54,10 +50,7 @@ import {
 import {
   AppStore,
   createInitialState,
-  defaultAnalysisParams,
   type AppState,
-  type DashboardTab,
-  type EditorToolMode,
 } from './state.js';
 
 /** Remembers which `details[data-keep-open]` blocks are open across innerHTML re-renders. */
@@ -263,15 +256,10 @@ const {
   loadSiteData,
   createDefaultOrLoadSites,
   handleFilesAdded,
-  runBatch,
-  runAllSites,
-  setFineGrainUpscale,
   persistActiveSession,
   applyCalibrationToActive,
   applyRectificationToActive,
-  refreshComparison,
 } = actions;
-const modelAbortControllers = new Map<ModelId, AbortController>();
 let lastAnnouncedMsg = '';
 
 // Persistent DOM containers created once
@@ -778,503 +766,97 @@ function mountShell(): void {
   );
 }
 
-function attachDelegatedHandlers(): void {
-  document.addEventListener('click', (e) => {
-    const target = e.target as HTMLElement | null;
-    if (!target) return;
-
-    const helpBtn = target.closest<HTMLElement>('[data-help], [data-open-help]');
-    if (helpBtn) {
-      // Help buttons sit inside <label>s: don't let the click toggle the control.
-      e.preventDefault();
-      const key = helpBtn.dataset['help'];
-      store.setState({ activeModal: 'help', helpTopic: key && isHelpKey(key) ? key : null });
-      return;
-    }
-
-    const modalBtn = target.closest<HTMLElement>('[data-open-modal]');
-    if (modalBtn) {
-      const m = modalBtn.dataset['openModal'] as AppState['activeModal'];
-      store.setState({ activeModal: m });
-      if (m === 'export' && !exportedOnce) {
+/** Screen hooks and preferences the event handlers need (see events/context.ts). */
+function eventContext(): EventContext {
+  return {
+    store,
+    actions,
+    storage: { saveSite, listSites },
+    ui: {
+      renderSidebar: () => renderSidebar(store.getState()),
+      syncViewport,
+      viewport: () => viewport,
+      openPhotoPicker: () => fileInputEl.click(),
+      openArchivePicker: () => archiveInputEl.click(),
+      askSiteName,
+      scrollSidebarToTop: () => {
+        sidebarEl.scrollTop = 0;
+      },
+      downloadChart,
+      download: triggerBlobDownload,
+      runExport,
+      setFieldValue: (id, value) => {
+        const el = document.getElementById(id) as HTMLInputElement | HTMLSelectElement | null;
+        if (el) el.value = value;
+      },
+      focusTab: (tab) => document.getElementById(`tab-${tab}`)?.focus(),
+    },
+    prefs: {
+      setGuideHidden: (hidden) => {
+        guideHidden = hidden;
+        writeFlag(GUIDE_HIDDEN_KEY, hidden);
+      },
+      noteExportOpened: () => {
+        if (exportedOnce) return;
         exportedOnce = true;
         writeFlag(EXPORTED_ONCE_KEY, true);
         renderSidebar(store.getState());
-      }
-      return;
-    }
-
-    if (target.closest('[data-action="close-modal"]')) {
-      store.setState({ activeModal: null });
-      return;
-    }
-
-    const actionEl = target.closest<HTMLElement>('[data-action]');
-    if (actionEl) {
-      const act = actionEl.dataset['action'];
-      const state = store.getState();
-      if (act === 'fine-grain-rerun' || act === 'fine-grain-undo') {
-        const photo = getActivePhoto(state);
-        if (photo && !state.batchRunning) void setFineGrainUpscale(photo, act === 'fine-grain-rerun' ? 1.5 : undefined);
-        return;
-      }
-      if (act === 'open-site') {
-        const id = actionEl.dataset['siteId'];
-        if (id) {
-          store.setState({ dashboardScope: 'photo' });
-          void loadSiteData(id);
+      },
+      setNotifyWhenDone: (on) => writeFlag(NOTIFY_PREF_KEY, on),
+      requestNotifyPermission,
+      saveCpuThreads: (value) => {
+        try {
+          if (value === 'auto') localStorage.removeItem(CPU_THREADS_KEY);
+          else localStorage.setItem(CPU_THREADS_KEY, value);
+        } catch {
+          /* storage blocked: the choice lasts for this view only */
         }
-        return;
-      }
-      if (act === 'toggle-compare-px') {
-        store.setState({ compareInPixels: (actionEl as HTMLInputElement).checked });
-        void refreshComparison();
-        return;
-      }
-      if (act === 'analyse-all-sites') {
-        void runAllSites();
-        return;
-      }
-      if (act === 'export-comparison') {
-        const cmp = state.comparison;
-        if (cmp && cmp.sites.length > 0) {
-          const csv = comparisonCsv(cmp.sites, {
-            ...baseExportMetadata(),
-            poolingMode: state.siteOptions.poolingMode,
-            sizeMetric: state.siteOptions.sizeMetric ?? 'bAxis',
-            sites: cmp.sites.map((s) => s.name).join('; '),
-          });
-          triggerBlobDownload(new Blob([csv], { type: 'text/csv' }), 'site_comparison.csv');
-        }
-        return;
-      }
-      if (act === 'add-photos') {
-        fileInputEl.click();
-        return;
-      }
-      if (act === 'hide-guide' || act === 'show-guide') {
-        guideHidden = act === 'hide-guide';
-        writeFlag(GUIDE_HIDDEN_KEY, guideHidden);
-        if (act === 'show-guide') store.setState({ activeModal: null });
-        renderSidebar(store.getState());
-        if (act === 'show-guide') sidebarEl.scrollTop = 0;
-        return;
-      }
-      if (act === 'reset-analysis-params') {
-        store.setState({ analysisParams: defaultAnalysisParams(), statusMessage: 'Analysis settings reset to the tested defaults.' });
-        return;
-      }
-      if (act === 'new-site') {
-        const name = askSiteName('Name for the new site (e.g. river and reach):', `Field Site ${state.sites.length + 1}`);
-        if (name === null) return;
-        const newSite: SiteRecord = {
-          siteId: makeId('site'),
-          name,
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-          options: state.siteOptions,
-          photoOrder: [],
-        };
-        void saveSite(newSite).then(async () => {
-          const sites = await listSites();
-          store.setState({ sites });
-          await loadSiteData(newSite.siteId);
-        });
-      } else if (act === 'rename-site') {
-        const site = getActiveSite(state);
-        if (!site) return;
-        const name = askSiteName('New name for this site:', site.name);
-        if (name === null || name === site.name) return;
-        const renamed: SiteRecord = { ...site, name, updatedAt: Date.now() };
-        void saveSite(renamed).then(async () => {
-          store.setState({ sites: await listSites(), statusMessage: `Site renamed to "${name}".` });
-          if (store.getState().dashboardScope === 'compare') void refreshComparison();
-        });
-      } else if (act === 'import-archive') {
-        archiveInputEl.click();
-      } else if (act === 'run-batch') {
-        void runBatch();
-      } else if (act === 'cancel-batch') {
-        actions.cancelBatch();
-      } else if (act === 'run-active' && state.activePhotoId) {
-        void runBatch([state.activePhotoId]);
-      } else if (act === 'fit-view') {
-        viewport?.fitToScreen();
-      } else if (act === 'finish-shape') {
-        viewport?.finishShape();
-      } else if (act === 'cancel-shape') {
-        viewport?.cancelShape();
-      } else if (act === 'close-inspector') {
-        store.setState({ inspectedGrainId: null });
-        void syncViewport(false);
-      } else if (act === 'undo' || act === 'redo') {
-        const photo = getActivePhoto(state);
-        const sess = photo ? state.sessions.get(photo.photoId) : null;
-        if (photo && sess) {
-          const ok = act === 'undo' ? sess.undo() : sess.redo();
-          if (ok) {
-            void persistActiveSession(photo.photoId, sess);
-            recomputeReports();
-            viewport?.markMasksDirty();
-          }
-        }
-      } else if (act === 'commit-merge') {
-        const photo = getActivePhoto(state);
-        const sess = photo ? state.sessions.get(photo.photoId) : null;
-        if (photo && sess && state.selectedGrainIds.size >= 2) {
-          if (sess.mergeGrains(Array.from(state.selectedGrainIds))) {
-            store.setState({ selectedGrainIds: new Set() });
-            void persistActiveSession(photo.photoId, sess);
-            recomputeReports();
-            viewport?.markMasksDirty();
-          }
-        }
-      } else if (act === 'copy-scale-all') {
-        const active = getActivePhoto(state);
-        if (active?.calibration) {
-          const cal = active.calibration;
-          void Promise.all(
-            state.photos.map(async (ph) => {
-              if (ph.photoId === active.photoId) return ph;
-              const updated: PhotoRecord = { ...ph, calibration: cal };
-              await savePhoto(updated);
-              const sess = state.sessions.get(ph.photoId);
-              if (sess) {
-                sess.setCalibration(cal);
-                await persistActiveSession(ph.photoId, sess);
-              }
-              return updated;
-            }),
-          ).then((photos) => {
-            store.setState({
-              photos,
-              statusMessage: `Copied scale (${cal.mmPerPx.toFixed(4)} mm/px) to all photos in site`,
-            });
-            recomputeReports();
-          });
-        }
-      } else if (act === 'download-model') {
-        const modelId = actionEl.dataset['modelId'] as ModelId;
-        const ctrl = new AbortController();
-        modelAbortControllers.set(modelId, ctrl);
-        const nextDl = new Map(state.modelDownloads);
-        nextDl.set(modelId, { active: true, percent: 0, loadedBytes: 0, totalBytes: 0, speedMBps: 0 });
-        store.setState({ modelDownloads: nextDl });
-        void downloadModel(modelId, {
-          signal: ctrl.signal,
-          requireCache: true,
-          onProgress: (prog) => {
-            const m = new Map(store.getState().modelDownloads);
-            m.set(modelId, { active: true, ...prog });
-            store.setState({ modelDownloads: m });
-          },
-        })
-          .then(async () => {
-            const m = new Map(store.getState().modelDownloads);
-            m.delete(modelId);
-            store.setState({ modelDownloads: m });
-            await refreshCapabilities();
-          })
-          .catch((err) => {
-            const m = new Map(store.getState().modelDownloads);
-            m.set(modelId, {
-              active: false,
-              percent: 0,
-              loadedBytes: 0,
-              totalBytes: 0,
-              speedMBps: 0,
-              error: err instanceof Error ? err.message : String(err),
-            });
-            store.setState({ modelDownloads: m });
-          })
-          .finally(() => {
-            modelAbortControllers.delete(modelId);
-          });
-      } else if (act === 'cancel-model-dl') {
-        const modelId = actionEl.dataset['modelId'] as ModelId;
-        modelAbortControllers.get(modelId)?.abort();
-      } else if (act === 'delete-model') {
-        const modelId = actionEl.dataset['modelId'] as ModelId;
-        void deleteCachedModel(modelId).then(() => refreshCapabilities());
-      } else if (act === 'clear-model-cache') {
-        void clearModelCache().then(() => refreshCapabilities());
-      }
-      return;
-    }
+      },
+    },
+    makeId,
+  };
+}
 
-    const exportBtn = target.closest<HTMLElement>('[data-export]');
-    if (exportBtn) {
-      const kind = exportBtn.dataset['export'];
-      if (kind) {
-        const st = store.getState();
-        const activePhoto = getActivePhoto(st);
-        const activeSession = activePhoto ? st.sessions.get(activePhoto.photoId) ?? null : null;
-        const exportSite = getActiveSite(st);
-        void handleExportAction(
-          kind,
-          exportSite,
-          activePhoto,
-          activeSession,
-          st.siteReport,
-          buildSiteInputs(st),
-          st.psdXAxis,
-          st.siteOptions.sizeMetric ?? 'bAxis',
-          st.siteOptions,
-        ).then((saved) => {
-          if (saved && kind === 'site-archive' && exportSite) {
-            markSiteBackedUp(exportSite.siteId);
-            renderSidebar(store.getState());
-          }
-        });
-      }
-      return;
+/** Runs an export; a saved project file counts as a backup of the site. */
+function runExport(kind: string): void {
+  const st = store.getState();
+  const activePhoto = getActivePhoto(st);
+  const activeSession = activePhoto ? st.sessions.get(activePhoto.photoId) ?? null : null;
+  const exportSite = getActiveSite(st);
+  void handleExportAction(
+    kind,
+    exportSite,
+    activePhoto,
+    activeSession,
+    st.siteReport,
+    buildSiteInputs(st),
+    st.psdXAxis,
+    st.siteOptions.sizeMetric ?? 'bAxis',
+    st.siteOptions,
+  ).then((saved) => {
+    if (saved && kind === 'site-archive' && exportSite) {
+      markSiteBackedUp(exportSite.siteId);
+      renderSidebar(store.getState());
     }
+  });
+}
 
-    const toolBtn = target.closest<HTMLElement>('[data-tool]');
-    if (toolBtn) {
-      const tool = toolBtn.dataset['tool'] as EditorToolMode;
-      store.setState({
-        activeTool: tool,
-        selectedGrainIds: new Set(),
-        pendingCalibrationPoints: [],
-        pendingRectifyPoints: [],
-      });
-      void syncViewport(false);
-      return;
-    }
-
-    const tabBtn = target.closest<HTMLElement>('[data-tab]');
-    if (tabBtn) {
-      store.setState({ dashboardTab: tabBtn.dataset['tab'] as DashboardTab });
-      return;
-    }
-
-    const scopeBtn = target.closest<HTMLElement>('[data-scope]');
-    if (scopeBtn) {
-      const scope = scopeBtn.dataset['scope'] as 'site' | 'photo' | 'compare';
-      store.setState({ dashboardScope: scope });
-      if (scope === 'compare') void refreshComparison();
-      return;
-    }
-
-    const psdXBtn = target.closest<HTMLElement>('[data-psd-x]');
-    if (psdXBtn) {
-      store.setState({ psdXAxis: psdXBtn.dataset['psdX'] as 'mm' | 'phi' });
-      return;
-    }
-
-    const chartDl = target.closest<HTMLElement>('[data-chart-dl]');
-    if (chartDl) {
-      void downloadChart(chartDl.dataset['chartDl'] ?? '', chartDl.dataset['fmt'] === 'png' ? 'png' : 'svg');
-      return;
-    }
-
-    const phiBtn = target.closest<HTMLElement>('[data-phi-step]');
-    if (phiBtn) {
-      store.setState({ histogramStepPhi: Number(phiBtn.dataset['phiStep']) === 1 ? 1.0 : 0.5 });
-      return;
-    }
-
-    if (target.closest('#photo-dropzone')) {
-      fileInputEl.click();
-      return;
-    }
-
-    const photoRow = target.closest<HTMLElement>('[data-photo-id]');
-    if (photoRow && !(target instanceof HTMLInputElement)) {
-      const pid = photoRow.dataset['photoId'];
-      if (pid && pid !== store.getState().activePhotoId) {
-        store.setState({
-          activePhotoId: pid,
-          selectedGrainIds: new Set(),
-          inspectedGrainId: null,
-        });
-        recomputeReports();
-        void syncViewport(true);
-      }
-    }
+function attachDelegatedHandlers(): void {
+  const ctx = eventContext();
+  document.addEventListener('click', (e) => {
+    const target = e.target as HTMLElement | null;
+    if (!target) return;
+    routeClick(target as unknown as ElementLike, () => e.preventDefault(), ctx);
   });
 
   dashboardEl.addEventListener('keydown', (e) => {
-    const target = e.target as HTMLElement | null;
-    const tab = target?.closest<HTMLElement>('[role="tab"][data-tab]');
-    if (!tab) return;
-
-    const order: DashboardTab[] = ['psd', 'adequacy', 'shape', 'fabric'];
-    const current = tab.dataset['tab'] as DashboardTab;
-    const idx = order.indexOf(current);
-    if (idx === -1) return;
-
-    let nextIdx: number | null = null;
-    if (e.key === 'ArrowRight') {
-      nextIdx = (idx + 1) % order.length;
-    } else if (e.key === 'ArrowLeft') {
-      nextIdx = (idx - 1 + order.length) % order.length;
-    } else if (e.key === 'Home') {
-      nextIdx = 0;
-    } else if (e.key === 'End') {
-      nextIdx = order.length - 1;
-    }
-    if (nextIdx === null) return;
-
-    e.preventDefault();
-    const nextTab = order[nextIdx]!;
-    store.setState({ dashboardTab: nextTab });
-    document.getElementById(`tab-${nextTab}`)?.focus();
+    handleDashboardKey(e.target as unknown as ElementLike | null, e, ctx);
   });
 
   document.addEventListener('change', (e) => {
     const target = e.target as HTMLElement | null;
     if (!target) return;
-
-    if (target.id === 'site-select') {
-      const siteId = (target as HTMLSelectElement).value;
-      void loadSiteData(siteId);
-      return;
-    }
-
-    if (target.id === 'cal-preset') {
-      const val = (target as HTMLSelectElement).value;
-      if (val !== 'custom') {
-        const [len, unit] = val.split('|');
-        const lenEl = document.getElementById('cal-length') as HTMLInputElement | null;
-        const unitEl = document.getElementById('cal-unit') as HTMLSelectElement | null;
-        if (lenEl && len) lenEl.value = len;
-        if (unitEl && unit) unitEl.value = unit;
-      }
-      return;
-    }
-
-    if (target instanceof HTMLInputElement && target.dataset['photoFacies']) {
-      const pid = target.dataset['photoFacies'];
-      const st = store.getState();
-      const ph = st.photos.find((p) => p.photoId === pid);
-      const w = Number(target.value);
-      if (ph && Number.isFinite(w) && w >= 0) {
-        const updated: PhotoRecord = { ...ph, faciesWeight: w };
-        void savePhoto(updated);
-        store.setState({ photos: st.photos.map((p) => (p.photoId === pid ? updated : p)) });
-        recomputeReports();
-      }
-      return;
-    }
-
-    if (target instanceof HTMLInputElement && target.dataset['toggleInclude']) {
-      const pid = target.dataset['toggleInclude'];
-      const st = store.getState();
-      const ph = st.photos.find((p) => p.photoId === pid);
-      if (ph) {
-        const updated: PhotoRecord = { ...ph, included: target.checked };
-        void savePhoto(updated);
-        store.setState({
-          photos: st.photos.map((p) => (p.photoId === pid ? updated : p)),
-        });
-        recomputeReports();
-      }
-      return;
-    }
-
-    const ovKey = target.dataset['ov'];
-    if (ovKey) {
-      const st = store.getState();
-      const nextOv = { ...st.overlays };
-      if (ovKey === 'opacity' && target instanceof HTMLInputElement) {
-        nextOv.opacity = Number(target.value);
-      } else if (target instanceof HTMLInputElement) {
-        (nextOv as Record<string, unknown>)[ovKey] = target.checked;
-      }
-      store.setState({ overlays: nextOv });
-      void syncViewport(false);
-      return;
-    }
-
-    if (target instanceof HTMLInputElement && target.dataset['notifyDone'] !== undefined) {
-      const box = target;
-      if (!box.checked) {
-        writeFlag(NOTIFY_PREF_KEY, false);
-        return;
-      }
-      void requestNotifyPermission().then((ok) => {
-        writeFlag(NOTIFY_PREF_KEY, ok);
-        box.checked = ok;
-        store.setState({
-          statusMessage: ok
-            ? 'You will be notified when an analysis longer than a minute finishes while this tab is in the background.'
-            : 'Notifications are blocked for this site in the browser settings.',
-        });
-      });
-      return;
-    }
-
-    if (target instanceof HTMLSelectElement && target.dataset['cpuThreads'] !== undefined) {
-      try {
-        if (target.value === 'auto') localStorage.removeItem(CPU_THREADS_KEY);
-        else localStorage.setItem(CPU_THREADS_KEY, target.value);
-      } catch {
-        /* storage blocked: the choice lasts for this view only */
-      }
-      store.setState({ statusMessage: 'CPU threads saved. Reload the page to apply (the CPU runtime fixes its thread count when it starts).' });
-      return;
-    }
-
-    const paramKey = target.dataset['param'];
-    if (paramKey) {
-      const st = store.getState();
-      const next = { ...st.analysisParams };
-      if (target instanceof HTMLInputElement && target.type === 'checkbox') {
-        (next as Record<string, unknown>)[paramKey] = target.checked;
-      } else if (target instanceof HTMLInputElement && target.type === 'number') {
-        (next as Record<string, unknown>)[paramKey] = Number(target.value);
-      } else if (target instanceof HTMLSelectElement) {
-        (next as Record<string, unknown>)[paramKey] = target.value;
-      }
-      store.setState({ analysisParams: next });
-      if (paramKey === 'excludeBorder' && target instanceof HTMLInputElement) {
-        // Border exclusion only filters statistics, so apply it to analysed photos now.
-        for (const sess of st.sessions.values()) sess.setExcludeBorder(target.checked);
-        recomputeReports();
-        void syncViewport(false);
-      }
-      return;
-    }
-
-    const compareSite = target instanceof HTMLInputElement ? target.dataset['compareSite'] : undefined;
-    if (compareSite !== undefined) {
-      const st = store.getState();
-      const current = new Set(st.compareSiteIds ?? st.sites.map((s) => s.siteId));
-      if ((target as HTMLInputElement).checked) current.add(compareSite);
-      else current.delete(compareSite);
-      store.setState({ compareSiteIds: st.sites.map((s) => s.siteId).filter((id) => current.has(id)) });
-      void refreshComparison();
-      return;
-    }
-
-    const siteOptKey = target.dataset['siteOpt'];
-    if (siteOptKey) {
-      const st = store.getState();
-      const nextOpts = { ...st.siteOptions };
-      if (target instanceof HTMLInputElement && target.type === 'checkbox') {
-        (nextOpts as Record<string, unknown>)[siteOptKey] = target.checked;
-      } else if (target instanceof HTMLInputElement && target.type === 'number') {
-        (nextOpts as Record<string, unknown>)[siteOptKey] = Number(target.value);
-      } else if (target instanceof HTMLSelectElement) {
-        (nextOpts as Record<string, unknown>)[siteOptKey] =
-          target.dataset['numeric'] === 'true' ? Number(target.value) : target.value;
-      }
-      const activeSite = getActiveSite(st);
-      if (activeSite) {
-        void saveSite({ ...activeSite, options: nextOpts, updatedAt: Date.now() });
-      }
-      store.setState({ siteOptions: nextOpts });
-      if (siteOptKey === 'maxExcludedFraction') {
-        actions.clearStoredSiteInputs(); // other sites' ROIs use the tolerance too
-        for (const ph of st.photos) {
-          if (ph.roiConfig) st.sessions.get(ph.photoId)?.setRoiConfig(effectiveRoi(ph, nextOpts));
-        }
-      }
-      recomputeReports();
-      void syncViewport(false);
-    }
+    routeChange(target as unknown as ControlLike, ctx);
   });
 
   fileInputEl.addEventListener('change', () => {
@@ -1313,32 +895,7 @@ function attachDelegatedHandlers(): void {
   });
 
   // Keyboard shortcuts Ctrl+Z / Ctrl+Y
-  window.addEventListener('keydown', (e) => {
-    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'z') {
-      const st = store.getState();
-      const ph = getActivePhoto(st);
-      const sess = ph ? st.sessions.get(ph.photoId) : null;
-      if (ph && sess && sess.undo()) {
-        e.preventDefault();
-        void persistActiveSession(ph.photoId, sess);
-        recomputeReports();
-        viewport?.markMasksDirty();
-      }
-    } else if (
-      (e.ctrlKey || e.metaKey) &&
-      (e.key.toLowerCase() === 'y' || (e.shiftKey && e.key.toLowerCase() === 'z'))
-    ) {
-      const st = store.getState();
-      const ph = getActivePhoto(st);
-      const sess = ph ? st.sessions.get(ph.photoId) : null;
-      if (ph && sess && sess.redo()) {
-        e.preventDefault();
-        void persistActiveSession(ph.photoId, sess);
-        recomputeReports();
-        viewport?.markMasksDirty();
-      }
-    }
-  });
+  window.addEventListener('keydown', (e) => handleUndoRedoKey(e, ctx));
 
   lightSchemeQuery?.addEventListener('change', () => {
     renderDashboard(store.getState());

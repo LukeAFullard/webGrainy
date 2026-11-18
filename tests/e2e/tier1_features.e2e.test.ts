@@ -42,7 +42,6 @@ import {
 import type {
   CachedModelInfo,
   DownloadProgress,
-  ExecutionProvider,
   GrainMorphometrics,
   InferenceProgress,
   ModelKind,

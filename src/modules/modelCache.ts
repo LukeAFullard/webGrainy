@@ -52,10 +52,6 @@ export function setModelIntegrityEnforcement(enabled: boolean): void {
   integrityEnforced = enabled;
 }
 
-export function isModelIntegrityEnforced(): boolean {
-  return integrityEnforced;
-}
-
 /** Lower-case hex SHA-256 of `data` via WebCrypto. */
 export async function sha256Hex(data: ArrayBuffer | Uint8Array): Promise<string> {
   const subtle = globalThis.crypto?.subtle;

@@ -1067,7 +1067,6 @@ describe('Tier 5: Adversarial Hardening — ImageGrains 2.0 Web', () => {
 
     it('MaskEditHistory enforces maxEntries eviction and clamps maxEntries <= 0', () => {
       const w = 10;
-      const h = 10;
 
       const clamped = new MaskEditHistory(0);
       clamped.push({

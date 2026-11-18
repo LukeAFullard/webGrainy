@@ -1,0 +1,235 @@
+import { readdirSync, readFileSync } from 'node:fs';
+import { describe, expect, it, vi } from 'vitest';
+import type { SiteRecord } from '../src/modules/projectStorage.js';
+import { AppStore, createInitialState, defaultAnalysisParams } from '../src/ui/state.js';
+import type { ControlLike, ElementLike, EventContext } from '../src/ui/events/context.js';
+import { ACTIONS, routeChange, routeClick } from '../src/ui/events/router.js';
+import { handleDashboardKey, nextTabForKey } from '../src/ui/events/dashboard.js';
+import { handleUndoRedoKey } from '../src/ui/events/toolbar.js';
+
+/** Minimal element: attributes, a parent, and `closest` for the selectors the handlers use. */
+interface FakeEl extends ControlLike {
+  attrs: Record<string, string>;
+  parent: FakeEl | null;
+}
+
+function camel(attr: string): string {
+  return attr.slice(5).replace(/-([a-z])/g, (_m, c: string) => c.toUpperCase());
+}
+
+function matches(e: FakeEl, selector: string): boolean {
+  const sel = selector.trim();
+  if (sel.startsWith('#')) return e.id === sel.slice(1);
+  const parts = [...sel.matchAll(/\[([\w-]+)(?:="([^"]*)")?\]/g)];
+  return parts.length > 0 && parts.every(([, name, value]) => name! in e.attrs && (value === undefined || e.attrs[name!] === value));
+}
+
+function el(attrs: Record<string, string> = {}, opts: Partial<Pick<FakeEl, 'id' | 'tagName' | 'type' | 'value' | 'checked' | 'parent'>> = {}): FakeEl {
+  const dataset: Record<string, string> = {};
+  for (const [k, v] of Object.entries(attrs)) if (k.startsWith('data-')) dataset[camel(k)] = v;
+  const e: FakeEl = {
+    attrs,
+    dataset,
+    parent: opts.parent ?? null,
+    tagName: opts.tagName ?? 'BUTTON',
+    value: opts.value ?? '',
+    ...(opts.id !== undefined ? { id: opts.id } : {}),
+    ...(opts.type !== undefined ? { type: opts.type } : {}),
+    ...(opts.checked !== undefined ? { checked: opts.checked } : {}),
+    closest(selector: string): ElementLike | null {
+      for (let cur: FakeEl | null = e; cur; cur = cur.parent) {
+        if (selector.split(',').some((s) => matches(cur!, s))) return cur;
+      }
+      return null;
+    },
+  };
+  return e;
+}
+
+const site = { siteId: 's1', name: 'Reach 1', createdAt: 0, updatedAt: 0, options: { poolingMode: 'physical-area' }, photoOrder: [] } as unknown as SiteRecord;
+
+function setup() {
+  const store = new AppStore({ ...createInitialState(), sites: [site], activeSiteId: 's1' });
+  const actions = {
+    runBatch: vi.fn(async () => {}),
+    runAllSites: vi.fn(async () => {}),
+    cancelBatch: vi.fn(),
+    loadSiteData: vi.fn(async () => {}),
+    refreshComparison: vi.fn(async () => {}),
+    recomputeReports: vi.fn(),
+    savePhoto: vi.fn(async () => {}),
+    persistActiveSession: vi.fn(async () => {}),
+    setFineGrainUpscale: vi.fn(async () => {}),
+    clearStoredSiteInputs: vi.fn(),
+    refreshCapabilities: vi.fn(async () => {}),
+  };
+  const ui = {
+    renderSidebar: vi.fn(),
+    syncViewport: vi.fn(async () => {}),
+    viewport: () => null,
+    openPhotoPicker: vi.fn(),
+    openArchivePicker: vi.fn(),
+    askSiteName: vi.fn((_m: string, current: string) => `${current} renamed`),
+    scrollSidebarToTop: vi.fn(),
+    downloadChart: vi.fn(async () => {}),
+    download: vi.fn(),
+    runExport: vi.fn(),
+    setFieldValue: vi.fn(),
+    focusTab: vi.fn(),
+  };
+  const prefs = {
+    setGuideHidden: vi.fn(),
+    noteExportOpened: vi.fn(),
+    setNotifyWhenDone: vi.fn(),
+    requestNotifyPermission: vi.fn(async () => true),
+    saveCpuThreads: vi.fn(),
+  };
+  const storage = { saveSite: vi.fn(async () => {}), listSites: vi.fn(async () => [site]) };
+  const ctx = { store, actions, ui, prefs, storage, makeId: (p: string) => `${p}_new` } as unknown as EventContext;
+  return { store, actions, ui, prefs, storage, ctx };
+}
+
+const click = (target: FakeEl, ctx: EventContext) => {
+  const preventDefault = vi.fn();
+  routeClick(target, preventDefault, ctx);
+  return preventDefault;
+};
+
+describe('event routing', () => {
+  it('every data-action in the UI has a handler', () => {
+    const files = ['src/ui/main.ts', 'src/ui/modals.ts', 'src/ui/onboarding.ts', 'src/ui/progress.ts', ...readdirSync('src/ui/panels').map((f) => `src/ui/panels/${f}`)];
+    const used = new Set(files.flatMap((f) => [...readFileSync(f, 'utf8').matchAll(/data-action="([a-z-]+)"/g)].map((m) => m[1]!)));
+    expect(used.size).toBeGreaterThan(20);
+    for (const act of used) if (act !== 'close-modal') expect(ACTIONS, act).toHaveProperty(act);
+  });
+
+  it('help buttons open the help topic and do not toggle their label', () => {
+    const { ctx, store } = setup();
+    const label = el({}, { tagName: 'LABEL' });
+    const prevent = click(el({ 'data-help': 'flowThreshold' }, { parent: label }), ctx);
+    expect(prevent).toHaveBeenCalled();
+    expect(store.getState()).toMatchObject({ activeModal: 'help', helpTopic: 'flowThreshold' });
+    click(el({ 'data-help': 'not-a-topic' }), ctx);
+    expect(store.getState().helpTopic).toBeNull();
+  });
+
+  it('opens and closes dialogs; opening Export marks the guide step', () => {
+    const { ctx, store, prefs } = setup();
+    click(el({ 'data-open-modal': 'export' }), ctx);
+    expect(store.getState().activeModal).toBe('export');
+    expect(prefs.noteExportOpened).toHaveBeenCalledTimes(1);
+    click(el({ 'data-action': 'close-modal' }), ctx);
+    expect(store.getState().activeModal).toBeNull();
+  });
+
+  it('dispatches data-action from a nested element, and ignores unknown actions', () => {
+    const { ctx, store, actions } = setup();
+    const btn = el({ 'data-action': 'run-active' });
+    click(el({}, { tagName: 'SPAN', parent: btn }), ctx);
+    expect(actions.runBatch).not.toHaveBeenCalled(); // no photo open
+    store.setState({ activePhotoId: 'p1' });
+    click(btn, ctx);
+    expect(actions.runBatch).toHaveBeenCalledWith(['p1']);
+    click(el({ 'data-action': 'no-such-thing' }), ctx);
+    click(el({ 'data-action': 'analyse-all-sites' }), ctx);
+    expect(actions.runAllSites).toHaveBeenCalledTimes(1);
+  });
+
+  it('renames and creates sites through the storage', async () => {
+    const { ctx, storage, actions } = setup();
+    click(el({ 'data-action': 'rename-site' }), ctx);
+    expect(storage.saveSite).toHaveBeenCalledWith(expect.objectContaining({ siteId: 's1', name: 'Reach 1 renamed' }));
+    click(el({ 'data-action': 'new-site' }), ctx);
+    await vi.waitFor(() => expect(actions.loadSiteData).toHaveBeenCalledWith('site_new'));
+  });
+
+  it('exports, tools, scope and tabs', () => {
+    const { ctx, store, ui, actions } = setup();
+    click(el({ 'data-export': 'site-archive' }), ctx);
+    expect(ui.runExport).toHaveBeenCalledWith('site-archive');
+    store.setState({ selectedGrainIds: new Set([3]) });
+    click(el({ 'data-tool': 'calibrate' }), ctx);
+    expect(store.getState().activeTool).toBe('calibrate');
+    expect(store.getState().selectedGrainIds.size).toBe(0);
+    click(el({ 'data-scope': 'compare' }), ctx);
+    expect(store.getState().dashboardScope).toBe('compare');
+    expect(actions.refreshComparison).toHaveBeenCalled();
+    click(el({ 'data-tab': 'fabric' }), ctx);
+    expect(store.getState().dashboardTab).toBe('fabric');
+    click(el({ 'data-chart-dl': 'psd', 'data-fmt': 'png' }), ctx);
+    expect(ui.downloadChart).toHaveBeenCalledWith('psd', 'png');
+    click(el({ 'data-phi-step': '1' }), ctx);
+    expect(store.getState().histogramStepPhi).toBe(1);
+  });
+
+  it('selects a photo from its row, but not when its checkbox is clicked', () => {
+    const { ctx, store, ui } = setup();
+    const row = el({ 'data-photo-id': 'p2' });
+    click(el({ 'data-toggle-include': 'p2' }, { tagName: 'INPUT', parent: row }), ctx);
+    expect(store.getState().activePhotoId).toBeNull();
+    click(el({}, { tagName: 'SPAN', parent: row }), ctx);
+    expect(store.getState().activePhotoId).toBe('p2');
+    expect(ui.syncViewport).toHaveBeenCalledWith(true);
+  });
+
+  it('keyboard: arrows move between result tabs; Ctrl+Z undoes', () => {
+    expect(nextTabForKey('psd', 'ArrowLeft')).toBe('fabric');
+    expect(nextTabForKey('fabric', 'ArrowRight')).toBe('psd');
+    expect(nextTabForKey('shape', 'Home')).toBe('psd');
+    expect(nextTabForKey('psd', 'x')).toBeNull();
+    const { ctx, store, ui, actions } = setup();
+    const prevent = vi.fn();
+    handleDashboardKey(el({ role: 'tab', 'data-tab': 'psd' }), { key: 'End', preventDefault: prevent }, ctx);
+    expect(store.getState().dashboardTab).toBe('fabric');
+    expect(ui.focusTab).toHaveBeenCalledWith('fabric');
+
+    const sess = { undo: vi.fn(() => true), redo: vi.fn(() => false) };
+    store.setState({ photos: [{ photoId: 'p1' } as never], activePhotoId: 'p1', sessions: new Map([['p1', sess as never]]) });
+    const e = { key: 'z', ctrlKey: true, metaKey: false, shiftKey: false, preventDefault: vi.fn() };
+    handleUndoRedoKey(e, ctx);
+    expect(sess.undo).toHaveBeenCalled();
+    expect(e.preventDefault).toHaveBeenCalled();
+    expect(actions.persistActiveSession).toHaveBeenCalledWith('p1', sess);
+    const r = { key: 'y', ctrlKey: true, metaKey: false, shiftKey: false, preventDefault: vi.fn() };
+    handleUndoRedoKey(r, ctx);
+    expect(r.preventDefault).not.toHaveBeenCalled(); // nothing to redo
+  });
+});
+
+describe('form changes', () => {
+  it('analysis settings: numbers, checkboxes and selects', () => {
+    const { ctx, store } = setup();
+    routeChange(el({ 'data-param': 'flowThreshold' }, { tagName: 'INPUT', type: 'number', value: '0.6' }), ctx);
+    routeChange(el({ 'data-param': 'skipTilesOutsideRoi' }, { tagName: 'INPUT', type: 'checkbox', checked: false }), ctx);
+    routeChange(el({ 'data-param': 'model' }, { tagName: 'SELECT', value: 'cpsam' }), ctx);
+    expect(store.getState().analysisParams).toEqual({ ...defaultAnalysisParams(), flowThreshold: 0.6, skipTilesOutsideRoi: false, model: 'cpsam' });
+  });
+
+  it('site statistics options are saved with the site', () => {
+    const { ctx, store, storage, actions } = setup();
+    routeChange(el({ 'data-site-opt': 'confidenceLevel', 'data-numeric': 'true' }, { tagName: 'SELECT', value: '0.9' }), ctx);
+    expect(store.getState().siteOptions.confidenceLevel).toBe(0.9);
+    expect(storage.saveSite).toHaveBeenCalledWith(expect.objectContaining({ options: expect.objectContaining({ confidenceLevel: 0.9 }) }));
+    routeChange(el({ 'data-site-opt': 'maxExcludedFraction' }, { tagName: 'INPUT', type: 'number', value: '0.2' }), ctx);
+    expect(actions.clearStoredSiteInputs).toHaveBeenCalled();
+  });
+
+  it('compare checkboxes, site switch, CPU threads, notifications, Display menu, calibration preset', async () => {
+    const { ctx, store, actions, prefs, ui } = setup();
+    store.setState({ sites: [site, { ...site, siteId: 's2', name: 'Reach 2' }] });
+    routeChange(el({ 'data-compare-site': 's1' }, { tagName: 'INPUT', type: 'checkbox', checked: false }), ctx);
+    expect(store.getState().compareSiteIds).toEqual(['s2']);
+    routeChange(el({}, { tagName: 'SELECT', id: 'site-select', value: 's2' }), ctx);
+    expect(actions.loadSiteData).toHaveBeenCalledWith('s2');
+    routeChange(el({ 'data-cpu-threads': '' }, { tagName: 'SELECT', value: '4' }), ctx);
+    expect(prefs.saveCpuThreads).toHaveBeenCalledWith('4');
+    const box = el({ 'data-notify-done': '' }, { tagName: 'INPUT', type: 'checkbox', checked: true });
+    routeChange(box, ctx);
+    await vi.waitFor(() => expect(prefs.setNotifyWhenDone).toHaveBeenCalledWith(true));
+    routeChange(el({ 'data-ov': 'opacity' }, { tagName: 'INPUT', type: 'range', value: '0.3' }), ctx);
+    expect(store.getState().overlays.opacity).toBe(0.3);
+    routeChange(el({}, { tagName: 'SELECT', id: 'cal-preset', value: '300|mm' }), ctx);
+    expect(ui.setFieldValue).toHaveBeenCalledWith('cal-length', '300');
+    expect(ui.setFieldValue).toHaveBeenCalledWith('cal-unit', 'mm');
+  });
+});
