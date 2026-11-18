@@ -894,12 +894,12 @@ export function renderLandingHtml(state: AppState, view: LandingView): string {
       <div class="landing-footer-inner">
         <div class="landing-footer-copy">
           <strong>webGrainy — ImageGrains 2.0 Web</strong>
-          <span>Browser-based, offline-capable gravel and sediment grain-size analysis. Your photos stay on your device.</span>
+          <span>Free, open-source (BSD-3-Clause) grain-size analysis hosted on GitHub Pages. No cookies or trackers; photos stay on your device. Models download from Hugging Face only when you choose to analyse or pre-download.</span>
         </div>
         <div class="landing-footer-actions">
           <button type="button" class="btn btn-primary" data-action="add-photos">Add Photos &amp; Start</button>
           <button type="button" class="btn" data-action="enter-workspace">Open Workspace</button>
-          <button type="button" class="btn" data-open-modal="about">About &amp; Citations</button>
+          <button type="button" class="btn" data-open-modal="about">Privacy, About &amp; Citations</button>
         </div>
       </div>
     </footer>

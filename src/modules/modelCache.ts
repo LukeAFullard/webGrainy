@@ -331,7 +331,11 @@ export async function downloadModel(
   const normalizedBase = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
   const url = `${normalizedBase}${fileName}`;
 
-  const response = await fetch(url, { signal });
+  const response = await fetch(url, {
+    signal,
+    credentials: 'omit',
+    referrerPolicy: 'no-referrer',
+  });
   if (!response.ok) {
     throw new Error(
       `Failed to download model "${modelId}" from ${url}: HTTP ${response.status} ${response.statusText}`,

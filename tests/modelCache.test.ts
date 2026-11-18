@@ -280,7 +280,11 @@ describe('modelCache', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock).toHaveBeenCalledWith(
       `${DEFAULT_HF_BASE_URL}ig2_unet_fp32.onnx`,
-      expect.objectContaining({ signal: undefined }),
+      expect.objectContaining({
+        signal: undefined,
+        credentials: 'omit',
+        referrerPolicy: 'no-referrer',
+      }),
     );
 
     expect(new Uint8Array(buffer)).toEqual(
