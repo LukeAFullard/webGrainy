@@ -580,6 +580,29 @@ pixel classes before calibration); the Shape tab shows the aspect-ratio distribu
 | **16/32-bit PNG mask** | The grain label image (each grain a different value), for GIS or Python. |
 | **GeoJSON / SVG contours** | Grain outlines in original photo coordinates. |
 
+### Backups: your work lives only in this browser
+
+Photos and results are stored in this browser's storage on this computer, not online.
+Clearing browsing data, a private window, or the browser freeing space can delete them.
+The **Site** panel shows **Last backed up** for the open site. It turns into a warning when
+the site has results that changed since its last backup (or was never backed up).
+**Back up now** saves the `.webgrainy.json` project (the same file as *Export → .webgrainy.json
+archive*). Below it, the storage line shows how much space is used and whether the browser
+agreed to protect it from automatic clearing.
+
+### Long analyses
+
+- **The screen stays awake** during an analysis where the browser supports it, so a phone
+  or laptop does not sleep and pause it.
+- **The tab title shows progress** while you are in another tab, e.g. `(3/12) webGrainy`, then
+  `✓ Done` (or `Stopped`).
+- **Notify me when a long analysis finishes** (Analysis settings → Advanced) shows a
+  system notification for analyses over one minute that finish while the tab is in the
+  background. The browser asks for permission the first time.
+- **Analysis settings are remembered** in this browser for your next visit. **Reset analysis
+  settings to defaults** returns to the tested configuration. Settings saved by an older
+  version that no longer apply fall back to their defaults.
+
 ### The extra statistics (Results → PSD → More statistics)
 
 | Statistic | Definition | Typical use |

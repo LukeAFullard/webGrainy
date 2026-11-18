@@ -135,6 +135,20 @@ export const HELP_TOPICS = {
     default: 'Auto: one fewer than the processor threads, at most 8 (e.g. 3 on a 4-thread computer)',
     when: 'Lower it if the computer or phone becomes unresponsive or hot during analysis. Raise it (up to all threads) on a computer you are not using for anything else, for a little more speed; more than the number of physical cores rarely helps. Has no effect when a graphics card (WebGPU) runs the model.',
   },
+  notifyWhenDone: {
+    title: 'Notify me when a long analysis finishes',
+    group: 'Advanced analysis',
+    what: 'Shows a system notification when an analysis that took more than a minute finishes while this tab is in the background. The browser asks for permission the first time. Whether or not this is on, the tab title shows progress, e.g. "(3/12) webGrainy", and "✓ Done" at the end while you are in another tab.',
+    default: 'Off',
+    when: 'Turn it on for long batches (CP-SAM, many photos) so you can work elsewhere. The screen is kept awake during an analysis where the browser allows it, but switching tabs or minimising can still slow it down on some devices.',
+  },
+  backup: {
+    title: 'Backups and browser storage',
+    group: 'Site statistics',
+    what: 'Your photos and results are stored only in this browser, on this computer. Clearing browsing data, a private window, or the browser freeing space can delete them. "Back up now" saves the open site (photos, results, scale, ROI and edits) as one .webgrainy.json project file; Open loads it again here or on another computer. "Last backed up" turns into a warning when the site has changed since its last backup.',
+    default: 'webGrainy asks the browser to protect its storage from automatic clearing; the storage line says whether the browser agreed',
+    when: 'Back up after each analysis session and before clearing browsing data, changing computers, or uninstalling the app.',
+  },
   skipTilesOutsideRoi: {
     title: 'Skip areas outside the ROI',
     group: 'Advanced analysis',

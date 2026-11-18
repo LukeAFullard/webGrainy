@@ -7,7 +7,7 @@ Status key: ☐ to do · ◐ in progress · ☑ done (with PR link).
 
 ---
 
-## 1. Backup reminder and storage status ☐
+## 1. Backup reminder and storage status ☑ (batch 1)
 
 **Problem.** Projects are stored only in this browser (IndexedDB). Clearing site data, using a
 different browser or computer, or the browser evicting storage loses every photo and result,
@@ -24,7 +24,7 @@ with no warning.
 **Done when.** A site with new results shows the reminder; backing up clears it; the reminder
 reappears after further changes. Tests for the "needs backup" rule.
 
-## 2. Keep the screen awake during analyses ☐
+## 2. Keep the screen awake during analyses ☑ (batch 1)
 
 **Problem.** Cellpose-SAM on a CPU takes minutes per photo. Laptops and phones dim and sleep,
 and browsers throttle or pause hidden tabs, so long batches stall.
@@ -36,7 +36,7 @@ visible again mid-batch. Silently skip where unsupported.
 **Done when.** Wake lock is held exactly while a batch runs (unit test with a mocked API;
 checked in Chromium).
 
-## 3. "Done" signal for long analyses ☐
+## 3. "Done" signal for long analyses ☑ (batch 1)
 
 **Problem.** Users switch to other work during long batches and do not know when they finish.
 
@@ -49,7 +49,7 @@ checked in Chromium).
 **Done when.** Title updates during a batch and resets when the tab is focused; notification
 is only requested after the user opts in.
 
-## 4. Remember analysis settings between visits ☐
+## 4. Remember analysis settings between visits ☑ (batch 1)
 
 **Problem.** Statistics settings are saved per site, but the analysis settings (model,
 CP-SAM weights, scale mode, fine-tuning, advanced) reset to defaults on every reload.
