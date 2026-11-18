@@ -5,7 +5,7 @@ import { AppStore, createInitialState, defaultAnalysisParams } from '../src/ui/s
 import type { ControlLike, ElementLike, EventContext } from '../src/ui/events/context.js';
 import { ACTIONS, routeChange, routeClick } from '../src/ui/events/router.js';
 import { handleDashboardKey, nextTabForKey } from '../src/ui/events/dashboard.js';
-import { handleUndoRedoKey } from '../src/ui/events/toolbar.js';
+import { handleShortcutKey } from '../src/ui/events/shortcuts.js';
 
 /** Minimal element: attributes, a parent, and `closest` for the selectors the handlers use. */
 interface FakeEl extends ControlLike {
@@ -76,6 +76,7 @@ function setup() {
     runExport: vi.fn(),
     setFieldValue: vi.fn(),
     focusTab: vi.fn(),
+    isTyping: vi.fn(() => false),
   };
   const prefs = {
     setGuideHidden: vi.fn(),
@@ -186,12 +187,12 @@ describe('event routing', () => {
     const sess = { undo: vi.fn(() => true), redo: vi.fn(() => false) };
     store.setState({ photos: [{ photoId: 'p1' } as never], activePhotoId: 'p1', sessions: new Map([['p1', sess as never]]) });
     const e = { key: 'z', ctrlKey: true, metaKey: false, shiftKey: false, preventDefault: vi.fn() };
-    handleUndoRedoKey(e, ctx);
+    handleShortcutKey(e, ctx);
     expect(sess.undo).toHaveBeenCalled();
     expect(e.preventDefault).toHaveBeenCalled();
     expect(actions.persistActiveSession).toHaveBeenCalledWith('p1', sess);
     const r = { key: 'y', ctrlKey: true, metaKey: false, shiftKey: false, preventDefault: vi.fn() };
-    handleUndoRedoKey(r, ctx);
+    handleShortcutKey(r, ctx);
     expect(r.preventDefault).not.toHaveBeenCalled(); // nothing to redo
   });
 });

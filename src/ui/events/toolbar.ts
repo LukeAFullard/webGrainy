@@ -1,6 +1,7 @@
 /** Toolbar and photo events: tools, shape buttons, undo/redo, merge, scale copy, Display menu. */
 import type { PhotoRecord } from '../../modules/projectStorage.js';
 import type { EditorToolMode } from '../state.js';
+import { navGrainsFor, navigateGrains, type GrainNavMode } from '../grainNav.js';
 import { getActivePhoto } from '../workspaceActions.js';
 import { isInput, type ActionHandler, type ControlLike, type ElementLike, type EventContext } from './context.js';
 
@@ -20,6 +21,20 @@ export function undoRedo(ctx: EventContext, which: 'undo' | 'redo'): boolean {
 }
 
 export const toolbarActions: Record<string, ActionHandler> = {
+  'grain-nav': (el, ctx) => {
+    const st = ctx.store.getState();
+    const photo = getActivePhoto(st);
+    const sess = photo ? st.sessions.get(photo.photoId) : null;
+    if (!sess) return;
+    const target = navigateGrains(navGrainsFor(sess), st.inspectedGrainId, (el.dataset['nav'] ?? 'next') as GrainNavMode);
+    if (!target) {
+      ctx.store.setState({ statusMessage: 'No flagged grains on this photo.' });
+      return;
+    }
+    ctx.store.setState({ inspectedGrainId: target.id, ...(st.activeTool !== 'inspect' ? { activeTool: 'inspect' as const } : {}) });
+    ctx.ui.focusGrain(target.id);
+    void ctx.ui.syncViewport(false);
+  },
   'fit-view': (_el, ctx) => ctx.ui.viewport()?.fitToScreen(),
   'finish-shape': (_el, ctx) => ctx.ui.viewport()?.finishShape(),
   'cancel-shape': (_el, ctx) => ctx.ui.viewport()?.cancelShape(),
@@ -101,23 +116,4 @@ export function handleToolbarChange(target: ControlLike, ctx: EventContext): boo
     return true;
   }
   return false;
-}
-
-export interface KeyLike {
-  key: string;
-  ctrlKey: boolean;
-  metaKey: boolean;
-  shiftKey: boolean;
-  preventDefault(): void;
-}
-
-/** Ctrl/Cmd+Z undo, Ctrl/Cmd+Y or Ctrl/Cmd+Shift+Z redo. */
-export function handleUndoRedoKey(e: KeyLike, ctx: EventContext): void {
-  const mod = e.ctrlKey || e.metaKey;
-  const k = e.key.toLowerCase();
-  if (mod && !e.shiftKey && k === 'z') {
-    if (undoRedo(ctx, 'undo')) e.preventDefault();
-  } else if (mod && (k === 'y' || (e.shiftKey && k === 'z'))) {
-    if (undoRedo(ctx, 'redo')) e.preventDefault();
-  }
 }

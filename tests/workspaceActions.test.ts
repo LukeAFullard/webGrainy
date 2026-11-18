@@ -44,6 +44,10 @@ function fakeWorld(opts: { failIds?: string[]; abortAfter?: number } = {}) {
     savePhoto: async (p: PhotoRecord) => void photos.set(p.photoId, p),
     savePhotoResult: async (r: PhotoResultRecord) => void results.set(r.photoId, r),
     saveSite: async (s: SiteRecord) => void sites.set(s.siteId, s),
+    deletePhoto: async (id: string) => {
+      photos.delete(id);
+      results.delete(id);
+    },
     runSiteBatch: async (o: BatchRunOptions): Promise<BatchRunResult> => {
       batchCalls.push({ siteId: o.siteId, ...(o.photoIds ? { photoIds: o.photoIds } : {}) });
       const queue = [...photos.values()].filter(
@@ -186,6 +190,24 @@ describe('workspace actions', () => {
     expect(world.batchCalls).toEqual([{ siteId: 'a', photoIds: ['p1'] }]);
     await actions.setFineGrainUpscale(store.getState().photos.find((p) => p.photoId === 'p1')!, undefined);
     expect(world.photos.get('p1')!.analysisConfig?.fineGrainUpscale).toBeUndefined();
+  });
+
+  it('bulk include/exclude and delete', async () => {
+    const world = fakeWorld();
+    world.sites.set('a', site('a', ['p1', 'p2', 'p3']));
+    for (const id of ['p1', 'p2', 'p3']) world.photos.set(id, photo(id, 'a'));
+    const { store, actions, changed } = setup(world);
+    await actions.createDefaultOrLoadSites();
+    await actions.setPhotosIncluded(['p1', 'p3'], false);
+    expect(store.getState().photos.map((p) => p.included)).toEqual([false, true, false]);
+    expect(world.photos.get('p3')!.included).toBe(false);
+    store.setState({ selectedPhotoIds: new Set(['p1', 'p2']) });
+    await actions.deletePhotos(['p1', 'p2']);
+    expect(store.getState().photos.map((p) => p.photoId)).toEqual(['p3']);
+    expect(world.sites.get('a')!.photoOrder).toEqual(['p3']);
+    expect(world.photos.has('p1')).toBe(false);
+    expect(store.getState().selectedPhotoIds.size).toBe(0);
+    expect(changed).toContain('a');
   });
 
   it('adds image files to the open site and skips other files', async () => {

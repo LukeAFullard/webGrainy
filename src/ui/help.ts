@@ -343,7 +343,7 @@ export function renderHelpModalHtml(focus: HelpKey | null): string {
         <button type="button" class="btn btn-sm" data-action="close-modal" autofocus>Close</button>
       </div>
       <div class="modal-body">
-        <p class="help-intro"><strong>New here?</strong> <button type="button" class="btn btn-sm" data-action="show-guide">Show the getting-started guide</button></p>
+        <p class="help-intro"><strong>New here?</strong> <button type="button" class="btn btn-sm" data-action="show-guide">Show the getting-started guide</button> <button type="button" class="btn btn-sm" data-open-modal="shortcuts">Keyboard shortcuts</button> (or press <kbd>?</kbd>)</p>
         <p class="help-intro"><strong>Using a GPU?</strong> The <a href="./gpucheck.html" target="_blank" rel="noopener">GPU check</a> page tests whether your graphics card gives the same results as the CPU (please send us the report).</p>
         <p class="help-intro">The defaults are the settings that were tested. For most photos: calibrate the scale, check the outlines, and set the field-count cutoff if you compare with a pebble count. Change other settings only for the reasons below, and note what you changed (exports record all settings).</p>
         ${focus ? topicHtml(focus, true) : ''}

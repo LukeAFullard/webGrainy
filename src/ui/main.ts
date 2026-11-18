@@ -34,7 +34,9 @@ import { esc, type ChartRegistry } from './panels/html.js';
 import type { ControlLike, ElementLike, EventContext } from './events/context.js';
 import { routeChange, routeClick } from './events/router.js';
 import { handleDashboardKey } from './events/dashboard.js';
-import { handleUndoRedoKey } from './events/toolbar.js';
+import { handleShortcutKey } from './events/shortcuts.js';
+import { renderShortcutsModalHtml } from './shortcuts.js';
+import { countFlagged, grainFlags, navGrainsFor } from './grainNav.js';
 import { createWorkspaceActions, getActivePhoto, getActiveSite, rectifyWithCanvas } from './workspaceActions.js';
 import { applyEvent, newActivity, renderActivityHtml, startPhoto, type ActivityState } from './progress.js';
 import { CPU_THREADS_KEY, readCpuThreadPref } from './cpuThreads.js';
@@ -382,6 +384,25 @@ function renderViewportExtras(state: AppState): void {
           }
           <div>Border: ${grain.touchesBorder ? 'Yes (excluded)' : 'No'}</div>
         </div>
+        ${(() => {
+          const flags = grainFlags({
+            id: grain.id,
+            areaPx: grain.areaPx,
+            touchesBorder: grain.touchesBorder,
+            ...(ext ? { aspectRatio: ext.aspectRatio } : {}),
+            excluded: session.getRoiFilterResult()?.excludedGrainIds.has(grain.id) ?? false,
+          });
+          return flags.length > 0 ? `<div class="inspector-flags">Check: ${esc(flags.join('; '))}</div>` : '';
+        })()}
+        <div class="inspector-nav" role="group" aria-label="Grain navigation">
+          <button type="button" class="btn btn-xs" data-action="grain-nav" data-nav="prev" title="Previous grain">◀ Prev</button>
+          <button type="button" class="btn btn-xs" data-action="grain-nav" data-nav="next" title="Next grain">Next ▶</button>
+          <button type="button" class="btn btn-xs" data-action="grain-nav" data-nav="largest" title="Show the largest grain">Largest</button>
+          ${(() => {
+            const n = countFlagged(navGrainsFor(session));
+            return `<button type="button" class="btn btn-xs" data-action="grain-nav" data-nav="flagged" title="Next grain touching the edge, outside the ROI, or very elongated" ${n === 0 ? 'disabled' : ''}>Next flagged (${n})</button>`;
+          })()}
+        </div>
       `;
       return;
     }
@@ -446,6 +467,8 @@ function renderModals(state: AppState): void {
     appDialogEl.innerHTML = renderAboutModalHtml();
   } else if (state.activeModal === 'help') {
     appDialogEl.innerHTML = renderHelpModalHtml(state.helpTopic);
+  } else if (state.activeModal === 'shortcuts') {
+    appDialogEl.innerHTML = renderShortcutsModalHtml();
   } else {
     if (appDialogEl.open) {
       appDialogEl.close();
@@ -493,6 +516,9 @@ function renderAll(state: AppState): void {
     prev.batchProgress !== state.batchProgress ||
     prev.analysisParams !== state.analysisParams ||
     prev.photoErrors !== state.photoErrors ||
+    prev.photoFilter !== state.photoFilter ||
+    prev.photoSelectMode !== state.photoSelectMode ||
+    prev.selectedPhotoIds !== state.selectedPhotoIds ||
     prev.siteOptions.poolingMode !== state.siteOptions.poolingMode
   ) {
     renderSidebar(state);
@@ -779,6 +805,7 @@ function eventContext(): EventContext {
       openPhotoPicker: () => fileInputEl.click(),
       openArchivePicker: () => archiveInputEl.click(),
       askSiteName,
+      confirm: (message) => window.confirm(message),
       scrollSidebarToTop: () => {
         sidebarEl.scrollTop = 0;
       },
@@ -790,6 +817,13 @@ function eventContext(): EventContext {
         if (el) el.value = value;
       },
       focusTab: (tab) => document.getElementById(`tab-${tab}`)?.focus(),
+      focusGrain: (id) => viewport?.focusOnGrain(id),
+      isTyping: () => {
+        const el = document.activeElement;
+        if (!el) return false;
+        const tag = el.tagName.toLowerCase();
+        return tag === 'input' || tag === 'textarea' || tag === 'select' || (el as HTMLElement).isContentEditable;
+      },
     },
     prefs: {
       setGuideHidden: (hidden) => {
@@ -894,8 +928,8 @@ function attachDelegatedHandlers(): void {
     }
   });
 
-  // Keyboard shortcuts Ctrl+Z / Ctrl+Y
-  window.addEventListener('keydown', (e) => handleUndoRedoKey(e, ctx));
+  // Keyboard shortcuts (table in shortcuts.ts; '?' shows them)
+  window.addEventListener('keydown', (e) => handleShortcutKey(e, ctx));
 
   lightSchemeQuery?.addEventListener('change', () => {
     renderDashboard(store.getState());

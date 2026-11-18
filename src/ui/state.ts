@@ -1,4 +1,5 @@
 import type { ComparedSite } from '../modules/siteComparison.js';
+import type { PhotoFilter } from './photoList.js';
 import type { HelpKey } from './help.js';
 import { DEFAULT_POSTPROCESS_OPTIONS } from '../modules/postprocessCore.js';
 import type {
@@ -34,7 +35,7 @@ export type EditorToolMode =
   | 'rectify';
 
 export type DashboardTab = 'psd' | 'adequacy' | 'shape' | 'fabric';
-export type ModalKind = 'models' | 'export' | 'about' | 'help' | null;
+export type ModalKind = 'models' | 'export' | 'about' | 'help' | 'shortcuts' | null;
 export type SwStatus = 'unsupported' | 'registering' | 'ready' | 'error';
 
 export interface OverlaySettings {
@@ -105,6 +106,11 @@ export interface AppState {
   activeTool: EditorToolMode;
   overlays: OverlaySettings;
   selectedGrainIds: Set<number>;
+  /** Which photos the photo list shows. */
+  photoFilter: PhotoFilter;
+  /** Photo list in select mode (checkboxes for bulk actions). */
+  photoSelectMode: boolean;
+  selectedPhotoIds: Set<string>;
   inspectedGrainId: number | null;
   pendingCalibrationPoints: Point2D[];
   pendingRectifyPoints: Point2D[];
@@ -178,6 +184,9 @@ export function createInitialState(): AppState {
       loupeZoom: 2,
     },
     selectedGrainIds: new Set(),
+    photoFilter: 'all',
+    photoSelectMode: false,
+    selectedPhotoIds: new Set(),
     inspectedGrainId: null,
     pendingCalibrationPoints: [],
     pendingRectifyPoints: [],

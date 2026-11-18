@@ -6,6 +6,25 @@ All notable changes to webGrainy are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added (quality of life, batch 2: items 6–8)
+- **Photo list tools.**
+  - A summary line ("8 photos · 6 analysed · 2 not calibrated · 1 failed") whose parts filter the list.
+  - **Select** mode with bulk include / leave out / re-analyse / delete. Delete asks first and gives the count.
+  - New modules: `ui/photoList.ts`, plus `deletePhotos` and `setPhotosIncluded` in `workspaceActions`.
+- **Grain inspector navigation.**
+  - Prev / Next / Largest / Next flagged. Flagged means touching the edge, outside the ROI, or b/a < 0.35, and the card shows why.
+  - The view pans and zooms to the grain (`ui/grainNav.ts`, `focusOnGrain`).
+  - "Largest" and "Flagged (n)" are also in the Inspect tool bar.
+- **Keyboard shortcuts** (`ui/shortcuts.ts`, a single table used by the key handler and the overlay):
+  - **?** opens the overlay;
+  - **[ ]** move between photos;
+  - **1–9** pick tools;
+  - Ctrl+Z / Ctrl+Y undo and redo.
+  - Shortcuts no longer act while you type in a field, so a text field's own undo works there.
+
+### Fixed
+- Pressing a button on the grain inspector card also counted as a tap on the photo under it, which could select another grain or close the card.
+
 ### Changed (code organisation; no change in results)
 - **App code split into modules** (`docs/plans/MODULE_REFACTOR_PLAN.md`, steps 1–5):
   - app actions in `ui/workspaceActions.ts`;

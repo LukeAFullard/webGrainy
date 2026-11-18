@@ -74,7 +74,7 @@ citation block.
 **Done when.** The report opens, prints to A4 on one or two pages, and contains the same
 numbers as the summary CSV (test compares them).
 
-## 6. Photo list tools ☐
+## 6. Photo list tools ☑ (batch 2)
 
 **Build.**
 - A summary line under the photo list: "8 photos · 6 analysed · 2 not calibrated · 1 failed",
@@ -84,7 +84,7 @@ numbers as the summary CSV (test compares them).
 
 **Done when.** Filters and bulk actions work on a site with mixed states (browser check).
 
-## 7. Grain inspector navigation ☐
+## 7. Grain inspector navigation ☑ (batch 2)
 
 **Build.** In the grain inspector: previous / next grain, "largest grain", and "next flagged
 grain" (touching the border, inside an exclusion, or unusually elongated), so checking
@@ -92,7 +92,7 @@ outlines does not require hunting around the photo.
 
 **Done when.** Buttons move the selection and pan the view to the grain.
 
-## 8. Keyboard shortcuts overlay ☐
+## 8. Keyboard shortcuts overlay ☑ (batch 2)
 
 **Build.** Press `?` (or Help → Keyboard shortcuts) to show all shortcuts: tools, zoom/pan,
 undo/redo, finish/cancel shape, next/previous photo. Add the missing ones (e.g. `[`/`]` for

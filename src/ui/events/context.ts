@@ -50,6 +50,8 @@ export interface EventContext {
     viewport(): ViewportControls | null;
     openPhotoPicker(): void;
     openArchivePicker(): void;
+    /** Asks the user to confirm (e.g. before deleting). */
+    confirm(message: string): boolean;
     /** Asks for a site name; null if cancelled. */
     askSiteName(message: string, current: string): string | null;
     scrollSidebarToTop(): void;
@@ -60,6 +62,10 @@ export interface EventContext {
     /** Sets the value of a form field by id (calibration presets). */
     setFieldValue(id: string, value: string): void;
     focusTab(tab: string): void;
+    /** Pans (and if needed zooms) the photo so the grain is in view. */
+    focusGrain(grainId: number): void;
+    /** True while the user is typing in a text field, select or textarea. */
+    isTyping(): boolean;
   };
   prefs: {
     setGuideHidden(hidden: boolean): void;
