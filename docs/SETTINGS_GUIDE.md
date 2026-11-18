@@ -198,16 +198,32 @@ Change it in small steps and check the outlines each time.
 images. That doubled the average D50 error of Cellpose-SAM. The value 0.40 matches the
 upstream Cellpose default.
 
-### Apply CLAHE / CLAHE Clip
+### Enlarge for fine grains (offered on the results)
+| | |
+|---|---|
+| **Default** | Not applied; **offered** for U-Net when the median grain is under 20 px in the analysed image |
+| **What it does** | Re-analyses the photo enlarged ×1.5, so small grains are bigger for the network. Sizes are still reported in original-photo pixels or mm. |
+
+When it appears, the *This photo* results show "Fine grains detected" with a **Re-analyse
+enlarged ×1.5** button. In the pre-processing benchmark (40 test photos,
+`audit/preprocessing/`), enlarging fine-gravel photos ×1.5 improved outline accuracy
+(PQ +0.025, 95% CI +0.007 to +0.049) and found more small grains, with no site getting
+worse, at about 20–50% more time per photo. Enlarging *every* photo did not pass: it over-split
+cobbles. The 20 px threshold was chosen after seeing the test results, so the app offers it
+rather than applying it automatically. Cellpose-SAM already handles fine grains. **Undo**
+returns to the normal analysis. The choice is saved with the photo and recorded in the
+exports (`fineGrainUpscale`).
+
+### Apply CLAHE / CLAHE Clip (Advanced)
 | | |
 |---|---|
 | **Default** | **Off**; clip limit **2.0** (range 1–8) |
-| **What it does** | Boosts local contrast before analysis, which helps in harsh light. |
+| **What it does** | Boosts local contrast before analysis. |
 
-**When to change it:** turn it on for photos with **strong shadows, glare, or very flat,
-low-contrast lighting** where grains are missed. Increase the clip limit (3–4) for
-stronger enhancement. Leave it off for normal, evenly lit photos. It was not part of the
-accuracy testing.
+**Leave it off.** In the pre-processing benchmark it **lowered** outline accuracy with both
+models (U-Net PQ −0.01 to −0.02, Cellpose-SAM −0.03 to −0.04) and made some sites much worse
+(D50 error up to +22 percentage points; coarse cobble photos suffered most). It is kept under
+*Advanced* for experiments only.
 
 ### Exclude border grains / Border margin (px)
 | | |

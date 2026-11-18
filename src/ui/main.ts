@@ -480,6 +480,18 @@ async function runAllSites(): Promise<void> {
   }
 }
 
+/** Saves the photo's fine-grain enlargement choice and re-analyses it. */
+async function setFineGrainUpscale(photo: PhotoRecord, factor: number | undefined): Promise<void> {
+  const { fineGrainUpscale: _old, ...rest } = photo.analysisConfig ?? {};
+  const updated: PhotoRecord = {
+    ...photo,
+    analysisConfig: factor !== undefined ? { ...rest, fineGrainUpscale: factor } : rest,
+  };
+  await savePhoto(updated);
+  store.setState({ photos: store.getState().photos.map((p) => (p.photoId === photo.photoId ? updated : p)) });
+  await runBatch([photo.photoId]);
+}
+
 let lastBatchCancelled = false;
 
 async function runBatch(photoIds?: string[]): Promise<void> {
@@ -952,14 +964,7 @@ function renderSidebar(state: AppState): void {
             <span class="label-row">Border margin (px) ${helpButton('excludeBorderMargin')}</span>
             <input class="input" type="number" step="1" min="0" max="100" value="${p.excludeBorderMargin}" data-param="excludeBorderMargin" />
           </label>
-          <label class="field-label">
-            <span class="label-row">CLAHE Clip ${helpButton('claheClipLimit')}</span>
-            <input class="input" type="number" step="0.5" min="1" max="8" value="${p.claheClipLimit}" data-param="claheClipLimit" />
-          </label>
           </div>
-          <label class="checkbox-label" style="margin-top:8px;">
-            <input type="checkbox" data-param="applyClahe" ${p.applyClahe ? 'checked' : ''} /> Apply CLAHE ${helpButton('applyClahe')}
-          </label>
         </details>
         <details class="advanced-block" style="margin-top:8px;" data-keep-open="advanced-analysis">
           <summary>Advanced (rarely needed)</summary>
@@ -996,6 +1001,20 @@ function renderSidebar(state: AppState): void {
           <label class="checkbox-label" style="margin-top:6px;">
             <input type="checkbox" data-param="skipTilesOutsideRoi" ${p.skipTilesOutsideRoi ? 'checked' : ''} /> Skip areas outside the ROI (faster) ${helpButton('skipTilesOutsideRoi')}
           </label>
+          <div class="clahe-block" style="margin-top:8px;">
+            <label class="checkbox-label">
+              <input type="checkbox" data-param="applyClahe" ${p.applyClahe ? 'checked' : ''} /> Apply CLAHE (contrast boost) ${helpButton('applyClahe')}
+            </label>
+            <span class="field-hint">Not recommended: it lowered accuracy with both models in testing.</span>
+            ${
+              p.applyClahe
+                ? `<label class="field-label" style="margin-top:4px;">
+                    <span class="label-row">CLAHE clip ${helpButton('claheClipLimit')}</span>
+                    <input class="input" type="number" step="0.5" min="1" max="8" value="${p.claheClipLimit}" data-param="claheClipLimit" />
+                  </label>`
+                : ''
+            }
+          </div>
           <button type="button" class="btn btn-sm" data-action="reset-analysis-params" style="margin-top:6px;">Reset analysis settings to defaults</button>
         </details>
         <button type="button" class="btn btn-sm" data-action="run-active" style="margin-top:8px;" ${!state.activePhotoId || state.batchRunning ? 'disabled' : ''} title="Re-analyse the photo shown in the middle with these settings">Re-analyse this photo</button>
@@ -1583,6 +1602,21 @@ function renderDashboard(state: AppState): void {
           ? `<div class="warning-banner" role="alert">${warns.map(esc).join('<br/>')}</div>`
           : '';
       })()}
+      ${(() => {
+        if (isSite || !activeSession || !activePhoto) return '';
+        const hint = activeSession.getFineGrainHint();
+        if (hint.enlarged !== null) {
+          return `<div class="basis-banner row-between" style="gap:8px;">
+            <span>Analysed enlarged ×${hint.enlarged} for fine grains.</span>
+            <button type="button" class="btn btn-sm" data-action="fine-grain-undo" ${state.batchRunning ? 'disabled' : ''}>Undo</button>
+          </div>`;
+        }
+        if (!hint.suggest) return '';
+        return `<div class="info-banner">
+          <strong>Fine grains detected</strong> (median about ${hint.medianWorkingBPx!.toFixed(0)} px). U-Net finds more of them if the photo is enlarged ×1.5 first: in testing on 40 photos this gave better outlines with no site getting worse, and takes about 20–50% longer. ${helpButton('fineGrainUpscale')}
+          <div style="margin-top:6px;"><button type="button" class="btn btn-sm btn-primary" data-action="fine-grain-rerun" ${state.batchRunning ? 'disabled' : ''}>Re-analyse enlarged ×1.5</button></div>
+        </div>`;
+      })()}
       <div class="stat-grid" style="margin-top:8px;">
         <div class="stat-card"><div class="stat-label">D<sub>16</sub></div><div class="stat-value">${psd ? psd.D16.toFixed(1) : '—'}</div><div class="stat-sub">${unit}</div></div>
         <div class="stat-card"><div class="stat-label">D<sub>50</sub> (median)</div><div class="stat-value">${psd ? psd.D50.toFixed(1) : '—'}</div><div class="stat-sub">${unit}</div></div>
@@ -1767,6 +1801,7 @@ function renderAll(state: AppState): void {
     prev.siteReportError !== state.siteReportError ||
     prev.singlePhotoStats !== state.singlePhotoStats ||
     prev.dashboardScope !== state.dashboardScope ||
+    prev.batchRunning !== state.batchRunning ||
     prev.comparison !== state.comparison ||
     prev.compareSiteIds !== state.compareSiteIds ||
     prev.sites !== state.sites ||
@@ -2044,6 +2079,11 @@ function attachDelegatedHandlers(): void {
     if (actionEl) {
       const act = actionEl.dataset['action'];
       const state = store.getState();
+      if (act === 'fine-grain-rerun' || act === 'fine-grain-undo') {
+        const photo = getActivePhoto(state);
+        if (photo && !state.batchRunning) void setFineGrainUpscale(photo, act === 'fine-grain-rerun' ? 1.5 : undefined);
+        return;
+      }
       if (act === 'open-site') {
         const id = actionEl.dataset['siteId'];
         if (id) {

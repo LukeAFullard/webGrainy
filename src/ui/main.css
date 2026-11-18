@@ -1286,3 +1286,12 @@ details.settings-block > summary {
   text-align: left;
   font-family: inherit;
 }
+
+.info-banner {
+  margin-top: 0.375rem;
+  padding: 0.45rem 0.6rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid color-mix(in oklab, var(--accent) 45%, transparent);
+  background: var(--accent-dim);
+  font-size: 0.75rem;
+}

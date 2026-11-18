@@ -82,9 +82,16 @@ export const HELP_TOPICS = {
   applyClahe: {
     title: 'Apply CLAHE',
     group: 'Analysis',
-    what: 'Boosts local contrast before analysis, which can help in harsh light.',
+    what: 'Boosts local contrast before analysis.',
     default: 'Off',
-    when: 'Turn on for photos with strong shadows, glare, or very flat lighting where grains are missed. Leave off for normal, evenly lit photos (it was not part of the accuracy testing).',
+    when: 'Leave it off. In the pre-processing benchmark (40 test photos, audit/preprocessing) it lowered outline accuracy with both models (U-Net PQ −0.01 to −0.02, Cellpose-SAM −0.03 to −0.04) and made some sites much worse (D50 error up to +22 percentage points; coarse cobble photos suffered most). Use it only for experiments, and record that you did (it is in the export metadata).',
+  },
+  fineGrainUpscale: {
+    title: 'Enlarge for fine grains',
+    group: 'Analysis',
+    what: 'Re-analyses the photo after enlarging it ×1.5, so small grains are bigger for the network. Sizes are still reported in the original photo pixels (or mm), so results stay comparable. Offered for U-Net when the median grain is under 20 px in the analysed image.',
+    default: 'Offered, not automatic',
+    when: 'Accept it for fine gravel analysed with U-Net. In the pre-processing benchmark (40 test photos) enlarging fine-gravel photos ×1.5 improved outline accuracy (PQ +0.025, 95% CI +0.007 to +0.049) and recall of small grains, with no site getting worse, at about 20–50% more time per photo. The 20 px threshold was chosen after seeing the test results, so it is offered rather than automatic until confirmed on new data. Cellpose-SAM already handles fine grains and does not need it. Undo returns to the normal analysis.',
   },
   claheClipLimit: {
     title: 'CLAHE clip',

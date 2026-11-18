@@ -274,6 +274,11 @@ export interface AnalysisConfig {
   skipTilesOutsideRoi?: boolean;
   inferencePipeline?: InferencePipeline;
   scaleMode?: ScaleMode;
+  /**
+   * Enlarge the working image by this factor before inference (e.g. 1.5). In testing this
+   * helped U-Net on fine gravel (working median b-axis < 20 px); see audit/preprocessing.
+   */
+  fineGrainUpscale?: number;
   applyClahe?: boolean;
   claheClipLimit?: number;
   excludeBorder?: boolean;
@@ -305,6 +310,8 @@ export interface AnalysisProvenance {
   executionProvider?: string;
   inferencePipeline?: string;
   scaleMode?: string;
+  /** Working image enlarged by this factor for fine gravel (U-Net), if any. */
+  fineGrainUpscale?: number;
   effectiveScaleFactor?: number;
   applyClahe?: boolean;
   claheClipLimit?: number;

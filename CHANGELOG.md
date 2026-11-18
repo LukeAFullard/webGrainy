@@ -6,6 +6,18 @@ All notable changes to webGrainy are recorded here. The format follows
 
 ## [Unreleased]
 
+### Changed (from the pre-processing benchmark, `audit/preprocessing/`)
+- **CLAHE moved under Advanced with a warning.** It lowered accuracy with both models in
+  the 40-photo benchmark (and badly for some sites). Still off by default.
+- **"Enlarge for fine grains" offered for U-Net.** When the median grain is under 20 px in
+  the analysed image, the photo's results suggest re-analysing enlarged ×1.5 (benchmark:
+  PQ +0.025, 95% CI +0.007 to +0.049, no site worse). Offered rather than automatic because
+  the threshold was chosen after seeing the test set. Saved per photo, recorded in
+  provenance (`fineGrainUpscale`), with Undo. `imagePreprocess.upscaleWorkingImage` and a
+  shared `resizeRgbaBilinear`.
+- The results panel now also redraws when an analysis finishes (buttons in it no longer
+  stay disabled).
+
 ### Fixed
 - **Calibration messages are in plain language** and name the photos (not internal IDs),
   e.g. "No scale yet: 1 photo is not calibrated (K1_C2.jpg) … Calibrate each photo with
