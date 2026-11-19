@@ -11,6 +11,7 @@ export function assessSampleAdequacy(
   preparedPhotos: readonly PreparedPhoto[],
   poolingMode: PoolingMode,
   warnings: string[],
+  pooledWeights?: readonly number[],
 ): {
   validGrainCount: number;
   effectiveGrainCount: number;
@@ -20,10 +21,25 @@ export function assessSampleAdequacy(
 } {
   const validGrainCount = preparedPhotos.reduce((s, p) => s + p.validGrains.length, 0);
   const totalGridHits = preparedPhotos.reduce((s, p) => s + p.gridGrainHits, 0);
-  const effectiveGrainCount =
-    poolingMode === 'virtual-wolman-grid'
-      ? totalGridHits
-      : validGrainCount;
+  let effectiveGrainCount: number;
+  if (poolingMode === 'virtual-wolman-grid') {
+    effectiveGrainCount = totalGridHits;
+  } else if (poolingMode === 'number-weighted') {
+    effectiveGrainCount = validGrainCount;
+  } else {
+    const weights = pooledWeights ?? buildPooledArrays(preparedPhotos, poolingMode).weights;
+    let sumW = 0;
+    let sumW2 = 0;
+    for (let i = 0; i < weights.length; i++) {
+      const w = weights[i];
+      if (w !== undefined && Number.isFinite(w) && w > 0) {
+        sumW += w;
+        sumW2 += w * w;
+      }
+    }
+    effectiveGrainCount =
+      sumW > 0 ? Math.max(1, Math.round((sumW * sumW) / Math.max(1e-12, sumW2))) : 0;
+  }
 
   const rating: SampleAdequacyRating =
     effectiveGrainCount < 100

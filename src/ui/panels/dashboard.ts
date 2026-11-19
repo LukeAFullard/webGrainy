@@ -186,7 +186,7 @@ export function renderDashboardHtml(state: AppState, view: DashboardView): strin
           <summary>More statistics <span class="summary-note">Sauter mean ${v(x.sauterMeanD32)} ${unit} · Dg ${v(x.geometricMean)} ${unit}</span></summary>
           <table class="stats-table">
             <tbody>
-              ${row('Sauter mean D[3,2]', `${v(x.sauterMeanD32)} ${unit}`, 'Σd³/Σd², each grain once; = area-weighted mean size')}
+              ${row('Sauter mean D[3,2]', `${v(x.sauterMeanD32)} ${unit}`, 'Σd³/Σd² (sphere-equivalent area-weighted mean)')}
               ${row('De Brouckère mean D[4,3]', `${v(x.deBrouckereMeanD43)} ${unit}`, 'Σd⁴/Σd³, each grain once')}
               ${row('Arithmetic mean D[1,0]', `${v(x.arithmeticMeanD10)} ${unit}`, 'each grain once')}
               ${row('Geometric mean Dg', `${v(x.geometricMean)} ${unit}`, 'same weighting as the PSD')}

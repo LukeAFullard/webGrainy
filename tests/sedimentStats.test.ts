@@ -72,7 +72,7 @@ describe('sedimentStats', () => {
   });
 
   describe('weightedPsdPercentiles', () => {
-    it('matches eval_core.py / np.interp((cumsum(w) - 0.5*w)/sum(w)) to 1e-6', () => {
+    it('matches log2 (phi-space) midpoint weighted interpolation to 1e-6', () => {
       // Unsorted values with non-uniform weights + invalid/zero entries filtered out
       const values = [30, 10, 50, -5, 20, 40];
       const weights = [3, 1, 2, 10, 4, 0];
@@ -81,23 +81,17 @@ describe('sedimentStats', () => {
       // v=[10, 20, 30, 50], w=[1, 4, 3, 2], sum=10
       // cumsum=[1, 5, 8, 10]
       // cdf = [(1-0.5)/10, (5-2)/10, (8-1.5)/10, (10-1)/10] = [0.05, 0.30, 0.65, 0.90]
-      // D5  (0.05) -> 10
-      // D10 (0.10) -> 10 + (0.10-0.05)/(0.30-0.05) * (20-10) = 12
-      // D16 (0.16) -> 10 + (0.11/0.25)*10 = 14.4
-      // D25 (0.25) -> 10 + (0.20/0.25)*10 = 18
-      // D50 (0.50) -> 20 + (0.50-0.30)/(0.65-0.30)*(30-20) = 20 + 200/35 = 25.714285714...
-      // D75 (0.75) -> 30 + (0.75-0.65)/(0.90-0.65)*(50-30) = 30 + 8 = 38
-      // D84 (0.84) -> 30 + (0.19/0.25)*20 = 45.2
-      // D90 (0.90) -> 50
-      // D95 (0.95) -> 50 (clamped)
+      // Interpolating linearly in log2(d) (phi space): 2^(log2(v0) + t*(log2(v1) - log2(v0)))
+      const logInterp = (v0: number, v1: number, t: number): number =>
+        2 ** (Math.log2(v0) + t * (Math.log2(v1) - Math.log2(v0)));
       const psd = weightedPsdPercentiles(values, weights);
       expect(psd['D5']).toBeCloseTo(10, 6);
-      expect(psd['D10']).toBeCloseTo(12, 6);
-      expect(psd['D16']).toBeCloseTo(14.4, 6);
-      expect(psd['D25']).toBeCloseTo(18, 6);
-      expect(psd['D50']).toBeCloseTo(20 + 20 / 3.5, 6);
-      expect(psd['D75']).toBeCloseTo(38, 6);
-      expect(psd['D84']).toBeCloseTo(45.2, 6);
+      expect(psd['D10']).toBeCloseTo(logInterp(10, 20, 0.05 / 0.25), 6);
+      expect(psd['D16']).toBeCloseTo(logInterp(10, 20, 0.11 / 0.25), 6);
+      expect(psd['D25']).toBeCloseTo(logInterp(10, 20, 0.20 / 0.25), 6);
+      expect(psd['D50']).toBeCloseTo(logInterp(20, 30, 0.20 / 0.35), 6);
+      expect(psd['D75']).toBeCloseTo(logInterp(30, 50, 0.10 / 0.25), 6);
+      expect(psd['D84']).toBeCloseTo(logInterp(30, 50, 0.19 / 0.25), 6);
       expect(psd['D90']).toBeCloseTo(50, 6);
       expect(psd['D95']).toBeCloseTo(50, 6);
     });
@@ -111,8 +105,9 @@ describe('sedimentStats', () => {
       expect(single.D50).toBeCloseTo(12.5, 10);
       expect(single.D95).toBeCloseTo(12.5, 10);
 
+      // Geometric midpoint between 8 and 16 in phi space is sqrt(8*16) = 8*sqrt(2) ≈ 11.313708
       const dupes = computePsdPercentiles([8, 8, 16, 16], [1, 1, 1, 1]);
-      expect(dupes.D50).toBeCloseTo(12, 6);
+      expect(dupes.D50).toBeCloseTo(Math.sqrt(8 * 16), 6);
     });
   });
 

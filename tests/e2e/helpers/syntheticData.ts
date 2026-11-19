@@ -382,6 +382,9 @@ export function oracleMidpointWeightedPercentiles(
       if (target >= c0 && target <= c1) {
         const span = c1 - c0;
         const t = span > 0 ? (target - c0) / span : 0;
+        if (p0.v > 0 && p1.v > 0) {
+          return 2 ** (Math.log2(p0.v) + t * (Math.log2(p1.v) - Math.log2(p0.v)));
+        }
         return p0.v + t * (p1.v - p0.v);
       }
     }
