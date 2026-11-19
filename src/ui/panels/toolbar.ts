@@ -111,7 +111,7 @@ export function renderToolbarHtml(state: AppState): { toolbar: string; subToolba
         <option value="mm" ${calUnit === 'mm' ? 'selected' : ''}>mm</option>
         <option value="cm" ${calUnit === 'cm' ? 'selected' : ''}>cm</option>
       </select>
-      <button type="button" class="btn btn-sm" data-action="copy-scale-all" ${activePhoto?.calibration ? '' : 'disabled'}>Copy Scale to Site</button>
+      <button type="button" class="btn btn-sm" data-action="copy-scale-start" ${activePhoto?.calibration ? '' : 'disabled'} title="Choose photos taken with the same camera and height, and give them this photo's scale">Copy scale to photos…</button>
     `;
   } else if (state.activeTool === 'rectify') {
     const rectW = state.rectifyWidthMm ?? 500;

@@ -196,7 +196,7 @@ export const WORKFLOW_STEPS: ReadonlyArray<WorkflowStepSpec> = [
       {
         label: 'Calibrate tool',
         detail:
-          'Click both ends of a ruler or quadrat edge and enter the known length in mm or cm (with presets for a 100 mm ruler, 25 mm coin, or 500 mm quadrat). Use "Copy Scale to Site" when all photos share the same camera height.',
+          'Click both ends of a ruler or quadrat edge and enter the known length in mm or cm (with presets for a 100 mm ruler, 25 mm coin, or 500 mm quadrat). Use "Copy scale to photos…" for other photos taken with the same camera, zoom and height.',
       },
       {
         label: 'Rectify tool (4-corner correction)',

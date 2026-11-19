@@ -288,7 +288,14 @@ export class AnalysisSession {
         this.calibration !== undefined
           ? {
               mmPerPx: this.calibration.mmPerPx,
-              method: 'two-point',
+              method:
+                this.calibration.source === 'rectification'
+                  ? 'perspective rectification (four corners of a reference rectangle)'
+                  : this.calibration.source === 'geotiff'
+                    ? 'GeoTIFF pixel size (ground distance)'
+                    : this.calibration.source === 'copied'
+                      ? `copied from photo "${this.calibration.copiedFrom ?? 'unknown'}"`
+                      : 'two-point',
               referenceLengthMm: this.calibration.physicalLengthMm,
               referencePixelDistance: this.calibration.pixelDistance,
             }

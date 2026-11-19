@@ -91,7 +91,7 @@ export const sidebarActions: Record<string, ActionHandler> = {
   },
   'photo-select-mode': (_el, ctx) => {
     const on = !ctx.store.getState().photoSelectMode;
-    ctx.store.setState({ photoSelectMode: on, selectedPhotoIds: new Set() });
+    ctx.store.setState({ photoSelectMode: on, selectedPhotoIds: new Set(), scaleCopySourceId: null });
   },
   'photo-select-all': (_el, ctx) => {
     const st = ctx.store.getState();

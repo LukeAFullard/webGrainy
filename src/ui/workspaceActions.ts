@@ -655,7 +655,7 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
         await deps.syncViewport(false);
         return;
       }
-      const cal = rectified.calibration;
+      const cal: CalibrationResult = { ...rectified.calibration, source: 'rectification' };
 
       const latestBeforeSave = store.getState();
       const latestPhoto = latestBeforeSave.photos.find((p) => p.photoId === photo.photoId);
@@ -1020,5 +1020,5 @@ export async function rectifyWithCanvas(
     physWidthMm,
     'mm',
   );
-  return { blob, width: rectified.width, height: rectified.height, calibration };
+  return { blob, width: rectified.width, height: rectified.height, calibration: { ...calibration, source: 'rectification' } };
 }

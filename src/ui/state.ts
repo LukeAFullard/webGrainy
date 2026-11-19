@@ -114,6 +114,8 @@ export interface AppState {
   /** Photo list in select mode (checkboxes for bulk actions). */
   photoSelectMode: boolean;
   selectedPhotoIds: Set<string>;
+  /** "Copy scale to photos": the photo whose scale is being copied (select mode is on). */
+  scaleCopySourceId: string | null;
   inspectedGrainId: number | null;
   pendingCalibrationPoints: Point2D[];
   pendingRectifyPoints: Point2D[];
@@ -203,6 +205,7 @@ export function createInitialState(): AppState {
     compareByDate: false,
     photoSelectMode: false,
     selectedPhotoIds: new Set(),
+    scaleCopySourceId: null,
     inspectedGrainId: null,
     pendingCalibrationPoints: [],
     pendingRectifyPoints: [],

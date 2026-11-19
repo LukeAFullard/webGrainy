@@ -360,6 +360,14 @@ export function photoSummaryHtml(state: AppState): string {
 export function bulkBarHtml(state: AppState): string {
   const n = state.selectedPhotoIds.size;
   const dis = n === 0 || state.batchRunning || state.enhancing ? 'disabled' : '';
+  const scaleSource = state.scaleCopySourceId ? state.photos.find((p) => p.photoId === state.scaleCopySourceId) : undefined;
+  if (scaleSource?.calibration) {
+    return `<div class="bulk-bar" role="group" aria-label="Copy scale to selected photos">
+    <span>Copy the scale of <strong>${esc(scaleSource.label)}</strong> (${scaleSource.calibration.mmPerPx.toPrecision(4)} mm/px) to ${n} selected photo${n === 1 ? '' : 's'}. Pre-selected: same pixel size, no scale yet. Only use it for photos taken with the same camera, zoom and height.</span>
+    <button type="button" class="btn btn-xs btn-primary" data-action="copy-scale-apply" ${dis}>Copy scale</button>
+    <button type="button" class="btn btn-xs" data-action="photo-select-mode">Cancel</button>
+  </div>`;
+  }
   return `<div class="bulk-bar" role="group" aria-label="Actions for selected photos">
     <span>${n} selected</span>
     <button type="button" class="btn btn-xs" data-action="photo-select-all">${n > 0 && n === visiblePhotos(state).length ? 'Select none' : 'Select all shown'}</button>

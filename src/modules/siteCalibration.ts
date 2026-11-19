@@ -43,7 +43,7 @@ export function validateSiteCalibration(
     return shown.join(', ') + (ids.length > 5 ? ` and ${ids.length - 5} more` : '');
   };
   const howTo =
-    'Calibrate each photo with Scale → Calibrate (mark two points a known distance apart, e.g. the ends of a ruler), or use "Copy Scale to Site" if all photos share the same camera and height.';
+    'Calibrate each photo with Scale → Calibrate (mark two points a known distance apart, e.g. the ends of a ruler), or, for photos taken with the same camera, zoom and height, calibrate one and use "Copy scale to photos…".';
 
   const requestedUnit = options?.unit;
   const allowFallback =

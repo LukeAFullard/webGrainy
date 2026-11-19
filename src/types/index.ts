@@ -204,6 +204,13 @@ export interface CalibrationResult {
   pointB: Point2D;
   physicalLengthMm: number;
   pixelDistance: number;
+  /**
+   * Where the scale came from: measured on the photo (default when absent), perspective
+   * rectification, GeoTIFF georeferencing, or copied from another photo.
+   */
+  source?: 'manual' | 'rectification' | 'geotiff' | 'copied';
+  /** Label of the photo a copied scale came from. */
+  copiedFrom?: string;
 }
 
 export interface PsdPercentiles {

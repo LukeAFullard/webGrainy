@@ -1,5 +1,5 @@
 /** Toolbar and photo events: tools, shape buttons, undo/redo, merge, scale copy, Display menu. */
-import { photoUpscaleFactor, scaleCalibrationAndRoi } from '../../modules/imageEnhance.js';
+import { planScaleCopy, suggestScaleTargets } from '../scaleCopy.js';
 import type { PhotoRecord } from '../../modules/projectStorage.js';
 import type { EditorToolMode } from '../state.js';
 import { navGrainsFor, navigateGrains, type GrainNavMode } from '../grainNav.js';
@@ -56,54 +56,58 @@ export const toolbarActions: Record<string, ActionHandler> = {
       ctx.ui.viewport()?.markMasksDirty();
     }
   },
-  'copy-scale-all': (_el, ctx) => {
+  // "Copy scale to photos…": pick the target photos in the photo list (select mode), with
+  // compatible photos (same pixel size, no scale yet) pre-selected; nothing changes until
+  // "Copy scale" is pressed, and overwriting a photo's own scale asks first.
+  'copy-scale-start': (_el, ctx) => {
     const state = ctx.store.getState();
     const active = getActivePhoto(state);
     if (!active?.calibration) return;
-    const cal = active.calibration;
-    const activeFactor = photoUpscaleFactor(active);
-    const updatedPhotos: PhotoRecord[] = [];
+    const suggested = suggestScaleTargets(active, state.photos);
+    ctx.store.setState({
+      photoSelectMode: true,
+      scaleCopySourceId: active.photoId,
+      selectedPhotoIds: suggested,
+      statusMessage:
+        suggested.size > 0
+          ? `${suggested.size} photo(s) with the same pixel size and no scale are selected. Adjust the selection in the photo list, then press "Copy scale".`
+          : 'No other photo has the same pixel size and no scale yet. Tick the photos to give this scale, then press "Copy scale".',
+    });
+    ctx.ui.scrollSidebarToTop?.();
+  },
+  'copy-scale-apply': (_el, ctx) => {
+    const state = ctx.store.getState();
+    const source = state.photos.find((p) => p.photoId === state.scaleCopySourceId);
+    if (!source?.calibration || state.batchRunning) return;
+    const plan = planScaleCopy(source, state.photos, state.selectedPhotoIds);
+    if (plan.updates.length === 0) return;
+    if (plan.confirmMessage !== null && !ctx.ui.confirm(plan.confirmMessage)) return;
+    const byId = new Map(plan.updates.map((p) => [p.photoId, p]));
     const toPersist: Array<{ photo: PhotoRecord; session?: ReturnType<typeof state.sessions.get> }> = [];
-
-    for (const ph of state.photos) {
-      if (ph.photoId === active.photoId) {
-        const activeSess = state.sessions.get(ph.photoId);
-        if (activeSess && activeSess.getCalibration()?.mmPerPx !== cal.mmPerPx) {
-          activeSess.setCalibration(cal);
-          toPersist.push({ photo: ph, session: activeSess });
-        }
-        updatedPhotos.push(ph);
-        continue;
-      }
-      const ratio = photoUpscaleFactor(ph) / activeFactor;
-      const phCal = scaleCalibrationAndRoi(cal, undefined, ratio).calibration ?? cal;
-      const updated: PhotoRecord = { ...ph, calibration: phCal };
-      const sess = state.sessions.get(ph.photoId);
-      if (sess) {
-        sess.setCalibration(phCal);
-      }
-      updatedPhotos.push(updated);
+    for (const updated of plan.updates) {
+      const sess = state.sessions.get(updated.photoId);
+      if (sess && updated.calibration) sess.setCalibration(updated.calibration);
       toPersist.push({ photo: updated, ...(sess ? { session: sess } : {}) });
     }
-
-    // Update live state & dashboard immediately so IndexedDB errors never block results from updating.
+    const n = plan.updates.length;
+    const msg = `Copied the scale of ${source.label} (${source.calibration.mmPerPx.toFixed(4)} mm/px) to ${n} photo${n === 1 ? '' : 's'}.`;
     ctx.store.setState({
-      photos: updatedPhotos,
-      statusMessage: `Copied scale (${cal.mmPerPx.toFixed(4)} mm/px) to all photos in site`,
+      photos: state.photos.map((p) => byId.get(p.photoId) ?? p),
+      photoSelectMode: false,
+      selectedPhotoIds: new Set(),
+      scaleCopySourceId: null,
+      statusMessage: msg,
     });
     ctx.actions.recomputeReports();
     void ctx.ui.syncViewport(false);
-
     void Promise.all(
       toPersist.map(async ({ photo, session }) => {
         await ctx.actions.savePhoto(photo);
-        if (session) {
-          await ctx.actions.persistActiveSession(photo.photoId, session);
-        }
+        if (session) await ctx.actions.persistActiveSession(photo.photoId, session);
       }),
     ).catch((err: unknown) => {
       ctx.store.setState({
-        statusMessage: `Copied scale (${cal.mmPerPx.toFixed(4)} mm/px), but could not save all photos to browser storage: ${err instanceof Error ? err.message : String(err)}`,
+        statusMessage: `${msg} But not all photos could be saved to browser storage: ${err instanceof Error ? err.message : String(err)}`,
       });
     });
   },
