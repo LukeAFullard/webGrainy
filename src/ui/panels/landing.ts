@@ -858,7 +858,7 @@ export function renderLandingHtml(state: AppState, view: LandingView): string {
                 </th>
                 <td>92 MB</td>
                 <td>Soft or motion-blurred photos before analysis</td>
-                <td>Runs on CPU (WASM) before segmentation and unloads automatically</td>
+                <td>Runs independently before segmentation and unloads automatically (WebGPU or CPU)</td>
                 <td>PSNR/L1-trained motion deblurring (no GAN); preserves original photo for 1-click Revert and discloses use in reports</td>
               </tr>
             </tbody>

@@ -35,10 +35,11 @@ export interface EnhanceModelSpec {
   sizeBytes: number;
   scaleFactor: 1 | 2;
   license: string;
-  /**
-   * Run on WASM (CPU) by default when the ONNX graph contains ops that ORT's WebGPU
-   * JSEP backend does not yet support (e.g. NAFNet's `sca/Pad_1` zero-sized tensor).
-   */
+  /** Default square tile size (px, multiple of 16). */
+  defaultTileSize: number;
+  /** Minimum spatial input dimension (px) required by the ONNX graph (e.g. 384 for NAFNet TLC). */
+  minTileSide: number;
+  /** Optional override to start on WASM instead of WebGPU. */
   preferWasm?: boolean;
 }
 
@@ -59,6 +60,8 @@ export const ENHANCE_MODELS: Record<EnhanceKind, EnhanceModelSpec> = {
     sizeBytes: 1361094,
     scaleFactor: 2,
     license: 'MIT',
+    defaultTileSize: 256,
+    minTileSide: 16,
   },
   deblur: {
     kind: 'deblur',
@@ -73,7 +76,8 @@ export const ENHANCE_MODELS: Record<EnhanceKind, EnhanceModelSpec> = {
     sizeBytes: 91736251,
     scaleFactor: 1,
     license: 'MIT',
-    preferWasm: true,
+    defaultTileSize: 384,
+    minTileSide: 384,
   },
 };
 
@@ -299,7 +303,9 @@ export async function runTiledImageEnhancement(
     );
   }
 
-  const tileSize = Math.max(32, Math.floor((options?.tileSize ?? 256) / 16) * 16);
+  const requestedTile = options?.tileSize ?? spec.defaultTileSize;
+  const minSide = options?.tileSize !== undefined ? Math.min(spec.minTileSide, requestedTile) : spec.minTileSide;
+  const tileSize = Math.max(32, minSide, Math.floor(requestedTile / 16) * 16);
   const overlap = Math.min(Math.floor(tileSize / 4), Math.max(0, options?.overlap ?? 32));
   const stride = tileSize - overlap;
   const scale = spec.scaleFactor;
@@ -309,16 +315,17 @@ export async function runTiledImageEnhancement(
   const accum = new Float32Array(outW * outH * 3);
   const weightSum = new Float32Array(outW * outH);
 
-  const xs: number[] = [];
-  for (let x = 0; x < width; x += stride) {
-    xs.push(x);
-    if (x + tileSize >= width) break;
-  }
-  const ys: number[] = [];
-  for (let y = 0; y < height; y += stride) {
-    ys.push(y);
-    if (y + tileSize >= height) break;
-  }
+  const buildStarts = (total: number): number[] => {
+    if (total <= tileSize) return [0];
+    const starts: number[] = [];
+    for (let p = 0; p + tileSize < total; p += stride) {
+      starts.push(p);
+    }
+    starts.push(total - tileSize);
+    return starts;
+  };
+  const xs = buildStarts(width);
+  const ys = buildStarts(height);
 
   const inputName = session.inputNames?.[0] ?? 'input';
   const totalTiles = xs.length * ys.length;
@@ -327,15 +334,15 @@ export async function runTiledImageEnhancement(
   for (let yi = 0; yi < ys.length; yi++) {
     const y0 = ys[yi]!;
     const validH = Math.min(tileSize, height - y0);
-    // Pad tile height/width up to next multiple of 16 (min 16) using edge replication.
-    const padH = Math.max(16, Math.ceil(validH / 16) * 16);
+    // Pad tile height/width up to at least minSide (e.g. 384 for NAFNet TLC) and multiple of 16.
+    const padH = Math.max(16, minSide, Math.ceil(validH / 16) * 16);
 
     for (let xi = 0; xi < xs.length; xi++) {
       if (options?.signal?.aborted) throw createAbortError();
 
       const x0 = xs[xi]!;
       const validW = Math.min(tileSize, width - x0);
-      const padW = Math.max(16, Math.ceil(validW / 16) * 16);
+      const padW = Math.max(16, minSide, Math.ceil(validW / 16) * 16);
 
       const planeSize = padH * padW;
       const inputData = new Float32Array(3 * planeSize);
