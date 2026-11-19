@@ -56,4 +56,12 @@ describe('exports module', () => {
     expect(isExportKind('photo-svg')).toBe(true);
     expect(isExportKind('nope')).toBe(false);
   });
+
+  it('applies siteOptions cutoffs to photo-summary-json and photo-summary-csv', async () => {
+    const looseJson = JSON.parse(await (await buildExport('photo-summary-json', { ...ctx, siteOptions: { minBaxisPx: 5 } }))!.blob.text());
+    const strictJson = JSON.parse(await (await buildExport('photo-summary-json', { ...ctx, siteOptions: { minBaxisPx: 50 } }))!.blob.text());
+    expect(looseJson.includedGrains).toBeGreaterThan(0);
+    expect(strictJson.includedGrains).toBe(0);
+    expect(strictJson.excludedCutoffGrains).toBe(looseJson.includedGrains);
+  });
 });

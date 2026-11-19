@@ -73,9 +73,9 @@ export function renderToolbarHtml(state: AppState): { toolbar: string; subToolba
       activePhoto
         ? `<span class="tool-group" role="group" aria-label="Optional image enhancement">
             <span class="tool-group-label">Enhance</span>
-            <button type="button" class="btn btn-sm" data-action="enhance-upscale" ${state.batchRunning ? 'disabled' : ''} title="Optional 2× AI upscale (PULSE, 1.4 MB, MIT, L1-trained — unloads segmentation model first)">2× Upscale</button>
-            <button type="button" class="btn btn-sm" data-action="enhance-deblur" ${state.batchRunning ? 'disabled' : ''} title="Optional AI motion deblur (NAFNet, 92 MB, MIT, L1-trained — unloads segmentation model first)">Deblur</button>
-            ${activePhoto.originalBackup ? `<button type="button" class="btn btn-sm" data-action="enhance-revert" ${state.batchRunning ? 'disabled' : ''} title="Restore the original unenhanced photo">Revert</button>` : ''}
+            <button type="button" class="btn btn-sm" data-action="enhance-upscale" ${state.batchRunning || state.enhancing ? 'disabled' : ''} title="Optional 2× AI upscale (PULSE, 1.4 MB, MIT, L1-trained — unloads segmentation model first)">2× Upscale</button>
+            <button type="button" class="btn btn-sm" data-action="enhance-deblur" ${state.batchRunning || state.enhancing ? 'disabled' : ''} title="Optional AI motion deblur (NAFNet, 92 MB, MIT, L1-trained — unloads segmentation model first)">Deblur</button>
+            ${activePhoto.originalBackup ? `<button type="button" class="btn btn-sm" data-action="enhance-revert" ${state.batchRunning || state.enhancing ? 'disabled' : ''} title="Restore the original unenhanced photo">Revert</button>` : ''}
           </span>`
         : ''
     }

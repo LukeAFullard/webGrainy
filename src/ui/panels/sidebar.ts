@@ -80,7 +80,7 @@ export function renderSidebarHtml(state: AppState, view: SidebarView): string {
       </select>
       ${surveyDateHtml(state)}
       ${backupLineHtml(state, analysedCount, view.storageInfo)}
-      ${state.sites.length > 1 ? `<button type="button" class="btn btn-sm" style="margin-top:6px;width:100%;" data-action="analyse-all-sites" title="Analyse every photo that is not analysed yet, in all ${state.sites.length} sites" ${state.batchRunning ? 'disabled' : ''}>Analyse all sites (${state.sites.length})</button>` : ''}
+      ${state.sites.length > 1 ? `<button type="button" class="btn btn-sm" style="margin-top:6px;width:100%;" data-action="analyse-all-sites" title="Analyse every photo that is not analysed yet, in all ${state.sites.length} sites" ${state.batchRunning || state.enhancing ? 'disabled' : ''}>Analyse all sites (${state.sites.length})</button>` : ''}
     </div>
 
     <div class="panel-section">
@@ -88,7 +88,7 @@ export function renderSidebarHtml(state: AppState, view: SidebarView): string {
         <span class="panel-title">Photos (${state.photos.length}${analysedCount > 0 ? ` · ${analysedCount} analysed` : ''})</span>
         <div class="row">
           ${
-            state.photos.length > 1 && !state.batchRunning
+            state.photos.length > 1 && !state.batchRunning && !state.enhancing
               ? `<button type="button" class="btn btn-sm ${state.photoSelectMode ? 'active' : ''}" data-action="photo-select-mode" aria-pressed="${state.photoSelectMode ? 'true' : 'false'}" title="Select several photos to include, leave out, re-analyse or delete">${state.photoSelectMode ? 'Done' : 'Select'}</button>`
               : ''
           }
@@ -96,7 +96,7 @@ export function renderSidebarHtml(state: AppState, view: SidebarView): string {
             state.batchRunning
               ? `<button type="button" class="btn btn-sm btn-danger" data-action="cancel-batch">Cancel</button>`
               : pendingCount > 0
-                ? `<button type="button" class="btn btn-sm btn-primary" data-action="run-batch">Analyse ${pendingCount === state.photos.length ? (pendingCount === 1 ? 'photo' : `all ${pendingCount}`) : `${pendingCount} new`}</button>`
+                ? `<button type="button" class="btn btn-sm btn-primary" data-action="run-batch" ${state.enhancing ? 'disabled' : ''}>Analyse ${pendingCount === state.photos.length ? (pendingCount === 1 ? 'photo' : `all ${pendingCount}`) : `${pendingCount} new`}</button>`
                 : ''
           }
         </div>
@@ -229,10 +229,11 @@ export function renderSidebarHtml(state: AppState, view: SidebarView): string {
             const mmPerWorkPx = cal.mmPerPx / wScale;
             const minSizeMm2 = p.minSize * mmPerWorkPx * mmPerWorkPx;
             const eqDiamMm = 2 * Math.sqrt(minSizeMm2 / Math.PI);
-            const stepMm2 = minSizeMm2 < 10 ? 0.5 : minSizeMm2 < 100 ? 1 : 5;
+            const stepMm2 = minSizeMm2 < 1 ? 0.05 : minSizeMm2 < 10 ? 0.5 : minSizeMm2 < 100 ? 1 : 5;
+            const fmtMm2 = minSizeMm2 < 1 ? minSizeMm2.toFixed(2) : minSizeMm2 < 10 ? minSizeMm2.toFixed(1) : String(Math.round(minSizeMm2));
             return `<label class="field-label">
               <span class="label-row">Min Size (mm²)</span>
-              <input class="input" type="number" step="${stepMm2}" min="0.1" value="${minSizeMm2 < 10 ? minSizeMm2.toFixed(1) : Math.round(minSizeMm2)}" data-min-size-mm2="" title="Converted to working-resolution px² using the active photo's scale (${cal.mmPerPx.toFixed(3)} mm/px)" />
+              <input class="input" type="number" step="${stepMm2}" min="0.01" value="${fmtMm2}" data-min-size-mm2="" title="Converted to working-resolution px² using the active photo's scale (${cal.mmPerPx.toFixed(3)} mm/px)" />
               <span class="field-hint">≈ Ø ${eqDiamMm.toFixed(1)} mm</span>
             </label>`;
           })()}

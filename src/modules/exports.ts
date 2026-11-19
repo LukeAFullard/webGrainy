@@ -103,17 +103,25 @@ export async function buildExport(kind: ExportKind, ctx: ExportContext): Promise
             filename: `${photoFile}_grains.csv`,
           }
         : null;
-    case 'photo-summary-csv':
+    case 'photo-summary-csv': {
+      const cutoffs = ctx.siteOptions
+        ? { minBaxisPx: ctx.siteOptions.minBaxisPx ?? 15, minSizeMm: ctx.siteOptions.minSizeMm ?? 0 }
+        : undefined;
       return session
-        ? { blob: new Blob([session.exportSummaryCsv(sizeMetric)], { type: 'text/csv' }), filename: `${photoFile}_summary.csv` }
+        ? { blob: new Blob([session.exportSummaryCsv(sizeMetric, cutoffs)], { type: 'text/csv' }), filename: `${photoFile}_summary.csv` }
         : null;
-    case 'photo-summary-json':
+    }
+    case 'photo-summary-json': {
+      const cutoffs = ctx.siteOptions
+        ? { minBaxisPx: ctx.siteOptions.minBaxisPx ?? 15, minSizeMm: ctx.siteOptions.minSizeMm ?? 0 }
+        : undefined;
       return session
         ? {
-            blob: new Blob([session.exportSummaryJson(sizeMetric)], { type: 'application/json' }),
+            blob: new Blob([session.exportSummaryJson(sizeMetric, cutoffs)], { type: 'application/json' }),
             filename: `${photoFile}_summary.json`,
           }
         : null;
+    }
     case 'photo-mask-16':
     case 'photo-mask-32': {
       if (!session) return null;

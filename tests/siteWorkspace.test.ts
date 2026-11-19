@@ -69,5 +69,7 @@ describe('site workspace', () => {
     expect(strict.singlePhotoStats?.includedGrains).toBe(1);
     expect(strict.singlePhotoStats?.excludedCutoffGrains).toBe(1);
     expect(strict.siteReport?.validGrainCount).toBe(1);
+    expect(s.getExtendedStatsGrains('bAxis', { minBaxisPx: 20 }).length).toBe(1);
+    expect(s.getFabricRose('bAxis', { minBaxisPx: 20 }).grainCount).toBe(1);
   });
 });

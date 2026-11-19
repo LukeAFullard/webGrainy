@@ -586,6 +586,7 @@ function renderAll(state: AppState): void {
     prev.photoFilter !== state.photoFilter ||
     prev.photoSelectMode !== state.photoSelectMode ||
     prev.selectedPhotoIds !== state.selectedPhotoIds ||
+    prev.enhancing !== state.enhancing ||
     prev.siteOptions.poolingMode !== state.siteOptions.poolingMode
   ) {
     renderSidebar(state);
@@ -603,7 +604,9 @@ function renderAll(state: AppState): void {
     prev.photos !== state.photos ||
     prev.siteReport !== state.siteReport ||
     prev.siteReportError !== state.siteReportError ||
-    prev.singlePhotoStats !== state.singlePhotoStats
+    prev.singlePhotoStats !== state.singlePhotoStats ||
+    prev.batchRunning !== state.batchRunning ||
+    prev.enhancing !== state.enhancing
   ) {
     renderToolbarAndOverlays(state);
   }
@@ -617,6 +620,7 @@ function renderAll(state: AppState): void {
     prev.singlePhotoStats !== state.singlePhotoStats ||
     prev.dashboardScope !== state.dashboardScope ||
     prev.batchRunning !== state.batchRunning ||
+    prev.enhancing !== state.enhancing ||
     prev.comparison !== state.comparison ||
     prev.compareSiteIds !== state.compareSiteIds ||
     prev.compareByDate !== state.compareByDate ||
