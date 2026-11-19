@@ -1,4 +1,5 @@
 /** Toolbar above the photo: tool groups, the Display menu and the active tool's prompt. */
+import { photoUpscaleFactor } from '../../modules/imageEnhance.js';
 import { helpButton } from '../help.js';
 import type { AppState, EditorToolMode } from '../state.js';
 import { getActivePhoto } from '../workspaceActions.js';
@@ -119,12 +120,14 @@ export function renderToolbarHtml(state: AppState): { toolbar: string; subToolba
   }
 
   const cal = activePhoto?.calibration;
+  const upscaleFactor = activePhoto ? photoUpscaleFactor(activePhoto) : 1;
+  const upscaleTag = upscaleFactor > 1.05 ? ` · ${Number.isInteger(upscaleFactor) ? upscaleFactor : upscaleFactor.toFixed(1)}×` : '';
   const scaleBadgeHtml = activePhoto
     ? cal && Number.isFinite(cal.mmPerPx) && cal.mmPerPx > 0
       ? `<span class="toolbar-sep" aria-hidden="true"></span>
-         <span class="scale-readout" data-scale-readout="" title="Physical pixel scale of the active photo (updates automatically on 2× Upscale or Revert)">Scale: <strong>${cal.mmPerPx.toFixed(3)} mm/px</strong> (${(1 / cal.mmPerPx).toFixed(2)} px/mm)${activePhoto.metadata?.enhancement?.kind === 'upscale-2x' ? ' · 2×' : ''}</span>`
+         <span class="scale-readout" data-scale-readout="" title="Physical pixel scale of the active photo (updates automatically on 2× Upscale or Revert)">Scale: <strong>${cal.mmPerPx.toFixed(3)} mm/px</strong> (${(1 / cal.mmPerPx).toFixed(2)} px/mm)${upscaleTag}</span>`
       : `<span class="toolbar-sep" aria-hidden="true"></span>
-         <span class="scale-readout" data-scale-readout="" style="color:var(--text-muted);" title="Use Calibrate to set a physical reference scale in mm/px">Scale: uncalibrated (px)</span>`
+         <span class="scale-readout" data-scale-readout="" style="color:var(--text-muted);" title="Use Calibrate to set a physical reference scale in mm/px">Scale: uncalibrated (px)${upscaleTag}</span>`
     : '';
 
   const onCount = [ov.instanceIds, ov.wentworthColors, ov.ellipses, ov.orientations, ov.borderTruncated, ov.loupe].filter(Boolean).length;

@@ -548,3 +548,16 @@ export function scaleCalibrationAndRoi(
     ...(nextRoi ? { roiConfig: nextRoi } : {}),
   };
 }
+
+/** Cumulative pixel scale factor relative to the unenhanced original (1 if not upscaled). */
+export function photoUpscaleFactor(photo: {
+  width: number;
+  originalBackup?: { width: number };
+  metadata?: { enhancement?: { scaleFactor?: number } };
+}): number {
+  if (photo.originalBackup && photo.originalBackup.width > 0 && photo.width > 0) {
+    return photo.width / photo.originalBackup.width;
+  }
+  const sf = photo.metadata?.enhancement?.scaleFactor;
+  return typeof sf === 'number' && Number.isFinite(sf) && sf > 0 ? sf : 1;
+}

@@ -1,4 +1,5 @@
 /** Toolbar and photo events: tools, shape buttons, undo/redo, merge, scale copy, Display menu. */
+import { photoUpscaleFactor, scaleCalibrationAndRoi } from '../../modules/imageEnhance.js';
 import type { PhotoRecord } from '../../modules/projectStorage.js';
 import type { EditorToolMode } from '../state.js';
 import { navGrainsFor, navigateGrains, type GrainNavMode } from '../grainNav.js';
@@ -60,14 +61,17 @@ export const toolbarActions: Record<string, ActionHandler> = {
     const active = getActivePhoto(state);
     if (!active?.calibration) return;
     const cal = active.calibration;
+    const activeFactor = photoUpscaleFactor(active);
     void Promise.all(
       state.photos.map(async (ph) => {
         if (ph.photoId === active.photoId) return ph;
-        const updated: PhotoRecord = { ...ph, calibration: cal };
+        const ratio = photoUpscaleFactor(ph) / activeFactor;
+        const phCal = scaleCalibrationAndRoi(cal, undefined, ratio).calibration ?? cal;
+        const updated: PhotoRecord = { ...ph, calibration: phCal };
         await ctx.actions.savePhoto(updated);
         const sess = state.sessions.get(ph.photoId);
         if (sess) {
-          sess.setCalibration(cal);
+          sess.setCalibration(phCal);
           await ctx.actions.persistActiveSession(ph.photoId, sess);
         }
         return updated;
