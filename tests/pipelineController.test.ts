@@ -628,7 +628,7 @@ describe('pipelineController (ImageGrainsEngine & AnalysisSession)', () => {
     const recorder = (): InferenceSessionLike => ({
       async run(feeds: Record<string, unknown>) {
         const t = feeds['image'] as { dims: readonly number[]; type?: string; data: Float32Array | Uint16Array };
-        calls.push({ dims: [...t.dims], type: t.data instanceof Uint16Array ? 'float16' : 'float32' });
+        calls.push({ dims: [...t.dims], type: t.type ?? (t.data instanceof Uint16Array ? 'float16' : 'float32') });
         const n = (t.dims[2] ?? 0) * (t.dims[3] ?? 0);
         return { flows_cellprob: { data: new Float32Array(3 * n).fill(-5), dims: [1, 3, t.dims[2] ?? 0, t.dims[3] ?? 0] } };
       },
