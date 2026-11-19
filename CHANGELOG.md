@@ -6,6 +6,61 @@ All notable changes to webGrainy are recorded here. The format follows
 
 ## [Unreleased]
 
+## [1.2.0] — production-readiness fixes (re-audit, 2026-11-19)
+
+Every export now records the exact build (`appCommit`), so results can be traced to the code
+that produced them. The items below and the earlier "Unreleased" entries are all in 1.2.0.
+
+### Fixed (blockers)
+- **Site statistics no longer freeze the page.** For 60 photos × 300 grains they took about
+  44 s on the main thread after every change; now about 0.5 s (about 1 s per 100 photos).
+  - The bootstrap sorts the grains once and evaluates each replicate in one pass. It draws
+    the same resamples as before; `runBootstrapReference` is kept and tested to be
+    equivalent.
+  - The jackknife reuses the same sorted pool.
+  - The convergence curve has D-values at every photo count and CIs at up to 15
+    checkpoints (100 replicates; the last point uses the full bootstrap).
+- **CPU inference runs in a worker** (`ortWasm.worker.ts`, `ortWorkerSession.ts`). Measured
+  in the built app:
+  - Cellpose-SAM INT8: the page was blocked for 81.5 s of an 85 s analysis, with single
+    freezes up to 17.7 s; now 0.9 s.
+  - U-Net: 7.1 s → 1.5 s.
+  - The browser smoke test fails on any freeze over 5 s, and CI now also runs Cellpose-SAM
+    (`SMOKE_MODEL=cpsam`).
+- **Project archives of any size.**
+  - New binary `.webgrainy` format (v2): a JSON header plus a raw payload, built from the
+    stored files and read lazily. The JSON format failed at about 40 photos (the browser's
+    maximum string length) and needed base64.
+  - Old `.webgrainy.json` files still open.
+  - Sessions no longer keep the working-image pixels (about 4 MB less per photo in memory,
+    storage and archives).
+- **"Copy Scale to Site" replaced by "Copy scale to photos…".**
+  - Targets are chosen in the photo list, with photos of the same pixel size and no scale
+    pre-selected.
+  - It asks before replacing a measured, rectified or GeoTIFF scale, or before copying to a
+    photo of a different pixel size.
+  - Calibrations record their source, and exports report it.
+- **Build provenance.** Version 1.2.0. Every analysis and export records the git commit
+  (`appCommit`) and build time. The smoke test checks that the build is stamped.
+
+### Fixed (significant)
+- Photos left "running" by a crashed or closed tab are analysed again by Analyse and
+  Analyse all sites.
+- Re-analysing asks before discarding manual outline edits. The edit count is stored with
+  the results and exported (`manualOutlineEdits`).
+- 2× Upscale is refused when the chosen Image scale would shrink the photo back (less than
+  20% more working pixels). Upscale and Deblur are labelled experimental and not
+  benchmarked.
+- One working-scale rule (`workingScaleFor`): the minimum-grain-size mm² → px conversion
+  used a different rule for 1025–4096 px photos.
+- New app versions wait for "Reload to update" instead of taking over an open page. That
+  had caused mismatched worker and runtime files after a deploy.
+- Typed analysis settings are validated: a cleared field no longer becomes 0, and
+  out-of-range values are rejected. The engine also rejects invalid post-processing options.
+- Photos over 16.7 MP (iOS Safari's canvas limit) are decoded smaller for analysis. Results
+  stay in the photo's own pixels, and the decoded size is recorded.
+- Sites over 100 photos show a warning suggesting splitting them. This is not a hard limit.
+
 ### Fixed (scientific audit, 2026-11-19)
 - **GeoTIFF auto-calibration in Web Mercator** (`tiffDecode.ts`). EPSG:3857 (and 3785, 900913,
   102100, 102113) pixel sizes are map metres, not ground metres. They were used as mm/px
