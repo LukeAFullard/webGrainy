@@ -175,6 +175,9 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
     const photoErrors = new Map<string, string>();
     const thumbUrls = new Map<string, string>();
 
+    const site = state.sites.find((s) => s.siteId === siteId);
+    const nextSiteOptions = site ? { ...site.options } : state.siteOptions;
+
     for (const p of photos) {
       thumbUrls.set(p.photoId, createUrl(p.imageBlob));
       const res = await storage.getPhotoResult(p.photoId);
@@ -185,7 +188,7 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
           try {
             const sess = AnalysisSession.fromSerialized(res.serializedSession);
             if (p.calibration) sess.setCalibration(p.calibration);
-            if (p.roiConfig) sess.setRoiConfig(effectiveRoi(p, store.getState().siteOptions));
+            if (p.roiConfig) sess.setRoiConfig(effectiveRoi(p, nextSiteOptions));
             sessions.set(p.photoId, sess);
           } catch {
             photoStatuses.set(p.photoId, 'pending');
@@ -196,7 +199,6 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
       }
     }
 
-    const site = state.sites.find((s) => s.siteId === siteId);
     store.setState({
       activeSiteId: siteId,
       photos,
@@ -205,9 +207,11 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
       photoStatuses,
       photoErrors,
       thumbUrls,
-      siteOptions: site ? { ...site.options } : state.siteOptions,
+      siteOptions: nextSiteOptions,
       selectedGrainIds: new Set(),
       inspectedGrainId: null,
+      pendingCalibrationPoints: [],
+      pendingRectifyPoints: [],
       photoFilter: 'all',
       photoSelectMode: false,
       selectedPhotoIds: new Set(),

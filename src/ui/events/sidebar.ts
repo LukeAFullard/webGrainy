@@ -134,7 +134,13 @@ export function handleSidebarClick(target: ElementLike, ctx: EventContext): bool
   if (photoRow && !isInput(target)) {
     const pid = photoRow.dataset['photoId'];
     if (pid && pid !== ctx.store.getState().activePhotoId) {
-      ctx.store.setState({ activePhotoId: pid, selectedGrainIds: new Set(), inspectedGrainId: null });
+      ctx.store.setState({
+        activePhotoId: pid,
+        selectedGrainIds: new Set(),
+        inspectedGrainId: null,
+        pendingCalibrationPoints: [],
+        pendingRectifyPoints: [],
+      });
       ctx.actions.recomputeReports();
       void ctx.ui.syncViewport(true);
     }
