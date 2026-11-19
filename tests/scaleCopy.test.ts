@@ -109,3 +109,17 @@ describe('scale copy actions', () => {
     expect(ACTIONS['copy-scale-all']).toBeUndefined();
   });
 });
+
+describe('2x upscale guard (regression)', () => {
+  it('refuses to upscale a photo that Auto image scale would shrink back, with an explanation', () => {
+    const enhance = vi.fn(async () => {});
+    const store = new AppStore({ ...createInitialState(), photos: [photo('A', 4000, 3000)], activePhotoId: 'A' });
+    const ctx = { store, actions: { enhanceActivePhoto: enhance } } as unknown as EventContext;
+    ACTIONS['enhance-upscale']!({ dataset: {}, closest: () => null } as never, ctx);
+    expect(enhance).not.toHaveBeenCalled();
+    expect(store.getState().statusMessage).toMatch(/would not help this photo/);
+    store.setState({ photos: [photo('A', 400, 300)] });
+    ACTIONS['enhance-upscale']!({ dataset: {}, closest: () => null } as never, ctx);
+    expect(enhance).toHaveBeenCalledWith('upscale-2x');
+  });
+});

@@ -1,4 +1,5 @@
 /** Left panel: getting-started guide, site, photo list and analysis settings. */
+import { workingScaleFor } from '../../modules/imagePreprocess.js';
 import { logicalCores, wasmThreadsFor } from '../../modules/onnxInference.js';
 import { backupStatus, readBackupRecords } from '../backup.js';
 import type { readCpuThreadPref } from '../cpuThreads.js';
@@ -13,11 +14,8 @@ import { esc } from './html.js';
 
 /** Effective working-resolution scale factor for a photo under the selected Scale Mode. */
 export function workingScaleFactorFor(width: number, height: number, scaleMode: ScaleMode): number {
-  if (scaleMode === '1.0x') return 1;
-  if (scaleMode === '0.5x') return 0.5;
-  if (scaleMode === '0.25x') return 0.25;
-  const maxDim = Math.max(width, height, 1);
-  return maxDim > 1024 ? 1024 / maxDim : 1;
+  // The analysis's own rule (it used to differ here for 1025-4096 px photos).
+  return workingScaleFor(width, height, scaleMode);
 }
 
 export interface StorageInfo {

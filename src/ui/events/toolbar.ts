@@ -1,4 +1,5 @@
 /** Toolbar and photo events: tools, shape buttons, undo/redo, merge, scale copy, Display menu. */
+import { upscaleIncreasesWorkingResolution } from '../../modules/imagePreprocess.js';
 import { planScaleCopy, suggestScaleTargets } from '../scaleCopy.js';
 import type { PhotoRecord } from '../../modules/projectStorage.js';
 import type { EditorToolMode } from '../state.js';
@@ -111,7 +112,22 @@ export const toolbarActions: Record<string, ActionHandler> = {
       });
     });
   },
-  'enhance-upscale': (_el, ctx) => void ctx.actions.enhanceActivePhoto('upscale-2x'),
+  'enhance-upscale': (_el, ctx) => {
+    const st = ctx.store.getState();
+    const photo = getActivePhoto(st);
+    if (!photo) return;
+    const mode = st.analysisParams.scaleMode;
+    if (!upscaleIncreasesWorkingResolution(photo.width, photo.height, mode)) {
+      ctx.store.setState({
+        statusMessage:
+          `2× upscaling would not help this photo: with Image scale "${mode}" a ${photo.width}×${photo.height} px photo is ` +
+          'analysed at the same size after upscaling (it is shrunk back), so it would only add interpolated detail. ' +
+          'Set Image scale to 1.0x first if you need more pixels per grain.',
+      });
+      return;
+    }
+    void ctx.actions.enhanceActivePhoto('upscale-2x');
+  },
   'enhance-deblur': (_el, ctx) => void ctx.actions.enhanceActivePhoto('deblur'),
   'enhance-revert': (_el, ctx) => void ctx.actions.revertActivePhotoEnhancement(),
 };

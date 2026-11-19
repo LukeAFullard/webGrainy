@@ -327,6 +327,34 @@ export function applyCLAHE(
 }
 
 /**
+ * Working-image scale for a photo and scale mode: the single rule used by the analysis and
+ * by every place that converts between photo and working pixels. 'auto': 1.0x up to
+ * 1024 px, 0.5x up to 2048 px, 0.25x up to 4096 px, else longest side 1024 px.
+ */
+export function workingScaleFor(width: number, height: number, scaleMode: ScaleMode = 'auto'): number {
+  if (scaleMode === '1.0x') return 1;
+  if (scaleMode === '0.5x') return 0.5;
+  if (scaleMode === '0.25x') return 0.25;
+  const maxDim = Math.max(width, height);
+  if (maxDim <= 1024) return 1;
+  if (maxDim <= 2048) return 0.5;
+  if (maxDim <= 4096) return 0.25;
+  return 1024 / maxDim;
+}
+
+/**
+ * Whether 2x upscaling a photo gives the network meaningfully more pixels per grain (at least
+ * 20% more working-image width) with this scale mode. In 'auto' mode most photos are shrunk
+ * back to (nearly) the same working size, so upscaling would only add interpolated or
+ * model-generated detail.
+ */
+export function upscaleIncreasesWorkingResolution(width: number, height: number, scaleMode: ScaleMode = 'auto'): boolean {
+  const before = Math.round(width * workingScaleFor(width, height, scaleMode));
+  const after = Math.round(2 * width * workingScaleFor(2 * width, 2 * height, scaleMode));
+  return after >= 1.2 * before;
+}
+
+/**
  * Adaptive input scaling with pure TypedArray RGBA resampling (area-average when shrinking).
  * Tracks `effectiveScaleFactor` (`newWidth / width`) so morphometrics scale back accurately.
  */
@@ -338,35 +366,9 @@ export function prepareWorkingImage(
 ): WorkingImageResult {
   validateImageDimensions(rgba, width, height);
 
-  const maxDim = Math.max(width, height);
-  let targetScale = 1.0;
-  let scaleModeApplied: Exclude<ScaleMode, 'auto'> = '1.0x';
-
-  if (scaleMode === '1.0x') {
-    targetScale = 1.0;
-    scaleModeApplied = '1.0x';
-  } else if (scaleMode === '0.5x') {
-    targetScale = 0.5;
-    scaleModeApplied = '0.5x';
-  } else if (scaleMode === '0.25x') {
-    targetScale = 0.25;
-    scaleModeApplied = '0.25x';
-  } else {
-    // 'auto'
-    if (maxDim <= 1024) {
-      targetScale = 1.0;
-      scaleModeApplied = '1.0x';
-    } else if (maxDim <= 2048) {
-      targetScale = 0.5;
-      scaleModeApplied = '0.5x';
-    } else if (maxDim <= 4096) {
-      targetScale = 0.25;
-      scaleModeApplied = '0.25x';
-    } else {
-      targetScale = 1024 / maxDim;
-      scaleModeApplied = '0.25x';
-    }
-  }
+  const targetScale = workingScaleFor(width, height, scaleMode);
+  const scaleModeApplied: Exclude<ScaleMode, 'auto'> =
+    targetScale === 1 ? '1.0x' : targetScale === 0.5 ? '0.5x' : '0.25x';
 
   if (targetScale === 1.0) {
     return {
