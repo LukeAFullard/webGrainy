@@ -781,7 +781,17 @@ function mountShell(): void {
         if (!photo || !session) return;
         const ok = session.splitGrain(grainId, points);
         if (ok) {
-          void persistActiveSession(photo.photoId, session);
+          const patch: Partial<AppState> = {};
+          if (state.inspectedGrainId === grainId) patch.inspectedGrainId = null;
+          if (state.selectedGrainIds.has(grainId)) {
+            const nextSel = new Set(state.selectedGrainIds);
+            nextSel.delete(grainId);
+            patch.selectedGrainIds = nextSel;
+          }
+          if (Object.keys(patch).length > 0) store.setState(patch);
+          void persistActiveSession(photo.photoId, session).catch((err: unknown) => {
+            store.setState({ statusMessage: `Could not save edit: ${err instanceof Error ? err.message : String(err)}` });
+          });
           recomputeReports();
           viewport?.markMasksDirty();
         }
@@ -792,7 +802,17 @@ function mountShell(): void {
         const session = photo ? state.sessions.get(photo.photoId) : null;
         if (!photo || !session) return;
         if (session.deleteGrain(grainId)) {
-          void persistActiveSession(photo.photoId, session);
+          const patch: Partial<AppState> = {};
+          if (state.inspectedGrainId === grainId) patch.inspectedGrainId = null;
+          if (state.selectedGrainIds.has(grainId)) {
+            const nextSel = new Set(state.selectedGrainIds);
+            nextSel.delete(grainId);
+            patch.selectedGrainIds = nextSel;
+          }
+          if (Object.keys(patch).length > 0) store.setState(patch);
+          void persistActiveSession(photo.photoId, session).catch((err: unknown) => {
+            store.setState({ statusMessage: `Could not save edit: ${err instanceof Error ? err.message : String(err)}` });
+          });
           recomputeReports();
           viewport?.markMasksDirty();
         }
@@ -803,7 +823,9 @@ function mountShell(): void {
         const session = photo ? state.sessions.get(photo.photoId) : null;
         if (!photo || !session) return;
         if (session.addPolygonGrain(points) > 0) {
-          void persistActiveSession(photo.photoId, session);
+          void persistActiveSession(photo.photoId, session).catch((err: unknown) => {
+            store.setState({ statusMessage: `Could not save edit: ${err instanceof Error ? err.message : String(err)}` });
+          });
           recomputeReports();
           viewport?.markMasksDirty();
         }
@@ -821,7 +843,9 @@ function mountShell(): void {
           },
         };
         if (updated.roiConfig) state.sessions.get(photo.photoId)?.setRoiConfig(effectiveRoi(updated, state.siteOptions));
-        void savePhoto(updated);
+        void savePhoto(updated).catch((err: unknown) => {
+          store.setState({ statusMessage: `Could not save exclusion: ${err instanceof Error ? err.message : String(err)}` });
+        });
         store.setState({
           photos: state.photos.map((p) => (p.photoId === photo.photoId ? updated : p)),
         });
@@ -841,7 +865,9 @@ function mountShell(): void {
           },
         };
         if (updated.roiConfig) state.sessions.get(photo.photoId)?.setRoiConfig(effectiveRoi(updated, state.siteOptions));
-        void savePhoto(updated);
+        void savePhoto(updated).catch((err: unknown) => {
+          store.setState({ statusMessage: `Could not save exclusion: ${err instanceof Error ? err.message : String(err)}` });
+        });
         store.setState({
           photos: state.photos.map((p) => (p.photoId === photo.photoId ? updated : p)),
         });
