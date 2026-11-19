@@ -79,7 +79,10 @@ function fakeWorld(opts: { failIds?: string[]; abortAfter?: number } = {}) {
   return { sites, photos, results, storage, batchCalls, actionsRef };
 }
 
-function setup(world: ReturnType<typeof fakeWorld>) {
+function setup(
+  world: ReturnType<typeof fakeWorld>,
+  overrides: { rectify?: () => Promise<null> } = {},
+) {
   const store = new AppStore(createInitialState());
   const log: string[] = [];
   const changed: string[] = [];
@@ -93,7 +96,7 @@ function setup(world: ReturnType<typeof fakeWorld>) {
     images: {
       imageSize: async () => ({ width: 120, height: 80 }),
       metadata: async () => undefined,
-      rectify: async () => null,
+      rectify: overrides.rectify ?? (async () => null),
     },
     syncViewport: async () => {},
     activity: {
@@ -263,6 +266,52 @@ describe('workspace actions', () => {
     expect(store.getState().singlePhotoStats?.unit).toBe('mm');
     expect(store.getState().singlePhotoStats!.areaWeightedB.D50).toBeCloseTo(pxD50 * 5, 3);
     expect(store.getState().siteReport?.unit).toBe('mm');
+  });
+
+  it('clears stale singlePhotoStats when adding a new unanalysed photo', async () => {
+    const world = fakeWorld();
+    world.sites.set('a', site('a', ['p1']));
+    world.photos.set('p1', photo('p1', 'a'));
+    const { store, actions } = setup(world);
+    await actions.createDefaultOrLoadSites();
+    await actions.runBatch();
+    expect(store.getState().singlePhotoStats).not.toBeNull();
+
+    await actions.handleFilesAdded([new File(['x'], 'two.jpg', { type: 'image/jpeg' })]);
+    expect(store.getState().activePhotoId).not.toBe('p1');
+    expect(store.getState().singlePhotoStats).toBeNull();
+  });
+
+  it('clears pendingRectifyPoints and reports status when rectification fails or returns null', async () => {
+    const world = fakeWorld();
+    world.sites.set('a', site('a', ['p1']));
+    world.photos.set('p1', photo('p1', 'a'));
+    const corners = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }] as [
+      { x: number; y: number },
+      { x: number; y: number },
+      { x: number; y: number },
+      { x: number; y: number },
+    ];
+
+    // Case 1: images.rectify throws
+    const throwing = setup(world, {
+      rectify: async () => {
+        throw new Error('degenerate quad');
+      },
+    });
+    await throwing.actions.createDefaultOrLoadSites();
+    throwing.store.setState({ pendingRectifyPoints: corners });
+    await throwing.actions.applyRectificationToActive(corners, 100, 100);
+    expect(throwing.store.getState().pendingRectifyPoints).toEqual([]);
+    expect(throwing.store.getState().statusMessage).toContain('Rectification failed: degenerate quad');
+
+    // Case 2: images.rectify returns null
+    const returningNull = setup(world, { rectify: async () => null });
+    await returningNull.actions.createDefaultOrLoadSites();
+    returningNull.store.setState({ pendingRectifyPoints: corners });
+    await returningNull.actions.applyRectificationToActive(corners, 100, 100);
+    expect(returningNull.store.getState().pendingRectifyPoints).toEqual([]);
+    expect(returningNull.store.getState().statusMessage).toContain('Rectification failed:');
   });
 });
 

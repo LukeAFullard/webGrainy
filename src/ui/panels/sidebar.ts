@@ -307,7 +307,7 @@ export function renderSidebarHtml(state: AppState, view: SidebarView): string {
           <span class="field-hint" style="margin-top:6px;">Settings are remembered in this browser for your next visit.</span>
           <button type="button" class="btn btn-sm" data-action="reset-analysis-params" style="margin-top:6px;">Reset analysis settings to defaults</button>
         </details>
-        <button type="button" class="btn btn-sm" data-action="run-active" style="margin-top:8px;" ${!state.activePhotoId || state.batchRunning ? 'disabled' : ''} title="Re-analyse the photo shown in the middle with these settings">Re-analyse this photo</button>
+        <button type="button" class="btn btn-sm" data-action="run-active" style="margin-top:8px;" ${!state.activePhotoId || state.batchRunning || state.enhancing ? 'disabled' : ''} title="Re-analyse the photo shown in the middle with these settings">Re-analyse this photo</button>
       </details>
     </div>
   `;
@@ -359,7 +359,7 @@ export function photoSummaryHtml(state: AppState): string {
 /** Bulk actions for the photos selected in select mode. */
 export function bulkBarHtml(state: AppState): string {
   const n = state.selectedPhotoIds.size;
-  const dis = n === 0 || state.batchRunning ? 'disabled' : '';
+  const dis = n === 0 || state.batchRunning || state.enhancing ? 'disabled' : '';
   return `<div class="bulk-bar" role="group" aria-label="Actions for selected photos">
     <span>${n} selected</span>
     <button type="button" class="btn btn-xs" data-action="photo-select-all">${n > 0 && n === visiblePhotos(state).length ? 'Select none' : 'Select all shown'}</button>

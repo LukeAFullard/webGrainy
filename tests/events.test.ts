@@ -304,4 +304,29 @@ describe('form changes', () => {
     expect(rectHtml).toContain('id="rect-w" type="number" value="300"');
     expect(rectHtml).toContain('id="rect-h" type="number" value="200"');
   });
+
+  it('syncs modified siteOptions into state.sites and ignores NaN numeric inputs', () => {
+    const { ctx, store } = setup();
+    routeChange(el({ 'data-site-opt': 'confidenceLevel', 'data-numeric': 'true' }, { tagName: 'SELECT', value: '0.9' }), ctx);
+    expect(store.getState().siteOptions.confidenceLevel).toBe(0.9);
+    expect(store.getState().sites.find((s) => s.siteId === 's1')?.options.confidenceLevel).toBe(0.9);
+
+    routeChange(el({ 'data-site-opt': 'maxExcludedFraction' }, { tagName: 'INPUT', type: 'number', value: '' }), ctx);
+    expect(Number.isFinite(store.getState().siteOptions.maxExcludedFraction)).toBe(true);
+  });
+
+  it('clears pending calibration and rectify points when switching photos via keyboard shortcut', () => {
+    const { ctx, store } = setup();
+    store.setState({
+      photos: [{ photoId: 'p1' } as never, { photoId: 'p2' } as never],
+      activePhotoId: 'p1',
+      pendingCalibrationPoints: [{ x: 10, y: 20 }],
+      pendingRectifyPoints: [{ x: 1, y: 2 }, { x: 3, y: 4 }],
+    });
+    const ev = { key: ']', ctrlKey: false, metaKey: false, shiftKey: false, preventDefault: vi.fn() };
+    handleShortcutKey(ev, ctx);
+    expect(store.getState().activePhotoId).toBe('p2');
+    expect(store.getState().pendingCalibrationPoints).toEqual([]);
+    expect(store.getState().pendingRectifyPoints).toEqual([]);
+  });
 });

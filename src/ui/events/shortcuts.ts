@@ -16,7 +16,13 @@ export function runShortcut(cmd: ShortcutCommand, ctx: EventContext): boolean {
       const idx = st.photos.findIndex((p) => p.photoId === st.activePhotoId);
       const next = st.photos[Math.min(st.photos.length - 1, Math.max(0, (idx === -1 ? 0 : idx) + cmd.step))];
       if (!next || next.photoId === st.activePhotoId) return false;
-      ctx.store.setState({ activePhotoId: next.photoId, selectedGrainIds: new Set(), inspectedGrainId: null });
+      ctx.store.setState({
+        activePhotoId: next.photoId,
+        selectedGrainIds: new Set(),
+        inspectedGrainId: null,
+        pendingCalibrationPoints: [],
+        pendingRectifyPoints: [],
+      });
       ctx.actions.recomputeReports();
       void ctx.ui.syncViewport(true);
       return true;

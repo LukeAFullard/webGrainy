@@ -1344,11 +1344,17 @@ function attachDelegatedHandlers(): void {
       if (store.getState().showLanding) {
         store.setState({ showLanding: false });
       }
-      void importSiteArchive(file).then(async (siteId) => {
-        const sites = await listSites();
-        store.setState({ sites, statusMessage: 'Imported .webgrainy.json archive' });
-        await loadSiteData(siteId);
-      });
+      void importSiteArchive(file)
+        .then(async (siteId) => {
+          const sites = await listSites();
+          store.setState({ sites, statusMessage: 'Imported .webgrainy.json archive' });
+          await loadSiteData(siteId);
+        })
+        .catch((err: unknown) => {
+          store.setState({
+            statusMessage: `Failed to import ${file.name}: ${err instanceof Error ? err.message : String(err)}`,
+          });
+        });
       archiveInputEl.value = '';
     }
   });
@@ -1391,11 +1397,17 @@ function attachDelegatedHandlers(): void {
       store.setState({ showLanding: false });
     }
     if (archive) {
-      void importSiteArchive(archive).then(async (siteId) => {
-        const sites = await listSites();
-        store.setState({ sites, statusMessage: 'Imported .webgrainy.json archive' });
-        await loadSiteData(siteId);
-      });
+      void importSiteArchive(archive)
+        .then(async (siteId) => {
+          const sites = await listSites();
+          store.setState({ sites, statusMessage: 'Imported .webgrainy.json archive' });
+          await loadSiteData(siteId);
+        })
+        .catch((err: unknown) => {
+          store.setState({
+            statusMessage: `Failed to import ${archive.name}: ${err instanceof Error ? err.message : String(err)}`,
+          });
+        });
     }
     if (images.length > 0) {
       void handleFilesAdded(images);

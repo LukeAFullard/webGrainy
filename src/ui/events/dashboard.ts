@@ -115,12 +115,31 @@ export function handleDashboardChange(target: ControlLike, ctx: EventContext): b
   const st = ctx.store.getState();
   const nextOpts = { ...st.siteOptions } as Record<string, unknown>;
   if (isInput(target) && target.type === 'checkbox') nextOpts[siteOptKey] = target.checked;
-  else if (isInput(target) && target.type === 'number') nextOpts[siteOptKey] = Number(target.value);
-  else if (isSelect(target)) nextOpts[siteOptKey] = target.dataset['numeric'] === 'true' ? Number(target.value) : target.value;
+  else if (isInput(target) && target.type === 'number') {
+    const v = Number(target.value);
+    if (!Number.isFinite(v)) return true;
+    nextOpts[siteOptKey] = v;
+  } else if (isSelect(target)) {
+    if (target.dataset['numeric'] === 'true') {
+      const v = Number(target.value);
+      if (!Number.isFinite(v)) return true;
+      nextOpts[siteOptKey] = v;
+    } else {
+      nextOpts[siteOptKey] = target.value;
+    }
+  }
   const opts = nextOpts as unknown as typeof st.siteOptions;
   const activeSite = getActiveSite(st);
-  if (activeSite) void ctx.storage.saveSite({ ...activeSite, options: opts, updatedAt: Date.now() });
-  ctx.store.setState({ siteOptions: opts });
+  if (activeSite) {
+    const updatedSite = { ...activeSite, options: opts, updatedAt: Date.now() };
+    void ctx.storage.saveSite(updatedSite);
+    ctx.store.setState({
+      siteOptions: opts,
+      sites: st.sites.map((s) => (s.siteId === activeSite.siteId ? updatedSite : s)),
+    });
+  } else {
+    ctx.store.setState({ siteOptions: opts });
+  }
   if (siteOptKey === 'maxExcludedFraction') {
     ctx.actions.clearStoredSiteInputs(); // other sites' ROIs use the tolerance too
     for (const ph of st.photos) {
