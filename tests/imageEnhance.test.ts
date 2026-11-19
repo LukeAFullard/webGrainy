@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   ENHANCE_MODELS,
   MAX_UPSCALE_OUTPUT_SIDE,
+  photoUpscaleFactor,
   runTiledImageEnhancement,
   scaleCalibrationAndRoi,
   type EnhanceSessionLike,
@@ -176,6 +177,16 @@ describe('imageEnhance', () => {
     const s1 = scaleCalibrationAndRoi(cal, roi, 1);
     expect(s1.calibration).toBe(cal);
     expect(s1.roiConfig).toBe(roi);
+
+    // Cumulative upscale factor stays 2 even if a 1x Deblur runs after 2x Upscale.
+    expect(photoUpscaleFactor({ width: 1000 })).toBe(1);
+    expect(
+      photoUpscaleFactor({
+        width: 2000,
+        originalBackup: { width: 1000 },
+        metadata: { enhancement: { scaleFactor: 1 } },
+      }),
+    ).toBe(2);
   });
 
   it('ImageGrainsEngine.releaseSessions releases cached sessions without disposing the engine', async () => {

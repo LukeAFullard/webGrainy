@@ -609,12 +609,19 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
     if (!rectified) return;
     const cal = rectified.calibration;
 
+    const { roiConfig: _dropRoi, originalBackup: _dropBackup, metadata: oldMeta, ...photoBase } = photo;
+    let nextMeta = oldMeta;
+    if (oldMeta?.enhancement) {
+      const { enhancement: _dropEnh, ...restMeta } = oldMeta;
+      nextMeta = restMeta;
+    }
     const updatedPhoto: PhotoRecord = {
-      ...photo,
+      ...photoBase,
       imageBlob: rectified.blob,
       width: rectified.width,
       height: rectified.height,
       calibration: cal,
+      ...(nextMeta ? { metadata: nextMeta } : {}),
     };
     await savePhoto(updatedPhoto);
     await storage.savePhotoResult({

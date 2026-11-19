@@ -11,6 +11,7 @@ import {
   type PhotoRecord,
 } from '../modules/projectStorage.js';
 import { rectifyPerspective } from '../modules/roiAndRectify.js';
+import { grainPassesSizeCutoffs } from '../modules/sedimentStats.js';
 import {
   buildSiteInputs,
   effectiveRoi,
@@ -395,12 +396,24 @@ function renderViewportExtras(state: AppState): void {
     const grain = session.getResult().grains.find((g) => g.id === state.inspectedGrainId);
     if (grain) {
       const ext = session.getExtendedGrain(grain.id);
+      const exclReasons: string[] = [];
+      if (session.getRoiFilterResult()?.excludedGrainIds.has(grain.id)) exclReasons.push('ROI');
+      if (session.getExcludeBorder() && grain.touchesBorder) exclReasons.push('edge');
+      if (
+        !grainPassesSizeCutoffs(grain, {
+          minBaxisPx: state.siteOptions.minBaxisPx ?? 15,
+          minSizeMm: state.siteOptions.minSizeMm ?? 0,
+          sizeMetric: state.siteOptions.sizeMetric ?? 'bAxis',
+        })
+      ) {
+        exclReasons.push('below cutoff');
+      }
       inspectorEl.style.display = 'block';
       inspectorEl.innerHTML = `
         <div class="row-between" style="margin-bottom:4px;">
           <strong>Grain #${grain.id}</strong>${
-            session.getRoiFilterResult()?.excludedGrainIds.has(grain.id)
-              ? ' <span class="badge warn" title="Outside the ROI or inside an excluded area: not counted in the statistics">not counted</span>'
+            exclReasons.length > 0
+              ? ` <span class="badge warn" title="Excluded from PSD statistics (${esc(exclReasons.join(', '))})">not counted (${esc(exclReasons.join(', '))})</span>`
               : ''
           }
           <button type="button" class="btn btn-sm" data-action="close-inspector" aria-label="Close grain inspector">×</button>
