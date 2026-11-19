@@ -12,7 +12,8 @@
     "test:e2e:browser": "node scripts/smoke-dist.mjs"
   },
   "dependencies": {
-    "onnxruntime-web": "^1.31.1"
+    "onnxruntime-web": "^1.31.1",
+    "utif2": "^4.1.0"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",

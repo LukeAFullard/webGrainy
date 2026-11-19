@@ -19,6 +19,7 @@ import { CanvasViewport } from './canvasViewport.js';
 import { parseJpegExifMetadata } from './exif.js';
 import { computeBlurScoreFromRgba, computeEffectiveDetectionLimit } from '../modules/photoQuality.js';
 import { enhanceImageBuffer, type EnhanceKind, type EnhanceProgressEvent } from '../modules/imageEnhance.js';
+import { decodeTiffBuffer, isSupportedImageFile, isTiffFile } from '../modules/tiffDecode.js';
 import { renderHelpModalHtml } from './help.js';
 import { wasmThreadsFor } from '../modules/onnxInference.js';
 import { GUIDE_HIDDEN_KEY, guideInputFrom, guideSteps, renderGuideHtml } from './onboarding.js';
@@ -222,6 +223,10 @@ const actions = createWorkspaceActions({
   batchEngine: engine,
   checkStorageQuota,
   images: {
+    prepareFile: async (file) => {
+      if (!isTiffFile(file)) return null;
+      return decodeTiffFileToPng(file);
+    },
     imageSize: async (file) => {
       const bmp = await createImageBitmap(file);
       const size = { width: bmp.width, height: bmp.height };
@@ -681,7 +686,7 @@ function mountShell(): void {
     <div class="activity-bar" id="activity-bar" role="status" aria-live="polite" hidden></div>
     <dialog id="app-dialog" class="app-dialog" closedby="any" aria-labelledby="dialog-title"></dialog>
     <div id="sr-announcer" class="sr-only" aria-live="polite" aria-atomic="true"></div>
-    <input type="file" id="photo-file-input" accept="image/*" multiple style="display:none;" />
+    <input type="file" id="photo-file-input" accept="image/*,.tif,.tiff" multiple style="display:none;" />
     <input type="file" id="archive-file-input" accept=".json,.webgrainy.json" style="display:none;" />
   `;
 
@@ -976,6 +981,34 @@ function eventContext(): EventContext {
       },
     },
     makeId,
+  };
+}
+
+/** Decodes a TIFF/GeoTIFF file via UTIF into a browser-universal lossless PNG blob. */
+async function decodeTiffFileToPng(file: File) {
+  const buf = await file.arrayBuffer();
+  const decoded = decodeTiffBuffer(buf);
+  const canvas = document.createElement('canvas');
+  canvas.width = decoded.width;
+  canvas.height = decoded.height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Could not create 2D canvas context for TIFF decoding.');
+  const imgData = new ImageData(new Uint8ClampedArray(decoded.data), decoded.width, decoded.height);
+  ctx.putImageData(imgData, 0, 0);
+  const blob = await new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('Failed to encode decoded TIFF as PNG.'))), 'image/png');
+  });
+  const blurScore = await computeBlurScoreFromBlob(blob);
+  const metadata =
+    decoded.metadata || blurScore !== undefined
+      ? { ...(decoded.metadata ?? {}), ...(blurScore !== undefined ? { blurScore } : {}) }
+      : undefined;
+  return {
+    blob,
+    width: decoded.width,
+    height: decoded.height,
+    ...(metadata ? { metadata } : {}),
+    ...(decoded.calibration ? { calibration: decoded.calibration } : {}),
   };
 }
 
@@ -1422,7 +1455,7 @@ function setupLaunchQueue(): void {
       const archiveFiles = files.filter(
         (f) => f.name.endsWith('.webgrainy.json') || f.name.endsWith('.json'),
       );
-      const imageFiles = files.filter((f) => f.type.startsWith('image/'));
+      const imageFiles = files.filter((f) => isSupportedImageFile(f));
 
       for (const archive of archiveFiles) {
         try {
