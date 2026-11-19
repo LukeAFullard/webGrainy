@@ -272,6 +272,11 @@ export type InferencePipeline = 'cellpose' | 'legacy';
 
 export interface AnalysisConfig {
   model?: ModelKind | 'auto';
+  /**
+   * The photo's real pixel size when the image passed in was decoded smaller (very large
+   * photos, see MAX_DECODE_PIXELS). Results are then reported in the photo's own pixels.
+   */
+  originalSize?: { width: number; height: number };
   /** Cellpose-SAM weight file (default 'auto'). Ignored for U-Net. */
   cpsamWeights?: CpsamWeights;
   /**
@@ -323,6 +328,8 @@ export interface AnalysisProvenance {
   scaleMode?: string;
   /** Working image enlarged by this factor for fine gravel (U-Net), if any. */
   fineGrainUpscale?: number;
+  /** Size the photo was decoded at when it was larger than MAX_DECODE_PIXELS. */
+  decodedSize?: { width: number; height: number };
   effectiveScaleFactor?: number;
   applyClahe?: boolean;
   claheClipLimit?: number;

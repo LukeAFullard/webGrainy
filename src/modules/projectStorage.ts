@@ -969,6 +969,31 @@ function isAbortError(err: unknown): boolean {
  * Sequentially processes pending photos in a site using a single `ImageGrainsEngine`
  * instance, releasing decoded `ImageBitmap` buffers in `finally` blocks after each photo.
  */
+/**
+ * Largest image (pixels) decoded for analysis. iOS Safari refuses canvases over 16.7 MP
+ * (recent iPhones take 24-48 MP photos) and full-size decodes of large photos cost hundreds
+ * of MB. Larger photos are decoded smaller; the engine reports results in the photo's own
+ * pixels (`originalSize`). With Auto image scale the network input is unchanged (at most
+ * 1024 px either way).
+ */
+export const MAX_DECODE_PIXELS = 16_777_216;
+
+/** Decodes `blob`, shrinking it (aspect kept) when it exceeds MAX_DECODE_PIXELS. */
+export async function decodeWithinPixelLimit(
+  blob: Blob,
+  createBitmap: (b: Blob, opts?: ImageBitmapOptions) => Promise<ImageBitmap>,
+  maxPixels = MAX_DECODE_PIXELS,
+): Promise<ImageBitmap> {
+  const bmp = await createBitmap(blob);
+  const px = bmp.width * bmp.height;
+  if (px <= maxPixels) return bmp;
+  const k = Math.sqrt(maxPixels / px);
+  const resizeWidth = Math.max(1, Math.floor(bmp.width * k));
+  const resizeHeight = Math.max(1, Math.floor(bmp.height * k));
+  bmp.close();
+  return createBitmap(blob, { resizeWidth, resizeHeight, resizeQuality: 'high' });
+}
+
 export async function runSiteBatch(
   opts: BatchRunOptions,
 ): Promise<BatchRunResult> {
@@ -1018,7 +1043,7 @@ export async function runSiteBatch(
           'createImageBitmap is not available in this environment; provide decodeImage option.',
         );
       }
-      return globalThis.createImageBitmap(blob);
+      return decodeWithinPixelLimit(blob, globalThis.createImageBitmap.bind(globalThis));
     });
 
   const completedPhotoIds: string[] = [];
@@ -1070,6 +1095,8 @@ export async function runSiteBatch(
       const mergedConfig: AnalysisConfig = {
         ...opts.analysisConfig,
         ...photo.analysisConfig,
+        // Results in the photo's own pixels even if it was decoded smaller.
+        originalSize: { width: photo.width, height: photo.height },
         // Skip inference tiles outside this photo's ROI / exclusions (default on).
         ...(opts.analysisConfig?.skipTilesOutsideRoi !== false && photo.roiConfig !== undefined
           ? { inferenceRoi: photo.roiConfig }

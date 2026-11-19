@@ -35,6 +35,7 @@ export function buildAnalysisProvenance(params: {
   inferencePipeline?: string;
   scaleMode?: string;
   fineGrainUpscale?: number;
+  decodedSize?: { width: number; height: number };
   effectiveScaleFactor?: number;
   applyClahe?: boolean;
   claheClipLimit?: number;
@@ -55,6 +56,7 @@ export function buildAnalysisProvenance(params: {
     ...(params.inferencePipeline !== undefined ? { inferencePipeline: params.inferencePipeline } : {}),
     ...(params.scaleMode !== undefined ? { scaleMode: params.scaleMode } : {}),
     ...(params.fineGrainUpscale !== undefined ? { fineGrainUpscale: params.fineGrainUpscale } : {}),
+    ...(params.decodedSize !== undefined ? { decodedSize: { ...params.decodedSize } } : {}),
     ...(params.effectiveScaleFactor !== undefined
       ? { effectiveScaleFactor: params.effectiveScaleFactor }
       : {}),
