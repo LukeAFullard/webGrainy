@@ -102,7 +102,7 @@ export const sidebarActions: Record<string, ActionHandler> = {
   'photo-bulk': (el, ctx) => {
     const st = ctx.store.getState();
     const ids = st.photos.filter((p) => st.selectedPhotoIds.has(p.photoId)).map((p) => p.photoId);
-    if (ids.length === 0 || st.batchRunning) return;
+    if (ids.length === 0 || st.batchRunning || st.enhancing) return;
     const what = el.dataset['bulk'];
     const n = `${ids.length} photo${ids.length === 1 ? '' : 's'}`;
     if (what === 'include' || what === 'exclude') {
@@ -236,12 +236,19 @@ export function handleSidebarChange(target: ControlLike, ctx: EventContext): boo
     const st = ctx.store.getState();
     const next = { ...st.analysisParams } as Record<string, unknown>;
     if (isInput(target) && target.type === 'checkbox') next[paramKey] = target.checked;
-    else if (isInput(target) && target.type === 'number') next[paramKey] = Number(target.value);
-    else if (isSelect(target)) next[paramKey] = target.value;
+    else if (isInput(target) && target.type === 'number') {
+      const v = Number(target.value);
+      if (!Number.isFinite(v)) return true;
+      next[paramKey] = v;
+    } else if (isSelect(target)) next[paramKey] = target.value;
     ctx.store.setState({ analysisParams: next as unknown as typeof st.analysisParams });
     if (paramKey === 'excludeBorder' && isInput(target)) {
-      // Border exclusion only filters statistics, so apply it to analysed photos now.
-      for (const sess of st.sessions.values()) sess.setExcludeBorder(target.checked === true);
+      // Border exclusion only filters statistics, so apply it to analysed photos now and persist.
+      const checked = target.checked === true;
+      for (const [photoId, sess] of st.sessions.entries()) {
+        sess.setExcludeBorder(checked);
+        void ctx.actions.persistActiveSession(photoId, sess).catch(() => undefined);
+      }
       ctx.actions.recomputeReports();
       void ctx.ui.syncViewport(false);
     }

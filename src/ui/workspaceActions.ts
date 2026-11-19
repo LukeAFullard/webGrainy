@@ -310,6 +310,7 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
       const lastAdded = added[added.length - 1];
       if (lastAdded) {
         store.setState({ activePhotoId: lastAdded.photoId });
+        recomputeReports();
         await deps.syncViewport(true);
       }
     }
@@ -559,7 +560,7 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
   async function deletePhotos(photoIds: readonly string[]): Promise<void> {
     const st = store.getState();
     const site = getActiveSite(st);
-    if (!site || st.batchRunning) return;
+    if (!site || st.batchRunning || enhancing) return;
     const ids = new Set(photoIds);
     for (const id of ids) await storage.deletePhoto(id);
     await storage.saveSite({ ...site, photoOrder: site.photoOrder.filter((id) => !ids.has(id)), updatedAt: Date.now() });
@@ -640,55 +641,80 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
     physHeightMm: number,
   ): Promise<void> {
     const state = store.getState();
+    if (state.batchRunning || enhancing) return;
     const photo = getActivePhoto(state);
     if (!photo) return;
 
-    const rectified = await images.rectify(photo.imageBlob, corners, physWidthMm, physHeightMm);
-    if (!rectified) return;
-    const cal = rectified.calibration;
+    try {
+      const rectified = await images.rectify(photo.imageBlob, corners, physWidthMm, physHeightMm);
+      if (!rectified) {
+        store.setState({
+          pendingRectifyPoints: [],
+          statusMessage: 'Rectification failed: could not compute perspective transform for those corners.',
+        });
+        await deps.syncViewport(false);
+        return;
+      }
+      const cal = rectified.calibration;
 
-    const { roiConfig: _dropRoi, originalBackup: _dropBackup, metadata: oldMeta, ...photoBase } = photo;
-    let nextMeta = oldMeta;
-    if (oldMeta?.enhancement) {
-      const { enhancement: _dropEnh, ...restMeta } = oldMeta;
-      nextMeta = restMeta;
+      const latestBeforeSave = store.getState();
+      const latestPhoto = latestBeforeSave.photos.find((p) => p.photoId === photo.photoId);
+      if (!latestPhoto) {
+        store.setState({ pendingRectifyPoints: [] });
+        return;
+      }
+
+      const { roiConfig: _dropRoi, originalBackup: _dropBackup, metadata: oldMeta, ...photoBase } = latestPhoto;
+      let nextMeta = oldMeta;
+      if (oldMeta?.enhancement) {
+        const { enhancement: _dropEnh, ...restMeta } = oldMeta;
+        nextMeta = restMeta;
+      }
+      const updatedPhoto: PhotoRecord = {
+        ...photoBase,
+        imageBlob: rectified.blob,
+        width: rectified.width,
+        height: rectified.height,
+        calibration: cal,
+        ...(nextMeta ? { metadata: nextMeta } : {}),
+      };
+      await savePhoto(updatedPhoto);
+      await storage.savePhotoResult({
+        photoId: latestPhoto.photoId,
+        status: 'pending',
+        updatedAt: Date.now(),
+      });
+
+      const latestState = store.getState();
+      const oldUrl = latestState.thumbUrls.get(latestPhoto.photoId);
+      if (oldUrl) revokeUrl(oldUrl);
+      const nextThumbs = new Map(latestState.thumbUrls);
+      nextThumbs.set(latestPhoto.photoId, createUrl(rectified.blob));
+
+      const nextSessions = new Map(latestState.sessions);
+      nextSessions.delete(latestPhoto.photoId);
+      const nextStatuses = new Map(latestState.photoStatuses);
+      nextStatuses.set(latestPhoto.photoId, 'pending');
+
+      store.setState({
+        photos: latestState.photos.map((p) => (p.photoId === latestPhoto.photoId ? updatedPhoto : p)),
+        thumbUrls: nextThumbs,
+        sessions: nextSessions,
+        photoStatuses: nextStatuses,
+        pendingRectifyPoints: [],
+        activeTool: 'inspect',
+        statusMessage: `Rectified ${latestPhoto.label} (${rectified.width}×${rectified.height}px, ${cal.mmPerPx.toFixed(4)} mm/px). Ready to re-analyze.`,
+      });
+      recomputeReports();
+      deps.onStorageChanged();
+      await deps.syncViewport(true);
+    } catch (err) {
+      store.setState({
+        pendingRectifyPoints: [],
+        statusMessage: `Rectification failed: ${err instanceof Error ? err.message : String(err)}`,
+      });
+      await deps.syncViewport(false);
     }
-    const updatedPhoto: PhotoRecord = {
-      ...photoBase,
-      imageBlob: rectified.blob,
-      width: rectified.width,
-      height: rectified.height,
-      calibration: cal,
-      ...(nextMeta ? { metadata: nextMeta } : {}),
-    };
-    await savePhoto(updatedPhoto);
-    await storage.savePhotoResult({
-      photoId: photo.photoId,
-      status: 'pending',
-      updatedAt: Date.now(),
-    });
-
-    const oldUrl = state.thumbUrls.get(photo.photoId);
-    if (oldUrl) revokeUrl(oldUrl);
-    const nextThumbs = new Map(state.thumbUrls);
-    nextThumbs.set(photo.photoId, createUrl(rectified.blob));
-
-    const nextSessions = new Map(state.sessions);
-    nextSessions.delete(photo.photoId);
-    const nextStatuses = new Map(state.photoStatuses);
-    nextStatuses.set(photo.photoId, 'pending');
-
-    store.setState({
-      photos: state.photos.map((p) => (p.photoId === photo.photoId ? updatedPhoto : p)),
-      thumbUrls: nextThumbs,
-      sessions: nextSessions,
-      photoStatuses: nextStatuses,
-      pendingRectifyPoints: [],
-      activeTool: 'inspect',
-      statusMessage: `Rectified ${photo.label} (${rectified.width}×${rectified.height}px, ${cal.mmPerPx.toFixed(4)} mm/px). Ready to re-analyze.`,
-    });
-    recomputeReports();
-    await deps.syncViewport(true);
   }
 
   let enhancing = false;
@@ -814,33 +840,40 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
       ...(restoredRoi ? { roiConfig: restoredRoi } : {}),
       ...(orig.metadata ? { metadata: orig.metadata } : {}),
     };
-    await savePhoto(restoredPhoto);
-    await storage.savePhotoResult({
-      photoId: photo.photoId,
-      status: 'pending',
-      updatedAt: Date.now(),
-    });
+    try {
+      await savePhoto(restoredPhoto);
+      await storage.savePhotoResult({
+        photoId: photo.photoId,
+        status: 'pending',
+        updatedAt: Date.now(),
+      });
 
-    const oldUrl = state.thumbUrls.get(photo.photoId);
-    if (oldUrl) revokeUrl(oldUrl);
-    const nextThumbs = new Map(state.thumbUrls);
-    nextThumbs.set(photo.photoId, createUrl(orig.imageBlob));
+      const latestState = store.getState();
+      const oldUrl = latestState.thumbUrls.get(photo.photoId);
+      if (oldUrl) revokeUrl(oldUrl);
+      const nextThumbs = new Map(latestState.thumbUrls);
+      nextThumbs.set(photo.photoId, createUrl(orig.imageBlob));
 
-    const nextSessions = new Map(state.sessions);
-    nextSessions.delete(photo.photoId);
-    const nextStatuses = new Map(state.photoStatuses);
-    nextStatuses.set(photo.photoId, 'pending');
+      const nextSessions = new Map(latestState.sessions);
+      nextSessions.delete(photo.photoId);
+      const nextStatuses = new Map(latestState.photoStatuses);
+      nextStatuses.set(photo.photoId, 'pending');
 
-    store.setState({
-      photos: state.photos.map((p) => (p.photoId === photo.photoId ? restoredPhoto : p)),
-      thumbUrls: nextThumbs,
-      sessions: nextSessions,
-      photoStatuses: nextStatuses,
-      statusMessage: `Reverted ${photo.label} to original (${orig.width}×${orig.height}px). Ready to analyse.`,
-    });
-    recomputeReports();
-    deps.onStorageChanged();
-    await deps.syncViewport(true);
+      store.setState({
+        photos: latestState.photos.map((p) => (p.photoId === photo.photoId ? restoredPhoto : p)),
+        thumbUrls: nextThumbs,
+        sessions: nextSessions,
+        photoStatuses: nextStatuses,
+        statusMessage: `Reverted ${photo.label} to original (${orig.width}×${orig.height}px). Ready to analyse.`,
+      });
+      recomputeReports();
+      deps.onStorageChanged();
+      await deps.syncViewport(true);
+    } catch (err) {
+      store.setState({
+        statusMessage: `Revert failed: ${err instanceof Error ? err.message : String(err)}`,
+      });
+    }
   }
 
   async function refreshComparison(): Promise<void> {
