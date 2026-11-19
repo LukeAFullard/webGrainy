@@ -204,6 +204,11 @@ export const WORKFLOW_STEPS: ReadonlyArray<WorkflowStepSpec> = [
           'If a quadrat photo was taken at an angle, mark its four corners and enter the real width and height in mm to straighten it before analysis.',
       },
       {
+        label: 'TIFF, GeoTIFF & optional pre-processing',
+        detail:
+          'Imports JPEG, PNG, WebP, TIFF, and GeoTIFF locally (projected meter GeoTIFFs auto-calibrate mm/px). Optional 2× Upscale (PULSE) and Deblur (NAFNet) tools are available in the toolbar with 1-click Revert.',
+      },
+      {
         label: 'Stored in your browser',
         detail:
           'Photos and settings stay in this browser on your device. Use "Back up now" in the Site panel to save a portable .webgrainy.json project file.',
@@ -656,7 +661,7 @@ export function renderLandingHtml(state: AppState, view: LandingView): string {
 
           <div class="landing-drop-callout" id="landing-dropzone" data-action="add-photos" role="button" tabindex="0" aria-label="Add or drop gravel photos or a .webgrainy.json project archive to start">
             <strong>Drop gravel photos or a <code>.webgrainy.json</code> project file anywhere on this page</strong>
-            <span>Supports JPEG, PNG, and WebP · Stored only in this browser${siteCount > 0 ? ` · ${siteCount} saved site${siteCount === 1 ? '' : 's'} here` : ''}</span>
+            <span>Supports JPEG, PNG, WebP, TIFF &amp; GeoTIFF · Stored only in this browser${siteCount > 0 ? ` · ${siteCount} saved site${siteCount === 1 ? '' : 's'} here` : ''}</span>
           </div>
 
           <div class="landing-pref-row">
@@ -835,6 +840,26 @@ export function renderLandingHtml(state: AppState, view: LandingView): string {
                 <td>Phones, tablets, or quick field previews</td>
                 <td>Works almost anywhere with low memory use</td>
                 <td>Small and fast; ideal for quick checks or mobile use, though less detailed than Cellpose-SAM</td>
+              </tr>
+              <tr>
+                <th scope="row">
+                  <strong>PULSE 2&times; Upscale (Optional)</strong>
+                  <span class="table-sub">ONNX FP32 · MIT</span>
+                </th>
+                <td>1.4 MB</td>
+                <td>Low-resolution or fine-grain photos before analysis</td>
+                <td>Runs independently before segmentation and unloads automatically</td>
+                <td>L1/Charbonnier-trained (no GAN hallucination); doubles pixel resolution, auto-adjusts scale, with 1-click Revert</td>
+              </tr>
+              <tr>
+                <th scope="row">
+                  <strong>NAFNet Deblur (Optional)</strong>
+                  <span class="table-sub">ONNX FP32 · MIT</span>
+                </th>
+                <td>92 MB</td>
+                <td>Soft or motion-blurred photos before analysis</td>
+                <td>Runs on CPU (WASM) before segmentation and unloads automatically</td>
+                <td>PSNR/L1-trained motion deblurring (no GAN); preserves original photo for 1-click Revert and discloses use in reports</td>
               </tr>
             </tbody>
           </table>
