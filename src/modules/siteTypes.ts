@@ -18,6 +18,10 @@ export type PoolingMode =
 export interface SitePhotoMetadata {
   timestamp?: string;
   gps?: { lat: number; lon: number };
+  cameraMake?: string;
+  cameraModel?: string;
+  focalLength35mm?: number;
+  blurScore?: number;
   notes?: string;
 }
 

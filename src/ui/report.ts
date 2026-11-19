@@ -29,6 +29,12 @@ export interface ReportInput {
   metadata: Record<string, unknown>;
   /** Analysis and statistics settings, as label/value pairs. */
   settings: Array<[string, string]>;
+  /** Effective minimum resolvable grain diameter (same unit as `report.unit`). */
+  detectionLimit?: number;
+  /** Number of included photos with manual outline edits in this session. */
+  manualEditsCount?: number;
+  /** Min/max calibration scale across included photos (mm/px), when calibrated. */
+  resolutionRangeMmPerPx?: [number, number];
   psdSvg: string;
   histogramSvg: string | null;
   photos: ReportPhoto[];
@@ -59,6 +65,30 @@ export function buildSiteReportHtml(input: ReportInput): string {
   const fw = r.folkWard;
   const w = r.wentworth;
   const dateOnly = input.generatedAt.slice(0, 10);
+  const resText = input.resolutionRangeMmPerPx
+    ? Math.abs(input.resolutionRangeMmPerPx[1] - input.resolutionRangeMmPerPx[0]) < 1e-4
+      ? `${input.resolutionRangeMmPerPx[0].toFixed(3)} mm/px`
+      : `${input.resolutionRangeMmPerPx[0].toFixed(3)}–${input.resolutionRangeMmPerPx[1].toFixed(3)} mm/px`
+    : undefined;
+  const detText =
+    input.detectionLimit !== undefined && Number.isFinite(input.detectionLimit) && input.detectionLimit > 0
+      ? `~${input.detectionLimit.toFixed(u === 'mm' ? 1 : 0)} ${u}`
+      : undefined;
+  const editText =
+    input.manualEditsCount !== undefined
+      ? input.manualEditsCount > 0
+        ? `Manual outline edits applied (${input.manualEditsCount} photo${input.manualEditsCount === 1 ? '' : 's'})`
+        : 'Automated outlines (no manual edits recorded in session)'
+      : undefined;
+  const modelName = input.metadata['modelId'] ? String(input.metadata['modelId']) : 'ImageGrains 2.0 ONNX';
+  const modelHash = input.metadata['modelSha256'] ? String(input.metadata['modelSha256']).slice(0, 12) : undefined;
+  const methodsSentence = [
+    `Surface grain sizes for ${site.name} (${r.includedPhotoCount} photo${r.includedPhotoCount === 1 ? '' : 's'}, n = ${r.validGrainCount} grains) were measured in webGrainy using ${modelName}${modelHash ? ` (SHA-256 ${modelHash}…)` : ''}.`,
+    `Sizes report the 2D visible ${r.sizeMetric} (${r.statisticalBasisLabel})${resText ? ` at ${resText}` : ''}${detText ? `, with an effective pixel detection limit of ${detText}` : ''}.`,
+    editText ? `${editText}.` : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
 
   return `<!doctype html>
 <html lang="en">
@@ -81,6 +111,7 @@ export function buildSiteReportHtml(input: ReportInput): string {
   .photos { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
   .kv { display: grid; grid-template-columns: auto 1fr auto 1fr; gap: 1px 10px; font-size: 8.5pt; }
   .kv dt { font-weight: 600; } .kv dd { margin: 0; overflow-wrap: anywhere; }
+  .methods-box { margin-top: 8px; padding: 6px 8px; background: #f7fafc; border: 1px solid #e2e8f0; border-radius: 4px; font-size: 8.5pt; color: #2d3748; }
   .cite { columns: 2; column-gap: 16px; font-size: 7.5pt; color: #4a5568; padding-left: 14px; margin: 0; }
   .cite li { break-inside: avoid; margin-bottom: 2px; }
   .photo { break-inside: avoid; font-size: 7.5pt; line-height: 1.3; }
@@ -155,7 +186,10 @@ ${input.photos
 <dl class="kv">
 ${[
   ...input.settings,
-  ...(['appVersion', 'ortVersion', 'modelId', 'modelRevision'] as const)
+  ...(resText ? ([['Pixel resolution', resText]] as Array<[string, string]>) : []),
+  ...(detText ? ([['Effective detection limit', detText]] as Array<[string, string]>) : []),
+  ...(editText ? ([['Outline review', editText]] as Array<[string, string]>) : []),
+  ...(['appVersion', 'ortVersion', 'modelId', 'modelRevision', 'modelSha256'] as const)
     .filter((k) => input.metadata[k] !== undefined)
     .map((k): [string, string] => [k, String(input.metadata[k])]),
   ['Bootstrap', `${r.bootstrapMode}, ${r.bootstrapReplicates} replicates, seed ${r.bootstrapSeed}`] as [string, string],
@@ -164,7 +198,7 @@ ${[
   .map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`)
   .join('\n')}
 </dl>
-<p class="small">Sizes are 2D surface measurements from photos (${esc(r.sizeMetric)} of each grain's visible outline), not sieve sizes. Fine material under the surface layer is not seen.</p>
+<div class="methods-box"><strong>Methods summary:</strong> ${esc(methodsSentence)} Sizes are 2D surface measurements from photos (${esc(r.sizeMetric)} of each grain's visible outline), not sieve sizes; subsurface fines are not observed.</div>
 </section>
 
 <section>

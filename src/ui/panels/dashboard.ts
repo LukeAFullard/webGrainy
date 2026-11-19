@@ -1,6 +1,7 @@
 /** Results panel (This photo / Whole site): summary, settings, PSD, adequacy, shape and fabric tabs. */
 import { computeFabricRoseStats } from '../../modules/morphometricsExt.js';
 import { aspectRatioCounts, sizeHistogramFromWentworth } from '../../modules/histograms.js';
+import { computeEffectiveDetectionLimit, getPhotoQualityWarnings } from '../../modules/photoQuality.js';
 import {
   renderAspectRatioHistogramSvg,
   renderConvergenceChartSvg,
@@ -47,6 +48,50 @@ export function renderDashboardHtml(state: AppState, view: DashboardView): strin
         : 'Add & analyze photos to compute site statistics')
     : 'Single-Photo Area-Weighted (Grid-by-Number Equivalent)';
 
+  // Compute effective pixel detection limit for the current view.
+  const detectionLimitInfo = (() => {
+    if (!psd) return null;
+    if (isSite && report) {
+      let maxVal = 0;
+      for (const p of report.perPhoto) {
+        const sess = state.sessions.get(p.photoId);
+        const prov = sess?.getProvenance();
+        const dl = computeEffectiveDetectionLimit(
+          {
+            minSizeWorkingPx: prov?.postProcess?.minSize ?? state.analysisParams.minSize,
+            effectiveScaleFactor: sess?.workingImage.effectiveScaleFactor ?? 1,
+            minBaxisPx: state.siteOptions.minBaxisPx,
+            mmPerPx: unit === 'mm' ? p.mmPerPx : undefined,
+          },
+          psd,
+        );
+        if (dl && dl.unit === unit && dl.value > maxVal) maxVal = dl.value;
+      }
+      if (maxVal <= 0) return null;
+      return {
+        value: maxVal,
+        unit,
+        nearD5: Number.isFinite(psd.D5) && psd.D5 > 0 && psd.D5 <= maxVal * 1.25,
+        nearD16: Number.isFinite(psd.D16) && psd.D16 > 0 && psd.D16 <= maxVal * 1.5,
+      };
+    }
+    if (!isSite && activeSession) {
+      const prov = activeSession.getProvenance();
+      return computeEffectiveDetectionLimit(
+        {
+          minSizeWorkingPx: prov?.postProcess?.minSize ?? state.analysisParams.minSize,
+          effectiveScaleFactor: activeSession.workingImage.effectiveScaleFactor,
+          minBaxisPx: state.siteOptions.minBaxisPx,
+          mmPerPx: unit === 'mm' ? activePhoto?.calibration?.mmPerPx : undefined,
+        },
+        psd,
+      );
+    }
+    return null;
+  })();
+
+  const activePhotoWarnings = !isSite ? getPhotoQualityWarnings(activePhoto?.metadata) : [];
+
   let tabContent = '';
   if (state.dashboardTab === 'psd') {
     const psdSvg = (light: boolean): string => psd
@@ -59,6 +104,7 @@ export function renderDashboardHtml(state: AppState, view: DashboardView): strin
           ciLower: isSite ? report?.bootstrapCi.lower : undefined,
           ciUpper: isSite ? report?.bootstrapCi.upper : undefined,
           perPhotoCurves: isSite ? report?.perPhoto : undefined,
+          detectionLimit: detectionLimitInfo?.value,
           lightTheme: light,
         })
       : `<svg viewBox="0 0 400 220" xmlns="http://www.w3.org/2000/svg"><rect width="400" height="220" fill="${light ? '#ffffff' : '#0c1014'}"/><text x="200" y="110" text-anchor="middle" fill="${light ? '#4a5568' : '#8fa0b2'}" font-size="12" font-family="system-ui, sans-serif">No segmented grains yet</text></svg>`;
@@ -69,7 +115,22 @@ export function renderDashboardHtml(state: AppState, view: DashboardView): strin
       : activeSession
         ? activeSession.getSizeHistogram(step, activeMetric)
         : sizeHistogramFromWentworth([], step);
+    const detectionNoteHtml = detectionLimitInfo
+      ? `<div class="${detectionLimitInfo.nearD16 || detectionLimitInfo.nearD5 ? 'warning-banner' : 'field-hint'}" style="margin-top:6px;">
+          Effective pixel detection limit: <strong>~${detectionLimitInfo.value.toFixed(detectionLimitInfo.unit === 'mm' ? 1 : 0)} ${detectionLimitInfo.unit}</strong>${
+            detectionLimitInfo.nearD16
+              ? ' — fine tail (D16) is close to the resolution floor; consider a closer photo or a Field-count cutoff.'
+              : detectionLimitInfo.nearD5
+                ? ' — D5 is close to the resolution floor.'
+                : ''
+          }
+        </div>`
+      : '';
+    const photoWarnHtml = activePhotoWarnings
+      .map((w) => `<div class="warning-banner" style="margin-top:6px;">${esc(w.message)}</div>`)
+      .join('');
     tabContent = `
+      ${photoWarnHtml}
       <div class="row-between" style="margin-top:8px;">
         <div class="row">
           <button type="button" class="btn btn-sm ${state.psdXAxis === 'mm' ? 'active' : ''}" aria-pressed="${state.psdXAxis === 'mm' ? 'true' : 'false'}" data-psd-x="mm">mm (log₁₀)</button>
@@ -82,6 +143,7 @@ export function renderDashboardHtml(state: AppState, view: DashboardView): strin
         }
       </div>
       ${chartBox('cumulative-psd', 'Cumulative grain-size distribution', psdSvg, lightTheme)}
+      ${detectionNoteHtml}
       <div class="row" style="margin-top:8px;">
         <button type="button" class="btn btn-sm ${step === 0.5 ? 'active' : ''}" aria-pressed="${step === 0.5 ? 'true' : 'false'}" data-phi-step="0.5">Narrow classes (${sizeHist.unit === 'mm' ? '0.5 φ' : '×√2'})</button>
         <button type="button" class="btn btn-sm ${step === 1 ? 'active' : ''}" aria-pressed="${step === 1 ? 'true' : 'false'}" data-phi-step="1.0">Wide classes (${sizeHist.unit === 'mm' ? '1 φ' : '×2'})</button>

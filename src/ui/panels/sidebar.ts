@@ -6,6 +6,7 @@ import { helpButton } from '../help.js';
 import { defaultAnalysisParams, type AppState } from '../state.js';
 import { getActiveSite } from '../workspaceActions.js';
 import { earliestPhotoDate } from '../../modules/surveyDate.js';
+import { getPhotoQualityWarnings } from '../../modules/photoQuality.js';
 import { photoSummary, visiblePhotos } from '../photoList.js';
 import { esc } from './html.js';
 
@@ -111,6 +112,7 @@ export function renderSidebarHtml(state: AppState, view: SidebarView): string {
                   const thumb = state.thumbUrls.get(ph.photoId) ?? '';
                   const isActive = ph.photoId === state.activePhotoId;
                   const errMsg = status === 'error' ? state.photoErrors.get(ph.photoId) ?? 'Analysis failed (no details reported).' : '';
+                  const qualityWarnings = getPhotoQualityWarnings(ph.metadata);
                   return `
                     <div class="photo-item ${isActive ? 'active' : ''} ${state.photoSelectMode && state.selectedPhotoIds.has(ph.photoId) ? 'selected' : ''}">
                       ${
@@ -125,6 +127,7 @@ export function renderSidebarHtml(state: AppState, view: SidebarView): string {
                           <span class="photo-sub">
                             ${ph.width}×${ph.height}${ph.calibration ? ` · ${ph.calibration.mmPerPx.toFixed(3)}mm/px` : ' · uncal'}
                             ${recModel ? ` · ${recModel}` : ''}
+                            ${qualityWarnings.length > 0 ? ` · <span style="color:var(--warning);font-weight:500;" title="${esc(qualityWarnings.map((w) => w.message).join(' '))}">⚠ ${esc(qualityWarnings.map((w) => w.shortLabel).join(', '))}</span>` : ''}
                           </span>
                         </span>
                         <span class="badge ${status}"${errMsg ? ` title="${esc(errMsg)}"` : ''}>${status}</span>

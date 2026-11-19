@@ -38,6 +38,8 @@ export interface PsdChartInput {
   ciLower?: PsdPercentiles;
   ciUpper?: PsdPercentiles;
   perPhotoCurves?: Array<{ label: string; D16: number; D50: number; D84: number }>;
+  /** Effective minimum resolvable grain diameter (same unit as `psd`). */
+  detectionLimit?: number;
   lightTheme?: boolean;
 }
 
@@ -148,6 +150,27 @@ export function renderPsdChartSvg(input: PsdChartInput): string {
     parts.push(
       `<text x="${x.toFixed(1)}" y="${padT + plotH + 13}" text-anchor="middle" fill="${muted}" font-size="9" font-family="ui-monospace, monospace">${label}</text>`,
     );
+  }
+
+  // Effective pixel detection limit marker
+  if (
+    typeof input.detectionLimit === 'number' &&
+    Number.isFinite(input.detectionLimit) &&
+    input.detectionLimit > 0
+  ) {
+    const dx = xPx(toXVal(input.detectionLimit));
+    if (dx >= padL && dx <= padL + plotW) {
+      const limCol = input.lightTheme ? '#b7791f' : '#f5a623';
+      const limText = `Min ~${input.detectionLimit.toFixed(input.unit === 'mm' ? 1 : 0)} ${input.unit}`;
+      const anchor = dx > padL + plotW - 72 ? 'end' : 'start';
+      const tx = anchor === 'end' ? dx - 4 : dx + 4;
+      parts.push(
+        `<line x1="${dx.toFixed(1)}" y1="${padT}" x2="${dx.toFixed(1)}" y2="${padT + plotH}" stroke="${limCol}" stroke-width="1.2" stroke-dasharray="4,3" opacity="0.85" />`,
+      );
+      parts.push(
+        `<text x="${tx.toFixed(1)}" y="${padT + plotH - 5}" text-anchor="${anchor}" fill="${limCol}" font-size="8.5" font-family="ui-monospace, monospace">${esc(limText)}</text>`,
+      );
+    }
   }
 
   // Faint individual photo curves (D16-D50-D84)
