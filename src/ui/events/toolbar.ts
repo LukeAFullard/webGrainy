@@ -67,6 +67,11 @@ export const toolbarActions: Record<string, ActionHandler> = {
 
     for (const ph of state.photos) {
       if (ph.photoId === active.photoId) {
+        const activeSess = state.sessions.get(ph.photoId);
+        if (activeSess && activeSess.getCalibration()?.mmPerPx !== cal.mmPerPx) {
+          activeSess.setCalibration(cal);
+          toPersist.push({ photo: ph, session: activeSess });
+        }
         updatedPhotos.push(ph);
         continue;
       }
@@ -123,6 +128,17 @@ export function handleToolbarClick(target: ElementLike, ctx: EventContext): bool
 
 const KNOWN_CAL_PRESETS = new Set(['100|mm', '25|mm', '500|mm']);
 
+/** If the active photo already has two calibration points marked and no new calibration is mid-click,
+ *  re-apply the calibration immediately with the updated physical length/unit. */
+function reapplyCalibrationIfPresent(ctx: EventContext, lengthVal: number, unit: 'mm' | 'cm'): void {
+  const st = ctx.store.getState();
+  if (st.pendingCalibrationPoints.length > 0) return;
+  const active = getActivePhoto(st);
+  const existing = active?.calibration;
+  if (!existing) return;
+  void ctx.actions.applyCalibrationToActive(existing.pointA, existing.pointB, lengthVal, unit);
+}
+
 /** Calibration presets/inputs, rectify dimensions, and the Display menu; returns true when handled. */
 export function handleToolbarChange(target: ControlLike, ctx: EventContext): boolean {
   if (target.id === 'cal-preset') {
@@ -136,9 +152,10 @@ export function handleToolbarChange(target: ControlLike, ctx: EventContext): boo
           calibrationLength: numLen,
           calibrationUnit: nextUnit,
         });
+        if (len) ctx.ui.setFieldValue('cal-length', len);
+        if (unit) ctx.ui.setFieldValue('cal-unit', unit);
+        reapplyCalibrationIfPresent(ctx, numLen, nextUnit);
       }
-      if (len) ctx.ui.setFieldValue('cal-length', len);
-      if (unit) ctx.ui.setFieldValue('cal-unit', unit);
     } else {
       ctx.store.setState({ calibrationPreset: 'custom' });
     }
@@ -149,10 +166,13 @@ export function handleToolbarChange(target: ControlLike, ctx: EventContext): boo
     if (Number.isFinite(v) && v >= 0.1) {
       const unit = ctx.store.getState().calibrationUnit;
       const key = `${v}|${unit}`;
+      const nextPreset = KNOWN_CAL_PRESETS.has(key) ? key : 'custom';
       ctx.store.setState({
         calibrationLength: v,
-        calibrationPreset: KNOWN_CAL_PRESETS.has(key) ? key : 'custom',
+        calibrationPreset: nextPreset,
       });
+      ctx.ui.setFieldValue('cal-preset', nextPreset);
+      reapplyCalibrationIfPresent(ctx, v, unit);
     }
     return true;
   }
@@ -160,10 +180,13 @@ export function handleToolbarChange(target: ControlLike, ctx: EventContext): boo
     const unit: 'mm' | 'cm' = target.value === 'cm' ? 'cm' : 'mm';
     const len = ctx.store.getState().calibrationLength;
     const key = `${len}|${unit}`;
+    const nextPreset = KNOWN_CAL_PRESETS.has(key) ? key : 'custom';
     ctx.store.setState({
       calibrationUnit: unit,
-      calibrationPreset: KNOWN_CAL_PRESETS.has(key) ? key : 'custom',
+      calibrationPreset: nextPreset,
     });
+    ctx.ui.setFieldValue('cal-preset', nextPreset);
+    reapplyCalibrationIfPresent(ctx, len, unit);
     return true;
   }
   if (target.id === 'rect-w') {

@@ -573,19 +573,24 @@ export class CanvasViewport {
     this.render();
   }
 
-  /** Pans to a grain, zooming in if it would be tiny on screen (keeps the zoom otherwise). */
+  /** Pans to a grain, zooming in if it would be tiny on screen or out if it exceeds the viewport. */
   focusOnGrain(grainId: number): void {
     if (!this.photo || !this.session) return;
     const g = this.session.getResult().grains.find((x) => x.id === grainId);
     if (!g) return;
-    const s = this.session.workingImage.effectiveScaleFactor || 1;
+    // g.bbox is already in original-image coordinates (rescaled by AnalysisSession).
     const [x0, y0, x1, y1] = g.bbox;
-    const cx = (x0 + x1 + 1) / 2 / s;
-    const cy = (y0 + y1 + 1) / 2 / s;
-    const size = Math.max(x1 - x0 + 1, y1 - y0 + 1) / s;
+    const cx = (x0 + x1) / 2;
+    const cy = (y0 + y1) / 2;
+    const size = Math.max(x1 - x0, y1 - y0, 1);
     const rect = this.stage.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return;
-    if (size * this.zoom < 60) this.zoom = Math.min(4, Math.max(this.zoom, 160 / Math.max(1, size)));
+    const minViewport = Math.min(rect.width, rect.height);
+    if (size * this.zoom < 60) {
+      this.zoom = Math.min(4, Math.max(this.zoom, 160 / size));
+    } else if (size * this.zoom > minViewport * 0.9) {
+      this.zoom = Math.max(this.fitZoom, (minViewport * 0.75) / size);
+    }
     this.panX = rect.width / 2 - cx * this.zoom;
     this.panY = rect.height / 2 - cy * this.zoom;
     this.render();
