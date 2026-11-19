@@ -22,6 +22,7 @@ import {
   type EnhanceKind,
   type EnhanceProgressEvent,
 } from '../modules/imageEnhance.js';
+import { isSupportedImageFile } from '../modules/tiffDecode.js';
 import type { PhotoEnhancementInfo } from '../modules/siteTypes.js';
 import { toAnalysisConfig, type AppState, type AppStore } from './state.js';
 
@@ -53,6 +54,14 @@ export interface JobHooks {
 }
 
 export interface ImageIo {
+  /** Optional pre-import conversion (e.g. decoding TIFF/GeoTIFF to PNG + auto scale). */
+  prepareFile?(file: File): Promise<{
+    blob: Blob;
+    width: number;
+    height: number;
+    metadata?: PhotoRecord['metadata'];
+    calibration?: CalibrationResult;
+  } | null>;
   /** Pixel size of an image file. */
   imageSize(file: Blob): Promise<{ width: number; height: number }>;
   /** Optional camera metadata (EXIF) of an image file. */
@@ -236,21 +245,30 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
     if (!site) return;
 
     const added: PhotoRecord[] = [];
+    let geoCalibratedCount = 0;
     let taskDeadline = performance.now() + 50;
     for (const file of Array.from(files)) {
-      if (!file.type.startsWith('image/')) continue;
+      if (!isSupportedImageFile(file)) continue;
       try {
-        const { width, height } = await images.imageSize(file);
-        const metadata = await images.metadata(file).catch(() => undefined);
+        const prepared = images.prepareFile ? await images.prepareFile(file) : null;
+        const blob = prepared ? prepared.blob : file;
+        const { width, height } = prepared
+          ? { width: prepared.width, height: prepared.height }
+          : await images.imageSize(file);
+        const metadata = prepared
+          ? prepared.metadata
+          : await images.metadata(file).catch(() => undefined);
+        if (prepared?.calibration) geoCalibratedCount++;
         const photo: PhotoRecord = {
           photoId: deps.makeId('photo'),
           siteId: site.siteId,
           label: file.name,
-          imageBlob: file,
+          imageBlob: blob,
           width,
           height,
           addedAt: Date.now(),
           included: true,
+          ...(prepared?.calibration ? { calibration: prepared.calibration } : {}),
           ...(metadata !== undefined ? { metadata } : {}),
         };
         await savePhoto(photo);
@@ -279,7 +297,11 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
       };
       await storage.saveSite(updatedSite);
       const sites = await storage.listSites();
-      store.setState({ sites, statusMessage: `Added ${added.length} photo(s) locally` });
+      const geoNote =
+        geoCalibratedCount > 0
+          ? ` (${geoCalibratedCount} auto-calibrated from GeoTIFF scale)`
+          : '';
+      store.setState({ sites, statusMessage: `Added ${added.length} photo(s) locally${geoNote}` });
       await loadSiteData(site.siteId);
       const lastAdded = added[added.length - 1];
       if (lastAdded) {
