@@ -8,7 +8,7 @@ import { baseExportMetadata, csvCell, metadataCommentLines, metadataSummaryRows 
 import { filterGrainsByRoiAndExclusion } from './roiAndRectify.js';
 import { filterBorderGrains } from './sedimentStats.js';
 import { PSD_KEYS } from './sitePooling.js';
-import type { SitePhotoInput, SiteAnalysisOptions, SiteAnalysisReport } from './siteTypes.js';
+import { photoProcessingHistory, type SitePhotoInput, type SiteAnalysisOptions, type SiteAnalysisReport } from './siteTypes.js';
 
 /**
  * Provenance block for site-level exports: app/ORT versions, notices, and the
@@ -24,12 +24,21 @@ export function buildSiteExportMetadata(
     .map((e) => {
       const prov = e.session.getProvenance();
       const cal = e.session.getCalibration();
+      const wi = e.session.workingImage;
+      const perPhoto = report?.perPhoto.find((p) => p.photoId === e.photoId);
       return {
         photoId: e.photoId,
         label: e.label,
         mmPerPx: cal?.mmPerPx ?? null,
-        effectiveScaleFactor: e.session.workingImage.effectiveScaleFactor,
+        originalWidth: wi.originalWidth,
+        originalHeight: wi.originalHeight,
+        workingWidth: wi.width,
+        workingHeight: wi.height,
+        effectiveScaleFactor: wi.effectiveScaleFactor,
+        ...(perPhoto?.detectionLimitPx !== undefined ? { detectionLimitPx: perPhoto.detectionLimitPx } : {}),
         roiApplied: e.roiConfig !== undefined,
+        // Image-modifying steps applied before analysis (AI upscaling, deblurring, rectification).
+        imageProcessing: photoProcessingHistory(e.metadata),
         ...(prov !== undefined
           ? {
               modelId: prov.modelId,
@@ -38,6 +47,15 @@ export function buildSiteExportMetadata(
               executionProvider: prov.executionProvider ?? null,
               analyzedAt: prov.analyzedAt,
               analyzedWithAppVersion: prov.appVersion,
+              inferencePipeline: prov.inferencePipeline ?? null,
+              scaleMode: prov.scaleMode ?? null,
+              fineGrainUpscale: prov.fineGrainUpscale ?? null,
+              applyClahe: prov.applyClahe ?? null,
+              claheClipLimit: prov.claheClipLimit ?? null,
+              tileSkipping:
+                prov.tileSkipping !== undefined
+                  ? { tilesRun: prov.tileSkipping.tilesRun, tilesTotal: prov.tileSkipping.tilesTotal, marginPx: prov.tileSkipping.marginPx }
+                  : null,
               postProcess: prov.postProcess ?? null,
             }
           : { provenance: 'unavailable (analysed before provenance tracking)' }),

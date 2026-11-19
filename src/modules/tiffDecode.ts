@@ -9,7 +9,9 @@
  *
  * Bonus: for projected GeoTIFFs in meters (e.g. UAV orthomosaic tiles from
  * Metashape, Pix4D, or QGIS), reads `ModelPixelScaleTag` (33550) to pre-populate
- * `mmPerPx` calibration automatically.
+ * `mmPerPx` calibration automatically. Web Mercator (EPSG:3857) pixel sizes are converted
+ * to ground distance with cos(latitude) at the image centre (from `ModelTiepointTag`);
+ * other Mercator / equirectangular projections get no automatic calibration.
  */
 import UTIF from 'utif2';
 import type { CalibrationResult } from '../types/index.js';
@@ -73,10 +75,59 @@ function isKnownMetricProjectedCrs(epsg: number | undefined): boolean {
     (epsg >= 25828 && epsg <= 25838) || // ETRS89 / UTM
     (epsg >= 28348 && epsg <= 28356) || // GDA94 / MGA
     (epsg >= 7848 && epsg <= 7856) ||   // GDA2020 / MGA
-    epsg === 3857 ||                    // Web Mercator
     epsg === 2193 ||                    // NZTM 2000
     epsg === 27700                      // British National Grid
   );
+}
+
+/**
+ * Spherical (Pseudo-)Mercator CRSs used by web maps. Their map units are metres on the
+ * projection, not on the ground: the scale factor is 1/cos(latitude), so a pixel's ground
+ * size is `pixelScale * cos(latitude)` (e.g. 29% smaller at 45°).
+ */
+export const WEB_MERCATOR_EPSG: ReadonlySet<number> = new Set([3857, 3785, 900913, 102100, 102113]);
+
+/**
+ * Projected CRSs whose map distance is far from ground distance away from the equator and
+ * that are not corrected here (ellipsoidal World Mercator, equirectangular / Plate Carrée).
+ * A GeoTIFF in one of these gets no automatic calibration.
+ */
+export const DISTORTED_SCALE_EPSG: ReadonlySet<number> = new Set([3395, 3832, 3994, 32662, 4087, 4088, 54001, 54004]);
+
+/** Largest change of the Web Mercator ground scale across the image accepted for one mm/px value. */
+export const MAX_MERCATOR_SCALE_VARIATION = 0.01;
+
+const WEB_MERCATOR_RADIUS_M = 6378137;
+
+/** Latitude (radians) of a spherical Web Mercator northing (metres). */
+export function webMercatorLatitude(northingM: number): number {
+  return 2 * Math.atan(Math.exp(northingM / WEB_MERCATOR_RADIUS_M)) - Math.PI / 2;
+}
+
+/**
+ * Ground-to-map scale (`cos(latitude)`) at the image centre for a Web Mercator GeoTIFF, from
+ * `ModelTiepointTag` (33922) and the pixel scale. Undefined when the tie point is missing or
+ * the scale changes by more than `MAX_MERCATOR_SCALE_VARIATION` from the top to the bottom row.
+ */
+function webMercatorGroundScale(
+  ifd: Record<string, unknown>,
+  sy: number,
+  height: number,
+): number | undefined {
+  const tie = ifd['t33922'];
+  if (!Array.isArray(tie) || tie.length < 6) return undefined;
+  const j = Number(tie[1]);
+  const yTie = Number(tie[4]);
+  if (!Number.isFinite(j) || !Number.isFinite(yTie)) return undefined;
+  // Raster rows go south as the northing decreases (GeoTIFF default, positive ScaleY).
+  const northingAt = (row: number): number => yTie - (row - j) * sy;
+  const cosAt = (row: number): number => Math.cos(webMercatorLatitude(northingAt(row)));
+  const top = cosAt(0);
+  const bottom = cosAt(height);
+  const centre = cosAt(height / 2);
+  if (!(centre > 0) || !Number.isFinite(centre)) return undefined;
+  if (Math.abs(top - bottom) / centre > MAX_MERCATOR_SCALE_VARIATION) return undefined;
+  return centre;
 }
 
 /**
@@ -86,6 +137,7 @@ function isKnownMetricProjectedCrs(epsg: number | undefined): boolean {
 function extractGeoTiffCalibration(
   ifd: Record<string, unknown>,
   width: number,
+  height: number,
 ): CalibrationResult | undefined {
   const scaleTag = ifd['t33550'];
   const geoDir = ifd['t34735'];
@@ -110,6 +162,10 @@ function extractGeoTiffCalibration(
   }
   // Only trust scale when explicitly Projected (1) and linear units are known.
   if (modelType !== 1) return undefined;
+  // Map metres are not ground metres in these projections (see DISTORTED_SCALE_EPSG).
+  if (projectedCrs !== undefined && DISTORTED_SCALE_EPSG.has(projectedCrs)) return undefined;
+  const isWebMercator = projectedCrs !== undefined && WEB_MERCATOR_EPSG.has(projectedCrs);
+  if (isWebMercator && linearUnits !== undefined && linearUnits !== 9001) return undefined;
   let mmPerUnit: number | undefined;
   if (linearUnits === 9001) {
     mmPerUnit = 1000; // Meter
@@ -117,7 +173,7 @@ function extractGeoTiffCalibration(
     mmPerUnit = 304.8; // International foot
   } else if (linearUnits === 9003) {
     mmPerUnit = 1200000 / 3937; // US survey foot (304.8006096... mm)
-  } else if (linearUnits === undefined && isKnownMetricProjectedCrs(projectedCrs)) {
+  } else if (linearUnits === undefined && (isWebMercator || isKnownMetricProjectedCrs(projectedCrs))) {
     mmPerUnit = 1000;
   }
   if (mmPerUnit === undefined) return undefined;
@@ -128,7 +184,13 @@ function extractGeoTiffCalibration(
   // Require near-square pixels (within 5%).
   if (Math.abs(sx - sy) / Math.max(sx, sy) > 0.05) return undefined;
 
-  const mmPerPx = ((sx + sy) / 2) * mmPerUnit;
+  let mmPerPx = ((sx + sy) / 2) * mmPerUnit;
+  if (isWebMercator) {
+    // Convert projected metres to ground metres at the image centre (scale = cos latitude).
+    const groundScale = webMercatorGroundScale(ifd, sy, height);
+    if (groundScale === undefined) return undefined;
+    mmPerPx *= groundScale;
+  }
   // Sanity range: 0.01 mm/px (macro) to 1000 mm/px (1 m/px).
   if (mmPerPx < 0.01 || mmPerPx > 1000) return undefined;
 
@@ -187,7 +249,7 @@ export function decodeTiffBuffer(buf: ArrayBuffer): DecodedTiffImage {
         }
       : undefined;
 
-  const calibration = extractGeoTiffCalibration(rawIfd, width);
+  const calibration = extractGeoTiffCalibration(rawIfd, width, height);
 
   return {
     data: new Uint8ClampedArray(rgbaRaw.buffer, rgbaRaw.byteOffset, width * height * 4),

@@ -49,6 +49,14 @@ Models are hosted at [`inYourOwnBrowser/imagegrains-2.0-onnx`](https://huggingfa
 
 Evaluated using the **actual shipped TypeScript engine** (`src/modules/onnxInference.ts` for both legacy tiling and the default Cellpose pipeline, plus `src/modules/postprocessCore.ts` with frozen defaults: `niter=250, cellprobThreshold=0.0, flowThreshold=0.45, minSize=30, minSeedDensity=2, excludeBorderMargin=2`), comparing **`maxGrainAreaFraction = 0.15`** (legacy v1.1.0), **`0.40`** (shipped default), and **`1.00`** (guard disabled), alongside **upstream PyTorch ImageGrains**, against **hand-digitised 2D pixel masks** (`bAxis`, moment-ellipse minor axis; *not* physical sieve/Wolman data):
 
+> **Note on reproducing these tables.** They were computed before two later method changes:
+> (1) D-percentiles are now interpolated in log2(size) (φ space) instead of linearly in size
+> (`weightedPsdPercentiles`, commit `48d64bc`); for typical samples the two agree within about
+> 0.1–1 %, but they can differ by 10–20 % where few grains span a wide size gap. (2) Photos are
+> now shrunk with area averaging (anti-aliased) instead of bilinear sampling, which changes the
+> network input for photos whose longest side exceeds 1024 px. Re-run the benchmark on a tagged
+> release before quoting these numbers for the current version.
+
 #### D50 Error vs Human GT (Primary Grain-Size Metric)
 
 | Model | Engine / Guard | D50 MAPE: mean [95% CI] | D50 MAPE: median [95% CI] | P90 / >25% / >50% | Signed bias (med / mean) | PQ vs GT |

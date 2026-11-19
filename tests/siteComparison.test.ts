@@ -67,6 +67,30 @@ describe('site comparison', () => {
     expect(pair!.p).toBeGreaterThan(0.05);
   });
 
+  it('regression: never compares a site in px with a site in mm (CSV included)', () => {
+    const calibrated = (id: string, size: number): SitePhotoInput => {
+      const p = photo(id, size);
+      p.session.setCalibration({ mmPerPx: 0.5, pointA: { x: 0, y: 0 }, pointB: { x: 100, y: 0 }, physicalLengthMm: 50, pixelDistance: 100 });
+      return p;
+    };
+    // "Compare in pixels": fully calibrated sites still report in mm, the uncalibrated one in px.
+    const sites = computeComparedSites(
+      [
+        { siteId: 'm1', name: 'Mm one', inputs: [calibrated('m1a', 30), calibrated('m1b', 32)] },
+        { siteId: 'm2', name: 'Mm two', inputs: [calibrated('m2a', 30), calibrated('m2b', 32)] },
+        { siteId: 'p', name: 'Px site', inputs: [photo('pa', 30), photo('pb', 32)] },
+      ],
+      options,
+    );
+    expect(sites.map((s) => s.report?.unit)).toEqual(['mm', 'mm', 'px']);
+    const pairs = compareD50(sites);
+    expect(pairs.map((c) => `${c.a}|${c.b}`)).toEqual(['Mm one|Mm two']);
+    const csv = comparisonCsv(sites, { app: 'test' });
+    expect(csv).toContain('d50_ratio,Mm one vs Mm two,ratio,');
+    expect(csv).not.toContain('Px site vs');
+    expect(csv).not.toContain('vs Px site');
+  });
+
   it('normal CDF is accurate', () => {
     expect(normalCdf(0)).toBeCloseTo(0.5, 7);
     expect(normalCdf(1.959963984540054)).toBeCloseTo(0.975, 6);

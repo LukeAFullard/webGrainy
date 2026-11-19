@@ -102,7 +102,11 @@ export interface D50Comparison {
   p: number;
 }
 
-/** Approximate pairwise D50 ratios (95% CI) and p-values between sites with reports. */
+/**
+ * Approximate pairwise D50 ratios (95% CI) and p-values between sites with reports. Only
+ * like-for-like pairs are compared: a site reported in px is never divided by one in mm
+ * (or measured with another size metric).
+ */
 export function compareD50(sites: readonly ComparedSite[]): D50Comparison[] {
   const ok = sites.filter((s) => s.report !== null && s.report.psd.D50 > 0) as Array<ComparedSite & { report: SiteAnalysisReport }>;
   const se = (r: SiteAnalysisReport): number => {
@@ -115,6 +119,7 @@ export function compareD50(sites: readonly ComparedSite[]): D50Comparison[] {
     for (let j = i + 1; j < ok.length; j++) {
       const A = ok[i]!;
       const B = ok[j]!;
+      if (A.report.unit !== B.report.unit || A.report.sizeMetric !== B.report.sizeMetric) continue;
       const lr = Math.log(A.report.psd.D50 / B.report.psd.D50);
       const s = Math.hypot(se(A.report), se(B.report));
       const z95 = zFor(0.95);

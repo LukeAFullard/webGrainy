@@ -33,7 +33,7 @@ import {
   type GrainHullCache,
 } from './morphometricsExt.js';
 import { photoSizeHistogram, type SizeHistogram } from './histograms.js';
-import { buildContourGeoJson, buildContourSvg, encodeMaskPng } from './exportFormats.js';
+import { buildContourGeoJson, buildContourSvg, encodeMaskPng, encodeMaskPngCompressed, resizeLabelsNearest } from './exportFormats.js';
 import { computeSedimentStats, filterBorderGrains, grainPassesSizeCutoffs, summaryCsvRows } from './sedimentStats.js';
 import {
   type AnalysisProvenance,
@@ -263,12 +263,17 @@ export class AnalysisSession {
     this.recomputeDerivedState(true);
   }
 
-  /** Metadata block attached to every export of this session. */
-  getExportMetadata(): Record<string, unknown> {
+  /**
+   * Metadata block attached to every export of this session. `photo` adds photo-level
+   * provenance the session does not know (e.g. `imageProcessing`: enhancement and
+   * rectification steps applied before analysis).
+   */
+  getExportMetadata(photo?: Record<string, unknown>): Record<string, unknown> {
     const wi = this.workingImage;
     return {
       ...baseExportMetadata(),
       ...(this.provenance !== undefined ? { analysis: this.provenance } : {}),
+      ...(photo !== undefined ? { photo } : {}),
       image: {
         originalWidth: wi.originalWidth,
         originalHeight: wi.originalHeight,
@@ -695,7 +700,15 @@ export class AnalysisSession {
    * flagged in `in_roi`. With `includeMetadata`, `# key: value` provenance lines are
    * prepended (read with e.g. `pandas.read_csv(path, comment='#')`).
    */
-  exportCsv(options?: { includeMetadata?: boolean }): string {
+  exportCsv(options?: {
+    includeMetadata?: boolean;
+    photoMetadata?: Record<string, unknown>;
+    /** Size metric and cutoffs used by the summaries, so `included_in_stats` matches them. */
+    sizeMetric?: SizeMetric;
+    cutoffs?: { minBaxisPx?: number; minSizeMm?: number };
+  }): string {
+    const sizeMetric = options?.sizeMetric ?? 'bAxis';
+    const statsIds = new Set(this.statsGrainsForSummaries(sizeMetric, options?.cutoffs).map((g) => g.id));
     const hasFeret = this.grains.some((g) => g.minFeretPx !== undefined);
     const header =
       'grain_id,centroid_x,centroid_y,area_px,a_axis_px,b_axis_px,d_eq_px,a_axis_mm,b_axis_mm,d_eq_mm' +
@@ -704,9 +717,8 @@ export class AnalysisSession {
       (this.roiConfig !== undefined ? ',in_roi' : '') +
       ',included_in_stats,orientation_rad,orientation_deg,perimeter_px,perimeter_mm,circularity,aspect_ratio,elongation,convex_area_px,convex_area_mm2,solidity,sphericity_2d';
     const lines: string[] = options?.includeMetadata
-      ? [...metadataCommentLines(this.getExportMetadata()), header]
+      ? [...metadataCommentLines(this.getExportMetadata(options.photoMetadata)), header]
       : [header];
-    const statsIds = new Set(this.statsGrainsForSummaries().map((g) => g.id));
     const inRoi =
       this.roiConfig !== undefined
         ? new Set(this.getStatsGrains().map((g) => g.id))
@@ -759,9 +771,10 @@ export class AnalysisSession {
   exportSummaryJson(
     sizeMetric: SizeMetric = 'bAxis',
     cutoffs?: { minBaxisPx?: number; minSizeMm?: number },
+    photoMetadata?: Record<string, unknown>,
   ): string {
     return JSON.stringify(
-      { metadata: this.getExportMetadata(), ...this.getStats(sizeMetric, cutoffs) },
+      { metadata: this.getExportMetadata(photoMetadata), ...this.getStats(sizeMetric, cutoffs) },
       null,
       2,
     );
@@ -770,10 +783,11 @@ export class AnalysisSession {
   exportSummaryCsv(
     sizeMetric: SizeMetric = 'bAxis',
     cutoffs?: { minBaxisPx?: number; minSizeMm?: number },
+    photoMetadata?: Record<string, unknown>,
   ): string {
     return [
       'section,metric,value,unit',
-      ...metadataSummaryRows(this.getExportMetadata()),
+      ...metadataSummaryRows(this.getExportMetadata(photoMetadata)),
       ...summaryCsvRows(this.getStats(sizeMetric, cutoffs)),
       ...this.summaryExtrasCsv(sizeMetric, cutoffs),
     ].join('\n');
@@ -837,29 +851,85 @@ export class AnalysisSession {
     return out;
   }
 
-  exportMaskPng(bitDepth: 16 | 32 = 16): Uint8Array {
-    return encodeMaskPng(this.workingMasks, this.workingImage.width, this.workingImage.height, bitDepth);
+  /**
+   * Label mask, its size, and PNG text chunks. `original` (default) resizes the working-image
+   * labels to the photo's pixel grid (nearest neighbour), so the mask overlays the photo and
+   * matches the CSV / GeoJSON coordinates. The `webgrainy` iTXt chunk holds the provenance
+   * metadata and the mask geometry (JSON).
+   */
+  private maskForExport(
+    bitDepth: 16 | 32,
+    options?: { resolution?: 'original' | 'working'; photoMetadata?: Record<string, unknown> },
+  ): { masks: Int32Array; width: number; height: number; text: Record<string, string> } {
+    const wi = this.workingImage;
+    const resolution = options?.resolution ?? 'original';
+    const width = resolution === 'original' ? wi.originalWidth : wi.width;
+    const height = resolution === 'original' ? wi.originalHeight : wi.height;
+    const masks =
+      resolution === 'original'
+        ? resizeLabelsNearest(this.workingMasks, wi.width, wi.height, width, height)
+        : this.workingMasks;
+    const meta = {
+      ...this.getExportMetadata(options?.photoMetadata),
+      mask: {
+        resolution: resolution === 'original' ? 'original-image pixels' : 'working-image pixels',
+        width,
+        height,
+        workingWidth: wi.width,
+        workingHeight: wi.height,
+        effectiveScaleFactor: wi.effectiveScaleFactor,
+        resampling: resolution === 'original' && (width !== wi.width || height !== wi.height) ? 'nearest-neighbour from working-image labels' : 'none',
+        idEncoding: bitDepth === 16 ? '16-bit grayscale grain_id (clamped to 65535)' : '32-bit grain_id, big-endian in RGBA bytes',
+        background: 0,
+      },
+    };
+    return {
+      masks,
+      width,
+      height,
+      text: {
+        Description: `webGrainy grain label mask (${meta.mask.resolution}); pixel value = grain_id in the grains CSV, 0 = background.`,
+        webgrainy: JSON.stringify(meta),
+      },
+    };
+  }
+
+  exportMaskPng(
+    bitDepth: 16 | 32 = 16,
+    options?: { resolution?: 'original' | 'working'; photoMetadata?: Record<string, unknown> },
+  ): Uint8Array {
+    const m = this.maskForExport(bitDepth, options);
+    return encodeMaskPng(m.masks, m.width, m.height, bitDepth, { text: m.text });
+  }
+
+  /** As `exportMaskPng`, deflate-compressed where the platform supports it (much smaller files). */
+  async exportMaskPngCompressed(
+    bitDepth: 16 | 32 = 16,
+    options?: { resolution?: 'original' | 'working'; photoMetadata?: Record<string, unknown> },
+  ): Promise<Uint8Array> {
+    const m = this.maskForExport(bitDepth, options);
+    return encodeMaskPngCompressed(m.masks, m.width, m.height, bitDepth, { text: m.text });
   }
 
   /** Outlines in original-image coordinates, with measurements and provenance. */
-  exportGeoJson(): string {
+  exportGeoJson(photoMetadata?: Record<string, unknown>): string {
     const grainById = new Map(this.grains.map((g) => [g.id, g]));
     return JSON.stringify(
       buildContourGeoJson(this.workingMasks, this.workingGrains, this.workingImage.width, this.workingImage.height, {
         scaleInv: this.outputScaleInv(),
         propertiesFor: (wg) => grainById.get(wg.id) ?? wg,
         // RFC 7946 §6.1 foreign member: provenance & coordinate system.
-        metadata: this.getExportMetadata(),
+        metadata: this.getExportMetadata(photoMetadata),
       }),
     );
   }
 
-  exportSvg(): string {
+  exportSvg(photoMetadata?: Record<string, unknown>): string {
     return buildContourSvg(this.workingMasks, this.workingGrains, this.workingImage.width, this.workingImage.height, {
       scaleInv: this.outputScaleInv(),
       outWidth: this.workingImage.originalWidth,
       outHeight: this.workingImage.originalHeight,
-      metadata: this.getExportMetadata(),
+      metadata: this.getExportMetadata(photoMetadata),
     });
   }
 

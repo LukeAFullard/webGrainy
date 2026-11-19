@@ -327,7 +327,7 @@ export function applyCLAHE(
 }
 
 /**
- * Adaptive input scaling with pure TypedArray bilinear RGBA resampling.
+ * Adaptive input scaling with pure TypedArray RGBA resampling (area-average when shrinking).
  * Tracks `effectiveScaleFactor` (`newWidth / width`) so morphometrics scale back accurately.
  */
 export function prepareWorkingImage(
@@ -382,7 +382,13 @@ export function prepareWorkingImage(
 
   const newWidth = Math.max(1, Math.round(width * targetScale));
   const newHeight = Math.max(1, Math.round(height * targetScale));
-  const out = resizeRgbaBilinear(rgba, width, height, newWidth, newHeight);
+  // Shrinking: average every source pixel each output pixel covers (anti-aliased, like
+  // OpenCV INTER_AREA). Bilinear sampling would read only 2x2 of e.g. 4x4 pixels at 0.25x
+  // and alias fine grain edges and texture.
+  const out =
+    newWidth < width && newHeight < height
+      ? resizeRgbaArea(rgba, width, height, newWidth, newHeight)
+      : resizeRgbaBilinear(rgba, width, height, newWidth, newHeight);
 
   return {
     data: out,
@@ -395,7 +401,85 @@ export function prepareWorkingImage(
   };
 }
 
-/** Bilinear resize of an RGBA image (pixel-centre aligned; used to shrink and to enlarge). */
+/** Per-output-index source spans and coverage weights for 1-D area resampling. */
+function areaWeights1D(src: number, dst: number): { start: Int32Array; count: Int32Array; w: Float64Array; maxSpan: number } {
+  const scale = src / dst;
+  const maxSpan = Math.ceil(scale) + 1;
+  const start = new Int32Array(dst);
+  const count = new Int32Array(dst);
+  const w = new Float64Array(dst * maxSpan);
+  for (let d = 0; d < dst; d++) {
+    const a = d * scale;
+    const b = Math.min(src, (d + 1) * scale);
+    const i0 = Math.floor(a);
+    const i1 = Math.min(src - 1, Math.ceil(b) - 1);
+    start[d] = i0;
+    count[d] = i1 - i0 + 1;
+    for (let i = i0; i <= i1; i++) {
+      const cover = Math.min(b, i + 1) - Math.max(a, i);
+      w[d * maxSpan + (i - i0)] = cover / (b - a);
+    }
+  }
+  return { start, count, w, maxSpan };
+}
+
+/**
+ * Area-average (box-filter) downscale of an RGBA image: each output pixel is the mean of the
+ * source pixels it covers, weighted by covered area (OpenCV `INTER_AREA` for shrinking).
+ * Separable; the image's mean intensity is preserved and fine patterns do not alias.
+ */
+export function resizeRgbaArea(
+  rgba: Uint8ClampedArray,
+  width: number,
+  height: number,
+  newWidth: number,
+  newHeight: number,
+): Uint8ClampedArray {
+  const xs = areaWeights1D(width, newWidth);
+  const ys = areaWeights1D(height, newHeight);
+  // Horizontal pass: height x newWidth x 4 (float).
+  const tmp = new Float32Array(height * newWidth * 4);
+  for (let y = 0; y < height; y++) {
+    const srcRow = y * width * 4;
+    const dstRow = y * newWidth * 4;
+    for (let dx = 0; dx < newWidth; dx++) {
+      const i0 = xs.start[dx]!;
+      const n = xs.count[dx]!;
+      const wOff = dx * xs.maxSpan;
+      let r = 0, g = 0, b = 0, a = 0;
+      for (let k = 0; k < n; k++) {
+        const wt = xs.w[wOff + k]!;
+        const p = srcRow + (i0 + k) * 4;
+        r += rgba[p]! * wt;
+        g += rgba[p + 1]! * wt;
+        b += rgba[p + 2]! * wt;
+        a += rgba[p + 3]! * wt;
+      }
+      const o = dstRow + dx * 4;
+      tmp[o] = r;
+      tmp[o + 1] = g;
+      tmp[o + 2] = b;
+      tmp[o + 3] = a;
+    }
+  }
+  // Vertical pass.
+  const out = new Uint8ClampedArray(newWidth * newHeight * 4);
+  const rowLen = newWidth * 4;
+  for (let dy = 0; dy < newHeight; dy++) {
+    const j0 = ys.start[dy]!;
+    const n = ys.count[dy]!;
+    const wOff = dy * ys.maxSpan;
+    const dstRow = dy * rowLen;
+    for (let i = 0; i < rowLen; i++) {
+      let acc = 0;
+      for (let k = 0; k < n; k++) acc += tmp[(j0 + k) * rowLen + i]! * ys.w[wOff + k]!;
+      out[dstRow + i] = Math.round(acc);
+    }
+  }
+  return out;
+}
+
+/** Bilinear resize of an RGBA image (pixel-centre aligned; used to enlarge, and to shrink one axis only). */
 export function resizeRgbaBilinear(
   rgba: Uint8ClampedArray,
   width: number,

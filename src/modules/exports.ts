@@ -5,6 +5,7 @@
 import type { SizeMetric } from '../types/index.js';
 import type { AnalysisSession } from './pipelineController.js';
 import { exportSiteArchive, type PhotoRecord, type SiteRecord } from './projectStorage.js';
+import { photoProcessingHistory } from './siteTypes.js';
 import {
   buildSiteExportMetadata,
   exportSiteGrainsCsv,
@@ -64,6 +65,16 @@ export async function buildExport(kind: ExportKind, ctx: ExportContext): Promise
   const sizeMetric = ctx.sizeMetric ?? 'bAxis';
   const siteFile = safeName(site?.name, 'site');
   const photoFile = safeName(photo?.label, 'photo');
+  // Photo-level provenance the analysis session does not hold (image steps before analysis).
+  const photoMeta: Record<string, unknown> | undefined = photo
+    ? {
+        photoId: photo.photoId,
+        label: photo.label,
+        imageWidth: photo.width,
+        imageHeight: photo.height,
+        imageProcessing: photoProcessingHistory(photo.metadata),
+      }
+    : undefined;
   // Site name first, then the usual provenance metadata.
   const siteMeta = (report: SiteAnalysisReport): Record<string, unknown> => ({
     ...(site?.name ? { siteName: site.name } : {}),
@@ -99,7 +110,19 @@ export async function buildExport(kind: ExportKind, ctx: ExportContext): Promise
     case 'photo-grains-csv':
       return session
         ? {
-            blob: new Blob([session.exportCsv({ includeMetadata: true })], { type: 'text/csv' }),
+            blob: new Blob(
+              [
+                session.exportCsv({
+                  includeMetadata: true,
+                  sizeMetric,
+                  ...(photoMeta ? { photoMetadata: photoMeta } : {}),
+                  ...(ctx.siteOptions
+                    ? { cutoffs: { minBaxisPx: ctx.siteOptions.minBaxisPx ?? 15, minSizeMm: ctx.siteOptions.minSizeMm ?? 0 } }
+                    : {}),
+                }),
+              ],
+              { type: 'text/csv' },
+            ),
             filename: `${photoFile}_grains.csv`,
           }
         : null;
@@ -108,7 +131,7 @@ export async function buildExport(kind: ExportKind, ctx: ExportContext): Promise
         ? { minBaxisPx: ctx.siteOptions.minBaxisPx ?? 15, minSizeMm: ctx.siteOptions.minSizeMm ?? 0 }
         : undefined;
       return session
-        ? { blob: new Blob([session.exportSummaryCsv(sizeMetric, cutoffs)], { type: 'text/csv' }), filename: `${photoFile}_summary.csv` }
+        ? { blob: new Blob([session.exportSummaryCsv(sizeMetric, cutoffs, photoMeta)], { type: 'text/csv' }), filename: `${photoFile}_summary.csv` }
         : null;
     }
     case 'photo-summary-json': {
@@ -117,7 +140,7 @@ export async function buildExport(kind: ExportKind, ctx: ExportContext): Promise
         : undefined;
       return session
         ? {
-            blob: new Blob([session.exportSummaryJson(sizeMetric, cutoffs)], { type: 'application/json' }),
+            blob: new Blob([session.exportSummaryJson(sizeMetric, cutoffs, photoMeta)], { type: 'application/json' }),
             filename: `${photoFile}_summary.json`,
           }
         : null;
@@ -126,20 +149,24 @@ export async function buildExport(kind: ExportKind, ctx: ExportContext): Promise
     case 'photo-mask-32': {
       if (!session) return null;
       const depth = kind === 'photo-mask-16' ? 16 : 32;
-      const bytes = session.exportMaskPng(depth);
+      // Photo resolution (overlays the photo, matches the CSV coordinates), provenance in iTXt.
+      const bytes = await session.exportMaskPngCompressed(depth, {
+        resolution: 'original',
+        ...(photoMeta ? { photoMetadata: photoMeta } : {}),
+      });
       return { blob: new Blob([bytes.slice().buffer], { type: 'image/png' }), filename: `${photoFile}_mask${depth}.png` };
     }
     case 'photo-geojson':
       // Original-image coordinates + provenance metadata.
       return session
         ? {
-            blob: new Blob([session.exportGeoJson()], { type: 'application/geo+json' }),
+            blob: new Blob([session.exportGeoJson(photoMeta)], { type: 'application/geo+json' }),
             filename: `${photoFile}_contours.geojson`,
           }
         : null;
     case 'photo-svg':
       return session
-        ? { blob: new Blob([session.exportSvg()], { type: 'image/svg+xml' }), filename: `${photoFile}_contours.svg` }
+        ? { blob: new Blob([session.exportSvg(photoMeta)], { type: 'image/svg+xml' }), filename: `${photoFile}_contours.svg` }
         : null;
   }
 }

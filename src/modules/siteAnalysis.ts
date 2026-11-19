@@ -9,6 +9,8 @@ import { computeExtraGrainStats } from './grainStatsExtra.js';
 import { computeFabricRoseStats, computeWentworthHistogram } from './morphometricsExt.js';
 import { buildValidBedMask, filterGrainsByRoiAndExclusion, type ValidBedMask } from './roiAndRectify.js';
 import { computeFolkWardStats, computePsdPercentiles, filterBorderGrains } from './sedimentStats.js';
+import { DEFAULT_POSTPROCESS_OPTIONS } from './postprocessCore.js';
+import type { AnalysisSession } from './pipelineController.js';
 import { assessSampleAdequacy, buildPerPhotoBreakdown } from './siteAdequacy.js';
 import { validateSiteCalibration, withExclusionTolerance } from './siteCalibration.js';
 import { getStatisticalBasisLabel, type PreparedGrain, type PreparedPhoto, computeVirtualWolmanHits, buildPooledArrays, getGrainSize, getGrainMmSize, computeSiteWentworth } from './sitePooling.js';
@@ -27,6 +29,22 @@ export {
   exportSiteSummaryCsv,
   exportSiteSummaryJson,
 } from './siteExportFormats.js';
+
+/**
+ * Smallest grain size (original-photo px) a photo's analysis can resolve: the equal-area
+ * diameter of the segmentation area floor (`minSize`, in working-image px) converted back
+ * to the photo with `effectiveScaleFactor`, or `minBaxisPx` if larger. Photos shrunk for
+ * analysis (auto scale on large photos) have a higher floor than `minBaxisPx` alone.
+ */
+export function photoDetectionLimitPx(session: AnalysisSession, minBaxisPx: number): number {
+  const minSize = session.getProvenance()?.postProcess?.['minSize'] ?? DEFAULT_POSTPROCESS_OPTIONS.minSize;
+  const s = session.workingImage.effectiveScaleFactor;
+  const floorPx =
+    Number.isFinite(minSize) && minSize > 0 && Number.isFinite(s) && s > 0
+      ? (2 * Math.sqrt(minSize / Math.PI)) / s
+      : 0;
+  return Math.max(Math.max(0, minBaxisPx), floorPx);
+}
 
 /**
  * Runs complete multi-image site pooling, truncation harmonization,
@@ -59,16 +77,17 @@ export function analyzeSite(
   const warnings: string[] = [...validation.warnings];
   const includedInputs = photos.filter((p) => p.included);
 
-  // Compute common physical cutoff if harmonizing in mm
+  // Compute common physical cutoff if harmonizing in mm: the coarsest photo's smallest
+  // resolvable size (detection floor at its working resolution, or minBaxisPx if larger).
   let dCutoffCommonMm: number | null = null;
-  if (unit === 'mm' && harmonize && minBaxisPx > 0) {
+  if (unit === 'mm' && harmonize) {
     let maxCutoff = 0;
     for (const p of includedInputs) {
       const mmPerPx = p.session.getCalibration()?.mmPerPx ?? 0;
-      const c = minBaxisPx * mmPerPx;
+      const c = photoDetectionLimitPx(p.session, minBaxisPx) * mmPerPx;
       if (c > maxCutoff) maxCutoff = c;
     }
-    dCutoffCommonMm = maxCutoff;
+    dCutoffCommonMm = maxCutoff > 0 ? maxCutoff : null;
   }
   const minSizeMm = options.minSizeMm;
   if (unit === 'mm' && minSizeMm !== undefined && Number.isFinite(minSizeMm) && minSizeMm > 0) {
@@ -224,6 +243,7 @@ export function analyzeSite(
       gridMatrixHits,
       gridSubCutoffHits,
       faciesWeight: Math.max(0, input.faciesWeight ?? 1),
+      detectionLimitPx: photoDetectionLimitPx(input.session, minBaxisPx),
     });
   }
 

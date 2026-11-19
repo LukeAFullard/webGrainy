@@ -120,8 +120,8 @@ median D50 error 2.8–2.9%; the differences are within measurement noise).
   memory as FP16 while running, so use it on computers with at least 8 GB of memory.
 
 **When to change it:** usually never. On a graphics card, FP16 has been checked against the
-processor on real hardware; INT8 and FP4 have not yet. You can check yours on the GPU check
-page. Keep the same choice for all photos you compare. The weight file used is recorded in
+processor on real hardware; INT8 and FP4 have not, so the app always runs them on the
+processor (CPU), even on a graphics card. The GPU check page can test them on yours. Keep the same choice for all photos you compare. The weight file used is recorded in
 every export.
 
 ### Scale Mode

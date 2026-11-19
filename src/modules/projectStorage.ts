@@ -67,9 +67,21 @@ export interface PhotoResultRecord {
   updatedAt: number;
 }
 
+interface ArchivedPhotoBackup extends Omit<PhotoOriginalBackup, 'imageBlob'> {
+  imageBase64: string;
+  imageMimeType: string;
+}
+
 interface ArchivedPhotoRecord extends Omit<PhotoRecord, 'imageBlob' | 'originalBackup'> {
   imageBase64: string;
   imageMimeType: string;
+  /** The photo before enhancement (so "Revert" still works after an export/import). */
+  originalBackup?: ArchivedPhotoBackup;
+}
+
+const ARCHIVE_IMAGE_MIME = /^image\/(jpeg|png|webp|gif|bmp|tiff|avif)$/i;
+function archiveMime(m: unknown): string {
+  return typeof m === 'string' && ARCHIVE_IMAGE_MIME.test(m) ? m : 'application/octet-stream';
 }
 
 interface ArchivedSerializedSession
@@ -482,11 +494,21 @@ export async function exportProjectArchive(
 
   for (const photo of photos) {
     const buf = await photo.imageBlob.arrayBuffer();
-    const { imageBlob, originalBackup: _backup, ...restPhoto } = photo;
+    const { imageBlob, originalBackup, ...restPhoto } = photo;
+    let archivedBackup: ArchivedPhotoBackup | undefined;
+    if (originalBackup !== undefined) {
+      const { imageBlob: backupBlob, ...restBackup } = originalBackup;
+      archivedBackup = {
+        ...restBackup,
+        imageBase64: uint8ToBase64(new Uint8Array(await backupBlob.arrayBuffer())),
+        imageMimeType: backupBlob.type || 'application/octet-stream',
+      };
+    }
     archivedPhotos.push({
       ...restPhoto,
       imageBase64: uint8ToBase64(new Uint8Array(buf)),
       imageMimeType: imageBlob.type || 'application/octet-stream',
+      ...(archivedBackup !== undefined ? { originalBackup: archivedBackup } : {}),
     });
 
     const res = await getPhotoResult(photo.photoId, options);
@@ -712,15 +734,29 @@ export async function importProjectArchive(
     validateCalibration(ap.calibration, ctx);
     validateRoi(ap.roiConfig, ctx);
     const imgBytes = base64ToUint8(ap.imageBase64);
-    const { imageBase64: _b64, imageMimeType, ...restPhoto } = ap;
-    const mime =
-      typeof imageMimeType === 'string' && /^image\/(jpeg|png|webp|gif|bmp|tiff|avif)$/i.test(imageMimeType)
-        ? imageMimeType
-        : 'application/octet-stream';
+    const { imageBase64: _b64, imageMimeType, originalBackup: archivedBackup, ...restPhoto } = ap;
+    let originalBackup: PhotoOriginalBackup | undefined;
+    if (archivedBackup !== undefined && archivedBackup !== null) {
+      const bctx = `${ctx}.originalBackup`;
+      if (typeof archivedBackup !== 'object' || typeof archivedBackup.imageBase64 !== 'string') {
+        throw new ArchiveValidationError(`${bctx}: missing image data.`);
+      }
+      if (!isDim(archivedBackup.width) || !isDim(archivedBackup.height)) {
+        throw new ArchiveValidationError(`${bctx}: width/height must be integers in [1, ${MAX_ARCHIVE_DIMENSION}].`);
+      }
+      validateCalibration(archivedBackup.calibration, bctx);
+      validateRoi(archivedBackup.roiConfig, bctx);
+      const { imageBase64: backupB64, imageMimeType: backupMime, ...restBackup } = archivedBackup;
+      originalBackup = {
+        ...restBackup,
+        imageBlob: new Blob([base64ToUint8(backupB64).slice().buffer], { type: archiveMime(backupMime) }),
+      };
+    }
     decodedPhotos.push({
       ...restPhoto,
       included: ap.included !== false,
-      imageBlob: new Blob([imgBytes.slice().buffer], { type: mime }),
+      imageBlob: new Blob([imgBytes.slice().buffer], { type: archiveMime(imageMimeType) }),
+      ...(originalBackup !== undefined ? { originalBackup } : {}),
     });
   }
 
@@ -745,8 +781,17 @@ export async function importProjectArchive(
   // ---- Phase 2: resolve id collisions (never overwrite existing data) -----------
   let site: SiteRecord = { ...arch.site };
   const existing = await getSite(site.siteId, options);
-  if (existing !== undefined) {
-    const suffix = `_imp${Date.now().toString(36)}`;
+  // A photo id already in storage (e.g. the same archive imported into a renamed site) must
+  // never be overwritten either, nor removed by a failed import's rollback.
+  let photoClash = false;
+  for (const p of decodedPhotos) {
+    if ((await getPhoto(p.photoId, options)) !== undefined) {
+      photoClash = true;
+      break;
+    }
+  }
+  if (existing !== undefined || photoClash) {
+    const suffix = `_imp${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
     const idMap = new Map<string, string>();
     for (const p of decodedPhotos) idMap.set(p.photoId, `${p.photoId}${suffix}`);
     const newSiteId = `${site.siteId}${suffix}`;
@@ -765,10 +810,29 @@ export async function importProjectArchive(
     }
   }
 
-  // ---- Phase 3: write ------------------------------------------------------------
-  await saveSite(site, options);
-  for (const p of decodedPhotos) await savePhoto(p, options);
-  for (const r of decodedResults) await savePhotoResult(r, options);
+  // Every imported photo belongs to the imported site (an inconsistent archive would
+  // otherwise leave orphaned photos).
+  for (const p of decodedPhotos) p.siteId = site.siteId;
+
+  // ---- Phase 3: write (all or nothing) ---------------------------------------------
+  // Photos and results first, the site record last, so a partly written import never shows
+  // up as a site. On any failure everything written so far is removed again.
+  const written: string[] = [];
+  try {
+    for (const p of decodedPhotos) {
+      written.push(p.photoId);
+      await savePhoto(p, options);
+    }
+    // Results only for photos in this archive (orphans could touch other photos' results).
+    for (const r of decodedResults) {
+      if (!written.includes(r.photoId)) continue;
+      await savePhotoResult(r, options);
+    }
+    await saveSite(site, options);
+  } catch (err) {
+    for (const id of written) await deletePhoto(id, options).catch(() => undefined);
+    throw err;
+  }
 
   return site.siteId;
 }

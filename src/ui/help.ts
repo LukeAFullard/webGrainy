@@ -42,7 +42,7 @@ export const HELP_TOPICS = {
     group: 'Analysis',
     what: 'Which copy of the Cellpose-SAM network to download and run. FP16 is the original (617 MB). INT8 (316 MB) and FP4 (183 MB) store the same network in compressed form. All three gave the same accuracy on the 40-photo benchmark (outline score 0.652–0.653, median D50 error 2.8–2.9%). Only used when the model is CP-SAM.',
     default: 'Auto: FP16 on a graphics card (WebGPU with float16), otherwise INT8 (always INT8 on phones and tablets)',
-    when: 'On a computer without a suitable graphics card, INT8 needs about half the memory of FP16 (about 2 GB vs 3.8 GB), loads much faster, and is as fast or faster (up to about 2× in the benchmark, depending on the computer). Choose FP4 for the smallest download on a slow or metered connection (it needs about as much memory as FP16 while running). On a graphics card, FP16 has been checked against the CPU on real hardware; INT8 and FP4 have not yet (use the GPU check page). Keep the same choice for all photos you compare, and note it when reporting results (it is recorded in the export).',
+    when: 'On a computer without a suitable graphics card, INT8 needs about half the memory of FP16 (about 2 GB vs 3.8 GB), loads much faster, and is as fast or faster (up to about 2× in the benchmark, depending on the computer). Choose FP4 for the smallest download on a slow or metered connection (it needs about as much memory as FP16 while running). On a graphics card, FP16 has been checked against the CPU on real hardware; INT8 and FP4 have not, so the app always runs them on the CPU (the GPU check page can test them on your graphics card). Keep the same choice for all photos you compare, and note it when reporting results (it is recorded in the export).',
   },
   scaleMode: {
     title: 'Scale mode',
@@ -201,7 +201,7 @@ export const HELP_TOPICS = {
   harmonizePhysicalCutoff: {
     title: 'Harmonize cutoff',
     group: 'Site statistics',
-    what: 'Photos at different scales can resolve different smallest sizes. When on, the largest of those cutoffs (in mm) is applied to every photo, so all photos describe the same size range.',
+    what: 'Photos at different scales can resolve different smallest sizes. Each photo\'s smallest size is the larger of "Min b-axis (px)" and what its analysis can detect: large photos are shrunk for analysis (see Image scale), which raises that floor. When on, the largest of these cutoffs (in mm) is applied to every photo, so all photos describe the same size range.',
     default: 'On',
     when: 'Keep on when combining photos taken at different heights or zooms. Turning it off adds more fine grains from the sharper photos, but mixes size ranges.',
   },

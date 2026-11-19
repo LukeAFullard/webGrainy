@@ -24,6 +24,7 @@ import {
   getModel,
   modelKindOf,
   resolveModelId,
+  WEBGPU_UNVERIFIED_MODELS,
 } from './modelCache.js';
 import {
   applyCLAHE,
@@ -635,7 +636,9 @@ export class ImageGrainsEngine {
 
         const created = await createInferenceSession(modelBytes, {
           ...this.options.sessionCreateOptions,
-          ...(this.webgpuDisabledReason !== null || this.wasmOnlyModels.has(modelId)
+          ...(this.webgpuDisabledReason !== null ||
+          this.wasmOnlyModels.has(modelId) ||
+          WEBGPU_UNVERIFIED_MODELS.has(modelId)
             ? { forceWasm: true }
             : {}),
           requireShaderF16:
@@ -652,8 +655,9 @@ export class ImageGrainsEngine {
             model: modelKind,
             modelId,
             executionProvider: 'wasm',
-            message:
-              `Cellpose-SAM (${modelId}) is running on the CPU (WASM) because WebGPU with shader-f16 is unavailable; expect slow inference (roughly 15 s per 256 px tile with INT8 weights).`,
+            message: WEBGPU_UNVERIFIED_MODELS.has(modelId)
+              ? `Cellpose-SAM (${modelId}) runs on the CPU (WASM): these quantized weights are not yet verified on WebGPU. Expect slow inference (roughly 15 s per 256 px tile); choose FP16 weights to use a float16 GPU.`
+              : `Cellpose-SAM (${modelId}) is running on the CPU (WASM) because WebGPU with shader-f16 is unavailable; expect slow inference (roughly 15 s per 256 px tile with INT8 weights).`,
           });
         }
       }
@@ -746,6 +750,20 @@ export class ImageGrainsEngine {
 
       const handleAbort = (): void => {
         rejectRequest(createAnalysisAbortError());
+        // The worker cannot be interrupted mid-job: stop it so a cancelled post-process does
+        // not keep using a CPU core (and delay the next analysis). A new worker is created on
+        // demand; any other request still waiting on this worker is rejected.
+        if (this.workerInstance === worker) {
+          try {
+            worker.terminate();
+          } catch {
+            // ignore
+          }
+          this.workerInstance = null;
+          for (const rejectOther of Array.from(this.pendingWorkerRejects)) {
+            rejectOther(new Error('Post-process worker was restarted after a cancelled analysis.'));
+          }
+        }
       };
 
       const handleError = (ev: Event | ErrorEvent): void => {

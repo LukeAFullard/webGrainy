@@ -6,6 +6,63 @@ All notable changes to webGrainy are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed (scientific audit, 2026-11-19)
+- **GeoTIFF auto-calibration in Web Mercator** (`tiffDecode.ts`). EPSG:3857 (and 3785, 900913,
+  102100, 102113) pixel sizes are map metres, not ground metres. They were used as mm/px
+  directly, so grain sizes were overstated by 1/cos(latitude): +41% at 45°. Now the pixel size
+  is multiplied by cos(latitude) at the image centre, taken from `ModelTiepointTag`. There is no
+  calibration when the tie point is missing or the scale varies by more than 1% across the
+  image. World Mercator (3395) and equirectangular projections get no automatic calibration.
+- **Harmonised site cutoff ignored working-resolution downscaling** (`siteAnalysis.ts`). The
+  common mm cutoff now uses each photo's real detection floor. That floor is the larger of
+  *Min b-axis (px)* and the equal-area diameter of the `minSize` area floor at the photo's
+  working resolution (`photoDetectionLimitPx`). Before, photos shrunk for analysis (longest side
+  > 2048 px) were assumed to resolve grains they could not, so size ranges were mixed. Each
+  photo's `detectionLimitPx` is reported in the per-photo breakdown and site export metadata.
+  Site results change for sites with large photos.
+- **Anti-aliased downscaling** (`imagePreprocess.ts`). Shrinking a photo for analysis now
+  averages every covered source pixel (`resizeRgbaArea`, like OpenCV `INTER_AREA`). Before, it
+  sampled 2×2 pixels bilinearly, which aliases fine texture at 0.25×. Results change for photos
+  whose longest side exceeds 1024 px.
+- **Site comparison mixed mm and px** (`siteComparison.ts`). `compareD50` (and the comparison
+  CSV) now only pairs sites with the same unit and size metric. The compare table marks px
+  values when units are mixed.
+- **Provenance gaps.**
+  - Every image-modifying step (AI 2× upscale, deblur, perspective rectification) is now kept in
+    `metadata.processingHistory`, including after a later rectification.
+  - That history is exported as `photo.imageProcessing` in the per-photo CSV / JSON / GeoJSON /
+    SVG / mask exports, and as `imageProcessing` per photo in site exports.
+  - Site export metadata now also records each photo's CLAHE setting, scale mode, inference
+    pipeline, fine-grain upscale, tile skipping, original and working sizes, and detection limit.
+- **Mask PNG export** is now at the photo's own resolution (nearest-neighbour from the working
+  labels), so it overlays the photo and matches the CSV / GeoJSON coordinates. It is
+  deflate-compressed, and provenance plus mask geometry are embedded as an `iTXt` chunk
+  (`webgrainy`). `exportMaskPng(depth, { resolution: 'working' })` keeps the old output.
+- **Quantized Cellpose-SAM weights (INT8, FP4) always run on the CPU (WASM)**
+  (`WEBGPU_UNVERIFIED_MODELS`). They are unverified on WebGPU, and WebGPU has corrupted INT8
+  `DequantizeLinear` output in another model with values the output checks cannot catch.
+- **Minor fixes.**
+  - The per-grain CSV `included_in_stats` column now follows the same size cutoffs and size
+    metric as the summary exports.
+  - Grain sizes never mix units (`grainSizeIn`). A missing mm value (for example min-Feret) is
+    derived from the grain's own scale, or the grain is skipped. It is never replaced by a px value.
+  - Cancelling during post-processing now terminates the worker; a new one is created for the
+    next analysis.
+  - Perspective rectification maps the reference to exactly width/mm-per-px by
+    height/mm-per-px output pixels (not rounded per axis), so pixels are square and the reported
+    mm/px holds on both axes.
+  - Project archives keep the pre-enhancement original, so "Revert" still works after
+    import. Import is all-or-nothing: the site is written last, and a failed import removes what
+    it wrote. Photo IDs that already exist are re-assigned, never overwritten, and orphan
+    results are skipped.
+  - The summary CSV has a `summary,excluded_cutoff_grains` row.
+  - The Wentworth histogram uses [lo, hi) mm bins like the class percentages, so 2 / 64 /
+    256 mm grains fall in gravel / cobble / boulder in both.
+- **Documentation.**
+  - The `weightedPsdPercentiles` docstring and `audit/oracle.py` now describe the log2 (φ-space)
+    interpolation actually used. The oracle output was regenerated.
+  - README notes that the benchmark tables predate the interpolation and resampling changes.
+
 ### Added (quality of life, batch 2: items 5 and 9)
 - **Printable site report** (Export → Printable report, `ui/report.ts`). It fits on 1–2 A4 pages and contains:
   - the charts and key statistics with confidence intervals;

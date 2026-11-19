@@ -5,6 +5,7 @@
 import type { GrainMorphometrics, PsdPercentiles, SizeMetric, WentworthProportions } from '../types/index.js';
 import type { AnalysisSession } from './pipelineController.js';
 import type { ValidBedMask } from './roiAndRectify.js';
+import { grainSizeIn } from './sedimentStats.js';
 import type { PoolingMode, SitePhotoInput, SiteAnalysisOptions } from './siteTypes.js';
 
 export const PSD_KEYS: ReadonlyArray<keyof PsdPercentiles> = [
@@ -59,6 +60,8 @@ export interface PreparedPhoto {
   gridMatrixHits: number;
   gridSubCutoffHits: number;
   faciesWeight: number;
+  /** Smallest resolvable size in original-photo px (working-resolution floor or minBaxisPx). */
+  detectionLimitPx: number;
 }
 
 export function emptyPsd(): PsdPercentiles {
@@ -291,14 +294,7 @@ export function getGrainSize(
   sizeMetric: SizeMetric,
   unit: 'mm' | 'px',
 ): number {
-  if (sizeMetric === 'dEq') {
-    return unit === 'mm' ? (grain.dEqMm ?? grain.dEqPx) : grain.dEqPx;
-  }
-  if (sizeMetric === 'minFeret') {
-    const px = grain.minFeretPx ?? grain.bAxisPx;
-    return unit === 'mm' ? (grain.minFeretMm ?? px) : px;
-  }
-  return unit === 'mm' ? (grain.bAxisMm ?? grain.bAxisPx) : grain.bAxisPx;
+  return grainSizeIn(grain, sizeMetric, unit);
 }
 
 export function getGrainMmSize(

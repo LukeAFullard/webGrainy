@@ -5,16 +5,16 @@ from skimage.measure import regionprops, label
 from scipy.spatial import ConvexHull
 d = json.load(open(sys.argv[1]))
 P = [5, 10, 16, 25, 50, 75, 84, 90, 95]
-# 1. percentiles: np.interp on midpoint CDF
+# 1. percentiles: np.interp in log2(size) on the midpoint CDF (shipped rule since commit 48d64bc)
 worst = 0.0
 for c in d['percentiles']:
     v, w = np.array(c['v'], float), np.array(c['w'], float)
     o = np.argsort(v, kind='stable'); v, w = v[o], w[o]
     cdf = (np.cumsum(w) - 0.5 * w) / w.sum()
     for p in P:
-        ref = np.interp(p / 100, cdf, v); got = c['r'][f'D{p}']
+        ref = 2 ** np.interp(p / 100, cdf, np.log2(v)); got = c['r'][f'D{p}']
         worst = max(worst, abs(ref - got) / max(1e-12, abs(ref)))
-print(f'[percentiles] {len(d["percentiles"])} cases, worst rel err vs np.interp = {worst:.2e}')
+print(f'[percentiles] {len(d["percentiles"])} cases, worst rel err vs log2 np.interp = {worst:.2e}')
 # 2. Folk & Ward from scratch
 fw, psd = d['folkward']['fw'], d['folkward']['psd']
 phi = {p: -math.log2(psd[f'D{100-p}']) for p in [5, 16, 25, 50, 75, 84, 95]}

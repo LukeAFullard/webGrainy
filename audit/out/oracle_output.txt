@@ -1,7 +1,7 @@
 /home/user/webGrainy/audit/oracle.py:47: RuntimeWarning: overflow encountered in cast
   ref = x.astype(np.float16).view(np.uint16).astype(np.int64)
-[percentiles] 204 cases, worst rel err vs np.interp = 2.08e-16
-[folk-ward] ours M=-3.602411 S=0.627675 Sk=-0.543694 K=0.748452 | ts M=-3.602411 S=0.627675 Sk=-0.543694 K=0.748452 | label=Very Coarse Skewed
+[percentiles] 204 cases, worst rel err vs log2 np.interp = 6.75e-16
+[folk-ward] ours M=-3.602411 S=0.627675 Sk=-0.543696 K=0.748452 | ts M=-3.602411 S=0.627675 Sk=-0.543696 K=0.748452 | label=Very Coarse Skewed
 [folk-ward] sample: mean-median in mm = +3.235 (tail toward coarse => phi skew should be negative/coarse)
 [morph] shape | ts b (moment) | skimage minor | minFeret | b/minFeret | ts a | maxFeret
   rect_80x20_rot30        23.11    23.11    21.34  1.083    92.48    83.49  orient ts=1.0471 sk=1.0471
@@ -27,3 +27,10 @@
 [hann] min window weight = 1.00e-06; np.clip(np.hanning(256),1e-3,1) match = True
 [reflect] matches np.pad reflect over [-12,13): True
 [homography] max reprojection err = 1.39e-13 px; |H_ts - H_svd|max = 2.59e-08; collinear input -> Error: Degenerate or collinear quadrilateral: cannot solve 4-point planar homogr
+[feret] shape | ts minFeret | oracle | ts maxFeret | oracle
+  rect_80x20_rot30       21.339   21.339   83.487   83.486
+  ellipse_60x30          60.931   60.931  121.004  121.004
+  triangle              108.673  108.673  135.506  135.506
+  L_shape               107.480  107.480  171.120  171.120
+  half_disk_occluded     61.000   61.000  121.004  121.004
+  square_60              61.000   61.000   86.267   86.267

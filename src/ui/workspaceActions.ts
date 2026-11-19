@@ -23,7 +23,7 @@ import {
   type EnhanceProgressEvent,
 } from '../modules/imageEnhance.js';
 import { isSupportedImageFile } from '../modules/tiffDecode.js';
-import type { PhotoEnhancementInfo } from '../modules/siteTypes.js';
+import { photoProcessingHistory, type PhotoEnhancementInfo, type SitePhotoMetadata } from '../modules/siteTypes.js';
 import { toAnalysisConfig, type AppState, type AppStore } from './state.js';
 
 /** The storage functions the actions use (projectStorage by default). */
@@ -665,18 +665,32 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
       }
 
       const { roiConfig: _dropRoi, originalBackup: _dropBackup, metadata: oldMeta, ...photoBase } = latestPhoto;
-      let nextMeta = oldMeta;
-      if (oldMeta?.enhancement) {
-        const { enhancement: _dropEnh, ...restMeta } = oldMeta;
-        nextMeta = restMeta;
-      }
+      // The new image is a different raster: drop the current-enhancement record (its scale
+      // factor no longer applies), but keep every step in the provenance history.
+      const { enhancement: _dropEnh, ...restMeta } = oldMeta ?? {};
+      const nextMeta: SitePhotoMetadata = {
+        ...restMeta,
+        processingHistory: [
+          ...photoProcessingHistory(oldMeta),
+          {
+            step: 'rectification',
+            corners: corners.map((c) => ({ x: c.x, y: c.y })),
+            physicalWidthMm: physWidthMm,
+            physicalHeightMm: physHeightMm,
+            outputWidth: rectified.width,
+            outputHeight: rectified.height,
+            mmPerPx: cal.mmPerPx,
+            appliedAt: new Date().toISOString(),
+          },
+        ],
+      };
       const updatedPhoto: PhotoRecord = {
         ...photoBase,
         imageBlob: rectified.blob,
         width: rectified.width,
         height: rectified.height,
         calibration: cal,
-        ...(nextMeta ? { metadata: nextMeta } : {}),
+        metadata: nextMeta,
       };
       await savePhoto(updatedPhoto);
       await storage.savePhotoResult({
@@ -772,6 +786,10 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
         ...(latestPhoto.metadata ?? {}),
         ...(enhanced.blurScore !== undefined ? { blurScore: enhanced.blurScore } : {}),
         enhancement: enhanced.enhancement,
+        processingHistory: [
+          ...photoProcessingHistory(latestPhoto.metadata),
+          { step: 'enhancement' as const, ...enhanced.enhancement },
+        ],
       };
 
       const updatedPhoto: PhotoRecord = {

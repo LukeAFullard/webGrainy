@@ -278,16 +278,37 @@ export function pointInRing(pt: [number, number], ring: ContourRing): boolean {
   return inside;
 }
 
+/** Optional extras for mask PNGs. */
+export interface MaskPngOptions {
+  /** UTF-8 text chunks (`iTXt`), e.g. provenance JSON. Keywords: 1-79 Latin-1 characters. */
+  text?: Record<string, string>;
+}
+
 /**
- * Lossless PNG of an instance mask: 16-bit grayscale (IDs clamped to 0..65535) or
- * 32-bit IDs packed big-endian into 8-bit RGBA.
+ * Nearest-neighbour resize of a label mask (pixel-centre aligned, as the image resize):
+ * original pixel (x, y) takes the label of working pixel (floor((x + 0.5) * w / outW), ...).
  */
-export function encodeMaskPng(
+export function resizeLabelsNearest(
   masks: Int32Array,
   width: number,
   height: number,
-  bitDepth: 16 | 32 = 16,
-): Uint8Array {
+  outWidth: number,
+  outHeight: number,
+): Int32Array {
+  if (outWidth === width && outHeight === height) return masks.slice();
+  const out = new Int32Array(outWidth * outHeight);
+  const xi = new Int32Array(outWidth);
+  for (let x = 0; x < outWidth; x++) xi[x] = Math.min(width - 1, Math.floor(((x + 0.5) * width) / outWidth));
+  for (let y = 0; y < outHeight; y++) {
+    const sy = Math.min(height - 1, Math.floor(((y + 0.5) * height) / outHeight));
+    const srcRow = sy * width;
+    const dstRow = y * outWidth;
+    for (let x = 0; x < outWidth; x++) out[dstRow + x] = masks[srcRow + xi[x]!]!;
+  }
+  return out;
+}
+
+function maskScanlines(masks: Int32Array, width: number, height: number, bitDepth: 16 | 32): Uint8Array {
   if (width <= 0 || height <= 0 || masks.length !== width * height) {
     throw new Error('Invalid mask dimensions for PNG export.');
   }
@@ -315,16 +336,40 @@ export function encodeMaskPng(
       }
     }
   }
+  return raw;
+}
+
+/** `iTXt` chunk payload: keyword, no compression, empty language tags, UTF-8 text. */
+function itxtData(keyword: string, text: string): Uint8Array {
+  const kw = keyword.replace(/[^\x20-\x7e]/g, '_').slice(0, 79) || 'Comment';
+  const body = new TextEncoder().encode(text);
+  const out = new Uint8Array(kw.length + 5 + body.length);
+  for (let i = 0; i < kw.length; i++) out[i] = kw.charCodeAt(i);
+  // [kw.length] = 0 separator, then compression flag 0, method 0, empty language tag + 0,
+  // empty translated keyword + 0.
+  out.set(body, kw.length + 5);
+  return out;
+}
+
+function assemblePng(
+  width: number,
+  height: number,
+  bitDepth: 16 | 32,
+  zlibData: Uint8Array,
+  options?: MaskPngOptions,
+): Uint8Array {
   const ihdrData = new Uint8Array(13);
   writeUint32BE(ihdrData, 0, width);
   writeUint32BE(ihdrData, 4, height);
   ihdrData[8] = bitDepth === 16 ? 16 : 8; // bit depth
   ihdrData[9] = bitDepth === 16 ? 0 : 6; // colour type: 0 = grayscale, 6 = RGBA
   const signature = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
+  const textChunks = Object.entries(options?.text ?? {}).map(([k, v]) => makePngChunk('iTXt', itxtData(k, v)));
   const parts = [
     signature,
     makePngChunk('IHDR', ihdrData),
-    makePngChunk('IDAT', deflateStoredZlib(raw)),
+    ...textChunks,
+    makePngChunk('IDAT', zlibData),
     makePngChunk('IEND', new Uint8Array(0)),
   ];
   const png = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
@@ -334,6 +379,48 @@ export function encodeMaskPng(
     offset += p.length;
   }
   return png;
+}
+
+/**
+ * Lossless PNG of an instance mask: 16-bit grayscale (IDs clamped to 0..65535) or
+ * 32-bit IDs packed big-endian into 8-bit RGBA. Uncompressed (stored) deflate.
+ */
+export function encodeMaskPng(
+  masks: Int32Array,
+  width: number,
+  height: number,
+  bitDepth: 16 | 32 = 16,
+  options?: MaskPngOptions,
+): Uint8Array {
+  const raw = maskScanlines(masks, width, height, bitDepth);
+  return assemblePng(width, height, bitDepth, deflateStoredZlib(raw), options);
+}
+
+/**
+ * As `encodeMaskPng`, but deflate-compressed with the platform `CompressionStream` (zlib
+ * format, as PNG requires) when available; label masks shrink many times. Falls back to
+ * stored deflate.
+ */
+export async function encodeMaskPngCompressed(
+  masks: Int32Array,
+  width: number,
+  height: number,
+  bitDepth: 16 | 32 = 16,
+  options?: MaskPngOptions,
+): Promise<Uint8Array> {
+  const raw = maskScanlines(masks, width, height, bitDepth);
+  let zlib: Uint8Array | null = null;
+  const CS = (globalThis as { CompressionStream?: new (format: string) => TransformStream<Uint8Array, Uint8Array> })
+    .CompressionStream;
+  if (typeof CS === 'function' && typeof Response === 'function' && typeof Blob === 'function') {
+    try {
+      const stream = new Blob([raw as Uint8Array<ArrayBuffer>]).stream().pipeThrough(new CS('deflate'));
+      zlib = new Uint8Array(await new Response(stream).arrayBuffer());
+    } catch {
+      zlib = null;
+    }
+  }
+  return assemblePng(width, height, bitDepth, zlib ?? deflateStoredZlib(raw), options);
 }
 
 type Geometry =

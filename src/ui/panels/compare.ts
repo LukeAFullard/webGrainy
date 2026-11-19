@@ -50,13 +50,13 @@ export function renderCompareHtml(state: AppState, lightTheme: boolean, charts: 
           .map((s) => {
             const r = s.report!;
             return `<tr><th scope="row"><span class="swatch" style="background:${s.color}"></span>${esc(s.name)}</th>
-              <td>${dateCell(s)}</td><td>${r.includedPhotoCount} / ${r.validGrainCount}</td><td>${v(r.psd.D16)}</td>
+              <td>${dateCell(s)}</td><td>${r.includedPhotoCount} / ${r.validGrainCount}</td><td>${v(r.psd.D16)}${mixedUnits ? ` <span class="stats-note">${r.unit}</span>` : ''}</td>
               <td>${v(r.psd.D50)} (${v(r.bootstrapCi.lower.D50)}–${v(r.bootstrapCi.upper.D50)})</td><td>${v(r.psd.D84)}</td>
               <td>${v(r.extra?.geometricMean)} / ${v(r.extra?.geometricSd, 2)}</td><td>${v(r.extra?.sauterMeanD32)}</td>
               <td>${v(r.folkWard?.sortingPhi, 2)}</td><td>${r.wentworth ? `${v(r.wentworth.gravelPct, 0)} / ${v(r.wentworth.cobblePct, 0)}` : '—'}</td></tr>`;
           })
           .join('')}</tbody></table></div>
-        <p class="field-hint">Sizes in ${unit}. All sites use the same statistics settings (${esc(state.siteOptions.poolingMode)}, ${esc(state.siteOptions.sizeMetric ?? 'bAxis')}).</p>`
+        <p class="field-hint">${mixedUnits ? 'Sizes in mm, or in px where marked (px sites are left out of the charts and D50 tests).' : `Sizes in ${unit}.`} All sites use the same statistics settings (${esc(state.siteOptions.poolingMode)}, ${esc(state.siteOptions.sizeMetric ?? 'bAxis')}).</p>`
     : '';
   const pairs = compareD50(plotted);
   const pairHtml = pairs.length
