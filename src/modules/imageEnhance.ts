@@ -35,6 +35,11 @@ export interface EnhanceModelSpec {
   sizeBytes: number;
   scaleFactor: 1 | 2;
   license: string;
+  /**
+   * Run on WASM (CPU) by default when the ONNX graph contains ops that ORT's WebGPU
+   * JSEP backend does not yet support (e.g. NAFNet's `sca/Pad_1` zero-sized tensor).
+   */
+  preferWasm?: boolean;
 }
 
 /** Maximum output side length (px) allowed for 2x upscaling to prevent browser canvas OOM. */
@@ -68,6 +73,7 @@ export const ENHANCE_MODELS: Record<EnhanceKind, EnhanceModelSpec> = {
     sizeBytes: 91736251,
     scaleFactor: 1,
     license: 'MIT',
+    preferWasm: true,
   },
 };
 
@@ -440,21 +446,45 @@ export async function enhanceImageBuffer(
   const bytes = await getEnhanceModelBytes(kind, options?.onProgress, options?.signal);
   options?.onProgress?.({ phase: 'session', message: `Starting ${spec.shortLabel} model…`, fraction: 0 });
 
-  const session: EnhanceSessionLike = options?.sessionFactory
-    ? await options.sessionFactory(bytes, spec)
-    : (await createInferenceSession(bytes, options?.sessionOptions)).session;
+  const tileOpts = {
+    ...(options?.tileSize !== undefined ? { tileSize: options.tileSize } : {}),
+    ...(options?.overlap !== undefined ? { overlap: options.overlap } : {}),
+    ...(options?.onProgress ? { onProgress: options.onProgress } : {}),
+    ...(options?.signal ? { signal: options.signal } : {}),
+  };
 
-  try {
-    return await runTiledImageEnhancement(rgba, width, height, spec, session, {
-      ...(options?.tileSize !== undefined ? { tileSize: options.tileSize } : {}),
-      ...(options?.overlap !== undefined ? { overlap: options.overlap } : {}),
-      ...(options?.onProgress ? { onProgress: options.onProgress } : {}),
-      ...(options?.signal ? { signal: options.signal } : {}),
-    });
-  } finally {
-    if (typeof session.release === 'function') {
-      await session.release().catch(() => undefined);
+  if (options?.sessionFactory) {
+    const session = await options.sessionFactory(bytes, spec);
+    try {
+      return await runTiledImageEnhancement(rgba, width, height, spec, session, tileOpts);
+    } finally {
+      if (typeof session.release === 'function') {
+        await session.release().catch(() => undefined);
+      }
     }
+  }
+
+  const initialOpts: SessionCreateOptions = {
+    ...(options?.sessionOptions ?? {}),
+    ...(spec.preferWasm ? { forceWasm: true } : {}),
+  };
+  let created = await createInferenceSession(bytes, initialOpts);
+  try {
+    return await runTiledImageEnhancement(rgba, width, height, spec, created.session, tileOpts);
+  } catch (err) {
+    if (created.executionProvider === 'webgpu' && !options?.signal?.aborted) {
+      await created.session.release().catch(() => undefined);
+      options?.onProgress?.({
+        phase: 'session',
+        message: `WebGPU kernel unsupported for ${spec.shortLabel}; retrying on CPU (WASM)…`,
+        fraction: 0,
+      });
+      created = await createInferenceSession(bytes, { ...initialOpts, forceWasm: true });
+      return await runTiledImageEnhancement(rgba, width, height, spec, created.session, tileOpts);
+    }
+    throw err;
+  } finally {
+    await created.session.release().catch(() => undefined);
   }
 }
 
