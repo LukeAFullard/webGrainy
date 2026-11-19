@@ -24,9 +24,31 @@ describe('imageEnhance', () => {
 
     expect(ENHANCE_MODELS.deblur.repoId).toBe('inYourOwnBrowser/deblurring_nafnet');
     expect(ENHANCE_MODELS.deblur.scaleFactor).toBe(1);
-    expect(ENHANCE_MODELS.deblur.preferWasm).toBe(true);
+    expect(ENHANCE_MODELS.deblur.minTileSide).toBe(384);
+    expect(ENHANCE_MODELS.deblur.defaultTileSize).toBe(384);
     expect(ENHANCE_MODELS.deblur.sha256).toMatch(/^[0-9a-f]{64}$/);
     expect(ENHANCE_MODELS.deblur.url).toContain(ENHANCE_MODELS.deblur.revision);
+  });
+
+  it('pads small images up to 384x384 by default for NAFNet TLC compatibility', async () => {
+    const w = 100;
+    const h = 80;
+    const rgba = new Uint8ClampedArray(w * h * 4).fill(180);
+    const seenDims: Array<readonly number[]> = [];
+    const session: EnhanceSessionLike = {
+      inputNames: ['lq'],
+      outputNames: ['output'],
+      run: async (feeds) => {
+        const tensor = feeds['lq'] as { data: Float32Array; dims: readonly number[] };
+        seenDims.push(tensor.dims);
+        return { output: { data: new Float32Array(tensor.data), dims: tensor.dims } };
+      },
+    };
+    const res = await runTiledImageEnhancement(rgba, w, h, ENHANCE_MODELS.deblur, session);
+    expect(seenDims).toEqual([[1, 3, 384, 384]]);
+    expect(res.width).toBe(w);
+    expect(res.height).toBe(h);
+    expect(res.data[0]).toBe(180);
   });
 
   it('runs seamless 1x tiled deblur across non-multiple-of-16 dimensions', async () => {
