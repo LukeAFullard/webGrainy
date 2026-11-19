@@ -151,6 +151,44 @@ describe('projectStorage', () => {
     const hydrated = AnalysisSession.fromSerialized(restoredResult!.serializedSession!);
     expect(hydrated.getStats().includedGrains).toBe(1);
 
+    // Round-trip a fine-grain upscaled session (effectiveScaleFactor = 1.5 > 1) with provenance
+    const upMasks = new Int32Array(60 * 60);
+    for (let y = 18; y <= 42; y++) for (let x = 18; x <= 42; x++) upMasks[y * 60 + x] = 1;
+    const upSession = new AnalysisSession({
+      workingImage: {
+        data: new Uint8ClampedArray(60 * 60 * 4).fill(128),
+        width: 60,
+        height: 60,
+        originalWidth: 40,
+        originalHeight: 40,
+        effectiveScaleFactor: 1.5,
+        scaleModeApplied: '1.0x',
+      },
+      recommendation: session.recommendation,
+      masks: upMasks,
+      workingGrains: computeAllGrainMorphometrics(upMasks, 60, 60, 2),
+      provenance: {
+        appVersion: '1.1.0',
+        ortVersion: '1.31.1',
+        analyzedAt: '2026-01-01T00:00:00Z',
+        modelId: 'ig2_unet_fp32',
+        modelFile: 'x',
+        modelRevision: 'r',
+        modelSha256: 's',
+        fineGrainUpscale: 1.5,
+      },
+    });
+    await savePhotoResult(
+      { photoId: 'ph-1', status: 'done', serializedSession: upSession.toSerialized(), updatedAt: 3000 },
+      opts,
+    );
+    const upArchive = await exportProjectArchive('site-1', opts);
+    const idb3 = createProjectMockIDB();
+    await importProjectArchive(upArchive, { indexedDB: idb3 });
+    const restoredUp = await getPhotoResult('ph-1', { indexedDB: idb3 });
+    expect(restoredUp?.serializedSession?.workingImage.effectiveScaleFactor).toBe(1.5);
+    expect(restoredUp?.serializedSession?.provenance?.fineGrainUpscale).toBe(1.5);
+
     // Reject invalid archive
     await expect(
       importProjectArchive('{"format":"wrong","version":2}', { indexedDB: idb2 }),

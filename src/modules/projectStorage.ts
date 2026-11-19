@@ -424,6 +424,7 @@ function serializeSessionForArchive(
       : {}),
     excludeBorder: session.excludeBorder,
     borderMargin: session.borderMargin,
+    ...(session.provenance !== undefined ? { provenance: session.provenance } : {}),
   };
 }
 
@@ -458,6 +459,7 @@ function deserializeSessionFromArchive(
       : {}),
     excludeBorder: archived.excludeBorder,
     borderMargin: archived.borderMargin,
+    ...(archived.provenance !== undefined ? { provenance: archived.provenance } : {}),
   };
 }
 
@@ -605,8 +607,8 @@ function validateArchivedSession(ss: unknown, ctx: string): SerializedAnalysisSe
     throw new ArchiveValidationError(`${ctx}: workingImage originalWidth/originalHeight invalid.`);
   }
   const sf = wi['effectiveScaleFactor'];
-  if (!isFiniteNum(sf) || sf <= 0 || sf > 1) {
-    throw new ArchiveValidationError(`${ctx}: effectiveScaleFactor must be in (0, 1].`);
+  if (!isFiniteNum(sf) || sf <= 0 || sf > 4) {
+    throw new ArchiveValidationError(`${ctx}: effectiveScaleFactor must be in (0, 4].`);
   }
   if (typeof ss['workingMasksBase64'] !== 'string' || typeof wi['dataBase64'] !== 'string') {
     throw new ArchiveValidationError(`${ctx}: missing base64 mask or image data.`);
