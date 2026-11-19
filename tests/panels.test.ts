@@ -7,6 +7,7 @@ import { createInitialState, type AppState } from '../src/ui/state.js';
 import { renderTopbarHtml } from '../src/ui/panels/topbar.js';
 import { renderSidebarHtml, backupLineHtml, formatBytes, type SidebarView } from '../src/ui/panels/sidebar.js';
 import { renderToolbarHtml } from '../src/ui/panels/toolbar.js';
+import { renderExportModalHtml } from '../src/ui/modals.js';
 import { renderDashboardHtml } from '../src/ui/panels/dashboard.js';
 import { renderCompareHtml } from '../src/ui/panels/compare.js';
 import {
@@ -188,5 +189,36 @@ describe('panel renderers', () => {
     expect(renderCompareHtml({ ...st, comparison: { loading: false, sites: [], error: 'disk full' } }, true, new Map())).toContain('disk full');
     const html = renderCompareHtml({ ...st, comparison: null }, true, new Map());
     expect(html).toContain('Rakaia &lt;reach&gt; 3');
+  });
+
+  it('shows mm/px (px/mm) scale readout, Wentworth/cutoff legends, Min Size mm², and export disabled reason', () => {
+    const base = analysedState();
+    const cal = { pointA: { x: 0, y: 0 }, pointB: { x: 100, y: 0 }, physicalLengthMm: 50, pixelDistance: 100, mmPerPx: 0.5 };
+    const st = {
+      ...base,
+      photos: base.photos.map((p, i) => (i === 0 ? { ...p, calibration: cal } : p)),
+    };
+    const tb = renderToolbarHtml(st);
+    expect(tb.subToolbar).toContain('0.500 mm/px');
+    expect(tb.subToolbar).toContain('2.00 px/mm');
+    expect(tb.subToolbar).toContain('Touches photo edge');
+    expect(tb.subToolbar).toContain('Below size cutoff');
+    expect(tb.subToolbar).toContain('Cobble 64–256');
+
+    const sb = renderSidebarHtml(st, {
+      guideHtml: '',
+      settingsOpen: true,
+      cpuThreadPref: 'auto',
+      cpuThreads: 4,
+      crossOriginIsolated: false,
+      canNotify: false,
+      notifyWhenDone: false,
+      storageInfo: null,
+    });
+    expect(sb).toContain('data-min-size-mm2');
+    expect(sb).toContain('Min Size (mm²)');
+
+    const expErr = renderExportModalHtml({ ...st, siteReport: null, siteReportError: 'Mixed calibration across photos' });
+    expect(expErr).toContain('Site exports unavailable: Mixed calibration across photos');
   });
 });

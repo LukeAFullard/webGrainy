@@ -1,5 +1,6 @@
 import { ellipseRotationDeg, majorAxisDirection } from '../modules/orientationGeometry.js';
-import type { GrainMorphometrics, Point2D } from '../types/index.js';
+import { grainPassesSizeCutoffs } from '../modules/sedimentStats.js';
+import type { GrainMorphometrics, Point2D, SizeMetric } from '../types/index.js';
 import type { AnalysisSession } from '../modules/pipelineController.js';
 import type { PhotoRecord } from '../modules/projectStorage.js';
 import type { EditorToolMode, OverlaySettings } from './state.js';
@@ -62,6 +63,8 @@ export class CanvasViewport {
   private selectedIds = new Set<number>();
   private inspectedId: number | null = null;
   private minBaxisPx = 15;
+  private minSizeMm = 0;
+  private sizeMetric: SizeMetric = 'bAxis';
   private calPoints: Point2D[] = [];
   private rectifyPoints: Point2D[] = [];
 
@@ -525,6 +528,8 @@ export class CanvasViewport {
     selectedIds: Set<number>;
     inspectedId: number | null;
     minBaxisPx: number;
+    minSizeMm?: number;
+    sizeMetric?: SizeMetric;
     calPoints: Point2D[];
     rectifyPoints: Point2D[];
   }): void {
@@ -540,6 +545,8 @@ export class CanvasViewport {
     this.selectedIds = opts.selectedIds;
     this.inspectedId = opts.inspectedId;
     this.minBaxisPx = opts.minBaxisPx;
+    this.minSizeMm = opts.minSizeMm ?? 0;
+    this.sizeMetric = opts.sizeMetric ?? 'bAxis';
     this.calPoints = opts.calPoints;
     this.rectifyPoints = opts.rectifyPoints;
     if (colorsChanged) this.maskDirty = true;
@@ -744,7 +751,11 @@ export class CanvasViewport {
         const isSelected = this.selectedIds.has(g.id) || this.inspectedId === g.id;
         // Excluded grains (outside the ROI / inside an exclusion): no ellipse or orientation line.
         if (excludedIds?.has(g.id) && !isSelected) continue;
-        const isTruncated = this.minBaxisPx > 0 && g.bAxisPx < this.minBaxisPx;
+        const isTruncated = !grainPassesSizeCutoffs(g, {
+          minBaxisPx: this.minBaxisPx,
+          minSizeMm: this.minSizeMm,
+          sizeMetric: this.sizeMetric,
+        });
 
         if (this.overlays.ellipses || isSelected) {
           const rx = Math.max(1, (g.aAxisPx / 2) * this.zoom);

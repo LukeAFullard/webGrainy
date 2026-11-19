@@ -118,6 +118,15 @@ export function renderToolbarHtml(state: AppState): { toolbar: string; subToolba
     `;
   }
 
+  const cal = activePhoto?.calibration;
+  const scaleBadgeHtml = activePhoto
+    ? cal && Number.isFinite(cal.mmPerPx) && cal.mmPerPx > 0
+      ? `<span class="toolbar-sep" aria-hidden="true"></span>
+         <span class="scale-readout" data-scale-readout="" title="Physical pixel scale of the active photo (updates automatically on 2× Upscale or Revert)">Scale: <strong>${cal.mmPerPx.toFixed(3)} mm/px</strong> (${(1 / cal.mmPerPx).toFixed(2)} px/mm)${activePhoto.metadata?.enhancement?.kind === 'upscale-2x' ? ' · 2×' : ''}</span>`
+      : `<span class="toolbar-sep" aria-hidden="true"></span>
+         <span class="scale-readout" data-scale-readout="" style="color:var(--text-muted);" title="Use Calibrate to set a physical reference scale in mm/px">Scale: uncalibrated (px)</span>`
+    : '';
+
   const onCount = [ov.instanceIds, ov.wentworthColors, ov.ellipses, ov.orientations, ov.borderTruncated, ov.loupe].filter(Boolean).length;
   const subToolbarHtml = `
     <details class="display-menu" data-keep-open="display">
@@ -125,13 +134,25 @@ export function renderToolbarHtml(state: AppState): { toolbar: string; subToolba
       <div class="display-options">
         <label class="checkbox-label"><input type="checkbox" data-ov="instanceIds" ${ov.instanceIds ? 'checked' : ''} /> Grain IDs</label>
         <label class="checkbox-label"><input type="checkbox" data-ov="wentworthColors" ${ov.wentworthColors ? 'checked' : ''} /> Size colours (Wentworth)</label>
+        <div class="field-hint" style="margin:-2px 0 4px 20px;line-height:1.4;">
+          <span style="color:#f5a623;">■</span> Sand &lt;2mm
+          &nbsp;<span style="color:#3b9eff;">■</span> Fine gravel 2–16
+          &nbsp;<span style="color:#2ecc71;">■</span> Coarse 16–64
+          &nbsp;<span style="color:#9b59b6;">■</span> Cobble 64–256
+          &nbsp;<span style="color:#e74c3c;">■</span> Boulder ≥256
+        </div>
         <label class="checkbox-label"><input type="checkbox" data-ov="ellipses" ${ov.ellipses ? 'checked' : ''} /> Ellipses (a/b axes)</label>
         <label class="checkbox-label"><input type="checkbox" data-ov="orientations" ${ov.orientations ? 'checked' : ''} /> Orientation lines</label>
         <label class="checkbox-label"><input type="checkbox" data-ov="borderTruncated" ${ov.borderTruncated ? 'checked' : ''} /> Mark edge/too-small grains</label>
+        <div class="field-hint" style="margin:-2px 0 4px 20px;line-height:1.4;">
+          <span style="color:#ff8577;">●</span> Touches photo edge &nbsp;
+          <span style="color:#f5a623;">●</span> Below size cutoff (excluded from PSD)
+        </div>
         <label class="checkbox-label"><input type="checkbox" data-ov="loupe" ${ov.loupe ? 'checked' : ''} /> Magnifier (${ov.loupeZoom}×)</label>
         <label class="checkbox-label">Outline opacity <input type="range" min="0" max="1" step="0.05" value="${ov.opacity}" data-ov="opacity" style="width:80px;" /></label>
       </div>
     </details>
+    ${scaleBadgeHtml}
     ${toolPrompt}
   `;
   return { toolbar: toolbarHtml, subToolbar: subToolbarHtml };

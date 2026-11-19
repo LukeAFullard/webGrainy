@@ -249,6 +249,19 @@ export function renderExportModalHtml(state: AppState): string {
   const activeSession = activePhoto ? state.sessions.get(activePhoto.photoId) ?? null : null;
   const hasSiteReport = state.siteReport !== null;
 
+  const analysedIncludedCount = state.photos.filter(
+    (p) => p.included && state.sessions.has(p.photoId),
+  ).length;
+  const siteDisabledReason = hasSiteReport
+    ? null
+    : state.siteReportError
+      ? `Site exports unavailable: ${state.siteReportError}`
+      : state.sessions.size === 0
+        ? 'Analyse at least one photo to enable site-level exports.'
+        : analysedIncludedCount === 0
+          ? 'Tick the checkbox beside at least one analysed photo in the sidebar to include it in site exports.'
+          : 'Site statistics are not available yet.';
+
   return `
     <div class="modal-card">
       <div class="modal-header">
@@ -258,6 +271,7 @@ export function renderExportModalHtml(state: AppState): string {
       <div class="modal-body">
         <div class="stat-card" style="padding:10px;">
           <div style="font-weight:700;margin-bottom:6px;">Site-Level Exports (${activeSite ? esc(activeSite.name) : 'No Site'})</div>
+          ${siteDisabledReason ? `<div class="warning-banner" style="margin-bottom:8px;">${esc(siteDisabledReason)}</div>` : ''}
           <div class="row" style="flex-wrap:wrap;">
             <button type="button" class="btn btn-sm btn-primary" data-action="printable-report" ${hasSiteReport ? '' : 'disabled'} title="One-page summary to print or save as PDF">Printable report</button>
             <button type="button" class="btn btn-sm btn-primary" data-export="site-summary-csv" ${hasSiteReport ? '' : 'disabled'}>Site Summary CSV</button>

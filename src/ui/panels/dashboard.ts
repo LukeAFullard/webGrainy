@@ -113,7 +113,10 @@ export function renderDashboardHtml(state: AppState, view: DashboardView): strin
     const sizeHist = isSite
       ? sizeHistogramFromWentworth((step === 0.5 ? report?.wentworthHistogram05Phi : report?.wentworthHistogram10Phi) ?? [], step)
       : activeSession
-        ? activeSession.getSizeHistogram(step, activeMetric)
+        ? activeSession.getSizeHistogram(step, activeMetric, {
+            minBaxisPx: state.siteOptions.minBaxisPx ?? 15,
+            minSizeMm: state.siteOptions.minSizeMm ?? 0,
+          })
         : sizeHistogramFromWentworth([], step);
     const detectionNoteHtml = detectionLimitInfo
       ? `<div class="${detectionLimitInfo.nearD16 || detectionLimitInfo.nearD5 ? 'warning-banner' : 'field-hint'}" style="margin-top:6px;">
@@ -277,11 +280,21 @@ export function renderDashboardHtml(state: AppState, view: DashboardView): strin
           ${scopeButtonsHtml(state.dashboardScope)}
         </div>
       </div>
-      <div class="basis-banner">${esc(basisLabel)}${
-        !isSite && single
-          ? ` · n = ${single.includedGrains}${activeSession && activeSession.getRoiExcludedGrainCount() > 0 ? ` (${activeSession.getRoiExcludedGrainCount()} excluded by ROI)` : ''}`
-          : ''
-      }</div>
+      <div class="basis-banner">${esc(basisLabel)}${(() => {
+        if (isSite && report) {
+          const excl = report.excludedTruncationCount > 0 ? ` (${report.excludedTruncationCount} below cutoff)` : '';
+          return ` · n = ${report.validGrainCount}${excl}`;
+        }
+        if (!isSite && single) {
+          const parts: string[] = [];
+          if ((single.excludedCutoffGrains ?? 0) > 0) parts.push(`${single.excludedCutoffGrains} below cutoff`);
+          if (single.excludedBorderGrains > 0) parts.push(`${single.excludedBorderGrains} edge`);
+          const roiExcl = activeSession ? activeSession.getRoiExcludedGrainCount() : 0;
+          if (roiExcl > 0) parts.push(`${roiExcl} excluded by ROI`);
+          return ` · n = ${single.includedGrains}${parts.length > 0 ? ` (${parts.join(', ')})` : ''}`;
+        }
+        return '';
+      })()}</div>
       ${(() => {
         const warns = [...(isSite ? report?.warnings ?? [] : single?.warnings ?? [])];
         // ROI enlarged after an analysis that skipped tiles outside the old ROI.
@@ -310,7 +323,7 @@ export function renderDashboardHtml(state: AppState, view: DashboardView): strin
         }
         if (!hint.suggest) return '';
         return `<div class="info-banner">
-          <strong>Fine grains detected</strong> (median about ${hint.medianWorkingBPx!.toFixed(0)} px). U-Net finds more of them if the photo is enlarged ×1.5 first: in testing on 40 photos this gave better outlines with no site getting worse, and takes about 20–50% longer. ${helpButton('fineGrainUpscale')}
+          <strong>Fine grains detected</strong> (median about ${hint.medianWorkingBPx!.toFixed(0)} px). U-Net finds more of them with a fast temporary ×1.5 bicubic resize during inference (unlike the toolbar's AI 2× Upscale, it does not modify your photo): in testing on 40 photos this improved outlines with no site getting worse, taking ~20–50% longer. ${helpButton('fineGrainUpscale')}
           <div style="margin-top:6px;"><button type="button" class="btn btn-sm btn-primary" data-action="fine-grain-rerun" ${state.batchRunning ? 'disabled' : ''}>Re-analyse enlarged ×1.5</button></div>
         </div>`;
       })()}
@@ -323,6 +336,7 @@ export function renderDashboardHtml(state: AppState, view: DashboardView): strin
       <details class="advanced-block stats-settings" style="margin-top:8px;" data-keep-open="stats-settings">
         <summary>Statistics settings <span class="summary-note">${({ 'physical-area': 'area-weighted', 'equal-photo': 'equal-photo', 'virtual-wolman-grid': 'Wolman grid', 'number-weighted': 'number-weighted', 'facies-weighted': 'facies-weighted' } as Record<string, string>)[state.siteOptions.poolingMode] ?? state.siteOptions.poolingMode} · ${activeMetric === 'bAxis' ? 'b-axis' : activeMetric}</span></summary>
         <div style="margin-top:6px;">
+        <div class="field-hint" style="margin-bottom:6px;">Cutoffs and pooling apply live to both This photo and Whole site without re-analysing.</div>
       <div class="grid-2">
         <label class="field-label">
           <span class="label-row">Pooling Mode ${helpButton('poolingMode')}</span>
