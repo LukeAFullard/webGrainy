@@ -38,4 +38,35 @@ describe('grain inspector navigation', () => {
     expect(grainFlags(grains[3]!)).toEqual(['outside the ROI or in an excluded area']);
     expect(grainFlags(grains[0]!)).toEqual([]);
   });
+
+  it('focusOnGrain centers on original-image coordinates without double-dividing by effectiveScaleFactor', async () => {
+    const { CanvasViewport } = await import('../src/ui/canvasViewport.js');
+    // Fake a minimal CanvasViewport instance to exercise focusOnGrain directly in Node.
+    const fakeViewport = {
+      photo: { width: 4000, height: 3000 },
+      session: {
+        workingImage: { width: 1000, height: 750, originalWidth: 4000, originalHeight: 3000, effectiveScaleFactor: 0.25 },
+        getResult: () => ({
+          // Already rescaled to original-image coordinates by AnalysisSession
+          grains: [{ id: 1, bbox: [1600, 1200, 2000, 1600] as [number, number, number, number] }],
+        }),
+      },
+      stage: { getBoundingClientRect: () => ({ width: 800, height: 600 }) },
+      zoom: 0.2,
+      fitZoom: 0.19,
+      panX: 0,
+      panY: 0,
+      render: () => {},
+    };
+
+    CanvasViewport.prototype.focusOnGrain.call(fakeViewport, 1);
+
+    // Center of grain in original-image coords is (1800, 1400).
+    // Screen center (400, 300) should map to (1800, 1400): panX + 1800 * zoom === 400, panY + 1400 * zoom === 300.
+    expect(fakeViewport.panX + 1800 * fakeViewport.zoom).toBeCloseTo(400, 5);
+    expect(fakeViewport.panY + 1400 * fakeViewport.zoom).toBeCloseTo(300, 5);
+    // Must not pan miles off-image (old bug divided by 0.25 again -> centered at 7200, 5600).
+    expect(Math.abs(fakeViewport.panX)).toBeLessThan(1000);
+    expect(Math.abs(fakeViewport.panY)).toBeLessThan(1000);
+  });
 });

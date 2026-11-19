@@ -313,5 +313,34 @@ describe('workspace actions', () => {
     expect(returningNull.store.getState().pendingRectifyPoints).toEqual([]);
     expect(returningNull.store.getState().statusMessage).toContain('Rectification failed:');
   });
+
+  it('re-calibrating an analysed photo multiple times updates stats every time (never stuck at first value)', async () => {
+    const world = fakeWorld();
+    world.sites.set('a', {
+      ...site('a', ['p1']),
+      options: { poolingMode: 'physical-area', minBaxisPx: 0 },
+    });
+    world.photos.set('p1', photo('p1', 'a'));
+    const { store, actions } = setup(world);
+    await actions.createDefaultOrLoadSites();
+    await actions.runBatch();
+
+    const pxD50 = store.getState().singlePhotoStats!.areaWeightedB.D50;
+
+    // 1st calibration: 100 px = 100 mm -> 1 mm/px
+    await actions.applyCalibrationToActive({ x: 0, y: 0 }, { x: 100, y: 0 }, 100, 'mm');
+    expect(store.getState().singlePhotoStats!.areaWeightedB.D50).toBeCloseTo(pxD50 * 1, 3);
+    expect(store.getState().siteReport!.psd.D50).toBeCloseTo(pxD50 * 1, 3);
+
+    // 2nd calibration: 100 px = 500 mm -> 5 mm/px
+    await actions.applyCalibrationToActive({ x: 0, y: 0 }, { x: 100, y: 0 }, 500, 'mm');
+    expect(store.getState().singlePhotoStats!.areaWeightedB.D50).toBeCloseTo(pxD50 * 5, 3);
+    expect(store.getState().siteReport!.psd.D50).toBeCloseTo(pxD50 * 5, 3);
+
+    // 3rd calibration: 100 px = 25 cm (250 mm) -> 2.5 mm/px
+    await actions.applyCalibrationToActive({ x: 0, y: 0 }, { x: 100, y: 0 }, 25, 'cm');
+    expect(store.getState().singlePhotoStats!.areaWeightedB.D50).toBeCloseTo(pxD50 * 2.5, 3);
+    expect(store.getState().siteReport!.psd.D50).toBeCloseTo(pxD50 * 2.5, 3);
+  });
 });
 

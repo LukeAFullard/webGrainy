@@ -64,6 +64,7 @@ function setup() {
     setFineGrainUpscale: vi.fn(async () => {}),
     clearStoredSiteInputs: vi.fn(),
     refreshCapabilities: vi.fn(async () => {}),
+    applyCalibrationToActive: vi.fn(async () => {}),
   };
   const ui = {
     renderSidebar: vi.fn(),
@@ -328,5 +329,47 @@ describe('form changes', () => {
     expect(store.getState().activePhotoId).toBe('p2');
     expect(store.getState().pendingCalibrationPoints).toEqual([]);
     expect(store.getState().pendingRectifyPoints).toEqual([]);
+  });
+
+  it('re-applies calibration immediately when preset, length, or unit changes on an already-calibrated photo', () => {
+    const { ctx, store, actions, ui } = setup();
+    const ptA = { x: 10, y: 20 };
+    const ptB = { x: 110, y: 20 };
+    store.setState({
+      activeTool: 'calibrate',
+      activePhotoId: 'p1',
+      photos: [
+        {
+          photoId: 'p1',
+          siteId: 's1',
+          label: 'p1.jpg',
+          width: 400,
+          height: 300,
+          addedAt: 0,
+          included: true,
+          imageBlob: new Blob(['x']),
+          calibration: { pointA: ptA, pointB: ptB, physicalLengthMm: 100, pixelDistance: 100, mmPerPx: 1 },
+        },
+      ],
+    });
+
+    // Changing preset to 500 mm Quadrat re-applies calibration with existing points
+    routeChange(el({}, { tagName: 'SELECT', id: 'cal-preset', value: '500|mm' }), ctx);
+    expect(actions.applyCalibrationToActive).toHaveBeenLastCalledWith(ptA, ptB, 500, 'mm');
+
+    // Changing custom length updates cal-preset DOM to 'custom' and re-applies calibration
+    routeChange(el({}, { tagName: 'INPUT', id: 'cal-length', type: 'number', value: '35' }), ctx);
+    expect(ui.setFieldValue).toHaveBeenCalledWith('cal-preset', 'custom');
+    expect(actions.applyCalibrationToActive).toHaveBeenLastCalledWith(ptA, ptB, 35, 'mm');
+
+    // Changing unit to cm re-applies calibration
+    routeChange(el({}, { tagName: 'SELECT', id: 'cal-unit', value: 'cm' }), ctx);
+    expect(actions.applyCalibrationToActive).toHaveBeenLastCalledWith(ptA, ptB, 35, 'cm');
+
+    // Mid-click (1 pending point) should NOT overwrite the existing calibration prematurely
+    actions.applyCalibrationToActive.mockClear();
+    store.setState({ pendingCalibrationPoints: [{ x: 50, y: 50 }] });
+    routeChange(el({}, { tagName: 'INPUT', id: 'cal-length', type: 'number', value: '200' }), ctx);
+    expect(actions.applyCalibrationToActive).not.toHaveBeenCalled();
   });
 });
