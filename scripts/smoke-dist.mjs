@@ -95,6 +95,14 @@ for (const asset of lists.flat()) {
 }
 console.log(`ok: ${lists.flat().length} precache assets reachable`);
 
+// 1b. The build must stamp the source commit (every export records it as appCommit).
+const mainJs = readFileSync(join(DIST, 'ui', 'main.js'), 'utf8');
+const commit = mainJs.match(/BUILD_COMMIT = (?:true \? )?"([^"]*)"/)?.[1] ?? null;
+if (mainJs.includes('__BUILD_COMMIT__') || commit === null || !/^[0-9a-f]{7,40}(-modified)?$/.test(commit)) {
+  fail(`build commit not stamped into dist/ui/main.js (found ${commit})`);
+}
+console.log(`ok: build stamped with commit ${commit}`);
+
 /** Path of the SHA-256-verified pinned weights (MODEL_PATH, or downloaded into .cache/). */
 async function getModelFile() {
   let path = process.env.MODEL_PATH;

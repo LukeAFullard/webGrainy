@@ -91,3 +91,15 @@ describe('per-grain CSV included_in_stats', () => {
     expect(s.getStats('bAxis', { minBaxisPx: 15 }).includedGrains).toBe(1);
   });
 });
+
+describe('build provenance (regression: re-audit blocker 5)', () => {
+  it('analyses and every export record the app commit and build time, not just the version', async () => {
+    const { buildAnalysisProvenance, baseExportMetadata, BUILD_COMMIT } = await import('../src/modules/provenance.js');
+    const prov = buildAnalysisProvenance({ modelId: 'ig2_unet_fp32' });
+    expect(prov.appCommit).toBe(BUILD_COMMIT);
+    const meta = baseExportMetadata();
+    expect(meta).toHaveProperty('appCommit', BUILD_COMMIT);
+    expect(meta).toHaveProperty('appBuiltAt');
+    expect(meta['appVersion']).toBe('0.0.0-dev'); // unit tests run unbundled; the build stamps package.json's version
+  });
+});

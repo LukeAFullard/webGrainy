@@ -47,6 +47,7 @@ export function buildSiteExportMetadata(
               executionProvider: prov.executionProvider ?? null,
               analyzedAt: prov.analyzedAt,
               analyzedWithAppVersion: prov.appVersion,
+              analyzedWithAppCommit: prov.appCommit ?? null,
               inferencePipeline: prov.inferencePipeline ?? null,
               scaleMode: prov.scaleMode ?? null,
               fineGrainUpscale: prov.fineGrainUpscale ?? null,

@@ -4,11 +4,18 @@ import { MODEL_FILES, MODEL_INTEGRITY, MODEL_REVISION } from './modelCache.js';
 // Injected by esbuild.config.mjs (`define`). Fallbacks apply in unit tests / ts-node.
 declare const __APP_VERSION__: string | undefined;
 declare const __ORT_VERSION__: string | undefined;
+declare const __BUILD_COMMIT__: string | undefined;
+declare const __BUILD_DATE__: string | undefined;
 
 export const APP_VERSION: string =
   typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : '0.0.0-dev';
 export const ORT_VERSION: string =
   typeof __ORT_VERSION__ === 'string' ? __ORT_VERSION__ : 'unknown';
+/** Git commit the running build was made from ('-modified' if built from uncommitted changes). */
+export const BUILD_COMMIT: string =
+  typeof __BUILD_COMMIT__ === 'string' ? __BUILD_COMMIT__ : 'dev';
+/** When the running build was made (ISO time). */
+export const BUILD_DATE: string = typeof __BUILD_DATE__ === 'string' ? __BUILD_DATE__ : 'dev';
 
 export const UNOFFICIAL_NOTICE =
   'webGrainy is an independent, unofficial browser port of ImageGrains 2.0; it is not affiliated with or endorsed by the ImageGrains or Cellpose authors, and its post-processing differs from the official Python implementation.';
@@ -37,6 +44,7 @@ export function buildAnalysisProvenance(params: {
 }): AnalysisProvenance {
   return {
     appVersion: APP_VERSION,
+    appCommit: BUILD_COMMIT,
     ortVersion: ORT_VERSION,
     analyzedAt: (params.now ?? new Date()).toISOString(),
     modelId: params.modelId,
@@ -69,6 +77,8 @@ export function baseExportMetadata(): Record<string, unknown> {
   return {
     generator: 'webGrainy (ImageGrains 2.0 Web)',
     appVersion: APP_VERSION,
+    appCommit: BUILD_COMMIT,
+    appBuiltAt: BUILD_DATE,
     ortVersion: ORT_VERSION,
     exportedAt: new Date().toISOString(),
     sizeMetricDefinition: SIZE_METRIC_DEFINITION,

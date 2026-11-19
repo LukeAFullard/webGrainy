@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { execSync } from 'node:child_process';
 import { build } from 'esbuild';
 
 const pkg = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'package.json'), 'utf8'));
@@ -8,10 +9,25 @@ const ortPkg = JSON.parse(
   fs.readFileSync(path.join(process.cwd(), 'node_modules', 'onnxruntime-web', 'package.json'), 'utf8'),
 );
 // Compile-time constants consumed by src/modules/provenance.ts
+// The exact source revision, so every export can be traced to the code that produced it
+// (the version number alone is not bumped for every deployment). CI: GITHUB_SHA.
+function gitCommit() {
+  if (process.env.GITHUB_SHA) return process.env.GITHUB_SHA.slice(0, 12);
+  try {
+    const sha = execSync('git rev-parse --short=12 HEAD', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+    const dirty = execSync('git status --porcelain --untracked-files=no', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+    return dirty ? `${sha}-modified` : sha;
+  } catch {
+    return 'unknown';
+  }
+}
 const define = {
   __APP_VERSION__: JSON.stringify(pkg.version),
   __ORT_VERSION__: JSON.stringify(ortPkg.version),
+  __BUILD_COMMIT__: JSON.stringify(gitCommit()),
+  __BUILD_DATE__: JSON.stringify(new Date().toISOString()),
 };
+console.log(`[build] webGrainy ${pkg.version} (commit ${define.__BUILD_COMMIT__})`);
 // The default `onnxruntime-web` entry (ort.all / JSEP) loads exactly these two runtime
 // files for both the WebGPU and the WASM execution providers. Nothing else is shipped.
 const ORT_RUNTIME_FILES = ['ort-wasm-simd-threaded.jsep.mjs', 'ort-wasm-simd-threaded.jsep.wasm'];

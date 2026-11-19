@@ -310,6 +310,8 @@ export interface EngineCapabilities {
 /** Everything needed to reproduce a single-photo analysis (see provenance.ts). */
 export interface AnalysisProvenance {
   appVersion: string;
+  /** Git commit of the build that ran the analysis (older results: absent). */
+  appCommit?: string;
   ortVersion: string;
   analyzedAt: string;
   modelId: ModelId;
