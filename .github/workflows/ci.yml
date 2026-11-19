@@ -45,11 +45,11 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Cache pinned U-Net weights
+      - name: Cache pinned model weights (U-Net + Cellpose-SAM INT8)
         uses: actions/cache@v4
         with:
           path: .cache
-          key: unet-7773328a-5e692c55
+          key: models-98e76b13-unet-5e692c55-cpsamint8-2cda0be5
 
       - name: Install Chromium for the dist smoke test
         run: npx playwright install --with-deps chromium
@@ -58,3 +58,10 @@ jobs:
       # one real U-Net analysis (SHA-256-verified pinned weights, WASM backend).
       - name: Browser smoke test (dist/)
         run: npm run test:e2e:browser
+
+      # Same check with Cellpose-SAM (INT8 weights, CPU): the more accurate model, and the
+      # one whose multi-second tiles froze the page before inference moved to a worker.
+      - name: Browser smoke test, Cellpose-SAM (dist/)
+        run: npm run test:e2e:browser
+        env:
+          SMOKE_MODEL: cpsam

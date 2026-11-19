@@ -1,4 +1,5 @@
 /** Left panel: getting-started guide, site, photo list and analysis settings. */
+import { workingScaleFor } from '../../modules/imagePreprocess.js';
 import { logicalCores, wasmThreadsFor } from '../../modules/onnxInference.js';
 import { backupStatus, readBackupRecords } from '../backup.js';
 import type { readCpuThreadPref } from '../cpuThreads.js';
@@ -13,11 +14,8 @@ import { esc } from './html.js';
 
 /** Effective working-resolution scale factor for a photo under the selected Scale Mode. */
 export function workingScaleFactorFor(width: number, height: number, scaleMode: ScaleMode): number {
-  if (scaleMode === '1.0x') return 1;
-  if (scaleMode === '0.5x') return 0.5;
-  if (scaleMode === '0.25x') return 0.25;
-  const maxDim = Math.max(width, height, 1);
-  return maxDim > 1024 ? 1024 / maxDim : 1;
+  // The analysis's own rule (it used to differ here for 1025-4096 px photos).
+  return workingScaleFor(width, height, scaleMode);
 }
 
 export interface StorageInfo {
@@ -67,7 +65,7 @@ export function renderSidebarHtml(state: AppState, view: SidebarView): string {
           <button type="button" class="btn btn-sm" data-action="rename-site" title="Rename this site" ${activeSite ? '' : 'disabled'}>Rename</button>
           <button type="button" class="btn btn-sm" data-action="new-site" title="Create a new site">+ New</button>
 
-          <button type="button" class="btn btn-sm" data-action="import-archive" title="Open a saved .webgrainy.json project">Open</button>
+          <button type="button" class="btn btn-sm" data-action="import-archive" title="Open a saved .webgrainy project">Open</button>
         </div>
       </div>
       <select class="select" id="site-select" aria-label="Select active field site">
@@ -333,7 +331,7 @@ export function backupLineHtml(state: AppState, analysedCount: number, storageIn
   return `<div class="backup-line ${status.needsBackup ? 'needs-backup' : ''}">
     <div class="row" style="justify-content:space-between;gap:6px;">
       <span>${status.needsBackup ? '⚠ ' : ''}Last backed up: ${esc(status.ago)}${status.needsBackup && status.backedUpAt !== null ? ' (changed since)' : ''}</span>
-      <button type="button" class="btn btn-sm ${status.needsBackup ? 'btn-primary' : ''}" data-export="site-archive" title="Save this site (photos and results) as a .webgrainy.json project file">Back up now</button>
+      <button type="button" class="btn btn-sm ${status.needsBackup ? 'btn-primary' : ''}" data-export="site-archive" title="Save this site (photos and results) as a .webgrainy project file">Back up now</button>
     </div>
     ${status.needsBackup ? '<span class="field-hint">Your work is stored only in this browser. Save a project file to keep it safe or move it to another computer.</span>' : ''}
     ${storage}
@@ -360,6 +358,14 @@ export function photoSummaryHtml(state: AppState): string {
 export function bulkBarHtml(state: AppState): string {
   const n = state.selectedPhotoIds.size;
   const dis = n === 0 || state.batchRunning || state.enhancing ? 'disabled' : '';
+  const scaleSource = state.scaleCopySourceId ? state.photos.find((p) => p.photoId === state.scaleCopySourceId) : undefined;
+  if (scaleSource?.calibration) {
+    return `<div class="bulk-bar" role="group" aria-label="Copy scale to selected photos">
+    <span>Copy the scale of <strong>${esc(scaleSource.label)}</strong> (${scaleSource.calibration.mmPerPx.toPrecision(4)} mm/px) to ${n} selected photo${n === 1 ? '' : 's'}. Pre-selected: same pixel size, no scale yet. Only use it for photos taken with the same camera, zoom and height.</span>
+    <button type="button" class="btn btn-xs btn-primary" data-action="copy-scale-apply" ${dis}>Copy scale</button>
+    <button type="button" class="btn btn-xs" data-action="photo-select-mode">Cancel</button>
+  </div>`;
+  }
   return `<div class="bulk-bar" role="group" aria-label="Actions for selected photos">
     <span>${n} selected</span>
     <button type="button" class="btn btn-xs" data-action="photo-select-all">${n > 0 && n === visiblePhotos(state).length ? 'Select none' : 'Select all shown'}</button>

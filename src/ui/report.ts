@@ -197,7 +197,7 @@ ${[
   ...(detText ? ([['Effective detection limit', detText]] as Array<[string, string]>) : []),
   ...(editText ? ([['Outline review', editText]] as Array<[string, string]>) : []),
   ...(enhText ? ([['Pre-processing enhancement', enhText]] as Array<[string, string]>) : []),
-  ...(['appVersion', 'ortVersion', 'modelId', 'modelRevision', 'modelSha256'] as const)
+  ...(['appVersion', 'appCommit', 'ortVersion', 'modelId', 'modelRevision', 'modelSha256'] as const)
     .filter((k) => input.metadata[k] !== undefined)
     .map((k): [string, string] => [k, String(input.metadata[k])]),
   ['Bootstrap', `${r.bootstrapMode}, ${r.bootstrapReplicates} replicates, seed ${r.bootstrapSeed}`] as [string, string],

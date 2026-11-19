@@ -106,7 +106,7 @@ export async function buildExport(kind: ExportKind, ctx: ExportContext): Promise
       return { blob: new Blob([svg], { type: 'image/svg+xml' }), filename: `${siteFile}_psd.svg` };
     }
     case 'site-archive':
-      return site ? { blob: await exportSiteArchive(site.siteId), filename: `${siteFile}.webgrainy.json` } : null;
+      return site ? { blob: await exportSiteArchive(site.siteId), filename: `${siteFile}.webgrainy` } : null;
     case 'photo-grains-csv':
       return session
         ? {

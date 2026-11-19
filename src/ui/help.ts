@@ -152,7 +152,7 @@ export const HELP_TOPICS = {
   backup: {
     title: 'Backups and browser storage',
     group: 'Site statistics',
-    what: 'Your photos and results are stored only in this browser, on this computer. Clearing browsing data, a private window, or the browser freeing space can delete them. "Back up now" saves the open site (photos, results, scale, ROI and edits) as one .webgrainy.json project file; Open loads it again here or on another computer. "Last backed up" turns into a warning when the site has changed since its last backup.',
+    what: 'Your photos and results are stored only in this browser, on this computer. Clearing browsing data, a private window, or the browser freeing space can delete them. "Back up now" saves the open site (photos, results, scale, ROI and edits) as one .webgrainy project file; Open loads it again here or on another computer (older .webgrainy.json backups open too). "Last backed up" turns into a warning when the site has changed since its last backup.',
     default: 'webGrainy asks the browser to protect its storage from automatic clearing; the storage line says whether the browser agreed',
     when: 'Back up after each analysis session and before clearing browsing data, changing computers, or uninstalling the app.',
   },

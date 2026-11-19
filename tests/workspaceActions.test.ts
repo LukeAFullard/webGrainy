@@ -3,7 +3,7 @@ import { AnalysisSession } from '../src/modules/analysisSession.js';
 import { computeGrainMorphometrics } from '../src/modules/postprocessCore.js';
 import type { BatchRunOptions, BatchRunResult, PhotoRecord, PhotoResultRecord, SiteRecord } from '../src/modules/projectStorage.js';
 import { AppStore, createInitialState } from '../src/ui/state.js';
-import { createWorkspaceActions, type WorkspaceStorage } from '../src/ui/workspaceActions.js';
+import { createWorkspaceActions, SITE_PHOTO_SOFT_LIMIT, type WorkspaceStorage } from '../src/ui/workspaceActions.js';
 
 function session(): AnalysisSession {
   const w = 120, h = 80;
@@ -131,6 +131,18 @@ describe('workspace actions', () => {
     await actions.createDefaultOrLoadSites();
     expect(store.getState().sites.map((s) => s.name)).toEqual(['Field Site 1']);
     expect(store.getState().activeSiteId).toBe('site_1');
+  });
+
+  it('warns (without refusing) when a site grows beyond the soft photo limit', async () => {
+    const world = fakeWorld();
+    const ids = Array.from({ length: SITE_PHOTO_SOFT_LIMIT }, (_, i) => `p${i}`);
+    world.sites.set('a', site('a', ids));
+    for (const id of ids) world.photos.set(id, photo(id, 'a'));
+    const { store, actions } = setup(world);
+    await actions.createDefaultOrLoadSites();
+    await actions.handleFilesAdded([new File(['x'], 'one-more.jpg', { type: 'image/jpeg' })]);
+    expect(world.sites.get('a')!.photoOrder).toHaveLength(SITE_PHOTO_SOFT_LIMIT + 1);
+    expect(store.getState().statusMessage).toMatch(/101 photos.*splitting/);
   });
 
   it('records statuses, errors and sessions during a batch', async () => {

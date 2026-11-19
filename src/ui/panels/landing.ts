@@ -196,7 +196,7 @@ export const WORKFLOW_STEPS: ReadonlyArray<WorkflowStepSpec> = [
       {
         label: 'Calibrate tool',
         detail:
-          'Click both ends of a ruler or quadrat edge and enter the known length in mm or cm (with presets for a 100 mm ruler, 25 mm coin, or 500 mm quadrat). Use "Copy Scale to Site" when all photos share the same camera height.',
+          'Click both ends of a ruler or quadrat edge and enter the known length in mm or cm (with presets for a 100 mm ruler, 25 mm coin, or 500 mm quadrat). Use "Copy scale to photos…" for other photos taken with the same camera, zoom and height.',
       },
       {
         label: 'Rectify tool (4-corner correction)',
@@ -211,7 +211,7 @@ export const WORKFLOW_STEPS: ReadonlyArray<WorkflowStepSpec> = [
       {
         label: 'Stored in your browser',
         detail:
-          'Photos and settings stay in this browser on your device. Use "Back up now" in the Site panel to save a portable .webgrainy.json project file.',
+          'Photos and settings stay in this browser on your device. Use "Back up now" in the Site panel to save a portable .webgrainy project file.',
       },
     ],
     cta: {
@@ -461,7 +461,7 @@ export const WORKFLOW_STEPS: ReadonlyArray<WorkflowStepSpec> = [
       {
         label: 'Tables, outlines, reports & backups',
         detail:
-          'Export per-grain and summary CSV/JSON files, GeoJSON and SVG outlines, 16/32-bit PNG masks, a printable HTML report, or a .webgrainy.json project archive.',
+          'Export per-grain and summary CSV/JSON files, GeoJSON and SVG outlines, 16/32-bit PNG masks, a printable HTML report, or a .webgrainy project archive.',
       },
     ],
     cta: {
@@ -493,7 +493,7 @@ export const WORKFLOW_STEPS: ReadonlyArray<WorkflowStepSpec> = [
 
         <rect x="20" y="184" width="380" height="48" rx="4" fill="#17212b" stroke="#2a3642" />
         <text x="32" y="204" fill="#e8eef4" font-family="system-ui, sans-serif" font-size="10.5" font-weight="600">Exports record the model and settings used so your results are easy to document</text>
-        <text x="32" y="220" fill="#9fb0c0" font-family="ui-monospace, monospace" font-size="9">CSV · Summary JSON · 16-bit PNG · GeoJSON · SVG · Printable Report · .webgrainy.json</text>
+        <text x="32" y="220" fill="#9fb0c0" font-family="ui-monospace, monospace" font-size="9">CSV · Summary JSON · 16-bit PNG · GeoJSON · SVG · Printable Report · .webgrainy</text>
       </svg>
     `,
   },
@@ -659,8 +659,8 @@ export function renderLandingHtml(state: AppState, view: LandingView): string {
             </button>
           </div>
 
-          <div class="landing-drop-callout" id="landing-dropzone" data-action="add-photos" role="button" tabindex="0" aria-label="Add or drop gravel photos or a .webgrainy.json project archive to start">
-            <strong>Drop gravel photos or a <code>.webgrainy.json</code> project file anywhere on this page</strong>
+          <div class="landing-drop-callout" id="landing-dropzone" data-action="add-photos" role="button" tabindex="0" aria-label="Add or drop gravel photos or a .webgrainy project archive to start">
+            <strong>Drop gravel photos or a <code>.webgrainy</code> project file anywhere on this page</strong>
             <span>Supports JPEG, PNG, WebP, TIFF &amp; GeoTIFF · Stored only in this browser${siteCount > 0 ? ` · ${siteCount} saved site${siteCount === 1 ? '' : 's'} here` : ''}</span>
           </div>
 
@@ -675,7 +675,7 @@ export function renderLandingHtml(state: AppState, view: LandingView): string {
               <span>Skip this overview next time (re-open from <strong>Overview</strong> in the top bar)</span>
             </label>
             <button type="button" class="btn btn-sm" data-action="import-archive">
-              Open .webgrainy.json Project
+              Open .webgrainy Project
             </button>
           </div>
         </div>
@@ -769,7 +769,7 @@ export function renderLandingHtml(state: AppState, view: LandingView): string {
           <article class="capability-card">
             <h3>Tables, Vector Outlines &amp; Project Backups</h3>
             <p>
-              Export per-grain and summary CSV/JSON tables, GeoJSON and SVG outlines, 16-bit and 32-bit PNG label masks, SVG/PNG charts, a printable one-page report, or a <code>.webgrainy.json</code> project archive.
+              Export per-grain and summary CSV/JSON tables, GeoJSON and SVG outlines, 16-bit and 32-bit PNG label masks, SVG/PNG charts, a printable one-page report, or a <code>.webgrainy</code> project archive.
             </p>
             <footer>CSV · JSON · GeoJSON · SVG · PNG Masks · Printable Report</footer>
           </article>

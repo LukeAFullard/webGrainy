@@ -74,8 +74,8 @@ export function renderToolbarHtml(state: AppState): { toolbar: string; subToolba
       activePhoto
         ? `<span class="tool-group" role="group" aria-label="Optional image enhancement">
             <span class="tool-group-label">Enhance</span>
-            <button type="button" class="btn btn-sm" data-action="enhance-upscale" ${state.batchRunning || state.enhancing ? 'disabled' : ''} title="Optional 2× AI upscale (PULSE, 1.4 MB, MIT, L1-trained — unloads segmentation model first)">2× Upscale</button>
-            <button type="button" class="btn btn-sm" data-action="enhance-deblur" ${state.batchRunning || state.enhancing ? 'disabled' : ''} title="Built-in deterministic deblur (Richardson–Lucy TV deconvolution, 0 MB download, instant, 1-click Revert)">Deblur</button>
+            <button type="button" class="btn btn-sm" data-action="enhance-upscale" ${state.batchRunning || state.enhancing ? 'disabled' : ''} title="Experimental, not part of the accuracy benchmark: 2× AI upscale (PULSE, 1.4 MB). With Auto image scale most photos are shrunk back to about the same size, so the app refuses when it would not add working pixels. Recorded in every export.">2× Upscale</button>
+            <button type="button" class="btn btn-sm" data-action="enhance-deblur" ${state.batchRunning || state.enhancing ? 'disabled' : ''} title="Experimental, not part of the accuracy benchmark: built-in Richardson–Lucy deblur (instant, 1-click Revert). Check outlines against the original. Recorded in every export.">Deblur</button>
             ${activePhoto.originalBackup ? `<button type="button" class="btn btn-sm" data-action="enhance-revert" ${state.batchRunning || state.enhancing ? 'disabled' : ''} title="Restore the original unenhanced photo">Revert</button>` : ''}
           </span>`
         : ''
@@ -111,7 +111,7 @@ export function renderToolbarHtml(state: AppState): { toolbar: string; subToolba
         <option value="mm" ${calUnit === 'mm' ? 'selected' : ''}>mm</option>
         <option value="cm" ${calUnit === 'cm' ? 'selected' : ''}>cm</option>
       </select>
-      <button type="button" class="btn btn-sm" data-action="copy-scale-all" ${activePhoto?.calibration ? '' : 'disabled'}>Copy Scale to Site</button>
+      <button type="button" class="btn btn-sm" data-action="copy-scale-start" ${activePhoto?.calibration ? '' : 'disabled'} title="Choose photos taken with the same camera and height, and give them this photo's scale">Copy scale to photos…</button>
     `;
   } else if (state.activeTool === 'rectify') {
     const rectW = state.rectifyWidthMm ?? 500;

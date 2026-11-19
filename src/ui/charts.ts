@@ -278,7 +278,7 @@ export function renderConvergenceChartSvg(
     return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg"><rect width="${W}" height="${H}" fill="${bg}"/><text x="${W / 2}" y="${H / 2}" text-anchor="middle" fill="${muted}" font-size="11" font-family="system-ui, sans-serif">Add &amp; analyze photos to view 1..N convergence</text></svg>`;
   }
 
-  const allY = points.flatMap((p) => [p.D16, p.D50, p.D84, p.ciLoD50, p.ciHiD50]).filter((v) => v > 0);
+  const allY = points.flatMap((p) => [p.D16, p.D50, p.D84, p.ciLoD50, p.ciHiD50]).filter((v) => Number.isFinite(v) && v > 0);
   const yMin = Math.max(0, Math.min(...allY) * 0.85);
   const yMax = Math.max(...allY, yMin + 1) * 1.1;
 
@@ -292,10 +292,11 @@ export function renderConvergenceChartSvg(
   parts.push(`<rect width="${W}" height="${H}" fill="${bg}" />`);
   parts.push(`<text x="${padL}" y="14" fill="${fg}" font-size="10.5" font-weight="700" font-family="system-ui, sans-serif">Cumulative Convergence (1..N Photos): D16 / D50 ± 95% CI / D84</text>`);
 
-  // CI ribbon for D50
-  if (points.length > 1) {
-    const hiPts = points.map((p, i) => `${xPx(i).toFixed(1)},${yPx(p.ciHiD50).toFixed(1)}`);
-    const loPts = [...points].reverse().map((p, ri) => `${xPx(points.length - 1 - ri).toFixed(1)},${yPx(p.ciLoD50).toFixed(1)}`);
+  // CI ribbon for D50 (through the photo counts that have a CI; large sites compute it at checkpoints)
+  const ciIdx = points.map((p, i) => (Number.isFinite(p.ciLoD50) && Number.isFinite(p.ciHiD50) ? i : -1)).filter((i) => i >= 0);
+  if (ciIdx.length > 1) {
+    const hiPts = ciIdx.map((i) => `${xPx(i).toFixed(1)},${yPx(points[i]!.ciHiD50).toFixed(1)}`);
+    const loPts = [...ciIdx].reverse().map((i) => `${xPx(i).toFixed(1)},${yPx(points[i]!.ciLoD50).toFixed(1)}`);
     parts.push(`<polygon points="${[...hiPts, ...loPts].join(' ')}" fill="rgba(245, 166, 35, 0.18)" />`);
   }
 
@@ -311,8 +312,11 @@ export function renderConvergenceChartSvg(
     const p = points[i];
     if (!p) continue;
     const x = xPx(i);
-    parts.push(`<circle cx="${x.toFixed(1)}" cy="${yPx(p.D50).toFixed(1)}" r="3" fill="#d98300" />`);
-    parts.push(`<text x="${x.toFixed(1)}" y="${padT + plotH + 12}" text-anchor="middle" fill="${muted}" font-size="9" font-family="ui-monospace, monospace">${p.photoCount}</text>`);
+    parts.push(`<circle cx="${x.toFixed(1)}" cy="${yPx(p.D50).toFixed(1)}" r="${points.length > 30 ? 1.8 : 3}" fill="#d98300" />`);
+    const labelEvery = Math.max(1, Math.ceil(points.length / 15));
+    if (i % labelEvery === 0 || i === points.length - 1) {
+      parts.push(`<text x="${x.toFixed(1)}" y="${padT + plotH + 12}" text-anchor="middle" fill="${muted}" font-size="9" font-family="ui-monospace, monospace">${p.photoCount}</text>`);
+    }
   }
 
   parts.push(`<text x="${padL - 4}" y="${padT + 6}" text-anchor="end" fill="${muted}" font-size="8.5" font-family="ui-monospace, monospace">${yMax.toFixed(1)}</text>`);

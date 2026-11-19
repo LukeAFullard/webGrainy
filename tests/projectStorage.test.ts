@@ -255,6 +255,27 @@ describe('projectStorage', () => {
     });
   });
 
+  it('regression: a photo left "running" by a crashed tab is analysed by the next batch', async () => {
+    const opts = { indexedDB: createProjectMockIDB() };
+    await saveSite({ siteId: 'S', name: 'S', createdAt: 0, updatedAt: 0, options: { poolingMode: 'physical-area' }, photoOrder: ['A', 'B', 'C'] } as SiteRecord, opts);
+    for (const id of ['A', 'B', 'C']) {
+      await savePhoto({ photoId: id, siteId: 'S', label: id, imageBlob: new Blob(['x']), width: 8, height: 8, addedAt: 0, included: true }, opts);
+    }
+    await savePhotoResult({ photoId: 'A', status: 'running', updatedAt: 0 }, opts);
+    await savePhotoResult({ photoId: 'C', status: 'done', serializedSession: makeTestSession().toSerialized(), updatedAt: 0 }, opts);
+    const started: string[] = [];
+    const res = await runSiteBatch({
+      ...opts,
+      siteId: 'S',
+      engine: { analyzeImage: async () => makeTestSession() } as never,
+      decodeImage: async () => ({ data: new Uint8ClampedArray(256), width: 8, height: 8 }),
+      onPhotoStart: (p) => started.push(p.photoId),
+    });
+    expect(started).toEqual(['A', 'B']); // done photos are still skipped
+    expect(res.completed).toBe(2);
+    expect((await getPhotoResult('A', opts))?.status).toBe('done');
+  });
+
   it('runs sequential batch processing with bitmap cleanup and AbortSignal cancellation', async () => {
     const idb = createProjectMockIDB();
     const opts = { indexedDB: idb };

@@ -15,7 +15,7 @@ const OPTIONS: Partial<Record<keyof UiAnalysisParams, readonly string[]>> = {
   inferencePipeline: ['cellpose', 'legacy'],
 };
 
-const RANGES: Partial<Record<keyof UiAnalysisParams, [number, number]>> = {
+export const PARAM_RANGES: Partial<Record<keyof UiAnalysisParams, [number, number]>> = {
   claheClipLimit: [0.1, 40],
   flowThreshold: [0, 10],
   cellprobThreshold: [-20, 20],
@@ -36,13 +36,29 @@ export function sanitizeAnalysisParams(raw: unknown): UiAnalysisParams {
     const d = defaults[key];
     if (typeof v !== typeof d) continue;
     if (typeof v === 'number') {
-      const range = RANGES[key];
+      const range = PARAM_RANGES[key];
       if (!Number.isFinite(v) || (range && (v < range[0] || v > range[1]))) continue;
     }
     if (typeof v === 'string' && !(OPTIONS[key] ?? []).includes(v)) continue;
     out[key] = v;
   }
   return out as unknown as UiAnalysisParams;
+}
+
+/**
+ * Checks one number typed into an analysis setting. Returns the number, or an error message
+ * (blank, not a number, or outside the allowed range) so the old value can be kept.
+ */
+export function parseParamInput(key: string, raw: string): { value: number } | { error: string } {
+  if (raw.trim() === '') return { error: 'The field is empty' };
+  const v = Number(raw);
+  if (!Number.isFinite(v)) return { error: `"${raw}" is not a number` };
+  const range = PARAM_RANGES[key as keyof UiAnalysisParams];
+  if (range && (v < range[0] || v > range[1])) return { error: `${v} is outside the allowed range ${range[0]} to ${range[1]}` };
+  if ((key === 'niter' || key === 'minSize' || key === 'excludeBorderMargin') && !Number.isInteger(v)) {
+    return { error: `${v} must be a whole number` };
+  }
+  return { value: v };
 }
 
 export function loadAnalysisParams(store: Pick<Storage, 'getItem'> | null = safeStorage()): UiAnalysisParams {

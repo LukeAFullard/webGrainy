@@ -322,7 +322,25 @@ export class ImageGrainsEngine {
     const prepared = prepareWorkingImage(preImg.data, preImg.width, preImg.height, config?.scaleMode ?? 'auto');
     // Optional enlargement for fine gravel (audit/preprocessing); results are converted back
     // to original-photo pixels through effectiveScaleFactor, so sizes are unaffected.
-    const workingImage = fineGrainUpscale !== undefined ? upscaleWorkingImage(prepared, fineGrainUpscale) : prepared;
+    const scaledWorking = fineGrainUpscale !== undefined ? upscaleWorkingImage(prepared, fineGrainUpscale) : prepared;
+    // A very large photo may have been decoded smaller (MAX_DECODE_PIXELS): report everything
+    // in the photo's own pixels by measuring the scale against its real size.
+    const orig = config?.originalSize;
+    // Only a proportional shrink counts: a stored size that disagrees otherwise (e.g. a
+    // different orientation) must not rescale every measurement.
+    const decodedSmaller =
+      orig !== undefined &&
+      orig.width > rawImg.width &&
+      orig.height > rawImg.height &&
+      Math.abs(orig.width / orig.height - rawImg.width / rawImg.height) <= 0.01 * (orig.width / orig.height);
+    const workingImage = decodedSmaller
+      ? {
+          ...scaledWorking,
+          originalWidth: orig.width,
+          originalHeight: orig.height,
+          effectiveScaleFactor: scaledWorking.width / orig.width,
+        }
+      : scaledWorking;
     throwIfAborted(signal);
 
     emit('inference', {
@@ -482,6 +500,7 @@ export class ImageGrainsEngine {
         ...(inferenceOut.tiling !== undefined ? { tileSkipping: inferenceOut.tiling } : {}),
         scaleMode: config?.scaleMode ?? 'auto',
         ...(fineGrainUpscale !== undefined ? { fineGrainUpscale } : {}),
+        ...(decodedSmaller ? { decodedSize: { width: rawImg.width, height: rawImg.height } } : {}),
         effectiveScaleFactor: workingImage.effectiveScaleFactor,
         applyClahe: config?.applyClahe ?? false,
         ...(config?.applyClahe ? { claheClipLimit: config.claheClipLimit ?? 2 } : {}),

@@ -204,6 +204,13 @@ export interface CalibrationResult {
   pointB: Point2D;
   physicalLengthMm: number;
   pixelDistance: number;
+  /**
+   * Where the scale came from: measured on the photo (default when absent), perspective
+   * rectification, GeoTIFF georeferencing, or copied from another photo.
+   */
+  source?: 'manual' | 'rectification' | 'geotiff' | 'copied';
+  /** Label of the photo a copied scale came from. */
+  copiedFrom?: string;
 }
 
 export interface PsdPercentiles {
@@ -265,6 +272,11 @@ export type InferencePipeline = 'cellpose' | 'legacy';
 
 export interface AnalysisConfig {
   model?: ModelKind | 'auto';
+  /**
+   * The photo's real pixel size when the image passed in was decoded smaller (very large
+   * photos, see MAX_DECODE_PIXELS). Results are then reported in the photo's own pixels.
+   */
+  originalSize?: { width: number; height: number };
   /** Cellpose-SAM weight file (default 'auto'). Ignored for U-Net. */
   cpsamWeights?: CpsamWeights;
   /**
@@ -303,6 +315,8 @@ export interface EngineCapabilities {
 /** Everything needed to reproduce a single-photo analysis (see provenance.ts). */
 export interface AnalysisProvenance {
   appVersion: string;
+  /** Git commit of the build that ran the analysis (older results: absent). */
+  appCommit?: string;
   ortVersion: string;
   analyzedAt: string;
   modelId: ModelId;
@@ -314,6 +328,8 @@ export interface AnalysisProvenance {
   scaleMode?: string;
   /** Working image enlarged by this factor for fine gravel (U-Net), if any. */
   fineGrainUpscale?: number;
+  /** Size the photo was decoded at when it was larger than MAX_DECODE_PIXELS. */
+  decodedSize?: { width: number; height: number };
   effectiveScaleFactor?: number;
   applyClahe?: boolean;
   claheClipLimit?: number;
@@ -331,5 +347,7 @@ export interface SerializedAnalysisSession {
   excludeBorder: boolean;
   borderMargin: number;
   provenance?: AnalysisProvenance;
+  /** Manual outline edits (split, merge, delete, add) kept in the masks; undo subtracts. */
+  manualEdits?: number;
 }
 

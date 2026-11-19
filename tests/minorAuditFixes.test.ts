@@ -91,3 +91,48 @@ describe('per-grain CSV included_in_stats', () => {
     expect(s.getStats('bAxis', { minBaxisPx: 15 }).includedGrains).toBe(1);
   });
 });
+
+describe('build provenance (regression: re-audit blocker 5)', () => {
+  it('analyses and every export record the app commit and build time, not just the version', async () => {
+    const { buildAnalysisProvenance, baseExportMetadata, BUILD_COMMIT } = await import('../src/modules/provenance.js');
+    const prov = buildAnalysisProvenance({ modelId: 'ig2_unet_fp32' });
+    expect(prov.appCommit).toBe(BUILD_COMMIT);
+    const meta = baseExportMetadata();
+    expect(meta).toHaveProperty('appCommit', BUILD_COMMIT);
+    expect(meta).toHaveProperty('appBuiltAt');
+    expect(meta['appVersion']).toBe('0.0.0-dev'); // unit tests run unbundled; the build stamps package.json's version
+  });
+});
+
+describe('analysis settings validation (regression)', () => {
+  it('rejects blank, non-numeric, out-of-range and fractional typed values', async () => {
+    const { parseParamInput } = await import('../src/ui/savedSettings.js');
+    expect(parseParamInput('flowThreshold', '')).toHaveProperty('error'); // a cleared field is not 0
+    expect(parseParamInput('flowThreshold', 'abc')).toHaveProperty('error');
+    expect(parseParamInput('flowThreshold', '-1')).toHaveProperty('error');
+    expect(parseParamInput('maxGrainAreaFraction', '5')).toHaveProperty('error');
+    expect(parseParamInput('niter', '1e9')).toHaveProperty('error');
+    expect(parseParamInput('minSize', '12.5')).toHaveProperty('error');
+    expect(parseParamInput('flowThreshold', '0.6')).toEqual({ value: 0.6 });
+  });
+
+  it('a cleared settings field keeps the previous value and says why', async () => {
+    const { routeChange } = await import('../src/ui/events/router.js');
+    const { AppStore, createInitialState } = await import('../src/ui/state.js');
+    const store = new AppStore(createInitialState());
+    const before = store.getState().analysisParams.flowThreshold;
+    const field = { tagName: 'INPUT', type: 'number', value: '', dataset: { param: 'flowThreshold' }, closest: () => null };
+    routeChange(field as never, { store, actions: {}, ui: {} } as never);
+    expect(store.getState().analysisParams.flowThreshold).toBe(before);
+    expect(store.getState().statusMessage).toMatch(/empty; the setting was not changed/);
+  });
+
+  it('the engine refuses invalid post-processing options instead of computing with them', async () => {
+    const { flowsToMasksBrowser } = await import('../src/modules/postprocessCore.js');
+    const z = new Float32Array(16);
+    expect(() => flowsToMasksBrowser(z, z, z, 4, 4, { flowThreshold: Number.NaN })).toThrow(RangeError);
+    expect(() => flowsToMasksBrowser(z, z, z, 4, 4, { niter: 1e9 })).toThrow(/niter/);
+    expect(() => flowsToMasksBrowser(z, z, z, 4, 4, { maxGrainAreaFraction: 2 })).toThrow(/maxGrainAreaFraction/);
+    expect(() => flowsToMasksBrowser(z, z, z, 4, 4, {})).not.toThrow();
+  });
+});

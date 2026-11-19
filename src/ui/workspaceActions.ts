@@ -307,6 +307,15 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
           : '';
       store.setState({ sites, statusMessage: `Added ${added.length} photo(s) locally${geoNote}` });
       await loadSiteData(site.siteId);
+      const total = updatedSite.photoOrder.length;
+      if (total > SITE_PHOTO_SOFT_LIMIT) {
+        store.setState({
+          statusMessage:
+            `Added ${added.length} photo(s)${geoNote}. This site now has ${total} photos: above ${SITE_PHOTO_SOFT_LIMIT}, ` +
+            'site statistics take a few seconds to update after each change and each analysed photo uses about 4 MB of memory. ' +
+            'Consider splitting it into several sites (e.g. one per reach or survey).',
+        });
+      }
       const lastAdded = added[added.length - 1];
       if (lastAdded) {
         store.setState({ activePhotoId: lastAdded.photoId });
@@ -655,7 +664,7 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
         await deps.syncViewport(false);
         return;
       }
-      const cal = rectified.calibration;
+      const cal: CalibrationResult = { ...rectified.calibration, source: 'rectification' };
 
       const latestBeforeSave = store.getState();
       const latestPhoto = latestBeforeSave.photos.find((p) => p.photoId === photo.photoId);
@@ -965,6 +974,14 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
   };
 }
 
+/**
+ * Photos per site above which the app suggests splitting the site. Not a hard limit: photos
+ * are analysed one at a time and archives have no size limit, but site statistics are
+ * recomputed after every change (about 1 s per 100 photos) and every analysed photo keeps
+ * its label mask in memory (about 3-4 MB).
+ */
+export const SITE_PHOTO_SOFT_LIMIT = 100;
+
 /** Browser implementation of `ImageIo.rectify` (canvas + perspective correction). */
 export async function rectifyWithCanvas(
   image: Blob,
@@ -1020,5 +1037,5 @@ export async function rectifyWithCanvas(
     physWidthMm,
     'mm',
   );
-  return { blob, width: rectified.width, height: rectified.height, calibration };
+  return { blob, width: rectified.width, height: rectified.height, calibration: { ...calibration, source: 'rectification' } };
 }

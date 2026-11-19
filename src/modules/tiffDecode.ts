@@ -201,6 +201,7 @@ function extractGeoTiffCalibration(
     pointB: { x: spanPx, y: 0 },
     pixelDistance: spanPx,
     physicalLengthMm: spanPx * mmPerPx,
+    source: 'geotiff',
   };
 }
 

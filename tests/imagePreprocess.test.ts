@@ -464,3 +464,23 @@ describe('imagePreprocess', () => {
     });
   });
 });
+
+describe('regression: one working-scale rule; when 2x upscaling helps', () => {
+  it('workingScaleFor matches what prepareWorkingImage does', async () => {
+    const { workingScaleFor } = await import('../src/modules/imagePreprocess.js');
+    for (const [w, h] of [[800, 600], [1500, 1000], [3000, 2000], [6000, 4000]] as const) {
+      const r = prepareWorkingImage(new Uint8ClampedArray(w * h * 4), w, h, 'auto');
+      expect(r.width).toBe(Math.max(1, Math.round(w * workingScaleFor(w, h, 'auto'))));
+    }
+    expect(workingScaleFor(1500, 1000, 'auto')).toBe(0.5); // the sidebar used 1024/1500 here
+  });
+
+  it('2x upscaling only adds working pixels for small photos in auto mode, or at 1.0x', async () => {
+    const { upscaleIncreasesWorkingResolution } = await import('../src/modules/imagePreprocess.js');
+    expect(upscaleIncreasesWorkingResolution(500, 400, 'auto')).toBe(true);
+    // Working width before -> after: 800 -> 800, 1500 -> 750 -> 750, 4000: 1000 -> 1024, 5000: 1024 -> 1024.
+    for (const w of [800, 1500, 4000, 5000]) expect(upscaleIncreasesWorkingResolution(w, (w * 3) / 4, 'auto')).toBe(false);
+    expect(upscaleIncreasesWorkingResolution(3000, 2250, 'auto')).toBe(true); // 750 -> 1024
+    expect(upscaleIncreasesWorkingResolution(3000, 2000, '1.0x')).toBe(true);
+  });
+});

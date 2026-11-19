@@ -16,7 +16,7 @@ import {
   runUnetCellposeInference,
 } from '../modules/onnxInference.js';
 import { flowsToMasksBrowser } from '../modules/postprocessCore.js';
-import { APP_VERSION, ORT_VERSION } from '../modules/provenance.js';
+import { APP_VERSION, BUILD_COMMIT, ORT_VERSION } from '../modules/provenance.js';
 import { preferredCpuThreads } from './cpuThreads.js';
 import { classifyCase, overallVerdict, type CaseVerdict } from '../modules/gpuCheckVerdict.js';
 import type { InferenceOutput, ModelId } from '../types/index.js';
@@ -158,6 +158,7 @@ async function runAll(kind: Kind): Promise<void> {
   const report: Record<string, unknown> = {
     tool: 'webGrainy GPU check',
     appVersion: APP_VERSION,
+    appCommit: BUILD_COMMIT,
     ortVersion: ORT_VERSION,
     date: new Date().toISOString(),
     model: kind,
@@ -379,7 +380,7 @@ function init(): void {
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
     void navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).catch(() => undefined);
   }
-  $('env').textContent = `webGrainy ${APP_VERSION} · ONNX Runtime ${ORT_VERSION} · ${cpuThreads !== undefined ? `CPU: ${cpuThreads} of ${navigator.hardwareConcurrency} threads (change in the app: Advanced → CPU threads)` : '1 CPU thread (reload the page for multi-threaded CPU)'}`;
+  $('env').textContent = `webGrainy ${APP_VERSION} (${BUILD_COMMIT}) · ONNX Runtime ${ORT_VERSION} · ${cpuThreads !== undefined ? `CPU: ${cpuThreads} of ${navigator.hardwareConcurrency} threads (change in the app: Advanced → CPU threads)` : '1 CPU thread (reload the page for multi-threaded CPU)'}`;
 }
 
 init();

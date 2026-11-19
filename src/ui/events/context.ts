@@ -55,6 +55,8 @@ export interface EventContext {
     /** Asks for a site name; null if cancelled. */
     askSiteName(message: string, current: string): string | null;
     scrollSidebarToTop(): void;
+    /** Activate the waiting app version and reload; false if none waits or work is running. */
+    applyUpdate?(): boolean;
     downloadChart(id: string, format: 'svg' | 'png'): Promise<void>;
     download(blob: Blob, filename: string): void;
     /** Opens the printable site report in a new tab (or downloads it if pop-ups are blocked). */
@@ -90,3 +92,23 @@ export interface EventContext {
 
 /** A handler for one `data-action` value; `el` is the element carrying the attribute. */
 export type ActionHandler = (el: ElementLike, ctx: EventContext) => void;
+
+/**
+ * Before re-analysing photos: if any have manual outline edits (split, merge, delete, add),
+ * ask first, because a new analysis replaces the outlines. Returns true to go ahead.
+ */
+export function confirmDiscardEdits(ctx: EventContext, photoIds: readonly string[]): boolean {
+  const st = ctx.store.getState();
+  const edited = photoIds
+    .map((id) => ({ id, n: st.sessions.get(id)?.getManualEditCount() ?? 0 }))
+    .filter((x) => x.n > 0);
+  if (edited.length === 0) return true;
+  const labels = edited
+    .slice(0, 5)
+    .map((x) => `"${st.photos.find((p) => p.photoId === x.id)?.label ?? x.id}" (${x.n} edit${x.n === 1 ? '' : 's'})`)
+    .join(', ');
+  const more = edited.length > 5 ? ` and ${edited.length - 5} more` : '';
+  return ctx.ui.confirm(
+    `Re-analysing replaces the grain outlines, so your manual edits will be lost: ${labels}${more}.\n\nExport or back up first if you want to keep them. Re-analyse anyway?`,
+  );
+}

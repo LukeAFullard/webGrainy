@@ -1,12 +1,13 @@
 /** Left panel & landing page events: sites, photos, the guide, landing workflow tabs, batch buttons and analysis settings. */
 import type { PhotoRecord, SiteRecord } from '../../modules/projectStorage.js';
+import { parseParamInput } from '../savedSettings.js';
 import { defaultAnalysisParams, type EditorToolMode } from '../state.js';
 import { isIsoDate } from '../../modules/surveyDate.js';
 import { isWorkflowStepId, nextWorkflowStepForKey } from '../panels/landing.js';
 import { workingScaleFactorFor } from '../panels/sidebar.js';
 import { visiblePhotos, type PhotoFilter } from '../photoList.js';
 import { getActivePhoto, getActiveSite } from '../workspaceActions.js';
-import { isInput, isSelect, type ActionHandler, type ControlLike, type ElementLike, type EventContext } from './context.js';
+import { confirmDiscardEdits, isInput, isSelect, type ActionHandler, type ControlLike, type ElementLike, type EventContext } from './context.js';
 
 export const sidebarActions: Record<string, ActionHandler> = {
   'add-photos': (_el, ctx) => ctx.ui.openPhotoPicker(),
@@ -80,9 +81,13 @@ export const sidebarActions: Record<string, ActionHandler> = {
   },
   'run-batch': (_el, ctx) => void ctx.actions.runBatch(),
   'cancel-batch': (_el, ctx) => ctx.actions.cancelBatch(),
+  'apply-update': (_el, ctx) => {
+    if (ctx.ui.applyUpdate?.()) ctx.store.setState({ statusMessage: 'Updating webGrainy…' });
+    else ctx.store.setState({ statusMessage: 'The update will be available when the current analysis finishes.' });
+  },
   'run-active': (_el, ctx) => {
     const id = ctx.store.getState().activePhotoId;
-    if (id) void ctx.actions.runBatch([id]);
+    if (id && confirmDiscardEdits(ctx, [id])) void ctx.actions.runBatch([id]);
   },
   'analyse-all-sites': (_el, ctx) => void ctx.actions.runAllSites(),
   'photo-filter': (el, ctx) => {
@@ -91,7 +96,7 @@ export const sidebarActions: Record<string, ActionHandler> = {
   },
   'photo-select-mode': (_el, ctx) => {
     const on = !ctx.store.getState().photoSelectMode;
-    ctx.store.setState({ photoSelectMode: on, selectedPhotoIds: new Set() });
+    ctx.store.setState({ photoSelectMode: on, selectedPhotoIds: new Set(), scaleCopySourceId: null });
   },
   'photo-select-all': (_el, ctx) => {
     const st = ctx.store.getState();
@@ -108,7 +113,7 @@ export const sidebarActions: Record<string, ActionHandler> = {
     if (what === 'include' || what === 'exclude') {
       void ctx.actions.setPhotosIncluded(ids, what === 'include');
     } else if (what === 'reanalyse') {
-      void ctx.actions.runBatch(ids);
+      if (confirmDiscardEdits(ctx, ids)) void ctx.actions.runBatch(ids);
     } else if (what === 'delete') {
       if (!ctx.ui.confirm(`Delete ${n} and their results from this site? This cannot be undone (unless you have a backup).`)) return;
       void ctx.actions.deletePhotos(ids).then(() => ctx.store.setState({ photoSelectMode: false }));
@@ -237,9 +242,16 @@ export function handleSidebarChange(target: ControlLike, ctx: EventContext): boo
     const next = { ...st.analysisParams } as Record<string, unknown>;
     if (isInput(target) && target.type === 'checkbox') next[paramKey] = target.checked;
     else if (isInput(target) && target.type === 'number') {
-      const v = Number(target.value);
-      if (!Number.isFinite(v)) return true;
-      next[paramKey] = v;
+      const parsed = parseParamInput(paramKey, target.value);
+      if ('error' in parsed) {
+        // Keep the previous value (the re-render puts it back in the field).
+        ctx.store.setState({
+          analysisParams: { ...st.analysisParams },
+          statusMessage: `${parsed.error}; the setting was not changed (still ${String(next[paramKey])}).`,
+        });
+        return true;
+      }
+      next[paramKey] = parsed.value;
     } else if (isSelect(target)) next[paramKey] = target.value;
     ctx.store.setState({ analysisParams: next as unknown as typeof st.analysisParams });
     if (paramKey === 'excludeBorder' && isInput(target)) {

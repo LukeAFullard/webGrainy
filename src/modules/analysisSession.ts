@@ -100,6 +100,8 @@ export class AnalysisSession {
   private roiConfig: RoiExclusionConfig | undefined;
   private readonly provenance: AnalysisProvenance | undefined;
   private roiExcludedGrainCount = 0;
+  /** Net manual outline edits in the masks (persisted; re-analysing discards them). */
+  private manualEdits = 0;
   private readonly history = new MaskEditHistory();
   private readonly hullCache: GrainHullCache = new Map();
   /** Derived values computed on demand; cleared whenever the results change. */
@@ -122,8 +124,12 @@ export class AnalysisSession {
     borderMargin?: number;
     roiConfig?: RoiExclusionConfig;
     provenance?: AnalysisProvenance;
+    manualEdits?: number;
   }) {
-    this.workingImage = params.workingImage;
+    this.manualEdits = Math.max(0, Math.floor(params.manualEdits ?? 0));
+    // The working-image pixels are only needed while the network runs. Not keeping them
+    // saves ~4 MB per photo in memory, in browser storage and in project archives.
+    this.workingImage = { ...params.workingImage, data: new Uint8ClampedArray(0) };
     this.roiConfig = params.roiConfig;
     this.provenance = params.provenance;
     this.recommendation = params.recommendation;
@@ -135,6 +141,11 @@ export class AnalysisSession {
     this.grains = [];
     this.stats = computeSedimentStats([], { excludeBorder: this.excludeBorder });
     this.recomputeDerivedState(false);
+  }
+
+  /** Manual outline edits (split, merge, delete, add) in these results; re-analysing discards them. */
+  getManualEditCount(): number {
+    return this.manualEdits;
   }
 
   get canUndo(): boolean {
@@ -286,7 +297,14 @@ export class AnalysisSession {
         this.calibration !== undefined
           ? {
               mmPerPx: this.calibration.mmPerPx,
-              method: 'two-point',
+              method:
+                this.calibration.source === 'rectification'
+                  ? 'perspective rectification (four corners of a reference rectangle)'
+                  : this.calibration.source === 'geotiff'
+                    ? 'GeoTIFF pixel size (ground distance)'
+                    : this.calibration.source === 'copied'
+                      ? `copied from photo "${this.calibration.copiedFrom ?? 'unknown'}"`
+                      : 'two-point',
               referenceLengthMm: this.calibration.physicalLengthMm,
               referencePixelDistance: this.calibration.pixelDistance,
             }
@@ -295,6 +313,7 @@ export class AnalysisSession {
       borderMarginWorkingPx: this.borderMargin,
       roiApplied: this.roiConfig !== undefined,
       roiExcludedGrains: this.roiExcludedGrainCount,
+      manualOutlineEdits: this.manualEdits,
     };
   }
 
@@ -330,6 +349,7 @@ export class AnalysisSession {
       excludeBorder: this.excludeBorder,
       borderMargin: this.borderMargin,
       ...(this.provenance !== undefined ? { provenance: { ...this.provenance } } : {}),
+      ...(this.manualEdits > 0 ? { manualEdits: this.manualEdits } : {}),
     };
   }
 
@@ -381,6 +401,7 @@ export class AnalysisSession {
       excludeBorder,
       borderMargin,
       ...(provenance !== undefined ? { provenance } : {}),
+      ...(typeof data.manualEdits === 'number' && Number.isFinite(data.manualEdits) ? { manualEdits: data.manualEdits } : {}),
     });
   }
 
@@ -431,6 +452,7 @@ export class AnalysisSession {
         this.borderMargin,
       );
 
+    this.manualEdits++;
     this.history.push({
       bbox: res.bbox,
       imageWidth: this.workingImage.width,
@@ -494,6 +516,7 @@ export class AnalysisSession {
         this.borderMargin,
       );
 
+    this.manualEdits++;
     this.history.push({
       bbox: res.bbox,
       imageWidth: this.workingImage.width,
@@ -551,6 +574,7 @@ export class AnalysisSession {
         this.borderMargin,
       );
 
+    this.manualEdits++;
     this.history.push({
       bbox: res.bbox,
       imageWidth: this.workingImage.width,
@@ -614,6 +638,7 @@ export class AnalysisSession {
         this.borderMargin,
       );
 
+    this.manualEdits++;
     this.history.push({
       bbox: res.bbox,
       imageWidth: this.workingImage.width,
@@ -643,6 +668,7 @@ export class AnalysisSession {
     if (!entry) {
       return false;
     }
+    this.manualEdits = Math.max(0, this.manualEdits - 1);
     this.hullCache.clear();
     this.workingGrains = entry.grainsBefore
       ? entry.grainsBefore.map(cloneGrain)
@@ -661,6 +687,7 @@ export class AnalysisSession {
     if (!entry) {
       return false;
     }
+    this.manualEdits++;
     this.hullCache.clear();
     this.workingGrains = entry.grainsAfter
       ? entry.grainsAfter.map(cloneGrain)

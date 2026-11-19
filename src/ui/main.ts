@@ -6,6 +6,7 @@ import {
 } from '../modules/pipelineController.js';
 import {
   importSiteArchive,
+  isProjectArchiveFileName,
   listSites,
   saveSite,
   type PhotoRecord,
@@ -20,6 +21,8 @@ import { CanvasViewport } from './canvasViewport.js';
 import { parseJpegExifMetadata } from './exif.js';
 import { computeBlurScoreFromRgba, computeEffectiveDetectionLimit } from '../modules/photoQuality.js';
 import { enhanceImageBuffer, type EnhanceKind, type EnhanceProgressEvent } from '../modules/imageEnhance.js';
+import { OrtWorkerHost } from '../modules/ortWorkerSession.js';
+import { manageSwUpdates, type SwUpdateController } from './swUpdate.js';
 import { decodeTiffBuffer, isSupportedImageFile, isTiffFile } from '../modules/tiffDecode.js';
 import { renderHelpModalHtml } from './help.js';
 import { wasmThreadsFor } from '../modules/onnxInference.js';
@@ -145,6 +148,12 @@ async function refreshStorageInfo(): Promise<void> {
 const cpuThreadPref = readCpuThreadPref();
 const cpuThreads = wasmThreadsFor(cpuThreadPref);
 
+// CPU (WASM) inference runs in its own worker so the page never freezes during analysis.
+const ortWorkerHost =
+  typeof Worker !== 'undefined'
+    ? new OrtWorkerHost(() => new Worker('./workers/ortWasm.worker.js', { type: 'module' }))
+    : undefined;
+
 const engine = new ImageGrainsEngine({
   useWorker: true,
   workerFactory: () =>
@@ -152,6 +161,7 @@ const engine = new ImageGrainsEngine({
   sessionCreateOptions: {
     wasmPaths: './ort/',
     ...(cpuThreads !== undefined ? { numThreads: cpuThreads } : {}),
+    ...(ortWorkerHost ? { wasmWorker: ortWorkerHost } : {}),
   },
 });
 
@@ -384,7 +394,7 @@ function renderViewportExtras(state: AppState): void {
   const pt = viewport?.getCursorImgPt();
   const zoomPct = viewport ? Math.round(viewport.getZoom() * 100) : 100;
   footerEl.innerHTML = `
-    <span>${esc(state.statusMessage)}</span>
+    <span>${state.updateReady ? `<button type="button" class="btn btn-xs btn-primary" data-action="apply-update" ${state.batchRunning || state.enhancing ? 'disabled title="Available when the analysis finishes"' : 'title="A new version is installed. Reload to use it (your data is kept)."'}>Reload to update</button> ` : ''}${esc(state.statusMessage)}</span>
     <span>${activePhoto ? `${activePhoto.width}×${activePhoto.height}px | Zoom ${zoomPct}%` : ''}${pt ? ` | (${Math.round(pt.x)}, ${Math.round(pt.y)})` : ''}</span>
   `;
 
@@ -706,7 +716,7 @@ function mountShell(): void {
     <dialog id="app-dialog" class="app-dialog" closedby="any" aria-labelledby="dialog-title"></dialog>
     <div id="sr-announcer" class="sr-only" aria-live="polite" aria-atomic="true"></div>
     <input type="file" id="photo-file-input" accept="image/*,.tif,.tiff" multiple style="display:none;" />
-    <input type="file" id="archive-file-input" accept=".json,.webgrainy.json" style="display:none;" />
+    <input type="file" id="archive-file-input" accept=".webgrainy,.json" style="display:none;" />
   `;
 
   landingEl = document.getElementById('landing-shell')!;
@@ -1011,6 +1021,7 @@ function eventContext(): EventContext {
         }, 'landing-heading');
       },
       focusGrain: (id) => viewport?.focusOnGrain(id),
+      applyUpdate: () => swUpdates?.applyUpdate() ?? false,
       isTyping: () => {
         const el = document.activeElement;
         if (!el) return false;
@@ -1124,6 +1135,7 @@ async function enhanceWithCanvas(
     sessionOptions: {
       wasmPaths: './ort/',
       ...(threads !== undefined ? { numThreads: threads } : {}),
+      ...(ortWorkerHost ? { wasmWorker: ortWorkerHost } : {}),
     },
     ...(onProgress ? { onProgress } : {}),
   });
@@ -1373,7 +1385,7 @@ function attachDelegatedHandlers(): void {
       void importSiteArchive(file)
         .then(async (siteId) => {
           const sites = await listSites();
-          store.setState({ sites, statusMessage: 'Imported .webgrainy.json archive' });
+          store.setState({ sites, statusMessage: 'Imported project archive' });
           await loadSiteData(siteId);
         })
         .catch((err: unknown) => {
@@ -1415,10 +1427,8 @@ function attachDelegatedHandlers(): void {
     const files = e.dataTransfer?.files;
     if (!files || files.length === 0) return;
     const allFiles = Array.from(files);
-    const archive = allFiles.find(
-      (f) => f.name.endsWith('.webgrainy.json') || f.name.endsWith('.json'),
-    );
-    const images = allFiles.filter((f) => !f.name.endsWith('.json'));
+    const archive = allFiles.find((f) => isProjectArchiveFileName(f.name));
+    const images = allFiles.filter((f) => !isProjectArchiveFileName(f.name));
     if (store.getState().showLanding) {
       store.setState({ showLanding: false });
     }
@@ -1426,7 +1436,7 @@ function attachDelegatedHandlers(): void {
       void importSiteArchive(archive)
         .then(async (siteId) => {
           const sites = await listSites();
-          store.setState({ sites, statusMessage: 'Imported .webgrainy.json archive' });
+          store.setState({ sites, statusMessage: 'Imported project archive' });
           await loadSiteData(siteId);
         })
         .catch((err: unknown) => {
@@ -1451,26 +1461,24 @@ function attachDelegatedHandlers(): void {
   window.addEventListener('offline', () => store.setState({ isOnline: false }));
 }
 
+let swUpdates: SwUpdateController | null = null;
+
 async function registerServiceWorker(): Promise<void> {
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
     store.setState({ swStatus: 'registering' });
     try {
       const hadController = Boolean(navigator.serviceWorker.controller);
       const reg = await navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' });
-      // A waiting worker never activates on a plain reload, so activate it explicitly and
-      // ask the user to reload once the new version controls the page.
-      const activateWaiting = (worker: ServiceWorker | null): void => {
-        worker?.postMessage({ type: 'SKIP_WAITING' });
-      };
-      if (reg.waiting && hadController) activateWaiting(reg.waiting);
-      reg.addEventListener('updatefound', () => {
-        const installing = reg.installing;
-        if (!installing) return;
-        installing.addEventListener('statechange', () => {
-          if (installing.state === 'installed' && navigator.serviceWorker.controller) {
-            activateWaiting(installing);
-          }
-        });
+      // New versions wait for the user's "Reload to update" (see swUpdate.ts): activating
+      // one under a running page made it load mismatched worker / runtime files.
+      swUpdates = manageSwUpdates(reg, {
+        hadController,
+        hasController: () => Boolean(navigator.serviceWorker.controller),
+        reload: () => location.reload(),
+        onUpdateReady: () => store.setState({ updateReady: true }),
+        isBusy: () => store.getState().batchRunning || store.getState().enhancing === true,
+        addControllerChangeListener: (cb) => navigator.serviceWorker.addEventListener('controllerchange', cb),
+        onStateChange: (w, cb) => (w as ServiceWorker).addEventListener('statechange', cb),
       });
       // The service worker adds COOP/COEP headers, but a page is only cross-origin
       // isolated if its own navigation response carried them. On the first visit (or
@@ -1489,16 +1497,8 @@ async function registerServiceWorker(): Promise<void> {
       };
       if (hadController) reloadForIsolation();
       navigator.serviceWorker.addEventListener('controllerchange', () => {
-        if (!hadController) {
-          reloadForIsolation();
-          return;
-        }
-        if (hadController) {
-          store.setState({
-            statusMessage:
-              'A new version of webGrainy was installed. Save your work and reload the page to use it.',
-          });
-        }
+        // First install: the page is now controlled; reload once for cross-origin isolation.
+        if (!hadController) reloadForIsolation();
       });
       store.setState({ swStatus: 'ready' });
     } catch {
@@ -1529,9 +1529,7 @@ function setupLaunchQueue(): void {
         store.setState({ showLanding: false });
       }
       const files = await Promise.all(handles.map((h) => h.getFile()));
-      const archiveFiles = files.filter(
-        (f) => f.name.endsWith('.webgrainy.json') || f.name.endsWith('.json'),
-      );
+      const archiveFiles = files.filter((f) => isProjectArchiveFileName(f.name));
       const imageFiles = files.filter((f) => isSupportedImageFile(f));
 
       for (const archive of archiveFiles) {
