@@ -24,6 +24,7 @@ describe('imageEnhance', () => {
 
     expect(ENHANCE_MODELS.deblur.repoId).toBe('inYourOwnBrowser/deblurring_nafnet');
     expect(ENHANCE_MODELS.deblur.scaleFactor).toBe(1);
+    expect(ENHANCE_MODELS.deblur.preferWasm).toBe(true);
     expect(ENHANCE_MODELS.deblur.sha256).toMatch(/^[0-9a-f]{64}$/);
     expect(ENHANCE_MODELS.deblur.url).toContain(ENHANCE_MODELS.deblur.revision);
   });
