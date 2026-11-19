@@ -133,6 +133,11 @@ export function renderSidebarHtml(state: AppState, view: SidebarView): string {
                         </span>
                         <span class="badge ${status}"${errMsg ? ` title="${esc(errMsg)}"` : ''}>${status}</span>
                       </button>
+                      ${
+                        !state.photoSelectMode && !state.batchRunning
+                          ? `<button type="button" class="photo-remove-btn" data-action="delete-photo" data-photo-id="${esc(ph.photoId)}" aria-label="Remove ${esc(ph.label)}" title="Remove photo from this site">×</button>`
+                          : ''
+                      }
                       ${errMsg ? `<div class="photo-error" role="alert">${esc(errMsg)}</div>` : ''}
                       ${
                         state.siteOptions.poolingMode === 'facies-weighted'
