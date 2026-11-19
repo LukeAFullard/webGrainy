@@ -484,6 +484,7 @@ export function computeFabricRoseStats(
 
   let validCount = 0;
   let totalWeight = 0;
+  let sumWeightSq = 0;
   let sumCos2 = 0;
   let sumSin2 = 0;
 
@@ -496,6 +497,7 @@ export function computeFabricRoseStats(
 
     validCount++;
     totalWeight += w;
+    sumWeightSq += w * w;
 
     const twoTheta = 2 * grain.orientationRad;
     sumCos2 += w * Math.cos(twoTheta);
@@ -532,8 +534,21 @@ export function computeFabricRoseStats(
     (((meanAngleRad * 180) / Math.PI) % 180 + 180) % 180;
   const resultantLength = Math.min(1, Math.hypot(cMean, sMean));
   const circularVariance = Math.max(0, 1 - resultantLength);
-  const rayleighZ = validCount * resultantLength * resultantLength;
-  const rayleighP = validCount >= 10 ? Math.exp(-rayleighZ) : null;
+  // Kish effective sample size n_eff = (sum w)^2 / sum(w^2); equals validCount when unweighted.
+  const effectiveN =
+    sumWeightSq > 0 ? (totalWeight * totalWeight) / sumWeightSq : 0;
+  const rayleighZ = effectiveN * resultantLength * resultantLength;
+  // Finite-sample Rayleigh p-value (Zar 1999, Eq. 27.4 / Mardia & Jupp 2000):
+  // p ≈ exp(sqrt(1 + 4n + 4(n^2 - R_n^2)) - (1 + 2n)), where R_n = n * R_bar.
+  const rn = effectiveN * resultantLength;
+  const disc = Math.max(
+    0,
+    1 + 4 * effectiveN + 4 * (effectiveN * effectiveN - rn * rn),
+  );
+  const rayleighP =
+    effectiveN >= 10
+      ? Math.min(1, Math.max(0, Math.exp(Math.sqrt(disc) - (1 + 2 * effectiveN))))
+      : null;
 
   for (const bin of bins) {
     bin.proportionPct = (bin.weightSum / totalWeight) * 100;

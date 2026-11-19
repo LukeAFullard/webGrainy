@@ -175,6 +175,22 @@ describe('morphometricsExt', () => {
       expect(stats.resultantLength).toBeCloseTo(0.8, 6);
       expect(stats.meanAngleRad).toBeCloseTo(0, 6);
     });
+
+    it('uses Kish effective sample size for weighted Rayleigh test (no false significance from 1 boulder)', () => {
+      const grains = [
+        makeGrain(1, { orientationRad: 0, areaPx: 20000 }),
+        ...Array.from({ length: 200 }, (_, i) =>
+          makeGrain(i + 2, {
+            orientationRad: ((i / 200) - 0.5) * Math.PI,
+            areaPx: 100,
+          }),
+        ),
+      ];
+      const stats = computeFabricRoseStats(grains, { weighted: true });
+      // 1 boulder = 50% of total area -> Kish n_eff ≈ 4 < 10 -> rayleighP must be null, Z small
+      expect(stats.rayleighZ).toBeLessThan(2);
+      expect(stats.rayleighP).toBeNull();
+    });
   });
 
   describe('computeWentworthHistogram', () => {

@@ -129,7 +129,13 @@ export function weightedPsdPercentiles(
       out[key] = v1;
     } else {
       const t = (target - c0) / (c1 - c0);
-      out[key] = v0 + t * (v1 - v0);
+      if (v0 > 0 && v1 > 0) {
+        const log0 = Math.log2(v0);
+        const log1 = Math.log2(v1);
+        out[key] = 2 ** (log0 + t * (log1 - log0));
+      } else {
+        out[key] = v0 + t * (v1 - v0);
+      }
     }
   }
 

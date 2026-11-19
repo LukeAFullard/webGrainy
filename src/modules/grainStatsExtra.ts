@@ -55,7 +55,9 @@ export function computeExtraGrainStats(
   weights: ArrayLike<number>,
   percentiles: { D10: number; D25: number; D50: number; D75: number; D90: number },
   unit: 'mm' | 'px',
+  options?: { multiplicity?: ArrayLike<number> },
 ): ExtraGrainStats {
+  const multiplicity = options?.multiplicity;
   let s1 = 0, s2 = 0, s3 = 0, s4 = 0, n = 0;
   let wSum = 0, lnMean = 0;
   const m = Math.min(sizes.length, weights.length);
@@ -63,11 +65,14 @@ export function computeExtraGrainStats(
     const d = sizes[i]!;
     const w = weights[i]!;
     if (!(d > 0) || !Number.isFinite(d)) continue;
-    n++;
-    s1 += d;
-    s2 += d * d;
-    s3 += d * d * d;
-    s4 += d * d * d * d;
+    const mult = multiplicity ? multiplicity[i]! : 1;
+    if (mult > 0 && Number.isFinite(mult)) {
+      n += mult;
+      s1 += mult * d;
+      s2 += mult * d * d;
+      s3 += mult * d * d * d;
+      s4 += mult * d * d * d * d;
+    }
     if (w > 0 && Number.isFinite(w)) {
       wSum += w;
       lnMean += w * Math.log(d);

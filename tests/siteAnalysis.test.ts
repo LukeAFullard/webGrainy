@@ -408,6 +408,8 @@ describe('siteAnalysis', () => {
     expect(boulderJack?.highInfluence).toBe(true);
     expect(report.adequacy.rating).toBe('Insufficient');
     expect(report.adequacy.largestClastWarning).toBe('critical');
+    expect(report.adequacy.effectiveGrainCount).toBe(report.binomialCi.sampleSizeUsed);
+    expect(report.adequacy.effectiveGrainCount).toBeLessThan(report.validGrainCount);
     expect(report.convergence.length).toBe(3);
 
     expect(report.binomialCi.lower.D50).toBeLessThanOrEqual(report.psd.D50);

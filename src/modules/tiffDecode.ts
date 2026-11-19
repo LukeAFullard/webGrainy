@@ -64,9 +64,24 @@ function parseTiffDate(raw: string | undefined): string | undefined {
   return `${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6]}`;
 }
 
+function isKnownMetricProjectedCrs(epsg: number | undefined): boolean {
+  if (epsg === undefined) return false;
+  return (
+    (epsg >= 32601 && epsg <= 32660) || // WGS 84 / UTM North
+    (epsg >= 32701 && epsg <= 32760) || // WGS 84 / UTM South
+    (epsg >= 26901 && epsg <= 26923) || // NAD83 / UTM
+    (epsg >= 25828 && epsg <= 25838) || // ETRS89 / UTM
+    (epsg >= 28348 && epsg <= 28356) || // GDA94 / MGA
+    (epsg >= 7848 && epsg <= 7856) ||   // GDA2020 / MGA
+    epsg === 3857 ||                    // Web Mercator
+    epsg === 2193 ||                    // NZTM 2000
+    epsg === 27700                      // British National Grid
+  );
+}
+
 /**
  * Extracts `mmPerPx` from a projected GeoTIFF's `ModelPixelScaleTag` (33550) when
- * `GeoKeyDirectoryTag` (34735) indicates a projected meter coordinate system.
+ * `GeoKeyDirectoryTag` (34735) indicates a projected coordinate system with known linear units.
  */
 function extractGeoTiffCalibration(
   ifd: Record<string, unknown>,
@@ -79,6 +94,7 @@ function extractGeoTiffCalibration(
 
   const numKeys = Number(geoDir[3]) || 0;
   let modelType: number | undefined;
+  let projectedCrs: number | undefined;
   let linearUnits: number | undefined;
   for (let i = 0; i < numKeys; i++) {
     const base = 4 + i * 4;
@@ -88,12 +104,23 @@ function extractGeoTiffCalibration(
     const valueOffset = Number(geoDir[base + 3]);
     if (tiffTagLocation === 0) {
       if (keyId === 1024) modelType = valueOffset; // GTModelTypeGeoKey: 1 = Projected
-      if (keyId === 3076) linearUnits = valueOffset; // ProjLinearUnitsGeoKey: 9001 = meter
+      if (keyId === 3072) projectedCrs = valueOffset; // ProjectedCSTypeGeoKey
+      if (keyId === 3076) linearUnits = valueOffset; // ProjLinearUnitsGeoKey
     }
   }
-  // Only trust scale when explicitly Projected (1) and in meters (9001 or default unset).
+  // Only trust scale when explicitly Projected (1) and linear units are known.
   if (modelType !== 1) return undefined;
-  if (linearUnits !== undefined && linearUnits !== 9001) return undefined;
+  let mmPerUnit: number | undefined;
+  if (linearUnits === 9001) {
+    mmPerUnit = 1000; // Meter
+  } else if (linearUnits === 9002) {
+    mmPerUnit = 304.8; // International foot
+  } else if (linearUnits === 9003) {
+    mmPerUnit = 1200000 / 3937; // US survey foot (304.8006096... mm)
+  } else if (linearUnits === undefined && isKnownMetricProjectedCrs(projectedCrs)) {
+    mmPerUnit = 1000;
+  }
+  if (mmPerUnit === undefined) return undefined;
 
   const sx = Number(scaleTag[0]);
   const sy = Number(scaleTag[1]);
@@ -101,7 +128,7 @@ function extractGeoTiffCalibration(
   // Require near-square pixels (within 5%).
   if (Math.abs(sx - sy) / Math.max(sx, sy) > 0.05) return undefined;
 
-  const mmPerPx = ((sx + sy) / 2) * 1000;
+  const mmPerPx = ((sx + sy) / 2) * mmPerUnit;
   // Sanity range: 0.01 mm/px (macro) to 1000 mm/px (1 m/px).
   if (mmPerPx < 0.01 || mmPerPx > 1000) return undefined;
 

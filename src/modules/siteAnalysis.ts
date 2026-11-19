@@ -235,7 +235,16 @@ export function analyzeSite(
   } = buildPooledArrays(preparedPhotos, options.poolingMode);
   const psd = computePsdPercentiles(values, weights);
   const folkWard = unit === 'mm' ? computeFolkWardStats(psd) : null;
-  const extra = values.length > 0 ? computeExtraGrainStats(values, weights, psd, unit) : null;
+  const extra =
+    values.length > 0
+      ? computeExtraGrainStats(
+          values,
+          weights,
+          psd,
+          unit,
+          options.poolingMode === 'virtual-wolman-grid' ? { multiplicity: weights } : undefined,
+        )
+      : null;
   const wentworth =
     unit === 'mm'
       ? computeSiteWentworth(preparedPhotos, options.poolingMode, sizeMetric)
@@ -301,7 +310,7 @@ export function analyzeSite(
 
   // Sample Adequacy & Outlier Flags
   const { validGrainCount, effectiveGrainCount, rating, largestClastAreaRatio, largestClastWarning } =
-    assessSampleAdequacy(preparedPhotos, options.poolingMode, warnings);
+    assessSampleAdequacy(preparedPhotos, options.poolingMode, warnings, weights);
   const { outlierPhotos, perPhoto } = buildPerPhotoBreakdown(
     preparedPhotos,
     options.poolingMode,

@@ -39,4 +39,14 @@ describe('extra grain statistics', () => {
     expect(x.n).toBe(0);
     expect(Number.isNaN(x.sauterMeanD32)).toBe(true);
   });
+
+  it('respects multiplicity for virtual-wolman-grid hit counts', () => {
+    // 1 hit at 2 mm and 3 hits at 8 mm should match [2, 8, 8, 8]
+    const expanded = computeExtraGrainStats([2, 8, 8, 8], [1, 1, 1, 1], { D10: 2, D25: 2, D50: 8, D75: 8, D90: 8 }, 'mm');
+    const mult = computeExtraGrainStats([2, 8], [1, 3], { D10: 2, D25: 2, D50: 8, D75: 8, D90: 8 }, 'mm', { multiplicity: [1, 3] });
+    expect(mult.n).toBe(4);
+    expect(mult.arithmeticMeanD10).toBeCloseTo(expanded.arithmeticMeanD10, 12);
+    expect(mult.sauterMeanD32).toBeCloseTo(expanded.sauterMeanD32, 12);
+    expect(mult.deBrouckereMeanD43).toBeCloseTo(expanded.deBrouckereMeanD43, 12);
+  });
 });
