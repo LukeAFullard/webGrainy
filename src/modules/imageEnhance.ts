@@ -78,6 +78,10 @@ export const ENHANCE_MODELS: Record<EnhanceKind, EnhanceModelSpec> = {
     license: 'MIT',
     defaultTileSize: 384,
     minTileSide: 384,
+    // deblurring_nafnet_2025may.onnx uses INT8 weights with 447 DequantizeLinear ops;
+    // ONNX Runtime Web's WebGPU EP silently produces corrupted rainbow/grid artifacts on
+    // INT8 DequantizeLinear graphs, whereas WASM produces accurate results.
+    preferWasm: true,
   },
 };
 
@@ -371,6 +375,19 @@ export async function runTiledImageEnhancement(
       const outTileW = padW * scale;
       const outTileH = padH * scale;
       const outPlane = outTileW * outTileH;
+      if (outTensor.dims && outTensor.dims.length === 4) {
+        const [, oc, oh, ow] = outTensor.dims;
+        if (oc !== 3 || oh !== outTileH || ow !== outTileW) {
+          throw new Error(
+            `Enhancement model ${spec.modelId} returned unexpected shape [${outTensor.dims.join(', ')}] (expected [1, 3, ${outTileH}, ${outTileW}]).`,
+          );
+        }
+      }
+      if (outData.length < 3 * outPlane) {
+        throw new Error(
+          `Enhancement model ${spec.modelId} returned truncated output (${outData.length} values, expected ${3 * outPlane}).`,
+        );
+      }
 
       const outValidW = validW * scale;
       const outValidH = validH * scale;
@@ -391,10 +408,25 @@ export async function runTiledImageEnhancement(
           const gx = x0 * scale + ox;
           const gIdx = gRow + gx;
           const tIdx = tRow + ox;
+          const r = Number(outData[tIdx]!);
+          const g = Number(outData[outPlane + tIdx]!);
+          const b = Number(outData[2 * outPlane + tIdx]!);
+          if (
+            !Number.isFinite(r) ||
+            !Number.isFinite(g) ||
+            !Number.isFinite(b) ||
+            Math.abs(r) > 10 ||
+            Math.abs(g) > 10 ||
+            Math.abs(b) > 10
+          ) {
+            throw new Error(
+              `Enhancement model ${spec.modelId} produced numerically invalid output (${r}, ${g}, ${b}).`,
+            );
+          }
           const g3 = gIdx * 3;
-          accum[g3] = accum[g3]! + Number(outData[tIdx]!) * w;
-          accum[g3 + 1] = accum[g3 + 1]! + Number(outData[outPlane + tIdx]!) * w;
-          accum[g3 + 2] = accum[g3 + 2]! + Number(outData[2 * outPlane + tIdx]!) * w;
+          accum[g3] = accum[g3]! + r * w;
+          accum[g3 + 1] = accum[g3 + 1]! + g * w;
+          accum[g3 + 2] = accum[g3 + 2]! + b * w;
           weightSum[gIdx] = weightSum[gIdx]! + w;
         }
       }

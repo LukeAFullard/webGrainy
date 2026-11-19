@@ -27,6 +27,7 @@ describe('imageEnhance', () => {
     expect(ENHANCE_MODELS.deblur.scaleFactor).toBe(1);
     expect(ENHANCE_MODELS.deblur.minTileSide).toBe(384);
     expect(ENHANCE_MODELS.deblur.defaultTileSize).toBe(384);
+    expect(ENHANCE_MODELS.deblur.preferWasm).toBe(true);
     expect(ENHANCE_MODELS.deblur.sha256).toMatch(/^[0-9a-f]{64}$/);
     expect(ENHANCE_MODELS.deblur.url).toContain(ENHANCE_MODELS.deblur.revision);
   });
@@ -150,6 +151,50 @@ describe('imageEnhance', () => {
         dummySession,
       ),
     ).rejects.toThrow(/limited to inputs up to/i);
+  });
+
+  it('rejects numerically invalid or wrong-shape output tensors so GPU fallback can trigger', async () => {
+    const w = 32;
+    const h = 32;
+    const rgba = new Uint8ClampedArray(w * h * 4).fill(128);
+
+    const nanSession: EnhanceSessionLike = {
+      inputNames: ['lq'],
+      outputNames: ['output'],
+      run: async (feeds) => {
+        const tensor = feeds['lq'] as { data: Float32Array; dims: readonly number[] };
+        const bad = new Float32Array(tensor.data.length);
+        bad[10] = Number.NaN;
+        return { output: { data: bad, dims: tensor.dims } };
+      },
+    };
+    await expect(
+      runTiledImageEnhancement(rgba, w, h, ENHANCE_MODELS.deblur, nanSession, { tileSize: 32, overlap: 0 }),
+    ).rejects.toThrow(/numerically invalid output/i);
+
+    const explodingSession: EnhanceSessionLike = {
+      inputNames: ['lq'],
+      outputNames: ['output'],
+      run: async (feeds) => {
+        const tensor = feeds['lq'] as { data: Float32Array; dims: readonly number[] };
+        const bad = new Float32Array(tensor.data.length).fill(50);
+        return { output: { data: bad, dims: tensor.dims } };
+      },
+    };
+    await expect(
+      runTiledImageEnhancement(rgba, w, h, ENHANCE_MODELS.deblur, explodingSession, { tileSize: 32, overlap: 0 }),
+    ).rejects.toThrow(/numerically invalid output/i);
+
+    const wrongShapeSession: EnhanceSessionLike = {
+      inputNames: ['lq'],
+      outputNames: ['output'],
+      run: async () => ({
+        output: { data: new Float32Array(3 * 16 * 16), dims: [1, 3, 16, 16] },
+      }),
+    };
+    await expect(
+      runTiledImageEnhancement(rgba, w, h, ENHANCE_MODELS.deblur, wrongShapeSession, { tileSize: 32, overlap: 0 }),
+    ).rejects.toThrow(/unexpected shape/i);
   });
 
   it('scales calibration and ROI geometry for 2x upscaling and leaves 1x unchanged', () => {
