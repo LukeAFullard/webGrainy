@@ -444,6 +444,9 @@ function deserializeSessionFromArchive(
     excludeBorder: archived.excludeBorder,
     borderMargin: archived.borderMargin,
     ...(archived.provenance !== undefined ? { provenance: archived.provenance } : {}),
+    ...(typeof archived.manualEdits === 'number' && Number.isFinite(archived.manualEdits) && archived.manualEdits >= 0
+      ? { manualEdits: Math.floor(archived.manualEdits) }
+      : {}),
   };
 }
 
@@ -1000,7 +1003,9 @@ export async function runSiteBatch(
       continue;
     }
     const existing = await getPhotoResult(p.photoId, opts);
-    if (!existing || existing.status === 'pending' || existing.status === 'error') {
+    // 'running' at the start of a batch is stale: the page that was analysing it closed or
+    // crashed (e.g. out of memory) before finishing, so analyse it again.
+    if (!existing || existing.status === 'pending' || existing.status === 'error' || existing.status === 'running') {
       queue.push(p);
     }
   }

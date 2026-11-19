@@ -340,5 +340,7 @@ export interface SerializedAnalysisSession {
   excludeBorder: boolean;
   borderMargin: number;
   provenance?: AnalysisProvenance;
+  /** Manual outline edits (split, merge, delete, add) kept in the masks; undo subtracts. */
+  manualEdits?: number;
 }
 

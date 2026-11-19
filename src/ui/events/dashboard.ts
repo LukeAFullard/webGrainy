@@ -4,7 +4,7 @@ import { effectiveRoi } from '../../modules/siteWorkspace.js';
 import { comparisonCsv } from '../../modules/siteComparison.js';
 import type { DashboardTab } from '../state.js';
 import { getActivePhoto, getActiveSite } from '../workspaceActions.js';
-import { isInput, isSelect, type ActionHandler, type ControlLike, type ElementLike, type EventContext } from './context.js';
+import { confirmDiscardEdits, isInput, isSelect, type ActionHandler, type ControlLike, type ElementLike, type EventContext } from './context.js';
 
 export const DASHBOARD_TABS: DashboardTab[] = ['psd', 'adequacy', 'shape', 'fabric'];
 
@@ -12,12 +12,12 @@ export const dashboardActions: Record<string, ActionHandler> = {
   'fine-grain-rerun': (_el, ctx) => {
     const state = ctx.store.getState();
     const photo = getActivePhoto(state);
-    if (photo && !state.batchRunning) void ctx.actions.setFineGrainUpscale(photo, 1.5);
+    if (photo && !state.batchRunning && confirmDiscardEdits(ctx, [photo.photoId])) void ctx.actions.setFineGrainUpscale(photo, 1.5);
   },
   'fine-grain-undo': (_el, ctx) => {
     const state = ctx.store.getState();
     const photo = getActivePhoto(state);
-    if (photo && !state.batchRunning) void ctx.actions.setFineGrainUpscale(photo, undefined);
+    if (photo && !state.batchRunning && confirmDiscardEdits(ctx, [photo.photoId])) void ctx.actions.setFineGrainUpscale(photo, undefined);
   },
   'open-site': (el, ctx) => {
     const id = el.dataset['siteId'];

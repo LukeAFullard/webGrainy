@@ -6,7 +6,7 @@ import { isWorkflowStepId, nextWorkflowStepForKey } from '../panels/landing.js';
 import { workingScaleFactorFor } from '../panels/sidebar.js';
 import { visiblePhotos, type PhotoFilter } from '../photoList.js';
 import { getActivePhoto, getActiveSite } from '../workspaceActions.js';
-import { isInput, isSelect, type ActionHandler, type ControlLike, type ElementLike, type EventContext } from './context.js';
+import { confirmDiscardEdits, isInput, isSelect, type ActionHandler, type ControlLike, type ElementLike, type EventContext } from './context.js';
 
 export const sidebarActions: Record<string, ActionHandler> = {
   'add-photos': (_el, ctx) => ctx.ui.openPhotoPicker(),
@@ -82,7 +82,7 @@ export const sidebarActions: Record<string, ActionHandler> = {
   'cancel-batch': (_el, ctx) => ctx.actions.cancelBatch(),
   'run-active': (_el, ctx) => {
     const id = ctx.store.getState().activePhotoId;
-    if (id) void ctx.actions.runBatch([id]);
+    if (id && confirmDiscardEdits(ctx, [id])) void ctx.actions.runBatch([id]);
   },
   'analyse-all-sites': (_el, ctx) => void ctx.actions.runAllSites(),
   'photo-filter': (el, ctx) => {
@@ -108,7 +108,7 @@ export const sidebarActions: Record<string, ActionHandler> = {
     if (what === 'include' || what === 'exclude') {
       void ctx.actions.setPhotosIncluded(ids, what === 'include');
     } else if (what === 'reanalyse') {
-      void ctx.actions.runBatch(ids);
+      if (confirmDiscardEdits(ctx, ids)) void ctx.actions.runBatch(ids);
     } else if (what === 'delete') {
       if (!ctx.ui.confirm(`Delete ${n} and their results from this site? This cannot be undone (unless you have a backup).`)) return;
       void ctx.actions.deletePhotos(ids).then(() => ctx.store.setState({ photoSelectMode: false }));
