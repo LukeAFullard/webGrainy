@@ -730,11 +730,19 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
     if (!photo) return;
 
     enhancing = true;
-    const label = kind === 'upscale-2x' ? 'PULSE 2× upscale' : 'NAFNet deblur';
-    store.setState({ enhancing: true, statusMessage: `Releasing segmentation model and starting ${label}…` });
+    const isOnnxEnhance = kind === 'upscale-2x';
+    const label = isOnnxEnhance ? 'PULSE 2× upscale' : 'Richardson–Lucy deblur';
+    store.setState({
+      enhancing: true,
+      statusMessage: isOnnxEnhance
+        ? `Releasing segmentation model and starting ${label}…`
+        : `Starting ${label}…`,
+    });
     try {
-      // Strictly isolate memory: unload any main segmentation session first.
-      await engine.releaseSessions?.();
+      // Strictly isolate memory for ONNX enhancers: unload any main segmentation session first.
+      if (isOnnxEnhance) {
+        await engine.releaseSessions?.();
+      }
 
       const enhanced = await images.enhance(photo.imageBlob, kind, (ev) => {
         store.setState({ statusMessage: `${ev.message}` });

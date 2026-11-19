@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  deblurRichardsonLucy,
   ENHANCE_MODELS,
+  enhanceImageBuffer,
   MAX_UPSCALE_OUTPUT_SIDE,
   photoUpscaleFactor,
   runTiledImageEnhancement,
@@ -16,44 +18,188 @@ import type { SiteRecord } from '../src/modules/projectStorage.js';
 import type { CalibrationResult } from '../src/types/index.js';
 import type { RoiExclusionConfig } from '../src/modules/roiAndRectify.js';
 
+function laplacianVariance(rgba: Uint8ClampedArray, w: number, h: number): number {
+  const vals: number[] = [];
+  const lum = (x: number, y: number): number => {
+    const o = (y * w + x) * 4;
+    return 0.2126 * rgba[o]! + 0.7152 * rgba[o + 1]! + 0.0722 * rgba[o + 2]!;
+  };
+  for (let y = 1; y < h - 1; y++) {
+    for (let x = 1; x < w - 1; x++) {
+      const lap = lum(x - 1, y) + lum(x + 1, y) + lum(x, y - 1) + lum(x, y + 1) - 4 * lum(x, y);
+      vals.push(lap);
+    }
+  }
+  const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
+  return vals.reduce((a, v) => a + (v - mean) * (v - mean), 0) / vals.length;
+}
+
 describe('imageEnhance', () => {
-  it('pins both inYourOwnBrowser Hugging Face repos with immutable revisions and SHA-256 hashes', () => {
+  it('pins PULSE 2x on Hugging Face with SHA-256 and configures built-in classical deblur', () => {
+    expect(ENHANCE_MODELS['upscale-2x'].engine).toBe('onnx');
     expect(ENHANCE_MODELS['upscale-2x'].repoId).toBe('inYourOwnBrowser/PULSE');
     expect(ENHANCE_MODELS['upscale-2x'].scaleFactor).toBe(2);
     expect(ENHANCE_MODELS['upscale-2x'].sha256).toMatch(/^[0-9a-f]{64}$/);
     expect(ENHANCE_MODELS['upscale-2x'].url).toContain(ENHANCE_MODELS['upscale-2x'].revision);
 
-    expect(ENHANCE_MODELS.deblur.repoId).toBe('inYourOwnBrowser/deblurring_nafnet');
+    expect(ENHANCE_MODELS.deblur.engine).toBe('classical');
+    expect(ENHANCE_MODELS.deblur.sizeBytes).toBe(0);
     expect(ENHANCE_MODELS.deblur.scaleFactor).toBe(1);
-    expect(ENHANCE_MODELS.deblur.minTileSide).toBe(384);
-    expect(ENHANCE_MODELS.deblur.defaultTileSize).toBe(384);
-    expect(ENHANCE_MODELS.deblur.preferWasm).toBe(true);
-    expect(ENHANCE_MODELS.deblur.sha256).toMatch(/^[0-9a-f]{64}$/);
-    expect(ENHANCE_MODELS.deblur.url).toContain(ENHANCE_MODELS.deblur.revision);
+    expect(ENHANCE_MODELS.deblur.modelId).toBe('richardson_lucy_tv_deblur');
   });
 
-  it('pads small images up to 384x384 by default for NAFNet TLC compatibility', async () => {
-    const w = 100;
-    const h = 80;
-    const rgba = new Uint8ClampedArray(w * h * 4).fill(180);
-    const seenDims: Array<readonly number[]> = [];
-    const session: EnhanceSessionLike = {
-      inputNames: ['lq'],
-      outputNames: ['output'],
-      run: async (feeds) => {
-        const tensor = feeds['lq'] as { data: Float32Array; dims: readonly number[] };
-        seenDims.push(tensor.dims);
-        return { output: { data: new Float32Array(tensor.data), dims: tensor.dims } };
-      },
-    };
-    const res = await runTiledImageEnhancement(rgba, w, h, ENHANCE_MODELS.deblur, session);
-    expect(seenDims).toEqual([[1, 3, 384, 384]]);
+  it('deblurRichardsonLucy leaves a uniform image unchanged and preserves alpha', async () => {
+    const w = 32;
+    const h = 24;
+    const rgba = new Uint8ClampedArray(w * h * 4);
+    for (let i = 0; i < w * h; i++) {
+      rgba[i * 4] = 160;
+      rgba[i * 4 + 1] = 120;
+      rgba[i * 4 + 2] = 80;
+      rgba[i * 4 + 3] = 200;
+    }
+
+    const res = await deblurRichardsonLucy(rgba, w, h);
     expect(res.width).toBe(w);
     expect(res.height).toBe(h);
-    expect(res.data[0]).toBe(180);
+    for (let i = 0; i < w * h; i++) {
+      const o = i * 4;
+      expect(Math.abs(res.data[o]! - 160)).toBeLessThanOrEqual(1);
+      expect(Math.abs(res.data[o + 1]! - 120)).toBeLessThanOrEqual(1);
+      expect(Math.abs(res.data[o + 2]! - 80)).toBeLessThanOrEqual(1);
+      expect(res.data[o + 3]).toBe(200);
+    }
   });
 
-  it('runs seamless 1x tiled deblur across non-multiple-of-16 dimensions', async () => {
+  it('deblurRichardsonLucy sharpens a blurred pebble scene and reduces error vs ground truth', async () => {
+    const w = 64;
+    const h = 64;
+    // Sharp synthetic gravel: bright circular pebble on darker background.
+    const sharp = new Uint8ClampedArray(w * h * 4);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const dx = x - 32;
+        const dy = y - 32;
+        const inside = dx * dx + dy * dy <= 14 * 14;
+        const o = (y * w + x) * 4;
+        sharp[o] = inside ? 210 : 70;
+        sharp[o + 1] = inside ? 190 : 65;
+        sharp[o + 2] = inside ? 160 : 60;
+        sharp[o + 3] = 255;
+      }
+    }
+
+    // Apply a 2D Gaussian blur (sigma = 1.4) to synthesize an out-of-focus photo.
+    const sigma = 1.4;
+    const r = 4;
+    const k: number[] = [];
+    let kSum = 0;
+    for (let i = -r; i <= r; i++) {
+      const v = Math.exp(-(i * i) / (2 * sigma * sigma));
+      k.push(v);
+      kSum += v;
+    }
+    const kern = k.map((v) => v / kSum);
+    const tmp = new Float32Array(w * h * 3);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        for (let c = 0; c < 3; c++) {
+          let acc = 0;
+          for (let i = -r; i <= r; i++) {
+            const sx = Math.max(0, Math.min(w - 1, x + i));
+            acc += sharp[(y * w + sx) * 4 + c]! * kern[i + r]!;
+          }
+          tmp[(y * w + x) * 3 + c] = acc;
+        }
+      }
+    }
+    const blurred = new Uint8ClampedArray(w * h * 4);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        for (let c = 0; c < 3; c++) {
+          let acc = 0;
+          for (let i = -r; i <= r; i++) {
+            const sy = Math.max(0, Math.min(h - 1, y + i));
+            acc += tmp[(sy * w + x) * 3 + c]! * kern[i + r]!;
+          }
+          blurred[(y * w + x) * 4 + c] = Math.round(acc);
+        }
+        blurred[(y * w + x) * 4 + 3] = 255;
+      }
+    }
+
+    const res = await deblurRichardsonLucy(blurred, w, h, { iterations: 10, sigma: 1.4 });
+    const blurSharpness = laplacianVariance(blurred, w, h);
+    const deblurSharpness = laplacianVariance(res.data, w, h);
+    expect(deblurSharpness).toBeGreaterThan(blurSharpness * 1.5);
+
+    let errBlur = 0;
+    let errDeblur = 0;
+    for (let i = 0; i < w * h * 4; i += 4) {
+      errBlur += Math.abs(blurred[i]! - sharp[i]!);
+      errDeblur += Math.abs(res.data[i]! - sharp[i]!);
+    }
+    expect(errDeblur).toBeLessThan(errBlur);
+  });
+
+  it('deblurRichardsonLucy stays bounded and stable on high-frequency RGB noise and honors abort', async () => {
+    const w = 48;
+    const h = 48;
+    const noisy = new Uint8ClampedArray(w * h * 4);
+    let seed = 1337;
+    const rand = (): number => {
+      seed = (seed * 1664525 + 1013904223) >>> 0;
+      return seed / 0xffffffff;
+    };
+    for (let i = 0; i < w * h; i++) {
+      noisy[i * 4] = Math.round(115 + (rand() - 0.5) * 40);
+      noisy[i * 4 + 1] = Math.round(125 + (rand() - 0.5) * 40);
+      noisy[i * 4 + 2] = Math.round(135 + (rand() - 0.5) * 40);
+      noisy[i * 4 + 3] = 255;
+    }
+
+    const res = await deblurRichardsonLucy(noisy, w, h);
+    let sumLumIn = 0;
+    let sumLumOut = 0;
+    for (let i = 0; i < w * h; i++) {
+      const o = i * 4;
+      expect(res.data[o]!).toBeGreaterThanOrEqual(0);
+      expect(res.data[o]!).toBeLessThanOrEqual(255);
+      sumLumIn += 0.2126 * noisy[o]! + 0.7152 * noisy[o + 1]! + 0.0722 * noisy[o + 2]!;
+      sumLumOut += 0.2126 * res.data[o]! + 0.7152 * res.data[o + 1]! + 0.0722 * res.data[o + 2]!;
+    }
+    // Mean brightness stays preserved (no explosion or washout).
+    expect(Math.abs(sumLumOut / (w * h) - sumLumIn / (w * h))).toBeLessThan(5);
+
+    const ac = new AbortController();
+    ac.abort();
+    await expect(deblurRichardsonLucy(noisy, w, h, { signal: ac.signal })).rejects.toThrow(/aborted/i);
+  });
+
+  it('enhanceImageBuffer runs classical deblur with zero network or ONNX calls', async () => {
+    const w = 24;
+    const h = 24;
+    const rgba = new Uint8ClampedArray(w * h * 4).fill(140);
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    const sessionFactory = vi.fn();
+    const fractions: number[] = [];
+
+    const res = await enhanceImageBuffer(rgba, w, h, 'deblur', {
+      sessionFactory,
+      onProgress: (ev) => fractions.push(ev.fraction),
+    });
+
+    expect(res.width).toBe(w);
+    expect(res.height).toBe(h);
+    expect(res.spec.modelId).toBe('richardson_lucy_tv_deblur');
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(sessionFactory).not.toHaveBeenCalled();
+    expect(fractions.length).toBeGreaterThan(0);
+    expect(fractions[fractions.length - 1]).toBe(1);
+    fetchSpy.mockRestore();
+  });
+
+  it('runs seamless 1x tiled ONNX enhancement across non-multiple-of-16 dimensions', async () => {
     const w = 70;
     const h = 50;
     const rgba = new Uint8ClampedArray(w * h * 4);
