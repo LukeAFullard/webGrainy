@@ -4,7 +4,10 @@ interface StoreEntry {
   data: Map<string, unknown>;
 }
 
-export function createProjectMockIDB(): IDBFactory {
+export function createProjectMockIDB(options?: {
+  /** Make `put` fail (as a full disk would) when this returns true. */
+  failPut?: (storeName: string, value: Record<string, unknown>) => boolean;
+}): IDBFactory {
   const stores = new Map<string, StoreEntry>();
 
   const makeReq = <T>(exec: () => T, onUpgrade?: (req: IDBOpenDBRequest) => void) => {
@@ -66,6 +69,7 @@ export function createProjectMockIDB(): IDBFactory {
           getAll: () => wrapReq(() => Array.from(entry.data.values())),
           put: (val: Record<string, unknown>) =>
             wrapReq(() => {
+              if (options?.failPut?.(name, val)) throw new Error(`QuotaExceededError: mock put failure in "${name}"`);
               const k = String(val[entry.keyPath]);
               entry.data.set(k, val);
               return k;

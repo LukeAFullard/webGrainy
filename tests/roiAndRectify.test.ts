@@ -277,6 +277,28 @@ describe('roiAndRectify', () => {
       expect(res.roiRectInOutput[1]).toBe(10);
     });
 
+    it('regression: output pixels are square (same mm/px on both axes) when sizes do not divide evenly', () => {
+      const srcImage: ImageBufferLike = { data: new Uint8ClampedArray(200 * 200 * 4).fill(128), width: 200, height: 200 };
+      // 100 mm x 7 mm reference at 3 mm/px: 33.33 x 2.33 px. Rounding each side separately
+      // would give 33 x 2 px, i.e. 3.03 vs 3.5 mm/px (16% anisotropy).
+      const res = rectifyPerspective(srcImage, {
+        srcCorners: [{ x: 20, y: 20 }, { x: 180, y: 20 }, { x: 180, y: 31.2 }, { x: 20, y: 31.2 }],
+        physicalWidthMm: 100,
+        physicalHeightMm: 7,
+        targetMmPerPx: 3,
+      });
+      expect(res.mmPerPx).toBe(3);
+      const [x0, y0, rw, rh] = res.roiRectInOutput;
+      expect(100 / rw).toBeCloseTo(3, 9);
+      expect(7 / rh).toBeCloseTo(3, 9);
+      expect(res.width).toBe(Math.ceil(rw));
+      expect(res.height).toBe(Math.ceil(rh));
+      // The source corners land exactly on the reference rectangle.
+      const br = applyHomographyPoint(res.homography, { x: 180, y: 31.2 });
+      expect(br.x).toBeCloseTo(x0 + rw, 6);
+      expect(br.y).toBeCloseTo(y0 + rh, 6);
+    });
+
     it('throws descriptive error on collinear or degenerate quadrilaterals', () => {
       const collinear: [Point2D, Point2D, Point2D, Point2D] = [
         { x: 0, y: 0 },

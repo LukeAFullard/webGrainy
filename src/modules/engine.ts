@@ -750,6 +750,20 @@ export class ImageGrainsEngine {
 
       const handleAbort = (): void => {
         rejectRequest(createAnalysisAbortError());
+        // The worker cannot be interrupted mid-job: stop it so a cancelled post-process does
+        // not keep using a CPU core (and delay the next analysis). A new worker is created on
+        // demand; any other request still waiting on this worker is rejected.
+        if (this.workerInstance === worker) {
+          try {
+            worker.terminate();
+          } catch {
+            // ignore
+          }
+          this.workerInstance = null;
+          for (const rejectOther of Array.from(this.pendingWorkerRejects)) {
+            rejectOther(new Error('Post-process worker was restarted after a cancelled analysis.'));
+          }
+        }
       };
 
       const handleError = (ev: Event | ErrorEvent): void => {

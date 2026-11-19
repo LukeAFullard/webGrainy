@@ -644,7 +644,9 @@ export function computeWentworthHistogram(
     if (!Number.isFinite(w) || w <= 0) continue;
 
     const phi = -Math.log2(dMm);
-    const rawIdx = Math.floor((phi - minPhi) / stepPhi);
+    // Bins are [mmMin, mmMax) in size, i.e. (phiMin, phiMax] in φ, matching the Wentworth
+    // class rule used elsewhere (2 mm is gravel, 64 mm cobble, 256 mm boulder).
+    const rawIdx = Math.ceil((phi - minPhi) / stepPhi) - 1;
     const idx = Math.min(numBins - 1, Math.max(0, rawIdx));
 
     const bin = bins[idx];

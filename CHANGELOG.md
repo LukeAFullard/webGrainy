@@ -41,6 +41,23 @@ All notable changes to webGrainy are recorded here. The format follows
 - **Quantized Cellpose-SAM weights (INT8, FP4) always run on the CPU (WASM)**
   (`WEBGPU_UNVERIFIED_MODELS`). They are unverified on WebGPU, and WebGPU has corrupted INT8
   `DequantizeLinear` output in another model with values the output checks cannot catch.
+- **Minor fixes.**
+  - The per-grain CSV `included_in_stats` column now follows the same size cutoffs and size
+    metric as the summary exports.
+  - Grain sizes never mix units (`grainSizeIn`). A missing mm value (for example min-Feret) is
+    derived from the grain's own scale, or the grain is skipped. It is never replaced by a px value.
+  - Cancelling during post-processing now terminates the worker; a new one is created for the
+    next analysis.
+  - Perspective rectification maps the reference to exactly width/mm-per-px by
+    height/mm-per-px output pixels (not rounded per axis), so pixels are square and the reported
+    mm/px holds on both axes.
+  - Project archives keep the pre-enhancement original, so "Revert" still works after
+    import. Import is all-or-nothing: the site is written last, and a failed import removes what
+    it wrote. Photo IDs that already exist are re-assigned, never overwritten, and orphan
+    results are skipped.
+  - The summary CSV has a `summary,excluded_cutoff_grains` row.
+  - The Wentworth histogram uses [lo, hi) mm bins like the class percentages, so 2 / 64 /
+    256 mm grains fall in gravel / cobble / boulder in both.
 - **Documentation.**
   - The `weightedPsdPercentiles` docstring and `audit/oracle.py` now describe the log2 (φ-space)
     interpolation actually used. The oracle output was regenerated.

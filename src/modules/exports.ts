@@ -110,7 +110,19 @@ export async function buildExport(kind: ExportKind, ctx: ExportContext): Promise
     case 'photo-grains-csv':
       return session
         ? {
-            blob: new Blob([session.exportCsv({ includeMetadata: true, ...(photoMeta ? { photoMetadata: photoMeta } : {}) })], { type: 'text/csv' }),
+            blob: new Blob(
+              [
+                session.exportCsv({
+                  includeMetadata: true,
+                  sizeMetric,
+                  ...(photoMeta ? { photoMetadata: photoMeta } : {}),
+                  ...(ctx.siteOptions
+                    ? { cutoffs: { minBaxisPx: ctx.siteOptions.minBaxisPx ?? 15, minSizeMm: ctx.siteOptions.minSizeMm ?? 0 } }
+                    : {}),
+                }),
+              ],
+              { type: 'text/csv' },
+            ),
             filename: `${photoFile}_grains.csv`,
           }
         : null;

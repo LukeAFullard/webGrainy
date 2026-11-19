@@ -202,6 +202,59 @@ describe('projectStorage', () => {
     expect(await getSite('site-1', opts)).toBeUndefined();
   });
 
+  describe('archives (regression: backup kept, never overwrite, all-or-nothing import)', () => {
+    const site: SiteRecord = { siteId: 'S', name: 'Bar', createdAt: 1, updatedAt: 1, options: { poolingMode: 'physical-area' }, photoOrder: ['P'] };
+    const enhancedPhoto: PhotoRecord = {
+      photoId: 'P', siteId: 'S', label: 'q1', imageBlob: new Blob([new Uint8Array([9, 9])], { type: 'image/png' }),
+      width: 80, height: 80, addedAt: 1, included: true,
+      calibration: { mmPerPx: 0.25, pointA: { x: 0, y: 0 }, pointB: { x: 80, y: 0 }, physicalLengthMm: 20, pixelDistance: 80 },
+      originalBackup: {
+        imageBlob: new Blob([new Uint8Array([1, 2, 3])], { type: 'image/jpeg' }), width: 40, height: 40,
+        calibration: { mmPerPx: 0.5, pointA: { x: 0, y: 0 }, pointB: { x: 40, y: 0 }, physicalLengthMm: 20, pixelDistance: 40 },
+      },
+    };
+    async function archiveOf(): Promise<Blob> {
+      const opts = { indexedDB: createProjectMockIDB() };
+      await saveSite(site, opts);
+      await savePhoto(enhancedPhoto, opts);
+      await savePhotoResult({ photoId: 'P', status: 'done', serializedSession: makeTestSession().toSerialized(), updatedAt: 1 }, opts);
+      return exportProjectArchive('S', opts);
+    }
+
+    it('keeps the pre-enhancement original through export and import', async () => {
+      const opts = { indexedDB: createProjectMockIDB() };
+      await importProjectArchive(await archiveOf(), opts);
+      const p = await getPhoto('P', opts);
+      expect(p?.originalBackup?.width).toBe(40);
+      expect(p?.originalBackup?.calibration?.mmPerPx).toBe(0.5);
+      expect(p?.originalBackup?.imageBlob.type).toBe('image/jpeg');
+      expect(Array.from(new Uint8Array(await p!.originalBackup!.imageBlob.arrayBuffer()))).toEqual([1, 2, 3]);
+    });
+
+    it('re-ids photos that already exist elsewhere instead of overwriting them', async () => {
+      const opts = { indexedDB: createProjectMockIDB() };
+      const other = { ...enhancedPhoto, siteId: 'OTHER', label: 'keep me' };
+      await saveSite({ ...site, siteId: 'OTHER', photoOrder: ['P'] }, opts);
+      await savePhoto(other, opts);
+      const id = await importProjectArchive(await archiveOf(), opts);
+      expect(id).not.toBe('S');
+      expect((await getPhoto('P', opts))?.label).toBe('keep me');
+      const imported = await listSitePhotos(id, opts);
+      expect(imported).toHaveLength(1);
+      expect(imported[0]!.photoId).not.toBe('P');
+      expect((await getPhotoResult(imported[0]!.photoId, opts))?.status).toBe('done');
+    });
+
+    it('leaves nothing behind when a write fails part-way', async () => {
+      const idb = createProjectMockIDB({ failPut: (store) => store === 'sites' });
+      const opts = { indexedDB: idb };
+      await expect(importProjectArchive(await archiveOf(), opts)).rejects.toThrow(/mock put failure/);
+      expect(await getPhoto('P', opts)).toBeUndefined();
+      expect(await getPhotoResult('P', opts)).toBeUndefined();
+      expect(await getSite('S', opts)).toBeUndefined();
+    });
+  });
+
   it('runs sequential batch processing with bitmap cleanup and AbortSignal cancellation', async () => {
     const idb = createProjectMockIDB();
     const opts = { indexedDB: idb };

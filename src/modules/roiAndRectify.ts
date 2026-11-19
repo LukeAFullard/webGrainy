@@ -614,10 +614,12 @@ export function rectifyPerspective(
   const paddingPx = Math.max(0, Math.round(input.paddingPx ?? 0));
   const maxOutputDimPx = Math.max(64, Math.round(input.maxOutputDimPx ?? 4096));
 
-  let refW = Math.max(1, Math.round(input.physicalWidthMm / mmPerPx));
-  let refH = Math.max(1, Math.round(input.physicalHeightMm / mmPerPx));
-  let outW = refW + 2 * paddingPx;
-  let outH = refH + 2 * paddingPx;
+  // The reference rectangle maps to exactly physicalWidthMm / mmPerPx by
+  // physicalHeightMm / mmPerPx output pixels (not rounded), so output pixels are square and
+  // `mmPerPx` holds on both axes. The canvas is the rectangle rounded up, plus padding.
+  const ceilPx = (v: number): number => Math.max(1, Math.ceil(v - 1e-9));
+  let outW = ceilPx(input.physicalWidthMm / mmPerPx) + 2 * paddingPx;
+  let outH = ceilPx(input.physicalHeightMm / mmPerPx) + 2 * paddingPx;
 
   if (outW > maxOutputDimPx || outH > maxOutputDimPx) {
     const availW = Math.max(1, maxOutputDimPx - 2 * paddingPx);
@@ -627,13 +629,13 @@ export function rectifyPerspective(
       input.physicalHeightMm / availH,
     );
     mmPerPx = Math.max(mmPerPx, minMmPerPx);
-    refW = Math.max(1, Math.round(input.physicalWidthMm / mmPerPx));
-    refH = Math.max(1, Math.round(input.physicalHeightMm / mmPerPx));
-    outW = Math.min(maxOutputDimPx, refW + 2 * paddingPx);
-    outH = Math.min(maxOutputDimPx, refH + 2 * paddingPx);
+    outW = Math.min(maxOutputDimPx, ceilPx(input.physicalWidthMm / mmPerPx) + 2 * paddingPx);
+    outH = Math.min(maxOutputDimPx, ceilPx(input.physicalHeightMm / mmPerPx) + 2 * paddingPx);
   }
 
-  const actualMmPerPx = input.physicalWidthMm / refW;
+  const refW = input.physicalWidthMm / mmPerPx;
+  const refH = input.physicalHeightMm / mmPerPx;
+  const actualMmPerPx = mmPerPx;
   const dstCorners: [Point2D, Point2D, Point2D, Point2D] = [
     { x: paddingPx, y: paddingPx },
     { x: paddingPx + refW, y: paddingPx },

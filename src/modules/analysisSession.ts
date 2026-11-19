@@ -700,7 +700,15 @@ export class AnalysisSession {
    * flagged in `in_roi`. With `includeMetadata`, `# key: value` provenance lines are
    * prepended (read with e.g. `pandas.read_csv(path, comment='#')`).
    */
-  exportCsv(options?: { includeMetadata?: boolean; photoMetadata?: Record<string, unknown> }): string {
+  exportCsv(options?: {
+    includeMetadata?: boolean;
+    photoMetadata?: Record<string, unknown>;
+    /** Size metric and cutoffs used by the summaries, so `included_in_stats` matches them. */
+    sizeMetric?: SizeMetric;
+    cutoffs?: { minBaxisPx?: number; minSizeMm?: number };
+  }): string {
+    const sizeMetric = options?.sizeMetric ?? 'bAxis';
+    const statsIds = new Set(this.statsGrainsForSummaries(sizeMetric, options?.cutoffs).map((g) => g.id));
     const hasFeret = this.grains.some((g) => g.minFeretPx !== undefined);
     const header =
       'grain_id,centroid_x,centroid_y,area_px,a_axis_px,b_axis_px,d_eq_px,a_axis_mm,b_axis_mm,d_eq_mm' +
@@ -711,7 +719,6 @@ export class AnalysisSession {
     const lines: string[] = options?.includeMetadata
       ? [...metadataCommentLines(this.getExportMetadata(options.photoMetadata)), header]
       : [header];
-    const statsIds = new Set(this.statsGrainsForSummaries().map((g) => g.id));
     const inRoi =
       this.roiConfig !== undefined
         ? new Set(this.getStatsGrains().map((g) => g.id))

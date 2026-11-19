@@ -18,6 +18,22 @@ export const MIN_GRAINS_RELIABLE = 30;
 export const MIN_GRAINS_ADEQUATE = 100;
 
 /**
+ * A grain's size for `metric` in `unit`, never mixing units. In px, a missing min-Feret
+ * falls back to the b-axis (px). In mm, a missing mm value is derived from the grain's own
+ * px value and scale (`bAxisMm / bAxisPx`); if no mm scale exists the result is NaN (the
+ * grain is then skipped), never a px number labelled as mm.
+ */
+export function grainSizeIn(grain: GrainMorphometrics, metric: SizeMetric, unit: 'mm' | 'px'): number {
+  const px = metric === 'dEq' ? grain.dEqPx : metric === 'minFeret' ? (grain.minFeretPx ?? grain.bAxisPx) : grain.bAxisPx;
+  if (unit === 'px') return px;
+  const mm = metric === 'dEq' ? grain.dEqMm : metric === 'minFeret' ? grain.minFeretMm : grain.bAxisMm;
+  if (typeof mm === 'number' && Number.isFinite(mm)) return mm;
+  const b = grain.bAxisMm;
+  if (typeof b === 'number' && Number.isFinite(b) && grain.bAxisPx > 0) return px * (b / grain.bAxisPx);
+  return Number.NaN;
+}
+
+/**
  * Filters out border-touching grains when `excludeBorder` is `true` (default).
  */
 export function filterBorderGrains(
@@ -396,8 +412,8 @@ export function computeSedimentStats(
   for (let i = 0; i < n; i++) {
     const g = included[i];
     if (g === undefined) continue;
-    bVals[i] = unit === 'mm' ? (g.bAxisMm ?? g.bAxisPx) : g.bAxisPx;
-    dEqVals[i] = unit === 'mm' ? (g.dEqMm ?? g.dEqPx) : g.dEqPx;
+    bVals[i] = grainSizeIn(g, 'bAxis', unit);
+    dEqVals[i] = grainSizeIn(g, 'dEq', unit);
     areaWeights[i] = g.areaPx;
     numberWeights[i] = 1;
   }
@@ -415,10 +431,7 @@ export function computeSedimentStats(
     for (let i = 0; i < n; i++) {
       const g = included[i];
       if (g === undefined) continue;
-      feretVals[i] =
-        unit === 'mm'
-          ? (g.minFeretMm ?? g.minFeretPx ?? g.bAxisPx)
-          : (g.minFeretPx ?? g.bAxisPx);
+      feretVals[i] = grainSizeIn(g, 'minFeret', unit);
     }
     areaWeightedMinFeret = computePsdPercentiles(feretVals, areaWeights);
     numberWeightedMinFeret = computePsdPercentiles(feretVals, numberWeights);
@@ -463,9 +476,7 @@ export function computeSedimentStats(
       effectiveMetric === 'dEq'
         ? dEqVals[i]!
         : effectiveMetric === 'minFeret'
-          ? unit === 'mm'
-            ? (g.minFeretMm ?? g.minFeretPx ?? g.bAxisPx)
-            : (g.minFeretPx ?? g.bAxisPx)
+          ? grainSizeIn(g, 'minFeret', unit)
           : bVals[i]!;
   }
   const extra = n > 0 ? computeExtraGrainStats(metricVals, areaWeights, fwPsd, unit) : undefined;
@@ -551,6 +562,7 @@ export function summaryCsvRows(report: SedimentStatsReport): string[] {
   lines.push(`summary,total_grains,${report.totalGrains},count`);
   lines.push(`summary,included_grains,${report.includedGrains},count`);
   lines.push(`summary,excluded_border_grains,${report.excludedBorderGrains},count`);
+  lines.push(`summary,excluded_cutoff_grains,${report.excludedCutoffGrains ?? 0},count`);
   lines.push(`summary,unit,${report.unit},unit`);
 
   const distributions: Array<[string, PsdPercentiles]> = [

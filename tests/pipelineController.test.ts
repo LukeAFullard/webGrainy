@@ -442,6 +442,50 @@ describe('pipelineController (ImageGrainsEngine & AnalysisSession)', () => {
     await midEngine.dispose();
   });
 
+  it('regression: cancelling during post-processing terminates the worker; the next analysis gets a new one', async () => {
+    const workers: Array<{ terminate: ReturnType<typeof vi.fn>; respond: boolean }> = [];
+    const makeWorker = (respond: boolean): Worker => {
+      const listeners = new Set<(ev: unknown) => void>();
+      const rec = { terminate: vi.fn(), respond };
+      workers.push(rec);
+      return {
+        addEventListener(type: string, fn: (ev: unknown) => void) { if (type === 'message') listeners.add(fn); },
+        removeEventListener(type: string, fn: (ev: unknown) => void) { if (type === 'message') listeners.delete(fn); },
+        postMessage(msg: WorkerRequest) {
+          if (!rec.respond) return; // a long job that never finishes on its own
+          queueMicrotask(() => {
+            const result = flowsToMasksBrowser(msg.flowY, msg.flowX, msg.cellprob, msg.width, msg.height, msg.options);
+            for (const fn of listeners) fn({ data: { type: 'result', requestId: msg.requestId, result } as WorkerResponse });
+          });
+        },
+        terminate: rec.terminate,
+      } as unknown as Worker;
+    };
+    let first = true;
+    const engine = new ImageGrainsEngine({
+      sessionFactory: async (kind) => createMockSession(kind, [{ cx: 32, cy: 32, rx: 12, ry: 10 }]),
+      workerFactory: () => {
+        const w = makeWorker(!first);
+        first = false;
+        return w;
+      },
+    });
+    const img = makeRgbaImage(64, 64, 'uniform');
+    const ac = new AbortController();
+    await expect(
+      engine.analyzeImage(img, {
+        inferencePipeline: 'legacy', model: 'unet', scaleMode: '1.0x', signal: ac.signal,
+        onProgress: (stage) => { if (stage === 'postprocess') queueMicrotask(() => ac.abort()); },
+      }),
+    ).rejects.toMatchObject({ name: 'AbortError' });
+    expect(workers).toHaveLength(1);
+    expect(workers[0]!.terminate).toHaveBeenCalledTimes(1);
+    const ok = await engine.analyzeImage(img, { inferencePipeline: 'legacy', model: 'unet', scaleMode: '1.0x' });
+    expect(workers).toHaveLength(2);
+    expect(ok.getResult().grainCount).toBe(1);
+    await engine.dispose();
+  });
+
   it('executes post-processing via workerFactory when provided and terminates worker on dispose()', async () => {
     const terminateMock = vi.fn();
     const listeners = new Map<string, Set<(ev: unknown) => void>>();
