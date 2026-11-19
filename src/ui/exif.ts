@@ -96,8 +96,16 @@ export async function parseJpegExifMetadata(
           }
         };
 
-        parseIfd(ifd0Offset, (tag, _type, count, valOrOff) => {
-          if (tag === 0x0132 && count > 4 && !meta.timestamp) {
+        parseIfd(ifd0Offset, (tag, _type, count, valOrOff, entry) => {
+          if (tag === 0x010f && count > 0) {
+            const off = count <= 4 ? entry + 8 : tiffStart + valOrOff;
+            const str = readAscii(view, off, count).trim();
+            if (str) meta.cameraMake = str;
+          } else if (tag === 0x0110 && count > 0) {
+            const off = count <= 4 ? entry + 8 : tiffStart + valOrOff;
+            const str = readAscii(view, off, count).trim();
+            if (str) meta.cameraModel = str;
+          } else if (tag === 0x0132 && count > 4 && !meta.timestamp) {
             const str = readAscii(view, tiffStart + valOrOff, count).trim();
             if (str) meta.timestamp = str;
           } else if (tag === 0x8769) {
@@ -108,10 +116,13 @@ export async function parseJpegExifMetadata(
         });
 
         if (exifIfdOffset !== null) {
-          parseIfd(exifIfdOffset, (tag, _type, count, valOrOff) => {
+          parseIfd(exifIfdOffset, (tag, type, count, valOrOff, entry) => {
             if (tag === 0x9003 && count > 4) {
               const str = readAscii(view, tiffStart + valOrOff, count).trim();
               if (str) meta.timestamp = str;
+            } else if (tag === 0xa405 && type === 3 && count >= 1) {
+              const fl35 = view.getUint16(entry + 8, littleEndian);
+              if (fl35 > 0) meta.focalLength35mm = fl35;
             }
           });
         }
@@ -141,7 +152,13 @@ export async function parseJpegExifMetadata(
           }
         }
 
-        return meta.timestamp !== undefined || meta.gps !== undefined ? meta : undefined;
+        return meta.timestamp !== undefined ||
+          meta.gps !== undefined ||
+          meta.cameraMake !== undefined ||
+          meta.cameraModel !== undefined ||
+          meta.focalLength35mm !== undefined
+          ? meta
+          : undefined;
       }
     }
 

@@ -17,6 +17,7 @@ import {
 } from '../modules/siteWorkspace.js';
 import { CanvasViewport } from './canvasViewport.js';
 import { parseJpegExifMetadata } from './exif.js';
+import { computeBlurScoreFromRgba, computeEffectiveDetectionLimit } from '../modules/photoQuality.js';
 import { renderHelpModalHtml } from './help.js';
 import { wasmThreadsFor } from '../modules/onnxInference.js';
 import { GUIDE_HIDDEN_KEY, guideInputFrom, guideSteps, renderGuideHtml } from './onboarding.js';
@@ -226,7 +227,14 @@ const actions = createWorkspaceActions({
       bmp.close();
       return size;
     },
-    metadata: (file) => parseJpegExifMetadata(file),
+    metadata: async (file) => {
+      const [exif, blurScore] = await Promise.all([
+        parseJpegExifMetadata(file),
+        computeBlurScoreFromBlob(file),
+      ]);
+      if (!exif && blurScore === undefined) return undefined;
+      return { ...(exif ?? {}), ...(blurScore !== undefined ? { blurScore } : {}) };
+    },
     rectify: (image, corners, w, h) => rectifyWithCanvas(image, corners, w, h, rectifyPerspective),
   },
   syncViewport: (fit) => syncViewport(fit),
@@ -969,6 +977,29 @@ function eventContext(): EventContext {
   };
 }
 
+/** Fast 256 px thumbnail Laplacian-variance sharpness check (0 MB, instant). */
+async function computeBlurScoreFromBlob(blob: Blob): Promise<number | undefined> {
+  try {
+    const bmp = await createImageBitmap(blob);
+    const maxSide = 256;
+    const k = Math.min(1, maxSide / Math.max(bmp.width, bmp.height));
+    const c = document.createElement('canvas');
+    c.width = Math.max(3, Math.round(bmp.width * k));
+    c.height = Math.max(3, Math.round(bmp.height * k));
+    const ctx = c.getContext('2d');
+    if (!ctx) {
+      bmp.close();
+      return undefined;
+    }
+    ctx.drawImage(bmp, 0, 0, c.width, c.height);
+    bmp.close();
+    const img = ctx.getImageData(0, 0, c.width, c.height);
+    return computeBlurScoreFromRgba(img.data, img.width, img.height);
+  } catch {
+    return undefined;
+  }
+}
+
 /** A small JPEG of a photo for the printable report. */
 async function photoThumbDataUrl(blob: Blob, maxSide: number): Promise<string | undefined> {
   try {
@@ -1036,6 +1067,26 @@ async function buildReport(): Promise<string | null> {
   const ap = st.analysisParams;
   const so = st.siteOptions;
   const hist = report.unit === 'mm' ? sizeHistogramFromWentworth(report.wentworthHistogram10Phi, 1) : null;
+
+  const limitValues: number[] = [];
+  const calibratedScales: number[] = [];
+  let manualEditsCount = 0;
+  for (const p of report.perPhoto) {
+    const sess = st.sessions.get(p.photoId);
+    if (sess?.canUndo) manualEditsCount++;
+    if (p.mmPerPx !== undefined && p.mmPerPx > 0) calibratedScales.push(p.mmPerPx);
+    const lim = computeEffectiveDetectionLimit({
+      minSizeWorkingPx: sess?.getProvenance()?.postProcess?.minSize ?? ap.minSize,
+      ...(sess ? { effectiveScaleFactor: sess.workingImage.effectiveScaleFactor } : {}),
+      ...(so.minBaxisPx !== undefined ? { minBaxisPx: so.minBaxisPx } : {}),
+      ...(report.unit === 'mm' && p.mmPerPx !== undefined ? { mmPerPx: p.mmPerPx } : {}),
+    });
+    if (lim) limitValues.push(lim.value);
+  }
+  const detectionLimit = limitValues.length > 0 ? Math.max(...limitValues) : undefined;
+  const resolutionRangeMmPerPx: [number, number] | undefined =
+    calibratedScales.length > 0 ? [Math.min(...calibratedScales), Math.max(...calibratedScales)] : undefined;
+
   const html = buildSiteReportHtml({
     site,
     report,
@@ -1049,6 +1100,9 @@ async function buildReport(): Promise<string | null> {
       ['Flow threshold / cell probability', `${ap.flowThreshold} / ${ap.cellprobThreshold}`],
       ['Grains touching the photo edge', ap.excludeBorder ? 'left out' : 'counted'],
     ],
+    ...(detectionLimit !== undefined ? { detectionLimit } : {}),
+    manualEditsCount,
+    ...(resolutionRangeMmPerPx ? { resolutionRangeMmPerPx } : {}),
     psdSvg: renderPsdChartSvg({
       psd: report.psd,
       unit: report.unit,
@@ -1058,6 +1112,7 @@ async function buildReport(): Promise<string | null> {
       ciLower: report.bootstrapCi.lower,
       ciUpper: report.bootstrapCi.upper,
       perPhotoCurves: report.perPhoto,
+      ...(detectionLimit !== undefined ? { detectionLimit } : {}),
       lightTheme: true,
     }),
     histogramSvg: hist && hist.bins.length > 0 ? renderSizeHistogramSvg(hist, true, 'Size distribution (area-weighted %, 1 φ classes)') : null,
