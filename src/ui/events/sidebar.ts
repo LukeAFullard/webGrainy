@@ -80,6 +80,10 @@ export const sidebarActions: Record<string, ActionHandler> = {
   },
   'run-batch': (_el, ctx) => void ctx.actions.runBatch(),
   'cancel-batch': (_el, ctx) => ctx.actions.cancelBatch(),
+  'apply-update': (_el, ctx) => {
+    if (ctx.ui.applyUpdate?.()) ctx.store.setState({ statusMessage: 'Updating webGrainy…' });
+    else ctx.store.setState({ statusMessage: 'The update will be available when the current analysis finishes.' });
+  },
   'run-active': (_el, ctx) => {
     const id = ctx.store.getState().activePhotoId;
     if (id && confirmDiscardEdits(ctx, [id])) void ctx.actions.runBatch([id]);

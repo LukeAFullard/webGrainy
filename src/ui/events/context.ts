@@ -55,6 +55,8 @@ export interface EventContext {
     /** Asks for a site name; null if cancelled. */
     askSiteName(message: string, current: string): string | null;
     scrollSidebarToTop(): void;
+    /** Activate the waiting app version and reload; false if none waits or work is running. */
+    applyUpdate?(): boolean;
     downloadChart(id: string, format: 'svg' | 'png'): Promise<void>;
     download(blob: Blob, filename: string): void;
     /** Opens the printable site report in a new tab (or downloads it if pop-ups are blocked). */

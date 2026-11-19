@@ -22,6 +22,7 @@ import { parseJpegExifMetadata } from './exif.js';
 import { computeBlurScoreFromRgba, computeEffectiveDetectionLimit } from '../modules/photoQuality.js';
 import { enhanceImageBuffer, type EnhanceKind, type EnhanceProgressEvent } from '../modules/imageEnhance.js';
 import { OrtWorkerHost } from '../modules/ortWorkerSession.js';
+import { manageSwUpdates, type SwUpdateController } from './swUpdate.js';
 import { decodeTiffBuffer, isSupportedImageFile, isTiffFile } from '../modules/tiffDecode.js';
 import { renderHelpModalHtml } from './help.js';
 import { wasmThreadsFor } from '../modules/onnxInference.js';
@@ -393,7 +394,7 @@ function renderViewportExtras(state: AppState): void {
   const pt = viewport?.getCursorImgPt();
   const zoomPct = viewport ? Math.round(viewport.getZoom() * 100) : 100;
   footerEl.innerHTML = `
-    <span>${esc(state.statusMessage)}</span>
+    <span>${state.updateReady ? `<button type="button" class="btn btn-xs btn-primary" data-action="apply-update" ${state.batchRunning || state.enhancing ? 'disabled title="Available when the analysis finishes"' : 'title="A new version is installed. Reload to use it (your data is kept)."'}>Reload to update</button> ` : ''}${esc(state.statusMessage)}</span>
     <span>${activePhoto ? `${activePhoto.width}×${activePhoto.height}px | Zoom ${zoomPct}%` : ''}${pt ? ` | (${Math.round(pt.x)}, ${Math.round(pt.y)})` : ''}</span>
   `;
 
@@ -1020,6 +1021,7 @@ function eventContext(): EventContext {
         }, 'landing-heading');
       },
       focusGrain: (id) => viewport?.focusOnGrain(id),
+      applyUpdate: () => swUpdates?.applyUpdate() ?? false,
       isTyping: () => {
         const el = document.activeElement;
         if (!el) return false;
@@ -1459,26 +1461,24 @@ function attachDelegatedHandlers(): void {
   window.addEventListener('offline', () => store.setState({ isOnline: false }));
 }
 
+let swUpdates: SwUpdateController | null = null;
+
 async function registerServiceWorker(): Promise<void> {
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
     store.setState({ swStatus: 'registering' });
     try {
       const hadController = Boolean(navigator.serviceWorker.controller);
       const reg = await navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' });
-      // A waiting worker never activates on a plain reload, so activate it explicitly and
-      // ask the user to reload once the new version controls the page.
-      const activateWaiting = (worker: ServiceWorker | null): void => {
-        worker?.postMessage({ type: 'SKIP_WAITING' });
-      };
-      if (reg.waiting && hadController) activateWaiting(reg.waiting);
-      reg.addEventListener('updatefound', () => {
-        const installing = reg.installing;
-        if (!installing) return;
-        installing.addEventListener('statechange', () => {
-          if (installing.state === 'installed' && navigator.serviceWorker.controller) {
-            activateWaiting(installing);
-          }
-        });
+      // New versions wait for the user's "Reload to update" (see swUpdate.ts): activating
+      // one under a running page made it load mismatched worker / runtime files.
+      swUpdates = manageSwUpdates(reg, {
+        hadController,
+        hasController: () => Boolean(navigator.serviceWorker.controller),
+        reload: () => location.reload(),
+        onUpdateReady: () => store.setState({ updateReady: true }),
+        isBusy: () => store.getState().batchRunning || store.getState().enhancing === true,
+        addControllerChangeListener: (cb) => navigator.serviceWorker.addEventListener('controllerchange', cb),
+        onStateChange: (w, cb) => (w as ServiceWorker).addEventListener('statechange', cb),
       });
       // The service worker adds COOP/COEP headers, but a page is only cross-origin
       // isolated if its own navigation response carried them. On the first visit (or
@@ -1497,16 +1497,8 @@ async function registerServiceWorker(): Promise<void> {
       };
       if (hadController) reloadForIsolation();
       navigator.serviceWorker.addEventListener('controllerchange', () => {
-        if (!hadController) {
-          reloadForIsolation();
-          return;
-        }
-        if (hadController) {
-          store.setState({
-            statusMessage:
-              'A new version of webGrainy was installed. Save your work and reload the page to use it.',
-          });
-        }
+        // First install: the page is now controlled; reload once for cross-origin isolation.
+        if (!hadController) reloadForIsolation();
       });
       store.setState({ swStatus: 'ready' });
     } catch {

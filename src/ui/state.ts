@@ -78,6 +78,8 @@ export interface AppState {
   capabilities: EngineCapabilities | null;
   isOnline: boolean;
   swStatus: SwStatus;
+  /** A new app version is installed and waits for "Reload to update". */
+  updateReady: boolean;
 
   sites: SiteRecord[];
   activeSiteId: string | null;
@@ -166,6 +168,7 @@ export function createInitialState(): AppState {
     capabilities: null,
     isOnline: typeof navigator !== 'undefined' ? navigator.onLine : true,
     swStatus: 'unsupported',
+    updateReady: false,
 
     sites: [],
     activeSiteId: null,
