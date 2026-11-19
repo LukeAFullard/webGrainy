@@ -133,7 +133,7 @@ export function renderDashboardHtml(state: AppState, view: DashboardView): strin
     const enhBannerHtml = activeEnh
       ? `<div class="basis-banner row-between" style="margin-top:6px;gap:8px;">
           <span>Enhanced with <strong>${esc(activeEnh.modelName)}</strong> — inspect outlines against the unenhanced photo.</span>
-          ${activePhoto?.originalBackup ? `<button type="button" class="btn btn-sm" data-action="enhance-revert" ${state.batchRunning ? 'disabled' : ''}>Revert</button>` : ''}
+          ${activePhoto?.originalBackup ? `<button type="button" class="btn btn-sm" data-action="enhance-revert" ${state.batchRunning || state.enhancing ? 'disabled' : ''}>Revert</button>` : ''}
         </div>`
       : '';
     const photoWarnHtml = activePhotoWarnings
@@ -141,7 +141,7 @@ export function renderDashboardHtml(state: AppState, view: DashboardView): strin
         (w) =>
           `<div class="warning-banner" style="margin-top:6px;">${esc(w.message)}${
             w.kind === 'blur' && !activeEnh
-              ? `<div style="margin-top:6px;"><button type="button" class="btn btn-sm" data-action="enhance-deblur" ${state.batchRunning ? 'disabled' : ''}>Try AI Deblur (NAFNet, 92 MB)</button></div>`
+              ? `<div style="margin-top:6px;"><button type="button" class="btn btn-sm" data-action="enhance-deblur" ${state.batchRunning || state.enhancing ? 'disabled' : ''}>Try AI Deblur (NAFNet, 92 MB)</button></div>`
               : ''
           }</div>`,
       )
@@ -225,9 +225,14 @@ export function renderDashboardHtml(state: AppState, view: DashboardView): strin
       ${chartBox('jackknife', 'Leave-one-photo-out influence on D50', (light) => renderJackknifeChartSvg(report?.jackknife ?? null, light), lightTheme)}
     `;
   } else if (state.dashboardTab === 'shape') {
-    // Cached on the session (recomputed only when its results change).
-    // Same grains as the statistics (inside the ROI, border rule applied), so n matches.
-    const ratios = activeSession ? activeSession.getExtendedStatsGrains().map((g) => g.aspectRatio) : [];
+    const cutoffs = {
+      minBaxisPx: state.siteOptions.minBaxisPx ?? 15,
+      minSizeMm: state.siteOptions.minSizeMm ?? 0,
+    };
+    // Same grains as the statistics (inside the ROI, border rule and cutoffs applied), so n matches.
+    const ratios = activeSession
+      ? activeSession.getExtendedStatsGrains(activeMetric, cutoffs).map((g) => g.aspectRatio)
+      : [];
     const arCounts = aspectRatioCounts(ratios, 10);
     const packingInfo = activeSession ? activeSession.getRoiFilterResult() : null;
 
@@ -241,11 +246,15 @@ export function renderDashboardHtml(state: AppState, view: DashboardView): strin
       <p class="field-hint">Grain shape for this photo. The size distribution is on the PSD tab.</p>
     `;
   } else {
+    const cutoffs = {
+      minBaxisPx: state.siteOptions.minBaxisPx ?? 15,
+      minSizeMm: state.siteOptions.minSizeMm ?? 0,
+    };
     const rose =
       isSite && report
         ? report.fabricRose
         : activeSession
-          ? activeSession.getFabricRose()
+          ? activeSession.getFabricRose(activeMetric, cutoffs)
           : computeFabricRoseStats([], { weighted: true, binCount: 12 });
     tabContent = `
       ${chartBox('fabric-rose', 'Grain orientation (fabric) rose', (light) => renderFabricRoseSvg(rose, light), lightTheme)}

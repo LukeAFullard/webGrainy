@@ -318,7 +318,7 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
    */
   async function runAllSites(): Promise<void> {
     const start = store.getState();
-    if (start.batchRunning) return;
+    if (start.batchRunning || enhancing) return;
     const activeId = start.activeSiteId;
     allSitesJobActive = true;
     job.acquireWakeLock();
@@ -417,7 +417,7 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
     lastBatchCancelled = false;
     const state = store.getState();
     const site = getActiveSite(state);
-    if (!site || state.batchRunning) return;
+    if (!site || state.batchRunning || enhancing) return;
 
     const controller = new AbortController();
     batchAbortController = controller;
@@ -660,7 +660,7 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
 
     enhancing = true;
     const label = kind === 'upscale-2x' ? 'PULSE 2× upscale' : 'NAFNet deblur';
-    store.setState({ statusMessage: `Releasing segmentation model and starting ${label}…` });
+    store.setState({ enhancing: true, statusMessage: `Releasing segmentation model and starting ${label}…` });
     try {
       // Strictly isolate memory: unload any main segmentation session first.
       await engine.releaseSessions?.();
@@ -739,6 +739,7 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
       });
     } finally {
       enhancing = false;
+      store.setState({ enhancing: false });
     }
   }
 
@@ -749,14 +750,23 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
     if (!photo?.originalBackup) return;
 
     const orig = photo.originalBackup;
+    const invScale = photo.width > 0 ? orig.width / photo.width : 1;
+    const scaledBack = scaleCalibrationAndRoi(
+      orig.calibration ? undefined : photo.calibration,
+      orig.roiConfig ? undefined : photo.roiConfig,
+      invScale,
+    );
+    const restoredCal = orig.calibration ?? scaledBack.calibration;
+    const restoredRoi = orig.roiConfig ?? scaledBack.roiConfig;
+
     const { originalBackup: _drop, calibration: _c, roiConfig: _r, metadata: _m, ...base } = photo;
     const restoredPhoto: PhotoRecord = {
       ...base,
       imageBlob: orig.imageBlob,
       width: orig.width,
       height: orig.height,
-      ...(orig.calibration ? { calibration: orig.calibration } : {}),
-      ...(orig.roiConfig ? { roiConfig: orig.roiConfig } : {}),
+      ...(restoredCal ? { calibration: restoredCal } : {}),
+      ...(restoredRoi ? { roiConfig: restoredRoi } : {}),
       ...(orig.metadata ? { metadata: orig.metadata } : {}),
     };
     await savePhoto(restoredPhoto);

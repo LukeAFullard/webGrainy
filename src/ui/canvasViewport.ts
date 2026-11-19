@@ -27,8 +27,13 @@ function hashColor(id: number): [number, number, number] {
   return [r, g, b];
 }
 
-function wentworthColor(grain: GrainMorphometrics): [number, number, number] {
-  const mm = grain.bAxisMm;
+function wentworthColor(grain: GrainMorphometrics, sizeMetric: SizeMetric = 'bAxis'): [number, number, number] {
+  const mm =
+    sizeMetric === 'minFeret'
+      ? (grain.minFeretMm ?? grain.bAxisMm)
+      : sizeMetric === 'dEq'
+        ? (grain.dEqMm ?? grain.bAxisMm)
+        : grain.bAxisMm;
   if (mm === undefined || mm <= 0) return hashColor(grain.id);
   if (mm < 2) return [245, 166, 35];      // Sand: amber
   if (mm < 16) return [59, 158, 255];     // Fine/Med Gravel: sky blue
@@ -533,9 +538,11 @@ export class CanvasViewport {
     calPoints: Point2D[];
     rectifyPoints: Point2D[];
   }): void {
+    const nextMetric = opts.sizeMetric ?? 'bAxis';
     const colorsChanged =
       this.overlays.wentworthColors !== opts.overlays.wentworthColors ||
-      this.overlays.instanceIds !== opts.overlays.instanceIds;
+      this.overlays.instanceIds !== opts.overlays.instanceIds ||
+      (opts.overlays.wentworthColors && this.sizeMetric !== nextMetric);
     if (this.tool !== opts.tool) {
       this.activePoints = [];
       this.splitTargetGrainId = null;
@@ -653,7 +660,7 @@ export class CanvasViewport {
       if (!rgb) {
         if (this.overlays.wentworthColors) {
           const g = grainMap.get(id);
-          rgb = g ? wentworthColor(g) : hashColor(id);
+          rgb = g ? wentworthColor(g, this.sizeMetric) : hashColor(id);
         } else {
           rgb = hashColor(id);
         }

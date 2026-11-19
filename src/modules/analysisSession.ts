@@ -756,39 +756,58 @@ export class AnalysisSession {
     return lines.join('\n');
   }
 
-  exportSummaryJson(sizeMetric: SizeMetric = 'bAxis'): string {
+  exportSummaryJson(
+    sizeMetric: SizeMetric = 'bAxis',
+    cutoffs?: { minBaxisPx?: number; minSizeMm?: number },
+  ): string {
     return JSON.stringify(
-      { metadata: this.getExportMetadata(), ...this.getStats(sizeMetric) },
+      { metadata: this.getExportMetadata(), ...this.getStats(sizeMetric, cutoffs) },
       null,
       2,
     );
   }
 
-  exportSummaryCsv(sizeMetric: SizeMetric = 'bAxis'): string {
+  exportSummaryCsv(
+    sizeMetric: SizeMetric = 'bAxis',
+    cutoffs?: { minBaxisPx?: number; minSizeMm?: number },
+  ): string {
     return [
       'section,metric,value,unit',
       ...metadataSummaryRows(this.getExportMetadata()),
-      ...summaryCsvRows(this.getStats(sizeMetric)),
-      ...this.summaryExtrasCsv(sizeMetric),
+      ...summaryCsvRows(this.getStats(sizeMetric, cutoffs)),
+      ...this.summaryExtrasCsv(sizeMetric, cutoffs),
     ].join('\n');
   }
 
-  /** Grains that count in the statistics: inside the ROI and (if set) not touching the border. */
-  private statsGrainsForSummaries(): GrainMorphometrics[] {
-    return filterBorderGrains(this.getStatsGrains(), this.excludeBorder);
+  /** Grains that count in the statistics: inside the ROI, border rule applied, and optional size cutoffs. */
+  private statsGrainsForSummaries(
+    sizeMetric: SizeMetric = 'bAxis',
+    cutoffs?: { minBaxisPx?: number; minSizeMm?: number },
+  ): GrainMorphometrics[] {
+    const minBaxisPx = Math.max(0, cutoffs?.minBaxisPx ?? 0);
+    const minSizeMm = Math.max(0, cutoffs?.minSizeMm ?? 0);
+    if (sizeMetric === 'minFeret' && (minBaxisPx > 0 || minSizeMm > 0)) {
+      this.ensureFeret();
+    }
+    const base = filterBorderGrains(this.getStatsGrains(), this.excludeBorder);
+    if (minBaxisPx <= 0 && minSizeMm <= 0) return base;
+    return base.filter((g) => grainPassesSizeCutoffs(g, { minBaxisPx, minSizeMm, sizeMetric }));
   }
 
   /**
    * Summary rows also shown in the dashboard: size-class histograms (area-weighted, 1 φ and
    * 0.5 φ bins), fabric (orientation) statistics, and warnings.
    */
-  private summaryExtrasCsv(sizeMetric: SizeMetric): string[] {
+  private summaryExtrasCsv(
+    sizeMetric: SizeMetric,
+    cutoffs?: { minBaxisPx?: number; minSizeMm?: number },
+  ): string[] {
     const out: string[] = [];
-    const grains = this.statsGrainsForSummaries();
+    const grains = this.statsGrainsForSummaries(sizeMetric, cutoffs);
     if (this.calibration === undefined) {
       // Uncalibrated: power-of-two pixel classes (the same as the dashboard histogram).
       for (const step of [1, 0.5] as const) {
-        const h = this.getSizeHistogram(step, sizeMetric);
+        const h = this.getSizeHistogram(step, sizeMetric, cutoffs);
         const sec = step === 1 ? 'size_class_px_x2' : 'size_class_px_xsqrt2';
         for (const b of h.bins) {
           const label = csvCell(`${+b.lo.toFixed(2)}-${+b.hi.toFixed(2)} px`);
@@ -805,7 +824,7 @@ export class AnalysisSession {
         out.push(`${sec}_count,${csvCell(`${b.label} [${b.mmMin}-${b.mmMax} mm]`)},${b.grainCount},count`);
       }
     }
-    const f = this.getFabricRose();
+    const f = this.getFabricRose(sizeMetric, cutoffs);
     out.push(`fabric,grain_count,${f.grainCount},count`);
     out.push(`fabric,mean_axial_orientation_deg,${f.meanAxialDeg},deg (0 = image vertical)`);
     out.push(`fabric,resultant_length_R,${f.resultantLength},ratio`);
@@ -813,7 +832,7 @@ export class AnalysisSession {
     out.push(`fabric,rayleigh_z,${f.rayleighZ},stat`);
     out.push(`fabric,rayleigh_p,${f.rayleighP ?? ''},p`);
     for (const b of f.bins) out.push(`fabric_bin,${b.startDeg}-${b.endDeg}deg,${b.proportionPct},%`);
-    const warnings = this.getStats(sizeMetric).warnings ?? [];
+    const warnings = this.getStats(sizeMetric, cutoffs).warnings ?? [];
     warnings.forEach((w, i) => out.push(`warning,${i + 1},${csvCell(w)},text`));
     return out;
   }
@@ -915,9 +934,12 @@ export class AnalysisSession {
     };
   }
 
-  /** Shape measures of the grains that count in the statistics (inside the ROI, border rule). */
-  getExtendedStatsGrains(): ExtendedGrainMorphometrics[] {
-    const ids = new Set(this.statsGrainsForSummaries().map((g) => g.id));
+  /** Shape measures of the grains that count in the statistics (inside the ROI, border rule, cutoffs). */
+  getExtendedStatsGrains(
+    sizeMetric: SizeMetric = 'bAxis',
+    cutoffs?: { minBaxisPx?: number; minSizeMm?: number },
+  ): ExtendedGrainMorphometrics[] {
+    const ids = new Set(this.statsGrainsForSummaries(sizeMetric, cutoffs).map((g) => g.id));
     return this.getExtendedGrains().filter((g) => ids.has(g.id));
   }
 
@@ -944,12 +966,7 @@ export class AnalysisSession {
     const cache = (this.derivedCache.sizeHistograms ??= new Map());
     let h = cache.get(key);
     if (h === undefined) {
-      if (sizeMetric === 'minFeret') this.ensureFeret();
-      const base = this.statsGrainsForSummaries();
-      const filtered =
-        minBaxisPx > 0 || minSizeMm > 0
-          ? base.filter((g) => grainPassesSizeCutoffs(g, { minBaxisPx, minSizeMm, sizeMetric }))
-          : base;
+      const filtered = this.statsGrainsForSummaries(sizeMetric, { minBaxisPx, minSizeMm });
       h = photoSizeHistogram(filtered, { step, sizeMetric });
       cache.set(key, h);
     }
@@ -958,13 +975,24 @@ export class AnalysisSession {
 
   /**
    * Area-weighted orientation (fabric) statistics of the grains that count in the
-   * statistics (inside the ROI, border rule applied). Cached.
+   * statistics (inside the ROI, border rule, and optional cutoffs applied). Cached when unfiltered.
    */
-  getFabricRose(): FabricRoseStats {
-    if (this.derivedCache.fabric === undefined) {
-      this.derivedCache.fabric = computeFabricRoseStats(this.statsGrainsForSummaries(), { weighted: true, binCount: 12 });
+  getFabricRose(
+    sizeMetric: SizeMetric = 'bAxis',
+    cutoffs?: { minBaxisPx?: number; minSizeMm?: number },
+  ): FabricRoseStats {
+    const minBaxisPx = Math.max(0, cutoffs?.minBaxisPx ?? 0);
+    const minSizeMm = Math.max(0, cutoffs?.minSizeMm ?? 0);
+    if (minBaxisPx === 0 && minSizeMm === 0) {
+      if (this.derivedCache.fabric === undefined) {
+        this.derivedCache.fabric = computeFabricRoseStats(this.statsGrainsForSummaries(), { weighted: true, binCount: 12 });
+      }
+      return this.derivedCache.fabric;
     }
-    return this.derivedCache.fabric;
+    return computeFabricRoseStats(
+      this.statsGrainsForSummaries(sizeMetric, { minBaxisPx, minSizeMm }),
+      { weighted: true, binCount: 12 },
+    );
   }
 
   private recomputeDerivedState(notify: boolean): void {

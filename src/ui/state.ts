@@ -122,6 +122,8 @@ export interface AppState {
   siteOptions: SiteAnalysisOptions;
 
   batchRunning: boolean;
+  /** True while an optional AI enhancement (2× Upscale / Deblur) is running. */
+  enhancing?: boolean;
   batchProgress: {
     completed: number;
     total: number;
@@ -215,6 +217,7 @@ export function createInitialState(): AppState {
     },
 
     batchRunning: false,
+    enhancing: false,
     batchProgress: null,
 
     activeModal: null,
