@@ -67,7 +67,7 @@ export function renderSidebarHtml(state: AppState, view: SidebarView): string {
           <button type="button" class="btn btn-sm" data-action="rename-site" title="Rename this site" ${activeSite ? '' : 'disabled'}>Rename</button>
           <button type="button" class="btn btn-sm" data-action="new-site" title="Create a new site">+ New</button>
 
-          <button type="button" class="btn btn-sm" data-action="import-archive" title="Open a saved .webgrainy.json project">Open</button>
+          <button type="button" class="btn btn-sm" data-action="import-archive" title="Open a saved .webgrainy project">Open</button>
         </div>
       </div>
       <select class="select" id="site-select" aria-label="Select active field site">
@@ -333,7 +333,7 @@ export function backupLineHtml(state: AppState, analysedCount: number, storageIn
   return `<div class="backup-line ${status.needsBackup ? 'needs-backup' : ''}">
     <div class="row" style="justify-content:space-between;gap:6px;">
       <span>${status.needsBackup ? '⚠ ' : ''}Last backed up: ${esc(status.ago)}${status.needsBackup && status.backedUpAt !== null ? ' (changed since)' : ''}</span>
-      <button type="button" class="btn btn-sm ${status.needsBackup ? 'btn-primary' : ''}" data-export="site-archive" title="Save this site (photos and results) as a .webgrainy.json project file">Back up now</button>
+      <button type="button" class="btn btn-sm ${status.needsBackup ? 'btn-primary' : ''}" data-export="site-archive" title="Save this site (photos and results) as a .webgrainy project file">Back up now</button>
     </div>
     ${status.needsBackup ? '<span class="field-hint">Your work is stored only in this browser. Save a project file to keep it safe or move it to another computer.</span>' : ''}
     ${storage}

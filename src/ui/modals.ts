@@ -278,7 +278,7 @@ export function renderExportModalHtml(state: AppState): string {
             <button type="button" class="btn btn-sm" data-export="site-summary-json" ${hasSiteReport ? '' : 'disabled'}>Site Summary JSON</button>
             <button type="button" class="btn btn-sm" data-export="site-grains-csv" ${hasSiteReport ? '' : 'disabled'}>Pooled Grains CSV</button>
             <button type="button" class="btn btn-sm" data-export="site-psd-svg" ${hasSiteReport ? '' : 'disabled'}>Printable SVG PSD Figure</button>
-            <button type="button" class="btn btn-sm" data-export="site-archive" ${activeSite ? '' : 'disabled'}>Export .webgrainy.json Archive</button>
+            <button type="button" class="btn btn-sm" data-export="site-archive" ${activeSite ? '' : 'disabled'}>Export .webgrainy Archive</button>
           </div>
         </div>
 

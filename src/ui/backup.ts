@@ -10,7 +10,7 @@ export const BACKUP_KEY = 'webgrainy-backup-v1';
 export interface SiteBackupInfo {
   /** Last time the site's photos, results, scale or ROI changed (ms since epoch). */
   changedAt?: number;
-  /** Last time the site was exported as a .webgrainy.json project (ms since epoch). */
+  /** Last time the site was exported as a .webgrainy project (ms since epoch). */
   backedUpAt?: number;
 }
 

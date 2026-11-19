@@ -68,12 +68,21 @@ export interface PhotoResultRecord {
 }
 
 interface ArchivedPhotoBackup extends Omit<PhotoOriginalBackup, 'imageBlob'> {
-  imageBase64: string;
+  imageBase64?: string;
+  imageRef?: ArchiveRef;
   imageMimeType: string;
 }
 
+/** Byte range in a v2 archive's binary payload (after the header). */
+interface ArchiveRef {
+  offset: number;
+  length: number;
+}
+
 interface ArchivedPhotoRecord extends Omit<PhotoRecord, 'imageBlob' | 'originalBackup'> {
-  imageBase64: string;
+  /** v1: image bytes as base64. v2: `imageRef` into the binary payload instead. */
+  imageBase64?: string;
+  imageRef?: ArchiveRef;
   imageMimeType: string;
   /** The photo before enhancement (so "Revert" still works after an export/import). */
   originalBackup?: ArchivedPhotoBackup;
@@ -86,9 +95,14 @@ function archiveMime(m: unknown): string {
 
 interface ArchivedSerializedSession
   extends Omit<SerializedAnalysisSession, 'workingMasks' | 'workingImage'> {
-  workingMasksBase64: string;
+  /** v1 */
+  workingMasksBase64?: string;
+  /** v2: little-endian Int32 label mask in the binary payload. */
+  workingMasksRef?: ArchiveRef;
   workingImage: Omit<SerializedAnalysisSession['workingImage'], 'data'> & {
-    dataBase64: string;
+    /** v1 (may be empty: sessions no longer keep the working pixels). */
+    dataBase64?: string;
+    dataRef?: ArchiveRef;
   };
 }
 
@@ -388,16 +402,6 @@ export async function deleteSite(
   );
 }
 
-function uint8ToBase64(bytes: Uint8Array): string {
-  let binary = '';
-  const chunkSize = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    const chunk = bytes.subarray(i, i + chunkSize);
-    binary += String.fromCharCode(...chunk);
-  }
-  return btoa(binary);
-}
-
 function base64ToUint8(b64: string): Uint8Array {
   const binary = atob(b64);
   const bytes = new Uint8Array(binary.length);
@@ -407,43 +411,11 @@ function base64ToUint8(b64: string): Uint8Array {
   return bytes;
 }
 
-function serializeSessionForArchive(
-  session: SerializedAnalysisSession,
-): ArchivedSerializedSession {
-  const maskBytes = new Uint8Array(
-    session.workingMasks.buffer,
-    session.workingMasks.byteOffset,
-    session.workingMasks.byteLength,
-  );
-  const imgBytes = new Uint8Array(
-    session.workingImage.data.buffer,
-    session.workingImage.data.byteOffset,
-    session.workingImage.data.byteLength,
-  );
-
-  const { data: _ignoredData, ...restWorkingImage } = session.workingImage;
-
-  return {
-    version: session.version,
-    workingMasksBase64: uint8ToBase64(maskBytes),
-    workingImage: {
-      ...restWorkingImage,
-      dataBase64: uint8ToBase64(imgBytes),
-    },
-    recommendation: session.recommendation,
-    ...(session.calibration !== undefined
-      ? { calibration: session.calibration }
-      : {}),
-    excludeBorder: session.excludeBorder,
-    borderMargin: session.borderMargin,
-    ...(session.provenance !== undefined ? { provenance: session.provenance } : {}),
-  };
-}
-
 function deserializeSessionFromArchive(
   archived: ArchivedSerializedSession,
+  bytes?: { masks: Uint8Array; image: Uint8Array },
 ): SerializedAnalysisSession {
-  const maskBytes = base64ToUint8(archived.workingMasksBase64);
+  const maskBytes = bytes?.masks ?? base64ToUint8(archived.workingMasksBase64 ?? '');
   if (maskBytes.byteLength % 4 !== 0) {
     throw new Error('Corrupt archived workingMasks buffer length.');
   }
@@ -453,10 +425,10 @@ function deserializeSessionFromArchive(
     maskBytes.byteLength / 4,
   ).slice();
 
-  const imgBytes = base64ToUint8(archived.workingImage.dataBase64);
+  const imgBytes = bytes?.image ?? base64ToUint8(archived.workingImage.dataBase64 ?? '');
   const workingImageData = new Uint8ClampedArray(imgBytes);
 
-  const { dataBase64: _ignored, ...restImg } = archived.workingImage;
+  const { dataBase64: _ignored, dataRef: _ignoredRef, ...restImg } = archived.workingImage;
 
   return {
     version: archived.version,
@@ -475,9 +447,28 @@ function deserializeSessionFromArchive(
   };
 }
 
+/** Project archive file names (.webgrainy; older versions wrote .webgrainy.json). */
+export function isProjectArchiveFileName(name: string): boolean {
+  const n = name.toLowerCase();
+  return n.endsWith('.webgrainy') || n.endsWith('.json');
+}
+
+/** First 8 bytes of a v2 (binary) project archive. */
+export const ARCHIVE_V2_MAGIC = 'WGRAINY2';
+/** Largest accepted v2 header (JSON metadata only; images and masks are binary). */
+export const MAX_ARCHIVE_HEADER_BYTES = 64 * 1024 * 1024;
+
 /**
- * Exports a site, all its photos, and all analysis results into a portable
- * `.webgrainy.json` archive Blob.
+ * Exports a site as a `.webgrainy` project archive (format version 2):
+ *
+ *   "WGRAINY2" | uint32 LE header length | UTF-8 JSON header | binary payload
+ *
+ * The header is the v1 archive JSON with every image and mask replaced by an
+ * `{offset, length}` reference into the payload (photos and backups as their original
+ * encoded files, label masks as little-endian Int32). The file is assembled from the
+ * stored Blobs without building one large string, so there is no size limit from the
+ * browser's maximum string length (~512 MB, about 40 photos in the old JSON format), and
+ * no base64 overhead.
  */
 export async function exportProjectArchive(
   siteId: string,
@@ -489,24 +480,32 @@ export async function exportProjectArchive(
   }
 
   const photos = await listSitePhotos(siteId, options);
+  const parts: BlobPart[] = [];
+  let offset = 0;
+  const addPart = (part: Blob | Uint8Array): ArchiveRef => {
+    const length = part instanceof Blob ? part.size : part.byteLength;
+    parts.push(part as BlobPart);
+    const ref = { offset, length };
+    offset += length;
+    return ref;
+  };
   const archivedPhotos: ArchivedPhotoRecord[] = [];
   const archivedResults: ArchivedResultRecord[] = [];
 
   for (const photo of photos) {
-    const buf = await photo.imageBlob.arrayBuffer();
     const { imageBlob, originalBackup, ...restPhoto } = photo;
     let archivedBackup: ArchivedPhotoBackup | undefined;
     if (originalBackup !== undefined) {
       const { imageBlob: backupBlob, ...restBackup } = originalBackup;
       archivedBackup = {
         ...restBackup,
-        imageBase64: uint8ToBase64(new Uint8Array(await backupBlob.arrayBuffer())),
+        imageRef: addPart(backupBlob),
         imageMimeType: backupBlob.type || 'application/octet-stream',
       };
     }
     archivedPhotos.push({
       ...restPhoto,
-      imageBase64: uint8ToBase64(new Uint8Array(buf)),
+      imageRef: addPart(imageBlob),
       imageMimeType: imageBlob.type || 'application/octet-stream',
       ...(archivedBackup !== undefined ? { originalBackup: archivedBackup } : {}),
     });
@@ -514,27 +513,56 @@ export async function exportProjectArchive(
     const res = await getPhotoResult(photo.photoId, options);
     if (res !== undefined) {
       const { serializedSession, ...restRes } = res;
-      archivedResults.push({
-        ...restRes,
-        ...(serializedSession !== undefined
-          ? { serializedSession: serializeSessionForArchive(serializedSession) }
-          : {}),
-      });
+      let archivedSession: ArchivedSerializedSession | undefined;
+      if (serializedSession !== undefined) {
+        const m = serializedSession.workingMasks;
+        const img = serializedSession.workingImage.data;
+        const { data: _d, ...restImg } = serializedSession.workingImage;
+        const { workingMasks: _m, workingImage: _w, ...restSession } = serializedSession;
+        archivedSession = {
+          ...restSession,
+          workingMasksRef: addPart(int32ToLittleEndianBytes(m)),
+          workingImage: {
+            ...restImg,
+            ...(img.length > 0 ? { dataRef: addPart(new Uint8Array(img.buffer, img.byteOffset, img.byteLength)) } : {}),
+          },
+        };
+      }
+      archivedResults.push({ ...restRes, ...(archivedSession !== undefined ? { serializedSession: archivedSession } : {}) });
     }
   }
 
-  const archive: ProjectArchiveV1 = {
+  const header = {
     format: 'webgrainy-project',
-    version: 1,
+    version: 2,
     exportedAt: new Date().toISOString(),
+    payloadBytes: offset,
     site,
     photos: archivedPhotos,
     results: archivedResults,
   };
-
-  return new Blob([JSON.stringify(archive, null, 2)], {
-    type: 'application/json;charset=utf-8',
+  const headerBytes = new TextEncoder().encode(JSON.stringify(header));
+  const lenBytes = new Uint8Array(4);
+  new DataView(lenBytes.buffer).setUint32(0, headerBytes.byteLength, true);
+  return new Blob([new TextEncoder().encode(ARCHIVE_V2_MAGIC), lenBytes, headerBytes, ...parts], {
+    type: 'application/octet-stream',
   });
+}
+
+/** Int32 label mask as little-endian bytes (independent of the platform's byte order). */
+function int32ToLittleEndianBytes(a: Int32Array): Uint8Array {
+  const out = new Uint8Array(a.length * 4);
+  const dv = new DataView(out.buffer);
+  for (let i = 0; i < a.length; i++) dv.setInt32(i * 4, a[i]!, true);
+  return out;
+}
+
+function littleEndianBytesToInt32Bytes(b: Uint8Array): Uint8Array {
+  // Returns bytes in platform order for `new Int32Array(buffer)`.
+  const dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
+  const out = new Int32Array(b.byteLength / 4);
+  for (let i = 0; i < out.length; i++) out[i] = dv.getInt32(i * 4, true);
+  return new Uint8Array(out.buffer);
 }
 
 export const exportSiteArchive = exportProjectArchive;
@@ -546,7 +574,7 @@ export const MAX_ARCHIVE_DIMENSION = 32768;
 
 class ArchiveValidationError extends Error {
   constructor(message: string) {
-    super(`Invalid .webgrainy.json archive: ${message}`);
+    super(`Invalid webGrainy project archive: ${message}`);
     this.name = 'ArchiveValidationError';
   }
 }
@@ -617,7 +645,11 @@ function validateRoi(r: unknown, ctx: string): void {
   }
 }
 
-function validateArchivedSession(ss: unknown, ctx: string): SerializedAnalysisSession {
+function validateArchivedSession(
+  ss: unknown,
+  ctx: string,
+  bytes?: { masks: Uint8Array; image: Uint8Array },
+): SerializedAnalysisSession {
   if (!isObj(ss) || ss['version'] !== 1) {
     throw new ArchiveValidationError(`${ctx}: unsupported serialized session version.`);
   }
@@ -632,7 +664,7 @@ function validateArchivedSession(ss: unknown, ctx: string): SerializedAnalysisSe
   if (!isFiniteNum(sf) || sf <= 0 || sf > 4) {
     throw new ArchiveValidationError(`${ctx}: effectiveScaleFactor must be in (0, 4].`);
   }
-  if (typeof ss['workingMasksBase64'] !== 'string' || typeof wi['dataBase64'] !== 'string') {
+  if (bytes === undefined && (typeof ss['workingMasksBase64'] !== 'string' || typeof wi['dataBase64'] !== 'string')) {
     throw new ArchiveValidationError(`${ctx}: missing base64 mask or image data.`);
   }
   if (!isObj(ss['recommendation'])) {
@@ -649,18 +681,19 @@ function validateArchivedSession(ss: unknown, ctx: string): SerializedAnalysisSe
 
   const w = wi['width'] as number;
   const h = wi['height'] as number;
-  const session = deserializeSessionFromArchive(ss as unknown as ArchivedSerializedSession);
+  const session = deserializeSessionFromArchive(ss as unknown as ArchivedSerializedSession, bytes);
   if (session.workingMasks.length !== w * h) {
     throw new ArchiveValidationError(`${ctx}: mask length ${session.workingMasks.length} != ${w}x${h}.`);
   }
-  if (session.workingImage.data.length !== w * h * 4) {
+  // Empty is allowed: sessions no longer keep the working-image pixels after analysis.
+  if (session.workingImage.data.length !== 0 && session.workingImage.data.length !== w * h * 4) {
     throw new ArchiveValidationError(`${ctx}: RGBA image length ${session.workingImage.data.length} != ${w}x${h}x4.`);
   }
   return session;
 }
 
 /**
- * Imports a `.webgrainy.json` archive into IndexedDB and returns the imported `siteId`.
+ * Imports a `.webgrainy` project archive (v2 binary, or a v1 `.webgrainy.json`) into IndexedDB and returns the imported `siteId`.
  *
  * The archive is fully validated and decoded before anything is written, so a
  * malformed file never leaves a partial import. If a site with the same `siteId`
@@ -672,29 +705,64 @@ export async function importProjectArchive(
   options?: ProjectStorageOptions,
 ): Promise<string> {
   const size = typeof archiveInput === 'string' ? archiveInput.length : archiveInput.size;
-  if (size > MAX_ARCHIVE_BYTES) {
-    throw new ArchiveValidationError(
-      `file is ${(size / 1e6).toFixed(0)} MB; maximum is ${(MAX_ARCHIVE_BYTES / 1e6).toFixed(0)} MB.`,
-    );
+  // v2 (binary): small JSON header + payload, read lazily with Blob.slice (no size limit
+  // from string lengths). v1: one JSON text, limited to MAX_ARCHIVE_BYTES.
+  let payload: Blob | null = null;
+  let rawText: string;
+  if (typeof archiveInput !== 'string' && size >= 12) {
+    const head = new Uint8Array(await archiveInput.slice(0, 12).arrayBuffer());
+    if (new TextDecoder().decode(head.subarray(0, 8)) === ARCHIVE_V2_MAGIC) {
+      const headerLen = new DataView(head.buffer).getUint32(8, true);
+      if (headerLen > MAX_ARCHIVE_HEADER_BYTES || 12 + headerLen > size) {
+        throw new ArchiveValidationError('archive header is truncated or too large.');
+      }
+      rawText = await archiveInput.slice(12, 12 + headerLen).text();
+      payload = archiveInput.slice(12 + headerLen);
+    }
   }
-  const rawText = typeof archiveInput === 'string' ? archiveInput : await archiveInput.text();
+  if (payload === null) {
+    if (size > MAX_ARCHIVE_BYTES) {
+      throw new ArchiveValidationError(
+        `file is ${(size / 1e6).toFixed(0)} MB; maximum is ${(MAX_ARCHIVE_BYTES / 1e6).toFixed(0)} MB.`,
+      );
+    }
+    rawText = typeof archiveInput === 'string' ? archiveInput : await archiveInput.text();
+  }
 
   let parsed: unknown;
   try {
-    parsed = JSON.parse(rawText);
+    parsed = JSON.parse(rawText!);
   } catch (err) {
     throw new Error(
-      `Invalid .webgrainy.json archive: ${err instanceof Error ? err.message : 'JSON parse error'}`,
+      `Invalid webGrainy project archive: ${err instanceof Error ? err.message : 'JSON parse error'}`,
     );
   }
+  /** The payload bytes a v2 reference points to (validated against the payload size). */
+  const refSlice = (ref: unknown, ctx: string, type = ''): Blob => {
+    if (
+      payload === null ||
+      !isObj(ref) ||
+      typeof ref['offset'] !== 'number' ||
+      typeof ref['length'] !== 'number' ||
+      !Number.isInteger(ref['offset']) ||
+      !Number.isInteger(ref['length']) ||
+      ref['offset'] < 0 ||
+      ref['length'] < 0 ||
+      ref['offset'] + ref['length'] > payload.size
+    ) {
+      throw new ArchiveValidationError(`${ctx}: invalid byte reference.`);
+    }
+    return payload.slice(ref['offset'], ref['offset'] + ref['length'], type);
+  };
 
   if (!parsed || typeof parsed !== 'object') {
-    throw new Error('Invalid .webgrainy.json archive: expected JSON object.');
+    throw new Error('Invalid webGrainy project archive: expected a JSON header object.');
   }
   stripDangerousKeys(parsed);
 
   const arch = parsed as Partial<ProjectArchiveV1>;
-  if (arch.format !== 'webgrainy-project' || arch.version !== 1) {
+  const archVersion = (arch as { version?: unknown }).version;
+  if (arch.format !== 'webgrainy-project' || !((archVersion === 1 && payload === null) || (archVersion === 2 && payload !== null))) {
     throw new Error(
       `Unsupported archive format or version: format=${String(arch.format)}, version=${String(arch.version)}.`,
     );
@@ -717,7 +785,7 @@ export async function importProjectArchive(
   const photoIds = new Set<string>();
   for (const [i, ap] of arch.photos.entries()) {
     const ctx = `photos[${i}]`;
-    if (!ap || !isId(ap.photoId) || typeof ap.imageBase64 !== 'string') {
+    if (!ap || !isId(ap.photoId) || (payload === null ? typeof ap.imageBase64 !== 'string' : ap.imageRef === undefined)) {
       throw new Error('Invalid archive: corrupt photo record.');
     }
     if (photoIds.has(ap.photoId)) throw new ArchiveValidationError(`${ctx}: duplicate photoId.`);
@@ -733,12 +801,15 @@ export async function importProjectArchive(
     }
     validateCalibration(ap.calibration, ctx);
     validateRoi(ap.roiConfig, ctx);
-    const imgBytes = base64ToUint8(ap.imageBase64);
-    const { imageBase64: _b64, imageMimeType, originalBackup: archivedBackup, ...restPhoto } = ap;
+    const { imageBase64: _b64, imageRef, imageMimeType, originalBackup: archivedBackup, ...restPhoto } = ap;
+    const imageBlob =
+      payload !== null
+        ? refSlice(imageRef, ctx, archiveMime(imageMimeType))
+        : new Blob([base64ToUint8(ap.imageBase64!).slice().buffer], { type: archiveMime(imageMimeType) });
     let originalBackup: PhotoOriginalBackup | undefined;
     if (archivedBackup !== undefined && archivedBackup !== null) {
       const bctx = `${ctx}.originalBackup`;
-      if (typeof archivedBackup !== 'object' || typeof archivedBackup.imageBase64 !== 'string') {
+      if (typeof archivedBackup !== 'object' || (payload === null ? typeof archivedBackup.imageBase64 !== 'string' : archivedBackup.imageRef === undefined)) {
         throw new ArchiveValidationError(`${bctx}: missing image data.`);
       }
       if (!isDim(archivedBackup.width) || !isDim(archivedBackup.height)) {
@@ -746,16 +817,19 @@ export async function importProjectArchive(
       }
       validateCalibration(archivedBackup.calibration, bctx);
       validateRoi(archivedBackup.roiConfig, bctx);
-      const { imageBase64: backupB64, imageMimeType: backupMime, ...restBackup } = archivedBackup;
+      const { imageBase64: backupB64, imageRef: backupRef, imageMimeType: backupMime, ...restBackup } = archivedBackup;
       originalBackup = {
         ...restBackup,
-        imageBlob: new Blob([base64ToUint8(backupB64).slice().buffer], { type: archiveMime(backupMime) }),
+        imageBlob:
+          payload !== null
+            ? refSlice(backupRef, bctx, archiveMime(backupMime))
+            : new Blob([base64ToUint8(backupB64!).slice().buffer], { type: archiveMime(backupMime) }),
       };
     }
     decodedPhotos.push({
       ...restPhoto,
       included: ap.included !== false,
-      imageBlob: new Blob([imgBytes.slice().buffer], { type: archiveMime(imageMimeType) }),
+      imageBlob,
       ...(originalBackup !== undefined ? { originalBackup } : {}),
     });
   }
@@ -770,10 +844,21 @@ export async function importProjectArchive(
       throw new ArchiveValidationError(`${ctx}.status is invalid.`);
     }
     const { serializedSession, ...restRes } = ar;
+    let bytes: { masks: Uint8Array; image: Uint8Array } | undefined;
+    if (payload !== null && serializedSession !== undefined) {
+      const ss = serializedSession as unknown as Record<string, unknown>;
+      const wi = isObj(ss['workingImage']) ? ss['workingImage'] : {};
+      const masks = new Uint8Array(await refSlice(ss['workingMasksRef'], `${ctx}.workingMasksRef`).arrayBuffer());
+      if (masks.byteLength % 4 !== 0) throw new ArchiveValidationError(`${ctx}: corrupt mask bytes.`);
+      bytes = {
+        masks: littleEndianBytesToInt32Bytes(masks),
+        image: wi['dataRef'] !== undefined ? new Uint8Array(await refSlice(wi['dataRef'], `${ctx}.dataRef`).arrayBuffer()) : new Uint8Array(0),
+      };
+    }
     decodedResults.push({
       ...restRes,
       ...(serializedSession !== undefined
-        ? { serializedSession: validateArchivedSession(serializedSession, ctx) }
+        ? { serializedSession: validateArchivedSession(serializedSession, ctx, bytes) }
         : {}),
     });
   }

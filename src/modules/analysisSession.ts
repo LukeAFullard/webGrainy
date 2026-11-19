@@ -123,7 +123,9 @@ export class AnalysisSession {
     roiConfig?: RoiExclusionConfig;
     provenance?: AnalysisProvenance;
   }) {
-    this.workingImage = params.workingImage;
+    // The working-image pixels are only needed while the network runs. Not keeping them
+    // saves ~4 MB per photo in memory, in browser storage and in project archives.
+    this.workingImage = { ...params.workingImage, data: new Uint8ClampedArray(0) };
     this.roiConfig = params.roiConfig;
     this.provenance = params.provenance;
     this.recommendation = params.recommendation;

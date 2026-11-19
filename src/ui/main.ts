@@ -6,6 +6,7 @@ import {
 } from '../modules/pipelineController.js';
 import {
   importSiteArchive,
+  isProjectArchiveFileName,
   listSites,
   saveSite,
   type PhotoRecord,
@@ -714,7 +715,7 @@ function mountShell(): void {
     <dialog id="app-dialog" class="app-dialog" closedby="any" aria-labelledby="dialog-title"></dialog>
     <div id="sr-announcer" class="sr-only" aria-live="polite" aria-atomic="true"></div>
     <input type="file" id="photo-file-input" accept="image/*,.tif,.tiff" multiple style="display:none;" />
-    <input type="file" id="archive-file-input" accept=".json,.webgrainy.json" style="display:none;" />
+    <input type="file" id="archive-file-input" accept=".webgrainy,.json" style="display:none;" />
   `;
 
   landingEl = document.getElementById('landing-shell')!;
@@ -1382,7 +1383,7 @@ function attachDelegatedHandlers(): void {
       void importSiteArchive(file)
         .then(async (siteId) => {
           const sites = await listSites();
-          store.setState({ sites, statusMessage: 'Imported .webgrainy.json archive' });
+          store.setState({ sites, statusMessage: 'Imported project archive' });
           await loadSiteData(siteId);
         })
         .catch((err: unknown) => {
@@ -1424,10 +1425,8 @@ function attachDelegatedHandlers(): void {
     const files = e.dataTransfer?.files;
     if (!files || files.length === 0) return;
     const allFiles = Array.from(files);
-    const archive = allFiles.find(
-      (f) => f.name.endsWith('.webgrainy.json') || f.name.endsWith('.json'),
-    );
-    const images = allFiles.filter((f) => !f.name.endsWith('.json'));
+    const archive = allFiles.find((f) => isProjectArchiveFileName(f.name));
+    const images = allFiles.filter((f) => !isProjectArchiveFileName(f.name));
     if (store.getState().showLanding) {
       store.setState({ showLanding: false });
     }
@@ -1435,7 +1434,7 @@ function attachDelegatedHandlers(): void {
       void importSiteArchive(archive)
         .then(async (siteId) => {
           const sites = await listSites();
-          store.setState({ sites, statusMessage: 'Imported .webgrainy.json archive' });
+          store.setState({ sites, statusMessage: 'Imported project archive' });
           await loadSiteData(siteId);
         })
         .catch((err: unknown) => {
@@ -1538,9 +1537,7 @@ function setupLaunchQueue(): void {
         store.setState({ showLanding: false });
       }
       const files = await Promise.all(handles.map((h) => h.getFile()));
-      const archiveFiles = files.filter(
-        (f) => f.name.endsWith('.webgrainy.json') || f.name.endsWith('.json'),
-      );
+      const archiveFiles = files.filter((f) => isProjectArchiveFileName(f.name));
       const imageFiles = files.filter((f) => isSupportedImageFile(f));
 
       for (const archive of archiveFiles) {
