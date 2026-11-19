@@ -6,6 +6,32 @@ All notable changes to webGrainy are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added: repeat surveys of a place, and fuller site comparison
+- **Places.** Each site is one survey; surveys of the same place share a place name (Site
+  panel). The site list groups surveys by place, oldest first. "+ New survey of this place"
+  starts the next survey with the same statistics settings, and "Compare N surveys over time"
+  opens Compare sites for that place. The place is saved in project archives, site exports and
+  the printable report.
+- **Change over time.**
+  - The time-series chart draws one line per place. Before, it joined every dated site into
+    one line, even different places.
+  - A table lists the change between consecutive surveys of each place: D16, D50 and D84,
+    later ÷ earlier, with 95% intervals and p-values.
+- **Like-for-like comparison.**
+  - Calibrated sites are compared over the same size range: the largest harmonised cutoff of
+    the compared sites is applied to all of them.
+  - A warning lists analysis settings that differ between the compared surveys: model, image
+    scale, pipeline, CLAHE, fine-grain enlargement, post-processing, enhancement or
+    rectification.
+- **The single-site results, side by side.** New in Compare sites:
+  - size-class composition bars;
+  - grain shape (b/a) curves (site reports now include a shape summary);
+  - a fabric rose per site;
+  - a "More statistics" table: Folk & Ward, D50 CI width, adequacy, size cutoff, median b/a,
+    fabric.
+  - Pairwise tests now cover D16 and D84 as well as D50.
+  - The comparison CSV includes all of these, the survey changes and the warnings.
+
 ## [1.2.0] — production-readiness fixes (re-audit, 2026-11-19)
 
 Every export now records the exact build (`appCommit`), so results can be traced to the code

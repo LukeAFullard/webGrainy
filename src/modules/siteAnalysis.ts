@@ -293,6 +293,17 @@ export function analyzeSite(
     weights,
   });
 
+  // Shape: b/a aspect ratio of every pooled grain once (number basis).
+  const ratios = pooledGrains
+    .map((g) => (g.aAxisPx > 0 ? g.bAxisPx / g.aAxisPx : Number.NaN))
+    .filter((r) => Number.isFinite(r))
+    .sort((a, b) => a - b);
+  const aspectRatioCounts = new Array<number>(10).fill(0);
+  for (const r of ratios) aspectRatioCounts[Math.min(9, Math.max(0, Math.floor(r * 10)))]!++;
+  const mid = ratios.length / 2;
+  const medianAspectRatio =
+    ratios.length === 0 ? Number.NaN : ratios.length % 2 ? ratios[Math.floor(mid)]! : (ratios[mid - 1]! + ratios[mid]!) / 2;
+
   const boot = runBootstrap(
     preparedPhotos,
     options.poolingMode,
@@ -356,6 +367,7 @@ export function analyzeSite(
     wentworthHistogram05Phi,
     wentworthHistogram10Phi,
     fabricRose,
+    shape: { aspectRatioCounts, medianAspectRatio, n: ratios.length },
     bootstrapMode: boot.mode,
     bootstrapSeed,
     bootstrapReplicates,

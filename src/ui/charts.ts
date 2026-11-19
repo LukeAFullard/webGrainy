@@ -699,6 +699,10 @@ export interface TimeSeriesPoint {
   D84: number;
   /** Bootstrap CI of each percentile. */
   ci?: { D16: [number, number]; D50: [number, number]; D84: [number, number] };
+  /** Points of the same group (place) are joined by lines; ungrouped points stand alone. */
+  group?: string;
+  /** Line colour of the group (several places: lines coloured by place). */
+  groupColor?: string;
 }
 
 /**
@@ -706,12 +710,21 @@ export interface TimeSeriesPoint {
  * calendar time; the y axis is log-scaled grain size.
  */
 export function renderTimeSeriesSvg(points: readonly TimeSeriesPoint[], unit: 'mm' | 'px', lightTheme = false): string {
+  // Points of the same group (place) are joined by lines, in date order.
+  const groups = new Map<string, number[]>();
+  points.forEach((p, i) => {
+    if (p.group === undefined) return;
+    const list = groups.get(p.group) ?? [];
+    list.push(i);
+    groups.set(p.group, list);
+  });
+  const multiGroup = groups.size > 1;
   const W = 400;
-  const H = 240;
+  const H = multiGroup ? 256 : 240;
   const padL = 44;
   const padR = 14;
   const padT = 26;
-  const padB = 46;
+  const padB = multiGroup ? 62 : 46;
   const plotW = W - padL - padR;
   const plotH = H - padT - padB;
   const fg = lightTheme ? '#1a202c' : '#e8eef4';
@@ -778,22 +791,38 @@ export function renderTimeSeriesSvg(points: readonly TimeSeriesPoint[], unit: 'm
   }
   parts.push(`<text transform="translate(11 ${padT + plotH / 2}) rotate(-90)" text-anchor="middle" fill="${muted}" font-size="9" ${font}>Grain size (${unit}, log scale)</text>`);
   // x labels: each point's date (thinned when crowded)
-  const step = Math.max(1, Math.ceil(points.length / 6));
-  points.forEach((p, i) => {
-    if (i % step !== 0 && i !== points.length - 1) return;
-    parts.push(`<text x="${X(t[i]!).toFixed(1)}" y="${padT + plotH + 13}" text-anchor="middle" fill="${muted}" font-size="9" ${font}>${p.date}</text>`);
-  });
+  // Dates in time order, skipping any that would overlap the previous label.
+  const labelOrder = points.map((_, i) => i).sort((a, b) => t[a]! - t[b]!);
+  let lastLabelX = -Infinity;
+  const shown = new Set<string>();
+  for (const i of labelOrder) {
+    const x = X(t[i]!);
+    const d = points[i]!.date;
+    if (shown.has(d) || x - lastLabelX < 56) continue;
+    shown.add(d);
+    lastLabelX = x;
+    parts.push(`<text x="${x.toFixed(1)}" y="${padT + plotH + 13}" text-anchor="middle" fill="${muted}" font-size="9" ${font}>${d}</text>`);
+  }
   parts.push(`<line x1="${padL}" x2="${W - padR}" y1="${padT + plotH}" y2="${padT + plotH}" stroke="${muted}" stroke-width="1"/>`);
+  // One line per group (place); several places: coloured by place, the percentile shown by
+  // the line style. Points without a group are not joined to anything.
   for (const s of series) {
-    const pts = points.map((p, i) => `${X(t[i]!).toFixed(1)},${Y(p[s.key]).toFixed(1)}`).join(' ');
-    if (points.length > 1) parts.push(`<polyline points="${pts}" fill="none" stroke="${s.color}" stroke-width="${s.key === 'D50' ? 2 : 1.3}" ${s.dash ? `stroke-dasharray="${s.dash}"` : ''}/>`);
+    for (const idx of groups.values()) {
+      if (idx.length < 2) continue;
+      const ordered = [...idx].sort((a, b) => t[a]! - t[b]!);
+      const pts = ordered.map((i) => `${X(t[i]!).toFixed(1)},${Y(points[i]![s.key]).toFixed(1)}`).join(' ');
+      const stroke = multiGroup ? (points[ordered[0]!]!.groupColor ?? s.color) : s.color;
+      const dash = multiGroup ? (s.key === 'D50' ? '' : s.key === 'D16' ? '4 3' : '1 3') : s.dash;
+      parts.push(`<polyline points="${pts}" fill="none" stroke="${stroke}" stroke-width="${s.key === 'D50' ? 2 : 1.3}" ${dash ? `stroke-dasharray="${dash}"` : ''}/>`);
+    }
     points.forEach((p, i) => {
       const x = X(t[i]!);
       const ci = p.ci?.[s.key];
       if (ci && ci[0] > 0 && ci[1] > 0) {
-        parts.push(`<line x1="${x.toFixed(1)}" x2="${x.toFixed(1)}" y1="${Y(ci[0]).toFixed(1)}" y2="${Y(ci[1]).toFixed(1)}" stroke="${s.color}" stroke-width="1.2"/>`);
+        parts.push(`<line x1="${x.toFixed(1)}" x2="${x.toFixed(1)}" y1="${Y(ci[0]).toFixed(1)}" y2="${Y(ci[1]).toFixed(1)}" stroke="${multiGroup ? (p.groupColor ?? muted) : s.color}" stroke-width="1.2"/>`);
       }
-      parts.push(`<circle cx="${x.toFixed(1)}" cy="${Y(p[s.key]).toFixed(1)}" r="${s.key === 'D50' ? 3.5 : 2.5}" fill="${p.color}" stroke="${s.color}" stroke-width="1.2"><title>${esc(p.name)} (${p.date}): ${s.key} ${p[s.key].toFixed(1)} ${unit}</title></circle>`);
+      const mark = multiGroup ? (p.groupColor ?? muted) : s.color;
+      parts.push(`<circle cx="${x.toFixed(1)}" cy="${Y(p[s.key]).toFixed(1)}" r="${s.key === 'D50' ? 3.5 : 2.5}" fill="${p.color}" stroke="${mark}" stroke-width="1.2"><title>${esc(p.name)} (${p.date}): ${s.key} ${p[s.key].toFixed(1)} ${unit}</title></circle>`);
     });
   }
   // legend
@@ -803,9 +832,118 @@ export function renderTimeSeriesSvg(points: readonly TimeSeriesPoint[], unit: 'm
     .reverse()
     .forEach((s, i) => {
       const lx = padL + i * 82;
-      parts.push(`<line x1="${lx}" x2="${lx + 16}" y1="${ly - 3}" y2="${ly - 3}" stroke="${s.color}" stroke-width="${s.key === 'D50' ? 2 : 1.3}" ${s.dash ? `stroke-dasharray="${s.dash}"` : ''}/>`);
+      const dash = multiGroup ? (s.key === 'D50' ? '' : s.key === 'D16' ? '4 3' : '1 3') : s.dash;
+      parts.push(`<line x1="${lx}" x2="${lx + 16}" y1="${ly - 3}" y2="${ly - 3}" stroke="${multiGroup ? fg : s.color}" stroke-width="${s.key === 'D50' ? 2 : 1.3}" ${dash ? `stroke-dasharray="${dash}"` : ''}/>`);
       parts.push(`<text x="${lx + 20}" y="${ly}" fill="${fg}" font-size="9" ${font}>${s.key}</text>`);
     });
   parts.push(`<text x="${W - padR}" y="${ly}" text-anchor="end" fill="${muted}" font-size="9" ${font}>bars: bootstrap CI</text>`);
-  return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="D16, D50 and D84 of the compared sites by survey date">${parts.join('')}</svg>`;
+  if (multiGroup) {
+    let gx = padL;
+    for (const [g, idx] of groups) {
+      const c = points[idx[0]!]!.groupColor ?? fg;
+      const label = g.length > 22 ? `${g.slice(0, 21)}…` : g;
+      parts.push(`<rect x="${gx}" y="${H - 34}" width="9" height="9" fill="${c}"/>`);
+      parts.push(`<text x="${gx + 12}" y="${H - 26}" fill="${fg}" font-size="9" ${font}>${esc(label)}</text>`);
+      gx += 20 + label.length * 5;
+      if (gx > W - 60) break;
+    }
+  }
+  return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="D16, D50 and D84 of the compared surveys by date, one line per place">${parts.join('')}</svg>`;
+}
+
+
+/** Size-class composition (sand / gravel / cobble / boulder, % of the PSD weight) per site, as stacked bars. */
+export function renderCompositionBarsSvg(
+  series: ReadonlyArray<{ name: string; color: string; w: { sandPct: number; gravelPct: number; cobblePct: number; boulderPct: number } }>,
+  lightTheme = false,
+): string {
+  const rowH = 22;
+  const padL = 110;
+  const padR = 14;
+  const padT = 28;
+  const W = 400;
+  const H = padT + series.length * rowH + 34;
+  const plotW = W - padL - padR;
+  const fg = lightTheme ? '#1a202c' : '#e8eef4';
+  const muted = lightTheme ? '#4a5568' : '#8fa0b2';
+  const bg = lightTheme ? '#ffffff' : '#0c1014';
+  const font = 'font-family="system-ui, sans-serif"';
+  const classes: Array<{ key: 'sandPct' | 'gravelPct' | 'cobblePct' | 'boulderPct'; label: string; fill: string }> = [
+    { key: 'sandPct', label: 'Sand (< 2 mm)', fill: '#F0E442' },
+    { key: 'gravelPct', label: 'Gravel (2–64)', fill: '#E69F00' },
+    { key: 'cobblePct', label: 'Cobble (64–256)', fill: '#56B4E9' },
+    { key: 'boulderPct', label: 'Boulder (≥ 256)', fill: '#0072B2' },
+  ];
+  const parts: string[] = [`<rect width="${W}" height="${H}" fill="${bg}"/>`];
+  parts.push(`<text x="${padL}" y="15" fill="${fg}" font-size="11" font-weight="600" ${font}>Size-class composition (% of the distribution)</text>`);
+  series.forEach((s, i) => {
+    const y = padT + i * rowH;
+    const label = s.name.length > 18 ? `${s.name.slice(0, 17)}…` : s.name;
+    parts.push(`<rect x="4" y="${y + 6}" width="8" height="8" fill="${s.color}"/>`);
+    parts.push(`<text x="16" y="${y + 14}" fill="${fg}" font-size="9.5" ${font}>${esc(label)}</text>`);
+    let x = padL;
+    for (const c of classes) {
+      const v = Math.max(0, s.w[c.key]);
+      const w = (v / 100) * plotW;
+      if (w > 0) {
+        parts.push(`<rect x="${x.toFixed(1)}" y="${y + 3}" width="${w.toFixed(1)}" height="${rowH - 7}" fill="${c.fill}"><title>${esc(s.name)}: ${c.label} ${v.toFixed(1)}%</title></rect>`);
+        if (w > 26) parts.push(`<text x="${(x + w / 2).toFixed(1)}" y="${y + 14}" text-anchor="middle" fill="#1a202c" font-size="8.5" ${font}>${v.toFixed(0)}%</text>`);
+      }
+      x += w;
+    }
+  });
+  const ly = H - 12;
+  classes.forEach((c, i) => {
+    const lx = 8 + i * 98;
+    parts.push(`<rect x="${lx}" y="${ly - 8}" width="9" height="9" fill="${c.fill}"/>`);
+    parts.push(`<text x="${lx + 12}" y="${ly}" fill="${muted}" font-size="8.5" ${font}>${c.label}</text>`);
+  });
+  return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Size-class composition by site">${parts.join('')}</svg>`;
+}
+
+/** Grain shape (b/a aspect ratio, % of grains per 0.1 bin) of several sites, overlaid. */
+export function renderCompareAspectRatioSvg(
+  series: ReadonlyArray<{ name: string; color: string; counts: readonly number[] }>,
+  lightTheme = false,
+): string {
+  const W = 400;
+  const legendRows = Math.ceil(series.length / 2);
+  const H = 190 + legendRows * 13;
+  const padL = 38;
+  const padR = 12;
+  const padT = 24;
+  const padB = 36 + legendRows * 13;
+  const plotW = W - padL - padR;
+  const plotH = H - padT - padB;
+  const fg = lightTheme ? '#1a202c' : '#e8eef4';
+  const muted = lightTheme ? '#4a5568' : '#8fa0b2';
+  const gridCol = lightTheme ? '#e2e8f0' : '#26323e';
+  const bg = lightTheme ? '#ffffff' : '#0c1014';
+  const font = 'font-family="system-ui, sans-serif"';
+  const pct = series.map((s) => {
+    const n = s.counts.reduce((a, b) => a + b, 0);
+    return s.counts.map((c) => (n > 0 ? (c / n) * 100 : 0));
+  });
+  const yMax = Math.max(10, ...pct.flat()) * 1.1;
+  const X = (bin: number): number => padL + ((bin + 0.5) / 10) * plotW;
+  const Y = (v: number): number => padT + plotH - (v / yMax) * plotH;
+  const parts: string[] = [`<rect width="${W}" height="${H}" fill="${bg}"/>`];
+  parts.push(`<text x="${padL}" y="15" fill="${fg}" font-size="11" font-weight="600" ${font}>Grain shape: aspect ratio b/a (% of grains)</text>`);
+  for (let v = 0; v <= yMax; v += yMax > 40 ? 20 : 10) {
+    parts.push(`<line x1="${padL}" x2="${W - padR}" y1="${Y(v).toFixed(1)}" y2="${Y(v).toFixed(1)}" stroke="${gridCol}"/>`);
+    parts.push(`<text x="${padL - 4}" y="${Y(v).toFixed(1)}" dy="3" text-anchor="end" fill="${muted}" font-size="9" ${font}>${v}</text>`);
+  }
+  for (let b = 0; b <= 10; b += 2) {
+    parts.push(`<text x="${(padL + (b / 10) * plotW).toFixed(1)}" y="${padT + plotH + 12}" text-anchor="middle" fill="${muted}" font-size="9" ${font}>${(b / 10).toFixed(1)}</text>`);
+  }
+  parts.push(`<text x="${padL + plotW / 2}" y="${padT + plotH + 24}" text-anchor="middle" fill="${muted}" font-size="9" ${font}>b/a (1 = round outline, small = elongated)</text>`);
+  series.forEach((s, i) => {
+    const pts = pct[i]!.map((v, b) => `${X(b).toFixed(1)},${Y(v).toFixed(1)}`).join(' ');
+    parts.push(`<polyline points="${pts}" fill="none" stroke="${s.color}" stroke-width="2" stroke-linejoin="round"><title>${esc(s.name)}</title></polyline>`);
+    const lx = padL + (i % 2) * 180;
+    const ly = padT + plotH + 38 + Math.floor(i / 2) * 13;
+    parts.push(`<line x1="${lx}" x2="${lx + 14}" y1="${ly - 3}" y2="${ly - 3}" stroke="${s.color}" stroke-width="2"/>`);
+    parts.push(`<text x="${lx + 18}" y="${ly}" fill="${fg}" font-size="9" ${font}>${esc(s.name.length > 30 ? `${s.name.slice(0, 29)}…` : s.name)}</text>`);
+  });
+  return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Aspect ratio distributions by site">${parts.join('')}</svg>`;
 }

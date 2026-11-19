@@ -142,10 +142,17 @@ export const HELP_TOPICS = {
     default: 'Off',
     when: 'Turn it on for long batches (CP-SAM, many photos) so you can work elsewhere. The screen is kept awake during an analysis where the browser allows it, but switching tabs or minimising can still slow it down on some devices.',
   },
+  sitePlace: {
+    title: 'Place (repeat surveys)',
+    group: 'Site statistics',
+    what: 'Each site in webGrainy is one survey: the photos of one place on one occasion. To follow a place over time, give each of its surveys the same place name (e.g. "Rakaia reach 3"). Surveys of a place are grouped in the site list, "+ New survey of this place" starts the next one with the same statistics settings, and Compare sites draws one line per place over time and lists the change between consecutive surveys (D16, D50, D84 with 95% intervals).',
+    default: 'Empty (the site is not grouped with others)',
+    when: 'Whenever the same reach, bar or patch is photographed again (after a flood, each season, before and after works). Use the same camera height, scale method and analysis settings for every survey so that changes reflect the bed, not the method.',
+  },
   surveyDate: {
     title: 'Survey date',
     group: 'Site statistics',
-    what: 'The date the site was surveyed, used to order sites and plot D16/D50/D84 over time in Compare sites. If you leave it empty, the earliest camera date of the site\'s photos is used (when the photos have one). Saved with the site and in project files.',
+    what: 'The date the site (survey) was made, used to order surveys of a place and plot D16/D50/D84 over time in Compare sites. If you leave it empty, the earliest camera date of the survey\'s photos is used (when the photos have one). Saved with the site and in project files.',
     default: 'Empty: the earliest photo date',
     when: 'Set it when the photos have no camera date, when the camera clock was wrong, or when photos from several days belong to one survey.',
   },
@@ -173,9 +180,9 @@ export const HELP_TOPICS = {
   compareSites: {
     title: 'Compare sites',
     group: 'Site statistics',
-    what: 'Overlays the grain-size curves and size distributions of the sites you tick, in different colours, with a table of D16, D50 (with its confidence interval), D84, geometric mean and spread, Sauter mean, sorting and gravel/cobble share. All sites are computed with the same statistics settings (pooling mode, size metric, cutoffs), so the comparison is like for like. For each pair of sites it gives the ratio of their D50s with a 95% interval and a p-value.',
+    what: 'Compares the sites (surveys) you tick, grouped by place: a table of D16, D50 (with its confidence interval), D84, geometric mean and spread, Sauter mean, sorting and gravel/cobble share; "More statistics" with Folk & Ward, adequacy, size cutoff, shape and fabric; overlaid grain-size curves and size distributions; size-class composition bars; grain shape (b/a) curves; and a fabric rose for each site. For each pair of sites it gives the ratio of D16, D50 and D84 with 95% intervals and p-values. With "Order by survey date" it draws D16/D50/D84 over time, one line per place, and lists the change between consecutive surveys of each place. All sites are computed with the same statistics settings, over the same size range (the largest size cutoff of the compared sites), and a warning appears when their photos were analysed with different settings (model, image scale, enhancement, post-processing).',
     default: 'All sites ticked',
-    when: 'Use it to compare reaches, surveys or dates. The D50 test is approximate: it combines each site\'s bootstrap interval on a log scale (z-test). Treat p < 0.05 as "likely different" and check the curves; for a formal test use a full two-sample method such as GSDtools (Eaton et al. 2019). Sites must be calibrated (mm) to be plotted together; uncalibrated sites are listed but not plotted with calibrated ones.',
+    when: 'Use it to compare reaches, or one place before and after a flood or between seasons. The tests are approximate: they combine each site\'s bootstrap interval on a log scale (z-test). Treat p < 0.05 as "likely different" and check the curves; with many pairs, some will be "significant" by chance; for a formal test use a full two-sample method such as GSDtools (Eaton et al. 2019). Sites must be calibrated (mm) to be plotted together; uncalibrated sites are listed but not plotted with calibrated ones. Fabric orientations are relative to each photo\'s frame, so compare them only between surveys photographed the same way round.',
   },
   moreStats: {
     title: 'More statistics',

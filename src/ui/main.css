@@ -2204,3 +2204,20 @@ kbd {
   }
 }
 
+
+/* Compare sites: surveys grouped by place, rose diagrams side by side */
+.compare-place {
+  width: 100%;
+  border-left: 2px solid var(--border);
+  padding: 2px 0 2px 8px;
+  margin: 2px 0;
+}
+.compare-place .compare-site {
+  display: inline-flex;
+  margin-right: 10px;
+}
+.compare-roses {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 8px;
+}

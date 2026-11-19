@@ -928,7 +928,14 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
         }
         // Colour by the site's position in the full list, so it does not change with the selection.
         const color = COMPARE_COLORS[state.sites.indexOf(site) % COMPARE_COLORS.length]!;
-        entries.push({ siteId: site.siteId, name: site.name, inputs, color, ...(site.surveyDate ? { surveyDate: site.surveyDate } : {}) });
+        entries.push({
+          siteId: site.siteId,
+          name: site.name,
+          inputs,
+          color,
+          ...(site.surveyDate ? { surveyDate: site.surveyDate } : {}),
+          ...(site.place ? { place: site.place } : {}),
+        });
       }
       if (run !== comparisonRun) return;
       // Same settings for every site, so the comparison is like for like.

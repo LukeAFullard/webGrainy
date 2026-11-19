@@ -236,6 +236,8 @@ export interface SiteAnalysisReport {
   wentworthHistogram05Phi: WentworthBin[];
   wentworthHistogram10Phi: WentworthBin[];
   fabricRose: FabricRoseStats;
+  /** Grain shape of the pooled grains (each counted once): b/a in 10 bins over [0, 1]. */
+  shape: { aspectRatioCounts: number[]; medianAspectRatio: number; n: number };
   bootstrapMode: 'cluster' | 'two-stage-cluster' | 'single-photo-grain-fallback';
   bootstrapSeed: number;
   bootstrapReplicates: number;

@@ -28,6 +28,11 @@ export interface SiteRecord {
   photoOrder: string[];
   /** Survey date (YYYY-MM-DD) set by the user; otherwise the earliest photo date is used. */
   surveyDate?: string;
+  /**
+   * Place (location) this survey belongs to. Repeat surveys of the same place share it, so
+   * they are grouped in the site list and shown as one series over time.
+   */
+  place?: string;
 }
 
 export interface PhotoOriginalBackup {
@@ -778,6 +783,9 @@ export async function importProjectArchive(
   }
   if (typeof arch.site.name !== 'string' || !Array.isArray(arch.site.photoOrder) || !isObj(arch.site.options)) {
     throw new ArchiveValidationError('site requires name, photoOrder[] and options{}.');
+  }
+  if (arch.site.place !== undefined && (typeof arch.site.place !== 'string' || arch.site.place.length > 256)) {
+    delete (arch.site as { place?: unknown }).place; // unreadable place: import as an ungrouped site
   }
   if (arch.site.surveyDate !== undefined && !isIsoDate(arch.site.surveyDate)) {
     delete (arch.site as { surveyDate?: unknown }).surveyDate; // unreadable date: fall back to photo dates

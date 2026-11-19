@@ -3,6 +3,7 @@ import type { PhotoRecord, SiteRecord } from '../../modules/projectStorage.js';
 import { parseParamInput } from '../savedSettings.js';
 import { defaultAnalysisParams, type EditorToolMode } from '../state.js';
 import { isIsoDate } from '../../modules/surveyDate.js';
+import { placeName, surveysOfSamePlace } from '../../modules/sitePlaces.js';
 import { isWorkflowStepId, nextWorkflowStepForKey } from '../panels/landing.js';
 import { workingScaleFactorFor } from '../panels/sidebar.js';
 import { visiblePhotos, type PhotoFilter } from '../photoList.js';
@@ -67,6 +68,44 @@ export const sidebarActions: Record<string, ActionHandler> = {
       ctx.store.setState({ sites });
       await ctx.actions.loadSiteData(newSite.siteId);
     });
+  },
+  'new-survey': (_el, ctx) => {
+    const state = ctx.store.getState();
+    const site = getActiveSite(state);
+    const place = placeName(site?.place);
+    if (!site || place === null) return;
+    const n = surveysOfSamePlace(state.sites, site.siteId).length + 1;
+    const name = ctx.ui.askSiteName(`Name for the new survey of ${place}:`, `${place} – survey ${n}`);
+    if (name === null) return;
+    const newSite: SiteRecord = {
+      siteId: ctx.makeId('site'),
+      name,
+      place,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      // Same statistics settings, so the surveys are comparable.
+      options: site.options,
+      photoOrder: [],
+    };
+    void ctx.storage.saveSite(newSite).then(async () => {
+      const sites = await ctx.storage.listSites();
+      ctx.store.setState({
+        sites,
+        statusMessage: `New survey of ${place}: add its photos, then set its survey date (or it is taken from the photos).`,
+      });
+      await ctx.actions.loadSiteData(newSite.siteId);
+    });
+  },
+  'compare-place': (_el, ctx) => {
+    const state = ctx.store.getState();
+    const site = getActiveSite(state);
+    if (!site) return;
+    ctx.store.setState({
+      compareSiteIds: surveysOfSamePlace(state.sites, site.siteId),
+      dashboardScope: 'compare',
+      compareByDate: true,
+    });
+    void ctx.actions.refreshComparison();
   },
   'rename-site': (_el, ctx) => {
     const site = getActiveSite(ctx.store.getState());
@@ -173,6 +212,21 @@ export function handleSidebarChange(target: ControlLike, ctx: EventContext): boo
   if (isInput(target) && target.dataset['photoFacies']) {
     const w = Number(target.value);
     if (Number.isFinite(w) && w >= 0) updatePhoto(ctx, target.dataset['photoFacies'], { faciesWeight: w });
+    return true;
+  }
+  if (isInput(target) && target.dataset['sitePlace'] !== undefined) {
+    const st = ctx.store.getState();
+    const site = getActiveSite(st);
+    if (!site) return true;
+    const { place: _old, ...rest } = site;
+    const place = placeName(target.value);
+    // Reuse an existing place's spelling, so "rakaia reach 3" joins "Rakaia reach 3".
+    const existing = st.sites.map((s) => placeName(s.place)).find((p) => p !== null && place !== null && p.toLowerCase() === place.toLowerCase());
+    const updated: SiteRecord = place !== null ? { ...rest, place: existing ?? place, updatedAt: Date.now() } : { ...rest, updatedAt: Date.now() };
+    void ctx.storage.saveSite(updated).then(async () => {
+      ctx.store.setState({ sites: await ctx.storage.listSites(), statusMessage: updated.place ? `Place set to ${updated.place}.` : 'Place cleared.' });
+      if (ctx.store.getState().dashboardScope === 'compare') void ctx.actions.refreshComparison();
+    });
     return true;
   }
   if (isInput(target) && target.dataset['siteDate'] !== undefined) {

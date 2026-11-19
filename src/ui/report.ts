@@ -136,7 +136,7 @@ export function buildSiteReportHtml(input: ReportInput): string {
 <body>
 <div class="actions"><button type="button" data-print="">Print / Save as PDF</button> <span class="small">or press Ctrl+P (⌘P on a Mac)</span></div>
 <h1>${esc(site.name)}</h1>
-<p class="sub">Grain-size report · ${esc(dateOnly)} · ${r.includedPhotoCount} photo${r.includedPhotoCount === 1 ? '' : 's'} · ${r.validGrainCount} grains · ${esc(r.statisticalBasisLabel)}</p>
+<p class="sub">${site.place ? `${esc(site.place)} · ` : ''}${site.surveyDate ? `Survey ${esc(site.surveyDate)} · ` : ''}Grain-size report · ${esc(dateOnly)} · ${r.includedPhotoCount} photo${r.includedPhotoCount === 1 ? '' : 's'} · ${r.validGrainCount} grains · ${esc(r.statisticalBasisLabel)}</p>
 
 <div class="grid2">
   <div class="chart">${input.psdSvg}</div>
