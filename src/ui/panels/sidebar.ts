@@ -127,6 +127,7 @@ export function renderSidebarHtml(state: AppState, view: SidebarView): string {
                           <span class="photo-sub">
                             ${ph.width}×${ph.height}${ph.calibration ? ` · ${ph.calibration.mmPerPx.toFixed(3)}mm/px` : ' · uncal'}
                             ${recModel ? ` · ${recModel}` : ''}
+                            ${ph.metadata?.enhancement ? ` · <span title="${esc(ph.metadata.enhancement.modelName)}">${ph.metadata.enhancement.kind === 'upscale-2x' ? '2×' : 'deblur'}</span>` : ''}
                             ${qualityWarnings.length > 0 ? ` · <span style="color:var(--warning);font-weight:500;" title="${esc(qualityWarnings.map((w) => w.message).join(' '))}">⚠ ${esc(qualityWarnings.map((w) => w.shortLabel).join(', '))}</span>` : ''}
                           </span>
                         </span>

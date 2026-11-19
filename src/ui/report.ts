@@ -33,6 +33,8 @@ export interface ReportInput {
   detectionLimit?: number;
   /** Number of included photos with manual outline edits in this session. */
   manualEditsCount?: number;
+  /** Number of included photos where optional AI pre-processing enhancement was applied. */
+  enhancedPhotosCount?: number;
   /** Min/max calibration scale across included photos (mm/px), when calibrated. */
   resolutionRangeMmPerPx?: [number, number];
   psdSvg: string;
@@ -80,12 +82,17 @@ export function buildSiteReportHtml(input: ReportInput): string {
         ? `Manual outline edits applied (${input.manualEditsCount} photo${input.manualEditsCount === 1 ? '' : 's'})`
         : 'Automated outlines (no manual edits recorded in session)'
       : undefined;
+  const enhText =
+    input.enhancedPhotosCount !== undefined && input.enhancedPhotosCount > 0
+      ? `Optional AI pre-processing enhancement applied to ${input.enhancedPhotosCount} photo${input.enhancedPhotosCount === 1 ? '' : 's'} prior to segmentation`
+      : undefined;
   const modelName = input.metadata['modelId'] ? String(input.metadata['modelId']) : 'ImageGrains 2.0 ONNX';
   const modelHash = input.metadata['modelSha256'] ? String(input.metadata['modelSha256']).slice(0, 12) : undefined;
   const methodsSentence = [
     `Surface grain sizes for ${site.name} (${r.includedPhotoCount} photo${r.includedPhotoCount === 1 ? '' : 's'}, n = ${r.validGrainCount} grains) were measured in webGrainy using ${modelName}${modelHash ? ` (SHA-256 ${modelHash}…)` : ''}.`,
     `Sizes report the 2D visible ${r.sizeMetric} (${r.statisticalBasisLabel})${resText ? ` at ${resText}` : ''}${detText ? `, with an effective pixel detection limit of ${detText}` : ''}.`,
     editText ? `${editText}.` : '',
+    enhText ? `${enhText}.` : '',
   ]
     .filter(Boolean)
     .join(' ');
@@ -189,6 +196,7 @@ ${[
   ...(resText ? ([['Pixel resolution', resText]] as Array<[string, string]>) : []),
   ...(detText ? ([['Effective detection limit', detText]] as Array<[string, string]>) : []),
   ...(editText ? ([['Outline review', editText]] as Array<[string, string]>) : []),
+  ...(enhText ? ([['Pre-processing enhancement', enhText]] as Array<[string, string]>) : []),
   ...(['appVersion', 'ortVersion', 'modelId', 'modelRevision', 'modelSha256'] as const)
     .filter((k) => input.metadata[k] !== undefined)
     .map((k): [string, string] => [k, String(input.metadata[k])]),

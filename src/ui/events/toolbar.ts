@@ -80,6 +80,9 @@ export const toolbarActions: Record<string, ActionHandler> = {
       ctx.actions.recomputeReports();
     });
   },
+  'enhance-upscale': (_el, ctx) => void ctx.actions.enhanceActivePhoto('upscale-2x'),
+  'enhance-deblur': (_el, ctx) => void ctx.actions.enhanceActivePhoto('deblur'),
+  'enhance-revert': (_el, ctx) => void ctx.actions.revertActivePhotoEnhancement(),
 };
 
 /** Tool buttons; returns true when handled. */

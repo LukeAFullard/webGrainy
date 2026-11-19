@@ -30,6 +30,15 @@ export interface SiteRecord {
   surveyDate?: string;
 }
 
+export interface PhotoOriginalBackup {
+  imageBlob: Blob;
+  width: number;
+  height: number;
+  calibration?: CalibrationResult;
+  roiConfig?: RoiExclusionConfig;
+  metadata?: SitePhotoMetadata;
+}
+
 export interface PhotoRecord {
   photoId: string;
   siteId: string;
@@ -44,6 +53,8 @@ export interface PhotoRecord {
   roiConfig?: RoiExclusionConfig;
   analysisConfig?: Omit<AnalysisConfig, 'signal' | 'onProgress' | 'calibration'>;
   metadata?: SitePhotoMetadata;
+  /** Preserved original photo before optional AI enhancement, enabling 1-click revert. */
+  originalBackup?: PhotoOriginalBackup;
 }
 
 export type PhotoProcessStatus = 'pending' | 'running' | 'done' | 'error';
@@ -56,7 +67,7 @@ export interface PhotoResultRecord {
   updatedAt: number;
 }
 
-interface ArchivedPhotoRecord extends Omit<PhotoRecord, 'imageBlob'> {
+interface ArchivedPhotoRecord extends Omit<PhotoRecord, 'imageBlob' | 'originalBackup'> {
   imageBase64: string;
   imageMimeType: string;
 }
@@ -469,7 +480,7 @@ export async function exportProjectArchive(
 
   for (const photo of photos) {
     const buf = await photo.imageBlob.arrayBuffer();
-    const { imageBlob, ...restPhoto } = photo;
+    const { imageBlob, originalBackup: _backup, ...restPhoto } = photo;
     archivedPhotos.push({
       ...restPhoto,
       imageBase64: uint8ToBase64(new Uint8Array(buf)),

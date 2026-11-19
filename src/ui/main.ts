@@ -18,6 +18,7 @@ import {
 import { CanvasViewport } from './canvasViewport.js';
 import { parseJpegExifMetadata } from './exif.js';
 import { computeBlurScoreFromRgba, computeEffectiveDetectionLimit } from '../modules/photoQuality.js';
+import { enhanceImageBuffer, type EnhanceKind, type EnhanceProgressEvent } from '../modules/imageEnhance.js';
 import { renderHelpModalHtml } from './help.js';
 import { wasmThreadsFor } from '../modules/onnxInference.js';
 import { GUIDE_HIDDEN_KEY, guideInputFrom, guideSteps, renderGuideHtml } from './onboarding.js';
@@ -236,6 +237,7 @@ const actions = createWorkspaceActions({
       return { ...(exif ?? {}), ...(blurScore !== undefined ? { blurScore } : {}) };
     },
     rectify: (image, corners, w, h) => rectifyWithCanvas(image, corners, w, h, rectifyPerspective),
+    enhance: (image, kind, onProgress) => enhanceWithCanvas(image, kind, onProgress),
   },
   syncViewport: (fit) => syncViewport(fit),
   activity: {
@@ -1000,6 +1002,67 @@ async function computeBlurScoreFromBlob(blob: Blob): Promise<number | undefined>
   }
 }
 
+/** Decodes a photo blob, runs memory-isolated ONNX enhancement, and encodes back to PNG. */
+async function enhanceWithCanvas(
+  blob: Blob,
+  kind: EnhanceKind,
+  onProgress?: (ev: EnhanceProgressEvent) => void,
+) {
+  const bmp = await createImageBitmap(blob);
+  const srcCanvas = document.createElement('canvas');
+  srcCanvas.width = bmp.width;
+  srcCanvas.height = bmp.height;
+  const srcCtx = srcCanvas.getContext('2d');
+  if (!srcCtx) {
+    bmp.close();
+    throw new Error('Could not create 2D canvas context.');
+  }
+  srcCtx.drawImage(bmp, 0, 0);
+  bmp.close();
+  const srcImg = srcCtx.getImageData(0, 0, srcCanvas.width, srcCanvas.height);
+
+  const threads = wasmThreadsFor(readCpuThreadPref());
+  const enhanced = await enhanceImageBuffer(srcImg.data, srcImg.width, srcImg.height, kind, {
+    sessionOptions: {
+      wasmPaths: './ort/',
+      ...(threads !== undefined ? { numThreads: threads } : {}),
+    },
+    ...(onProgress ? { onProgress } : {}),
+  });
+
+  const outCanvas = document.createElement('canvas');
+  outCanvas.width = enhanced.width;
+  outCanvas.height = enhanced.height;
+  const outCtx = outCanvas.getContext('2d');
+  if (!outCtx) throw new Error('Could not create output canvas context.');
+  const outImgData = new ImageData(
+    new Uint8ClampedArray(enhanced.data),
+    enhanced.width,
+    enhanced.height,
+  );
+  outCtx.putImageData(outImgData, 0, 0);
+
+  const outBlob = await new Promise<Blob>((resolve, reject) => {
+    outCanvas.toBlob((b) => (b ? resolve(b) : reject(new Error('Failed to encode enhanced image.'))), 'image/png');
+  });
+  const blurScore = await computeBlurScoreFromBlob(outBlob);
+
+  return {
+    blob: outBlob,
+    width: enhanced.width,
+    height: enhanced.height,
+    ...(blurScore !== undefined ? { blurScore } : {}),
+    enhancement: {
+      kind: enhanced.spec.kind,
+      modelId: enhanced.spec.modelId,
+      modelName: enhanced.spec.modelName,
+      modelSha256: enhanced.spec.sha256,
+      scaleFactor: enhanced.spec.scaleFactor,
+      appliedAt: new Date().toISOString(),
+    },
+  };
+}
+
 /** A small JPEG of a photo for the printable report. */
 async function photoThumbDataUrl(blob: Blob, maxSide: number): Promise<string | undefined> {
   try {
@@ -1071,7 +1134,10 @@ async function buildReport(): Promise<string | null> {
   const limitValues: number[] = [];
   const calibratedScales: number[] = [];
   let manualEditsCount = 0;
+  let enhancedPhotosCount = 0;
   for (const p of report.perPhoto) {
+    const rec = st.photos.find((x) => x.photoId === p.photoId);
+    if (rec?.metadata?.enhancement) enhancedPhotosCount++;
     const sess = st.sessions.get(p.photoId);
     if (sess?.canUndo) manualEditsCount++;
     if (p.mmPerPx !== undefined && p.mmPerPx > 0) calibratedScales.push(p.mmPerPx);
@@ -1102,6 +1168,7 @@ async function buildReport(): Promise<string | null> {
     ],
     ...(detectionLimit !== undefined ? { detectionLimit } : {}),
     manualEditsCount,
+    ...(enhancedPhotosCount > 0 ? { enhancedPhotosCount } : {}),
     ...(resolutionRangeMmPerPx ? { resolutionRangeMmPerPx } : {}),
     psdSvg: renderPsdChartSvg({
       psd: report.psd,
