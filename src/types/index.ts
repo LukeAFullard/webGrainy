@@ -240,6 +240,8 @@ export interface SedimentStatsReport {
   totalGrains: number;
   includedGrains: number;
   excludedBorderGrains: number;
+  /** Grains excluded by minBaxisPx or minSizeMm cutoffs. */
+  excludedCutoffGrains?: number;
   unit: 'px' | 'mm';
   areaWeightedB: PsdPercentiles;
   numberWeightedB: PsdPercentiles;

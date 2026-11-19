@@ -325,6 +325,8 @@ async function syncViewport(fitToView = false): Promise<void> {
     selectedIds: state.selectedGrainIds,
     inspectedId: state.inspectedGrainId,
     minBaxisPx: state.siteOptions.minBaxisPx ?? 15,
+    minSizeMm: state.siteOptions.minSizeMm ?? 0,
+    sizeMetric: state.siteOptions.sizeMetric ?? 'bAxis',
     calPoints: state.pendingCalibrationPoints,
     rectifyPoints: state.pendingRectifyPoints,
   });

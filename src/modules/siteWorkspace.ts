@@ -63,7 +63,12 @@ export function computeWorkspaceReports(workspace: {
 }): WorkspaceReports {
   const activeSession = workspace.activePhotoId !== null ? workspace.sessions.get(workspace.activePhotoId) ?? null : null;
   const metric: SizeMetric = workspace.siteOptions.sizeMetric ?? 'bAxis';
-  const singlePhotoStats = activeSession ? activeSession.getStats(metric) : null;
+  const singlePhotoStats = activeSession
+    ? activeSession.getStats(metric, {
+        minBaxisPx: workspace.siteOptions.minBaxisPx ?? 15,
+        minSizeMm: workspace.siteOptions.minSizeMm ?? 0,
+      })
+    : null;
   const siteInputs = buildSiteInputs(workspace);
   let siteReport: SiteAnalysisReport | null = null;
   let siteReportError: string | null = null;

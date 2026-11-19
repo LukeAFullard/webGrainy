@@ -46,4 +46,28 @@ describe('site workspace', () => {
     expect(mm.siteReport).toBeNull();
     expect(mm.siteReportError).toMatch(/calibrat/i);
   });
+
+  it('applies minBaxisPx and minSizeMm cutoffs consistently to single-photo stats', () => {
+    const s = session();
+    // Grain 1 is ~15x20 (bAxis ~17px), Grain 2 is ~20x30 (bAxis ~23px).
+    const loose = computeWorkspaceReports({
+      photos,
+      sessions: new Map([['a', s]]),
+      activePhotoId: 'a',
+      siteOptions: { poolingMode: 'physical-area', unit: 'px', minBaxisPx: 5, bootstrapReplicates: 10 },
+    });
+    expect(loose.singlePhotoStats?.includedGrains).toBe(2);
+    expect(loose.singlePhotoStats?.excludedCutoffGrains).toBe(0);
+    expect(loose.siteReport?.validGrainCount).toBe(2);
+
+    const strict = computeWorkspaceReports({
+      photos,
+      sessions: new Map([['a', s]]),
+      activePhotoId: 'a',
+      siteOptions: { poolingMode: 'physical-area', unit: 'px', minBaxisPx: 20, bootstrapReplicates: 10 },
+    });
+    expect(strict.singlePhotoStats?.includedGrains).toBe(1);
+    expect(strict.singlePhotoStats?.excludedCutoffGrains).toBe(1);
+    expect(strict.siteReport?.validGrainCount).toBe(1);
+  });
 });

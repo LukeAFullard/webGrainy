@@ -4,11 +4,21 @@ import { backupStatus, readBackupRecords } from '../backup.js';
 import type { readCpuThreadPref } from '../cpuThreads.js';
 import { helpButton } from '../help.js';
 import { defaultAnalysisParams, type AppState } from '../state.js';
-import { getActiveSite } from '../workspaceActions.js';
+import type { ScaleMode } from '../../types/index.js';
+import { getActivePhoto, getActiveSite } from '../workspaceActions.js';
 import { earliestPhotoDate } from '../../modules/surveyDate.js';
 import { getPhotoQualityWarnings } from '../../modules/photoQuality.js';
 import { photoSummary, visiblePhotos } from '../photoList.js';
 import { esc } from './html.js';
+
+/** Effective working-resolution scale factor for a photo under the selected Scale Mode. */
+export function workingScaleFactorFor(width: number, height: number, scaleMode: ScaleMode): number {
+  if (scaleMode === '1.0x') return 1;
+  if (scaleMode === '0.5x') return 0.5;
+  if (scaleMode === '0.25x') return 0.25;
+  const maxDim = Math.max(width, height, 1);
+  return maxDim > 1024 ? 1024 / maxDim : 1;
+}
 
 export interface StorageInfo {
   usage: number;
@@ -211,6 +221,21 @@ export function renderSidebarHtml(state: AppState, view: SidebarView): string {
             <span class="label-row">Min Size (px²) ${helpButton('minSize')}</span>
             <input class="input" type="number" step="1" min="4" max="500" value="${p.minSize}" data-param="minSize" />
           </label>
+          ${(() => {
+            const activePhoto = getActivePhoto(state);
+            const cal = activePhoto?.calibration;
+            if (!activePhoto || !cal || !Number.isFinite(cal.mmPerPx) || cal.mmPerPx <= 0) return '';
+            const wScale = workingScaleFactorFor(activePhoto.width, activePhoto.height, p.scaleMode);
+            const mmPerWorkPx = cal.mmPerPx / wScale;
+            const minSizeMm2 = p.minSize * mmPerWorkPx * mmPerWorkPx;
+            const eqDiamMm = 2 * Math.sqrt(minSizeMm2 / Math.PI);
+            const stepMm2 = minSizeMm2 < 10 ? 0.5 : minSizeMm2 < 100 ? 1 : 5;
+            return `<label class="field-label">
+              <span class="label-row">Min Size (mm²)</span>
+              <input class="input" type="number" step="${stepMm2}" min="0.1" value="${minSizeMm2 < 10 ? minSizeMm2.toFixed(1) : Math.round(minSizeMm2)}" data-min-size-mm2="" title="Converted to working-resolution px² using the active photo's scale (${cal.mmPerPx.toFixed(3)} mm/px)" />
+              <span class="field-hint">≈ Ø ${eqDiamMm.toFixed(1)} mm</span>
+            </label>`;
+          })()}
           <label class="field-label">
             <span class="label-row">Max Area Frac ${helpButton('maxGrainAreaFraction')}</span>
             <input class="input" type="number" step="0.01" min="0.01" max="1" value="${p.maxGrainAreaFraction}" data-param="maxGrainAreaFraction" />
@@ -220,6 +245,7 @@ export function renderSidebarHtml(state: AppState, view: SidebarView): string {
             <input class="input" type="number" step="1" min="0" max="100" value="${p.excludeBorderMargin}" data-param="excludeBorderMargin" />
           </label>
           </div>
+          <p class="field-hint" style="margin-top:6px;">Min Size removes tiny noise blobs during segmentation (re-analyse to apply). To filter small grains from the PSD live, use Results → Statistics settings.</p>
         </details>
         <details class="advanced-block" style="margin-top:8px;" data-keep-open="advanced-analysis">
           <summary>Advanced (rarely needed)</summary>

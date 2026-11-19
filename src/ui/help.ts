@@ -208,16 +208,16 @@ export const HELP_TOPICS = {
   minBaxisPx: {
     title: 'Min b-axis (px)',
     group: 'Site statistics',
-    what: 'Grains smaller than this (in original photo pixels) are left out of the site statistics because they are too small to measure reliably.',
+    what: 'Grains smaller than this (in original photo pixels) are left out of both This photo and Whole site statistics because they are too small to measure reliably. Marked with an amber dot when "Mark edge/too-small grains" is on.',
     default: '15 px',
-    when: 'Lower it (e.g. 10) for very sharp high-resolution photos. Raise it if small grains look unreliable.',
+    when: 'Lower it (e.g. 10) for very sharp high-resolution photos. Raise it if small grains look unreliable. Applies immediately without re-analysing.',
   },
   minSizeMm: {
     title: 'Field-count cutoff (mm)',
     group: 'Site statistics',
-    what: 'Leaves out all grains smaller than this size (mm), so results cover the same size range as a field pebble count.',
+    what: 'Leaves out all grains smaller than this size (mm) from both This photo and Whole site statistics, so results cover the same size range as a field pebble count. Marked with an amber dot when "Mark edge/too-small grains" is on.',
     default: '0 (off)',
-    when: 'Set it to the smallest stone your field method records (typically 8–16 mm) whenever you compare with a pebble count. Without it the photo D50 can look much finer (about 40% at the K1 test site; with a matching 13 mm cutoff the photo and field D50 agreed within about 3–4%).',
+    when: 'Set it to the smallest stone your field method records (typically 8–16 mm) whenever you compare with a pebble count. Without it the photo D50 can look much finer (about 40% at the K1 test site; with a matching 13 mm cutoff the photo and field D50 agreed within about 3–4%). Applies immediately without re-analysing.',
   },
   maxExcludedFraction: {
     title: 'Exclusion overlap',

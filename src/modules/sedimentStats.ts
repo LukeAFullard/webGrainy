@@ -298,21 +298,69 @@ export function computeWentworthProportions(
 }
 
 /**
+ * Returns true if a grain passes the optional pixel (`minBaxisPx`) and physical (`minSizeMm`)
+ * lower size cutoffs for the active size metric.
+ */
+export function grainPassesSizeCutoffs(
+  grain: GrainMorphometrics,
+  options?: { minBaxisPx?: number; minSizeMm?: number; sizeMetric?: SizeMetric },
+): boolean {
+  const minBaxisPx = Math.max(0, options?.minBaxisPx ?? 0);
+  const minSizeMm = Math.max(0, options?.minSizeMm ?? 0);
+  if (minBaxisPx <= 0 && minSizeMm <= 0) return true;
+  const metric = options?.sizeMetric ?? 'bAxis';
+  const pxSize =
+    metric === 'minFeret'
+      ? (grain.minFeretPx ?? grain.bAxisPx)
+      : metric === 'dEq'
+        ? grain.dEqPx
+        : grain.bAxisPx;
+  if (minBaxisPx > 0 && pxSize < minBaxisPx) return false;
+  if (minSizeMm > 0) {
+    const mmSize =
+      metric === 'minFeret'
+        ? grain.minFeretMm
+        : metric === 'dEq'
+          ? grain.dEqMm
+          : grain.bAxisMm;
+    if (mmSize !== undefined && Number.isFinite(mmSize) && mmSize < minSizeMm) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
  * Computes the complete sediment statistics report (area-weighted & number-weighted
  * PSDs on `bAxis` and `dEq`, plus Folk & Ward and Wentworth when calibrated in `mm`).
  */
 export function computeSedimentStats(
   grains: readonly GrainMorphometrics[],
-  options?: { excludeBorder?: boolean; minAreaPx?: number; sizeMetric?: SizeMetric },
+  options?: {
+    excludeBorder?: boolean;
+    minAreaPx?: number;
+    sizeMetric?: SizeMetric;
+    minBaxisPx?: number;
+    minSizeMm?: number;
+  },
 ): SedimentStatsReport {
   const excludeBorder = options?.excludeBorder ?? true;
   const minAreaPx = options?.minAreaPx ?? 0;
   const sizeMetric = options?.sizeMetric ?? 'bAxis';
+  const minBaxisPx = Math.max(0, options?.minBaxisPx ?? 0);
+  const minSizeMm = Math.max(0, options?.minSizeMm ?? 0);
 
   const areaFiltered =
     minAreaPx > 0 ? grains.filter((g) => g.areaPx >= minAreaPx) : grains;
-  const included = filterBorderGrains(areaFiltered, excludeBorder);
-  const excludedBorderGrains = areaFiltered.length - included.length;
+  const borderFiltered = filterBorderGrains(areaFiltered, excludeBorder);
+  const excludedBorderGrains = areaFiltered.length - borderFiltered.length;
+  const included =
+    minBaxisPx > 0 || minSizeMm > 0
+      ? borderFiltered.filter((g) =>
+          grainPassesSizeCutoffs(g, { minBaxisPx, minSizeMm, sizeMetric }),
+        )
+      : borderFiltered;
+  const excludedCutoffGrains = borderFiltered.length - included.length;
 
   const isCalibrated =
     included.length > 0 &&
@@ -417,6 +465,7 @@ export function computeSedimentStats(
     totalGrains: grains.length,
     includedGrains: included.length,
     excludedBorderGrains,
+    excludedCutoffGrains,
     unit,
     areaWeightedB,
     numberWeightedB,

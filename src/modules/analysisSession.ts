@@ -34,7 +34,7 @@ import {
 } from './morphometricsExt.js';
 import { photoSizeHistogram, type SizeHistogram } from './histograms.js';
 import { buildContourGeoJson, buildContourSvg, encodeMaskPng } from './exportFormats.js';
-import { computeSedimentStats, filterBorderGrains, summaryCsvRows } from './sedimentStats.js';
+import { computeSedimentStats, filterBorderGrains, grainPassesSizeCutoffs, summaryCsvRows } from './sedimentStats.js';
 import {
   type AnalysisProvenance,
   baseExportMetadata,
@@ -190,8 +190,13 @@ export class AnalysisSession {
     };
   }
 
-  getStats(sizeMetric: SizeMetric = 'bAxis'): SedimentStatsReport {
-    if (sizeMetric === 'bAxis') {
+  getStats(
+    sizeMetric: SizeMetric = 'bAxis',
+    cutoffs?: { minBaxisPx?: number; minSizeMm?: number },
+  ): SedimentStatsReport {
+    const minBaxisPx = Math.max(0, cutoffs?.minBaxisPx ?? 0);
+    const minSizeMm = Math.max(0, cutoffs?.minSizeMm ?? 0);
+    if (sizeMetric === 'bAxis' && minBaxisPx === 0 && minSizeMm === 0) {
       return this.stats;
     }
     if (sizeMetric === 'minFeret') {
@@ -200,6 +205,8 @@ export class AnalysisSession {
     return computeSedimentStats(this.getStatsGrains(), {
       excludeBorder: this.excludeBorder,
       sizeMetric,
+      minBaxisPx,
+      minSizeMm,
     });
   }
 
@@ -926,12 +933,24 @@ export class AnalysisSession {
    * Area-weighted size histogram of the grains that count in the statistics (φ classes in
    * mm when calibrated, power-of-two px classes otherwise). Cached per step and metric.
    */
-  getSizeHistogram(step: 0.5 | 1 = 1, sizeMetric: SizeMetric = 'bAxis'): SizeHistogram {
-    const key = `${step}|${sizeMetric}`;
+  getSizeHistogram(
+    step: 0.5 | 1 = 1,
+    sizeMetric: SizeMetric = 'bAxis',
+    cutoffs?: { minBaxisPx?: number; minSizeMm?: number },
+  ): SizeHistogram {
+    const minBaxisPx = Math.max(0, cutoffs?.minBaxisPx ?? 0);
+    const minSizeMm = Math.max(0, cutoffs?.minSizeMm ?? 0);
+    const key = `${step}|${sizeMetric}|${minBaxisPx}|${minSizeMm}`;
     const cache = (this.derivedCache.sizeHistograms ??= new Map());
     let h = cache.get(key);
     if (h === undefined) {
-      h = photoSizeHistogram(this.statsGrainsForSummaries(), { step, sizeMetric });
+      if (sizeMetric === 'minFeret') this.ensureFeret();
+      const base = this.statsGrainsForSummaries();
+      const filtered =
+        minBaxisPx > 0 || minSizeMm > 0
+          ? base.filter((g) => grainPassesSizeCutoffs(g, { minBaxisPx, minSizeMm, sizeMetric }))
+          : base;
+      h = photoSizeHistogram(filtered, { step, sizeMetric });
       cache.set(key, h);
     }
     return h;
