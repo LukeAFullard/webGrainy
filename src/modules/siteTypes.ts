@@ -15,6 +15,15 @@ export type PoolingMode =
   | 'number-weighted'
   | 'facies-weighted';
 
+export interface PhotoEnhancementInfo {
+  kind: 'upscale-2x' | 'deblur';
+  modelId: string;
+  modelName: string;
+  modelSha256: string;
+  scaleFactor: number;
+  appliedAt: string;
+}
+
 export interface SitePhotoMetadata {
   timestamp?: string;
   gps?: { lat: number; lon: number };
@@ -22,6 +31,7 @@ export interface SitePhotoMetadata {
   cameraModel?: string;
   focalLength35mm?: number;
   blurScore?: number;
+  enhancement?: PhotoEnhancementInfo;
   notes?: string;
 }
 

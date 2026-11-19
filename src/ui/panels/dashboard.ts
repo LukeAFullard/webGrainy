@@ -126,10 +126,25 @@ export function renderDashboardHtml(state: AppState, view: DashboardView): strin
           }
         </div>`
       : '';
+    const activeEnh = !isSite ? activePhoto?.metadata?.enhancement : undefined;
+    const enhBannerHtml = activeEnh
+      ? `<div class="basis-banner row-between" style="margin-top:6px;gap:8px;">
+          <span>Enhanced with <strong>${esc(activeEnh.modelName)}</strong> — inspect outlines against the unenhanced photo.</span>
+          ${activePhoto?.originalBackup ? `<button type="button" class="btn btn-sm" data-action="enhance-revert" ${state.batchRunning ? 'disabled' : ''}>Revert</button>` : ''}
+        </div>`
+      : '';
     const photoWarnHtml = activePhotoWarnings
-      .map((w) => `<div class="warning-banner" style="margin-top:6px;">${esc(w.message)}</div>`)
+      .map(
+        (w) =>
+          `<div class="warning-banner" style="margin-top:6px;">${esc(w.message)}${
+            w.kind === 'blur' && !activeEnh
+              ? `<div style="margin-top:6px;"><button type="button" class="btn btn-sm" data-action="enhance-deblur" ${state.batchRunning ? 'disabled' : ''}>Try AI Deblur (NAFNet, 92 MB)</button></div>`
+              : ''
+          }</div>`,
+      )
       .join('');
     tabContent = `
+      ${enhBannerHtml}
       ${photoWarnHtml}
       <div class="row-between" style="margin-top:8px;">
         <div class="row">

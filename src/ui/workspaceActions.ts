@@ -17,6 +17,12 @@ import {
   type SiteForComparison,
 } from '../modules/siteComparison.js';
 import { ScaleCalibrator } from '../modules/interactiveEditor.js';
+import {
+  scaleCalibrationAndRoi,
+  type EnhanceKind,
+  type EnhanceProgressEvent,
+} from '../modules/imageEnhance.js';
+import type { PhotoEnhancementInfo } from '../modules/siteTypes.js';
 import { toAnalysisConfig, type AppState, type AppStore } from './state.js';
 
 /** The storage functions the actions use (projectStorage by default). */
@@ -26,7 +32,8 @@ export type WorkspaceStorage = Pick<
 >;
 
 /** The engine methods the actions use. */
-export type WorkspaceEngine = Pick<ImageGrainsEngine, 'initialize' | 'getWebGpuDisabledReason'>;
+export type WorkspaceEngine = Pick<ImageGrainsEngine, 'initialize' | 'getWebGpuDisabledReason'> &
+  Partial<Pick<ImageGrainsEngine, 'releaseSessions'>>;
 
 /** Activity bar (stages, tiles, time left) shown while a batch runs. */
 export interface ActivityHooks {
@@ -57,6 +64,18 @@ export interface ImageIo {
     physWidthMm: number,
     physHeightMm: number,
   ): Promise<{ blob: Blob; width: number; height: number; calibration: CalibrationResult } | null>;
+  /** Optional memory-isolated AI enhancement (2x upscale or deblur). */
+  enhance?(
+    image: Blob,
+    kind: EnhanceKind,
+    onProgress?: (ev: EnhanceProgressEvent) => void,
+  ): Promise<{
+    blob: Blob;
+    width: number;
+    height: number;
+    blurScore?: number;
+    enhancement: PhotoEnhancementInfo;
+  } | null>;
 }
 
 export interface WorkspaceDeps {
@@ -605,6 +624,148 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
     await deps.syncViewport(true);
   }
 
+  let enhancing = false;
+
+  async function enhanceActivePhoto(kind: EnhanceKind): Promise<void> {
+    if (enhancing || store.getState().batchRunning) return;
+    if (!images.enhance) {
+      store.setState({ statusMessage: 'Image enhancement is not available in this environment.' });
+      return;
+    }
+    const state = store.getState();
+    const photo = getActivePhoto(state);
+    if (!photo) return;
+
+    enhancing = true;
+    const label = kind === 'upscale-2x' ? 'PULSE 2× upscale' : 'NAFNet deblur';
+    store.setState({ statusMessage: `Releasing segmentation model and starting ${label}…` });
+    try {
+      // Strictly isolate memory: unload any main segmentation session first.
+      await engine.releaseSessions?.();
+
+      const enhanced = await images.enhance(photo.imageBlob, kind, (ev) => {
+        store.setState({ statusMessage: `${ev.message}` });
+      });
+      if (!enhanced) return;
+
+      const latestState = store.getState();
+      const latestPhoto = latestState.photos.find((p) => p.photoId === photo.photoId);
+      if (!latestPhoto) return;
+
+      const backup = latestPhoto.originalBackup ?? {
+        imageBlob: latestPhoto.imageBlob,
+        width: latestPhoto.width,
+        height: latestPhoto.height,
+        ...(latestPhoto.calibration ? { calibration: latestPhoto.calibration } : {}),
+        ...(latestPhoto.roiConfig ? { roiConfig: latestPhoto.roiConfig } : {}),
+        ...(latestPhoto.metadata ? { metadata: latestPhoto.metadata } : {}),
+      };
+
+      const scaled = scaleCalibrationAndRoi(
+        latestPhoto.calibration,
+        latestPhoto.roiConfig,
+        enhanced.enhancement.scaleFactor,
+      );
+
+      const nextMetadata = {
+        ...(latestPhoto.metadata ?? {}),
+        ...(enhanced.blurScore !== undefined ? { blurScore: enhanced.blurScore } : {}),
+        enhancement: enhanced.enhancement,
+      };
+
+      const updatedPhoto: PhotoRecord = {
+        ...latestPhoto,
+        imageBlob: enhanced.blob,
+        width: enhanced.width,
+        height: enhanced.height,
+        ...(scaled.calibration ? { calibration: scaled.calibration } : {}),
+        ...(scaled.roiConfig ? { roiConfig: scaled.roiConfig } : {}),
+        metadata: nextMetadata,
+        originalBackup: backup,
+      };
+      await savePhoto(updatedPhoto);
+      await storage.savePhotoResult({
+        photoId: latestPhoto.photoId,
+        status: 'pending',
+        updatedAt: Date.now(),
+      });
+
+      const oldUrl = latestState.thumbUrls.get(latestPhoto.photoId);
+      if (oldUrl) revokeUrl(oldUrl);
+      const nextThumbs = new Map(latestState.thumbUrls);
+      nextThumbs.set(latestPhoto.photoId, createUrl(enhanced.blob));
+
+      const nextSessions = new Map(latestState.sessions);
+      nextSessions.delete(latestPhoto.photoId);
+      const nextStatuses = new Map(latestState.photoStatuses);
+      nextStatuses.set(latestPhoto.photoId, 'pending');
+
+      store.setState({
+        photos: latestState.photos.map((p) => (p.photoId === latestPhoto.photoId ? updatedPhoto : p)),
+        thumbUrls: nextThumbs,
+        sessions: nextSessions,
+        photoStatuses: nextStatuses,
+        activeTool: 'inspect',
+        statusMessage: `Enhanced ${latestPhoto.label} (${enhanced.enhancement.modelName}, ${enhanced.width}×${enhanced.height}px). Ready to analyse.`,
+      });
+      recomputeReports();
+      deps.onStorageChanged();
+      await deps.syncViewport(true);
+    } catch (err) {
+      store.setState({
+        statusMessage: `Enhancement failed: ${err instanceof Error ? err.message : String(err)}`,
+      });
+    } finally {
+      enhancing = false;
+    }
+  }
+
+  async function revertActivePhotoEnhancement(): Promise<void> {
+    if (enhancing || store.getState().batchRunning) return;
+    const state = store.getState();
+    const photo = getActivePhoto(state);
+    if (!photo?.originalBackup) return;
+
+    const orig = photo.originalBackup;
+    const { originalBackup: _drop, calibration: _c, roiConfig: _r, metadata: _m, ...base } = photo;
+    const restoredPhoto: PhotoRecord = {
+      ...base,
+      imageBlob: orig.imageBlob,
+      width: orig.width,
+      height: orig.height,
+      ...(orig.calibration ? { calibration: orig.calibration } : {}),
+      ...(orig.roiConfig ? { roiConfig: orig.roiConfig } : {}),
+      ...(orig.metadata ? { metadata: orig.metadata } : {}),
+    };
+    await savePhoto(restoredPhoto);
+    await storage.savePhotoResult({
+      photoId: photo.photoId,
+      status: 'pending',
+      updatedAt: Date.now(),
+    });
+
+    const oldUrl = state.thumbUrls.get(photo.photoId);
+    if (oldUrl) revokeUrl(oldUrl);
+    const nextThumbs = new Map(state.thumbUrls);
+    nextThumbs.set(photo.photoId, createUrl(orig.imageBlob));
+
+    const nextSessions = new Map(state.sessions);
+    nextSessions.delete(photo.photoId);
+    const nextStatuses = new Map(state.photoStatuses);
+    nextStatuses.set(photo.photoId, 'pending');
+
+    store.setState({
+      photos: state.photos.map((p) => (p.photoId === photo.photoId ? restoredPhoto : p)),
+      thumbUrls: nextThumbs,
+      sessions: nextSessions,
+      photoStatuses: nextStatuses,
+      statusMessage: `Reverted ${photo.label} to original (${orig.width}×${orig.height}px). Ready to analyse.`,
+    });
+    recomputeReports();
+    deps.onStorageChanged();
+    await deps.syncViewport(true);
+  }
+
   async function refreshComparison(): Promise<void> {
     const run = ++comparisonRun;
     const state = store.getState();
@@ -654,6 +815,8 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
     persistActiveSession,
     applyCalibrationToActive,
     applyRectificationToActive,
+    enhanceActivePhoto,
+    revertActivePhotoEnhancement,
     refreshComparison,
     /** Forget other sites' cached inputs (e.g. after a setting that changes them). */
     clearStoredSiteInputs(): void {

@@ -69,6 +69,16 @@ export function renderToolbarHtml(state: AppState): { toolbar: string; subToolba
       <button type="button" class="btn btn-sm" data-action="redo" ${session.canRedo ? '' : 'disabled'}>Redo</button>` : ''}
       <button type="button" class="btn btn-sm" data-action="fit-view" ${activePhoto ? '' : 'disabled'} title="Fit the photo to the view">Fit</button>
     </span>
+    ${
+      activePhoto
+        ? `<span class="tool-group" role="group" aria-label="Optional image enhancement">
+            <span class="tool-group-label">Enhance</span>
+            <button type="button" class="btn btn-sm" data-action="enhance-upscale" ${state.batchRunning ? 'disabled' : ''} title="Optional 2× AI upscale (PULSE, 1.4 MB, MIT, L1-trained — unloads segmentation model first)">2× Upscale</button>
+            <button type="button" class="btn btn-sm" data-action="enhance-deblur" ${state.batchRunning ? 'disabled' : ''} title="Optional AI motion deblur (NAFNet, 92 MB, MIT, L1-trained — unloads segmentation model first)">Deblur</button>
+            ${activePhoto.originalBackup ? `<button type="button" class="btn btn-sm" data-action="enhance-revert" ${state.batchRunning ? 'disabled' : ''} title="Restore the original unenhanced photo">Revert</button>` : ''}
+          </span>`
+        : ''
+    }
   `;
 
   const ov = state.overlays;

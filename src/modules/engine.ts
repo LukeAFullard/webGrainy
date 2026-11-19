@@ -537,6 +537,22 @@ export class ImageGrainsEngine {
     }
   }
 
+  /**
+   * Releases all loaded ONNX segmentation sessions to free GPU/WASM memory without
+   * permanently disposing the engine. Called before loading optional enhancement models
+   * so segmentation and enhancement models are never loaded simultaneously.
+   */
+  async releaseSessions(): Promise<void> {
+    for (const session of this.ownedSessions) {
+      if (typeof session.release === 'function') {
+        await session.release().catch(() => undefined);
+      }
+    }
+    this.ownedSessions.clear();
+    this.sessionCache.clear();
+    this.inFlightSessions.clear();
+  }
+
   async dispose(): Promise<void> {
     this.disposed = true;
 
@@ -547,14 +563,7 @@ export class ImageGrainsEngine {
     }
     this.pendingWorkerRejects.clear();
 
-    for (const session of this.ownedSessions) {
-      if (typeof session.release === 'function') {
-        await session.release().catch(() => undefined);
-      }
-    }
-    this.ownedSessions.clear();
-    this.sessionCache.clear();
-    this.inFlightSessions.clear();
+    await this.releaseSessions();
 
     if (this.workerInstance !== null) {
       this.workerInstance.terminate();
