@@ -31,9 +31,16 @@ export function filterBorderGrains(
 }
 
 /**
- * Computes weighted particle-size distribution percentiles with exact parity
- * to `eval_core.py` / `np.interp(p / 100.0, cdf, v)` using midpoint cumulative
- * weights `cdf = (cumsum(w) - 0.5 * w) / sum(w)`.
+ * Weighted particle-size distribution percentiles from midpoint cumulative weights
+ * `cdf = (cumsum(w) - 0.5 * w) / sum(w)`, interpolated linearly in log2(size) (φ space):
+ * `2 ** np.interp(p / 100, cdf, log2(v))`. Sizes outside the CDF range clamp to the
+ * smallest / largest grain.
+ *
+ * Note: before v1.1.0's scientific-audit fixes (commit 48d64bc) this interpolated linearly
+ * in size (`np.interp(p / 100, cdf, v)`, as `eval_core.py`). The held-out benchmark tables
+ * in README.md were computed with that linear rule; the two agree closely for typical
+ * samples (mean |difference| ~0.1-1% for D16/D50/D84) but can differ by 10-20% where few
+ * grains span a wide size gap (small or very coarse-tailed samples).
  */
 export function weightedPsdPercentiles(
   values: ArrayLike<number>,

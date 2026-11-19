@@ -158,6 +158,7 @@ export function buildPerPhotoBreakdown(
       D50: pPsd.D50,
       D84: pPsd.D84,
       weightContributionPct: photoWeightsPct[i] ?? 0,
+      detectionLimitPx: p.detectionLimitPx,
       outlierReasons: reasons,
     });
   }

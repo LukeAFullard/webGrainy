@@ -6,6 +6,8 @@ import {
   normalizeRgbJoint99,
   prepareWorkingImage,
   recommendModel,
+  resizeRgbaArea,
+  resizeRgbaBilinear,
 } from '../src/modules/imagePreprocess.js';
 
 function makeSolidRgba(
@@ -184,6 +186,53 @@ describe('imagePreprocess', () => {
       expect(r025.data[0]).toBe(12);
       expect(r025.data[1]).toBe(34);
       expect(r025.data[2]).toBe(56);
+    });
+  });
+
+  describe('regression: anti-aliased downscaling', () => {
+    // 1-px white vertical lines every 8 px on black (e.g. thin grain gaps / edges).
+    const W = 400;
+    const H = 200;
+    const lines = new Uint8ClampedArray(W * H * 4);
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const o = (y * W + x) * 4;
+        const v = x % 8 === 0 ? 255 : 0;
+        lines[o] = v;
+        lines[o + 1] = v;
+        lines[o + 2] = v;
+        lines[o + 3] = 255;
+      }
+    }
+    const meanRed = (d: Uint8ClampedArray): number => {
+      let s = 0;
+      for (let i = 0; i < d.length; i += 4) s += d[i]!;
+      return s / (d.length / 4);
+    };
+
+    it('prepareWorkingImage preserves the mean intensity of fine detail at 0.25x', () => {
+      const r = prepareWorkingImage(lines, W, H, '0.25x');
+      expect(meanRed(r.data)).toBeCloseTo(255 / 8, 0);
+      // Each output column covers 4 source columns: every other one contains a line (255/4).
+      expect(r.data[0]).toBe(64);
+      expect(r.data[4]).toBe(0);
+    });
+
+    it('bilinear point sampling would drop the lines entirely (why area averaging is used)', () => {
+      expect(meanRed(resizeRgbaBilinear(lines, W, H, W / 4, H / 4))).toBe(0);
+    });
+
+    it('area resampling handles non-integer factors and keeps a flat image flat', () => {
+      const flat = makeSolidRgba(1000, 750, 90, 120, 200, 255);
+      const out = resizeRgbaArea(flat, 1000, 750, 333, 250);
+      for (let i = 0; i < out.length; i += 4) {
+        expect(out[i]).toBe(90);
+        expect(out[i + 1]).toBe(120);
+        expect(out[i + 2]).toBe(200);
+        expect(out[i + 3]).toBe(255);
+      }
+      const r = resizeRgbaArea(lines, W, H, 123, 61);
+      expect(Math.abs(meanRed(r) - 255 / 8)).toBeLessThan(1.5);
     });
   });
 

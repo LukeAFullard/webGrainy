@@ -81,7 +81,7 @@ function fakeWorld(opts: { failIds?: string[]; abortAfter?: number } = {}) {
 
 function setup(
   world: ReturnType<typeof fakeWorld>,
-  overrides: { rectify?: () => Promise<null> } = {},
+  overrides: { rectify?: () => Promise<unknown>; enhance?: () => Promise<unknown> } = {},
 ) {
   const store = new AppStore(createInitialState());
   const log: string[] = [];
@@ -96,7 +96,8 @@ function setup(
     images: {
       imageSize: async () => ({ width: 120, height: 80 }),
       metadata: async () => undefined,
-      rectify: overrides.rectify ?? (async () => null),
+      rectify: (overrides.rectify ?? (async () => null)) as never,
+      ...(overrides.enhance ? { enhance: overrides.enhance as never } : {}),
     },
     syncViewport: async () => {},
     activity: {
@@ -312,6 +313,40 @@ describe('workspace actions', () => {
     await returningNull.actions.applyRectificationToActive(corners, 100, 100);
     expect(returningNull.store.getState().pendingRectifyPoints).toEqual([]);
     expect(returningNull.store.getState().statusMessage).toContain('Rectification failed:');
+  });
+
+  it('regression: rectification and enhancement keep every image step in the provenance history', async () => {
+    const world = fakeWorld();
+    world.sites.set('a', site('a', ['p1']));
+    const enhancement = {
+      kind: 'upscale-2x' as const, modelId: 'pulse_2x_fp32', modelName: 'PULSE 2x', modelSha256: 'abc', scaleFactor: 2, appliedAt: '2026-01-01T00:00:00Z',
+    };
+    world.photos.set('p1', { ...photo('p1', 'a'), metadata: { cameraModel: 'X', enhancement } });
+    const corners = [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 60 }, { x: 0, y: 60 }] as [
+      { x: number; y: number }, { x: number; y: number }, { x: number; y: number }, { x: number; y: number },
+    ];
+    const cal = { mmPerPx: 0.5, pointA: { x: 0, y: 0 }, pointB: { x: 100, y: 0 }, physicalLengthMm: 50, pixelDistance: 100 };
+    const deblur = {
+      kind: 'deblur' as const, modelId: 'richardson_lucy_tv_deblur', modelName: 'RL', modelSha256: '', scaleFactor: 1, appliedAt: '2026-01-03T00:00:00Z',
+    };
+    const { store, actions } = setup(world, {
+      rectify: async () => ({ blob: new Blob(['r']), width: 200, height: 120, calibration: cal }),
+      enhance: async () => ({ blob: new Blob(['e']), width: 200, height: 120, enhancement: deblur }),
+    });
+    await actions.createDefaultOrLoadSites();
+    await actions.applyRectificationToActive(corners, 100, 60);
+    let saved = world.photos.get('p1')!;
+    expect(saved.metadata?.enhancement).toBeUndefined(); // the new raster is not the enhanced one
+    expect(saved.metadata?.cameraModel).toBe('X');
+    expect(saved.metadata?.processingHistory?.map((x) => x.step)).toEqual(['enhancement', 'rectification']);
+    expect(saved.metadata?.processingHistory?.[0]).toMatchObject({ modelId: 'pulse_2x_fp32' });
+    expect(saved.metadata?.processingHistory?.[1]).toMatchObject({ physicalWidthMm: 100, physicalHeightMm: 60, outputWidth: 200, mmPerPx: 0.5 });
+
+    expect(store.getState().photos[0]!.photoId).toBe('p1');
+    await actions.enhanceActivePhoto('deblur');
+    saved = world.photos.get('p1')!;
+    expect(saved.metadata?.enhancement?.modelId).toBe('richardson_lucy_tv_deblur');
+    expect(saved.metadata?.processingHistory?.map((x) => x.step)).toEqual(['enhancement', 'rectification', 'enhancement']);
   });
 
   it('re-calibrating an analysed photo multiple times updates stats every time (never stuck at first value)', async () => {

@@ -691,6 +691,41 @@ describe('pipelineController (ImageGrainsEngine & AnalysisSession)', () => {
     await engine.dispose();
   });
 
+  it('regression: keeps quantized Cellpose-SAM weights (INT8/FP4) on WASM even with a float16 GPU', async () => {
+    Object.defineProperty(globalThis, 'navigator', {
+      value: { gpu: { requestAdapter: async () => ({ features: { has: (f: string) => f === 'shader-f16' } }) } },
+      configurable: true,
+    });
+    const created: string[] = [];
+    const createSpy = vi.spyOn(ort.InferenceSession, 'create').mockImplementation((async (_b: unknown, opts?: ort.InferenceSession.SessionOptions) => {
+      created.push(String(opts?.executionProviders?.[0] ?? 'wasm'));
+      return {
+        async run(feeds: Record<string, { dims: readonly number[] }>) {
+          const d = feeds['image']!.dims; const n = d[2]! * d[3]!;
+          return { flows_cellprob: { data: new Float32Array(3 * n).fill(-5), dims: [1, 3, d[2], d[3]] } };
+        },
+        release: async () => undefined,
+      } as unknown as ort.InferenceSession;
+    }) as unknown as typeof ort.InferenceSession.create);
+    const engine = new ImageGrainsEngine({ modelDownloadOptions: {} });
+    const warnings: Array<{ code?: string; message?: string }> = [];
+    engine.onProgress((stage, detail) => { if (stage === 'warning') warnings.push(detail as { code?: string }); });
+    await engine.initialize();
+    const img = makeRgbaImage(64, 64, 'uniform');
+    const int8 = await engine.analyzeImage(img, { model: 'cpsam', scaleMode: '1.0x', cpsamWeights: 'int8' });
+    expect(int8.getProvenance()?.executionProvider).toBe('wasm');
+    const fp4 = await engine.analyzeImage(img, { model: 'cpsam', scaleMode: '1.0x', cpsamWeights: 'fp4' });
+    expect(fp4.getProvenance()?.executionProvider).toBe('wasm');
+    // FP16 still uses the GPU.
+    const fp16 = await engine.analyzeImage(img, { model: 'cpsam', scaleMode: '1.0x', cpsamWeights: 'fp16' });
+    expect(fp16.getProvenance()?.executionProvider).toBe('webgpu');
+    expect(created).toEqual(['wasm', 'wasm', 'webgpu']);
+    expect(warnings.find((w) => w.code === 'cpsam-wasm-fallback')?.message).toMatch(/not yet verified on WebGPU/);
+    createSpy.mockRestore();
+    await engine.dispose();
+    Object.defineProperty(globalThis, 'navigator', { value: {}, configurable: true });
+  });
+
   it('retries a device-lost analysis only once', async () => {
     Object.defineProperty(globalThis, 'navigator', {
       value: { gpu: { requestAdapter: async () => ({ features: { has: () => true } }) } },

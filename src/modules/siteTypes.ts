@@ -24,6 +24,32 @@ export interface PhotoEnhancementInfo {
   appliedAt: string;
 }
 
+/** A perspective rectification applied to the photo before analysis. */
+export interface PhotoRectificationInfo {
+  /** Reference quadrilateral corners (TL, TR, BR, BL) in the input image's pixels. */
+  corners: Array<{ x: number; y: number }>;
+  physicalWidthMm: number;
+  physicalHeightMm: number;
+  outputWidth: number;
+  outputHeight: number;
+  mmPerPx: number;
+  appliedAt: string;
+}
+
+/** One image-modifying step applied before analysis, in the order applied. */
+export type PhotoProcessingStep =
+  | ({ step: 'enhancement' } & PhotoEnhancementInfo)
+  | ({ step: 'rectification' } & PhotoRectificationInfo);
+
+/**
+ * Every image-modifying step applied to a photo (enhancement, rectification), oldest first.
+ * Falls back to the current `enhancement` record for photos saved before the history existed.
+ */
+export function photoProcessingHistory(meta: SitePhotoMetadata | undefined): PhotoProcessingStep[] {
+  if (meta?.processingHistory !== undefined) return meta.processingHistory.map((s) => ({ ...s }));
+  return meta?.enhancement !== undefined ? [{ step: 'enhancement', ...meta.enhancement }] : [];
+}
+
 export interface SitePhotoMetadata {
   timestamp?: string;
   gps?: { lat: number; lon: number };
@@ -31,7 +57,10 @@ export interface SitePhotoMetadata {
   cameraModel?: string;
   focalLength35mm?: number;
   blurScore?: number;
+  /** The enhancement of the current image (cleared by a later rectification). */
   enhancement?: PhotoEnhancementInfo;
+  /** Provenance: every image-modifying step, kept across later steps (see photoProcessingHistory). */
+  processingHistory?: PhotoProcessingStep[];
   notes?: string;
 }
 
@@ -180,6 +209,11 @@ export interface PerPhotoSiteBreakdown {
   D50: number;
   D84: number;
   weightContributionPct: number;
+  /**
+   * Smallest resolvable grain size in original-photo px: the segmentation area floor at the
+   * photo's working resolution (or `minBaxisPx` if larger). Used for the harmonised cutoff.
+   */
+  detectionLimitPx?: number;
   outlierReasons: string[];
 }
 

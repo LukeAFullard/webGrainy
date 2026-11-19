@@ -47,8 +47,10 @@ function makeSyntheticSession(params: {
   circles: ReadonlyArray<{ cx: number; cy: number; r: number }>;
   mmPerPx?: number;
   excludeBorder?: boolean;
+  /** Working-image scale (working px / original px); circles are in working px. */
+  scaleFactor?: number;
 }): AnalysisSession {
-  const { width, height, circles, mmPerPx, excludeBorder = true } = params;
+  const { width, height, circles, mmPerPx, excludeBorder = true, scaleFactor = 1 } = params;
   const masks = new Int32Array(width * height);
   let id = 1;
   for (const c of circles) {
@@ -73,10 +75,10 @@ function makeSyntheticSession(params: {
     data: new Uint8ClampedArray(width * height * 4),
     width,
     height,
-    originalWidth: width,
-    originalHeight: height,
-    effectiveScaleFactor: 1,
-    scaleModeApplied: '1.0x',
+    originalWidth: Math.round(width / scaleFactor),
+    originalHeight: Math.round(height / scaleFactor),
+    effectiveScaleFactor: scaleFactor,
+    scaleModeApplied: scaleFactor === 1 ? '1.0x' : '0.25x',
   };
 
   const workingGrains = computeAllGrainMorphometrics(masks, width, height, 2);
@@ -256,6 +258,32 @@ describe('siteAnalysis', () => {
     expect(report.excludedTruncationCount).toBe(2);
     expect(report.excludedTruncationAreaMm2).toBeGreaterThan(0);
     expect(report.validGrainCount).toBe(2);
+  });
+
+  it('regression: harmonised cutoff uses each photo\'s detection floor at its working resolution', () => {
+    // Both photos 1 mm/px. The full-resolution photo resolves 15 px (minBaxisPx) = 15 mm.
+    // The photo analysed at 0.25x cannot see grains under the minSize=30 working-px area floor:
+    // d_eq = 2*sqrt(30/pi) = 6.18 working px = 24.7 original px = 24.7 mm. That is the common cutoff.
+    const floorMm = (2 * Math.sqrt(30 / Math.PI)) / 0.25;
+    const full = makeSyntheticSession({ width: 400, height: 400, circles: makeGridCircles([9, 11, 13, 20, 25], 5, 70, 50), mmPerPx: 1 });
+    // Working-px radii 4..8 -> original b-axes ~32..64 mm, all above the floor.
+    const shrunk = makeSyntheticSession({ width: 200, height: 200, circles: makeGridCircles([4, 5, 6, 8], 4, 45, 30), mmPerPx: 1, scaleFactor: 0.25 });
+    const photos: SitePhotoInput[] = [
+      { photoId: 'full', label: 'Full', included: true, session: full },
+      { photoId: 'shrunk', label: 'Shrunk', included: true, session: shrunk },
+    ];
+    const opts = { poolingMode: 'physical-area' as const, minBaxisPx: 15, bootstrapReplicates: 20 };
+    const report = analyzeSite(photos, { ...opts, harmonizeCutoff: true });
+    expect(report.dCutoffCommonMm).toBeCloseTo(floorMm, 6);
+    // Full-res grains with b = 18 and 22 mm (r = 9, 11) are below the shrunk photo's floor.
+    expect(report.excludedTruncationCount).toBe(2);
+    const shrunkRow = report.perPhoto.find((p) => p.photoId === 'shrunk')!;
+    expect(shrunkRow.detectionLimitPx).toBeCloseTo(floorMm, 6);
+    expect(report.perPhoto.find((p) => p.photoId === 'full')!.detectionLimitPx).toBe(15);
+    // Without harmonisation only the per-photo px cutoff applies.
+    const off = analyzeSite(photos, { ...opts, harmonizeCutoff: false });
+    expect(off.dCutoffCommonMm).toBeNull();
+    expect(off.excludedTruncationCount).toBe(0);
   });
 
   it('exclusion overlap tolerance (maxExcludedFraction) decides whether a partly excluded grain is kept', () => {

@@ -59,6 +59,8 @@ export interface PreparedPhoto {
   gridMatrixHits: number;
   gridSubCutoffHits: number;
   faciesWeight: number;
+  /** Smallest resolvable size in original-photo px (working-resolution floor or minBaxisPx). */
+  detectionLimitPx: number;
 }
 
 export function emptyPsd(): PsdPercentiles {

@@ -95,6 +95,19 @@ export const MODEL_FILES: Record<ModelId, string> = {
   ig2_cpsam_fp4_e2m1_lut: 'ig2_cpsam_fp4_e2m1_lut.onnx',
 };
 
+/**
+ * Weight files kept on the WASM (CPU) backend even when WebGPU is available. The quantized
+ * Cellpose-SAM files have only been verified on the CPU (audit/quantization/
+ * APP_INTEGRATION_CHECK.md), and WebGPU has corrupted INT8 `DequantizeLinear` output in
+ * another model (the NAFNet deblurrer). WebGPU can return plausible-looking wrong numbers
+ * that the output checks cannot catch, so these run on the CPU until the GPU check page
+ * confirms them on real hardware.
+ */
+export const WEBGPU_UNVERIFIED_MODELS: ReadonlySet<ModelId> = new Set<ModelId>([
+  'ig2_cpsam_int8_wo_fp32scale',
+  'ig2_cpsam_fp4_e2m1_lut',
+]);
+
 /** The model family (and so the inference pipeline) a weight file belongs to. */
 export function modelKindOf(modelId: ModelId): 'unet' | 'cpsam' {
   return modelId === 'ig2_unet_fp32' ? 'unet' : 'cpsam';
