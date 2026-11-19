@@ -1,9 +1,0 @@
-KILLED (6 non-timing failures) | F&W phi16 mapped to D16 (swap)
-KILLED (6 non-timing failures) | percentile CDF without midpoint
-KILLED (2 non-timing failures) | area rescaled linearly instead of squared
-KILLED (12 non-timing failures) | b-axis +5% scale error
-KILLED (2 non-timing failures) | Kish n_eff replaced by raw weight sum
-KILLED (12 non-timing failures) | binomial CI lower tail alpha instead of alpha/2
-KILLED (2 non-timing failures) | Wentworth gravel/cobble edge 64->32 mm
-KILLED (2 non-timing failures) | F&W sorting threshold
-KILLED (2 non-timing failures) | flow-QC magnitude weighting removed

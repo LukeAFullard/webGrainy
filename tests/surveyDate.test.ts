@@ -59,12 +59,21 @@ describe('survey dates', () => {
     );
     expect(svg).toContain('2024-05-01');
     expect(svg).toContain('A (2024-05-01): D50 20.0 mm');
-    expect((svg.match(/<polyline/g) ?? []).length).toBe(3);
+    // Different places / no place: points are not joined into a line (no false "trend").
+    expect((svg.match(/<polyline/g) ?? []).length).toBe(0);
+    const samePlace = renderTimeSeriesSvg(
+      [
+        { date: '2024-05-01', name: 'A', color: '#0072B2', D16: 10, D50: 20, D84: 40, group: 'Reach 3', groupColor: '#0072B2' },
+        { date: '2025-05-01', name: 'B', color: '#E69F00', D16: 8, D50: 16, D84: 30, group: 'Reach 3', groupColor: '#0072B2' },
+      ],
+      'mm',
+    );
+    expect((samePlace.match(/<polyline/g) ?? []).length).toBe(3); // D16, D50, D84 of the one place
     expect(renderTimeSeriesSvg([], 'mm')).toContain('Give at least one compared site a survey date');
   });
 
   it('compare view: date toggle, date column and the undated list', () => {
-    const report = { unit: 'mm', includedPhotoCount: 1, validGrainCount: 100, psd: { D16: 1, D50: 2, D84: 4 }, bootstrapCi: { lower: { D16: 1, D50: 2, D84: 3 }, upper: { D16: 1, D50: 2, D84: 5 } }, extra: null, folkWard: null, wentworth: null, wentworthHistogram05Phi: [], wentworthHistogram10Phi: [] } as never;
+    const report = { unit: 'mm', includedPhotoCount: 1, validGrainCount: 100, psd: { D16: 1, D50: 2, D84: 4 }, bootstrapCi: { lower: { D16: 1, D50: 2, D84: 3 }, upper: { D16: 1, D50: 2, D84: 5 } }, extra: null, folkWard: null, wentworth: null, wentworthHistogram05Phi: [], wentworthHistogram10Phi: [], dCutoffCommonMm: null, adequacy: { rating: 'Adequate', effectiveGrainCount: 250 }, shape: { aspectRatioCounts: [], medianAspectRatio: 0.7, n: 0 }, fabricRose: { grainCount: 0 } } as never;
     const st = {
       ...createInitialState(),
       dashboardScope: 'compare' as const,
@@ -74,8 +83,8 @@ describe('survey dates', () => {
         loading: false,
         error: null,
         sites: [
-          { siteId: 'b', name: 'Undated', color: '#111', report, error: null, date: null, dateSource: null },
-          { siteId: 'a', name: 'Spring', color: '#222', report, error: null, date: '2025-04-01', dateSource: 'photos' },
+          { siteId: 'b', name: 'Undated', color: '#111', report, error: null, date: null, dateSource: null, place: null, analysisSettings: {} },
+          { siteId: 'a', name: 'Spring', color: '#222', report, error: null, date: '2025-04-01', dateSource: 'photos', place: null, analysisSettings: {} },
         ],
       },
     };

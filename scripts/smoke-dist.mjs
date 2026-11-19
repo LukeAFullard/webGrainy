@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// Browser smoke test of the BUILT app (dist/). This is the integration check whose
-// absence let the ORT path bug (AUDIT_REPORT F-01) ship with an all-green unit suite.
+// Browser smoke test of the BUILT app (dist/): the integration check that unit tests cannot
+// replace (asset paths, service worker, ONNX Runtime loading, workers).
 //
 //   1. Serves dist/ on a local port and checks every service-worker precache asset is 200.
 //   2. Loads the app headless and fails on any console error / HTTP >= 400 / CSP violation.

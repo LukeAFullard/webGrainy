@@ -2,6 +2,7 @@
 import { baseExportMetadata } from '../../modules/provenance.js';
 import { effectiveRoi } from '../../modules/siteWorkspace.js';
 import { comparisonCsv } from '../../modules/siteComparison.js';
+import { placeName } from '../../modules/sitePlaces.js';
 import type { DashboardTab } from '../state.js';
 import { getActivePhoto, getActiveSite } from '../workspaceActions.js';
 import { confirmDiscardEdits, isInput, isSelect, type ActionHandler, type ControlLike, type ElementLike, type EventContext } from './context.js';
@@ -24,6 +25,13 @@ export const dashboardActions: Record<string, ActionHandler> = {
     if (!id) return;
     ctx.store.setState({ dashboardScope: 'photo' });
     void ctx.actions.loadSiteData(id);
+  },
+  'compare-select-place': (el, ctx) => {
+    const place = placeName(el.dataset['place']);
+    if (place === null) return;
+    const ids = ctx.store.getState().sites.filter((s) => placeName(s.place)?.toLowerCase() === place.toLowerCase()).map((s) => s.siteId);
+    ctx.store.setState({ compareSiteIds: ids, compareByDate: true });
+    void ctx.actions.refreshComparison();
   },
   'toggle-compare-px': (el, ctx) => {
     ctx.store.setState({ compareInPixels: (el as ControlLike).checked === true });

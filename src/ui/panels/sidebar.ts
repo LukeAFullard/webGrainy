@@ -8,13 +8,14 @@ import { defaultAnalysisParams, type AppState } from '../state.js';
 import type { ScaleMode } from '../../types/index.js';
 import { getActivePhoto, getActiveSite } from '../workspaceActions.js';
 import { earliestPhotoDate } from '../../modules/surveyDate.js';
+import { groupSitesByPlace, placeName, surveysOfSamePlace } from '../../modules/sitePlaces.js';
 import { getPhotoQualityWarnings } from '../../modules/photoQuality.js';
 import { photoSummary, visiblePhotos } from '../photoList.js';
 import { esc } from './html.js';
 
 /** Effective working-resolution scale factor for a photo under the selected Scale Mode. */
 export function workingScaleFactorFor(width: number, height: number, scaleMode: ScaleMode): number {
-  // The analysis's own rule (it used to differ here for 1025-4096 px photos).
+  // The analysis's own rule (imagePreprocess.workingScaleFor).
   return workingScaleFor(width, height, scaleMode);
 }
 
@@ -68,14 +69,10 @@ export function renderSidebarHtml(state: AppState, view: SidebarView): string {
           <button type="button" class="btn btn-sm" data-action="import-archive" title="Open a saved .webgrainy project">Open</button>
         </div>
       </div>
-      <select class="select" id="site-select" aria-label="Select active field site">
-        ${state.sites
-          .map(
-            (s) =>
-              `<option value="${esc(s.siteId)}" ${s.siteId === activeSite?.siteId ? 'selected' : ''}>${esc(s.name)} (${s.photoOrder.length})</option>`,
-          )
-          .join('')}
+      <select class="select" id="site-select" aria-label="Select active field site (surveys grouped by place)">
+        ${siteOptionsHtml(state)}
       </select>
+      ${placeHtml(state)}
       ${surveyDateHtml(state)}
       ${backupLineHtml(state, analysedCount, view.storageInfo)}
       ${state.sites.length > 1 ? `<button type="button" class="btn btn-sm" style="margin-top:6px;width:100%;" data-action="analyse-all-sites" title="Analyse every photo that is not analysed yet, in all ${state.sites.length} sites" ${state.batchRunning || state.enhancing ? 'disabled' : ''}>Analyse all sites (${state.sites.length})</button>` : ''}
@@ -257,7 +254,7 @@ export function renderSidebarHtml(state: AppState, view: SidebarView): string {
               <span class="label-row">Inference pipeline ${helpButton('inferencePipeline')}</span>
               <select class="select" data-param="inferencePipeline">
                 <option value="cellpose" ${p.inferencePipeline === 'cellpose' ? 'selected' : ''}>Cellpose (matches ImageGrains)</option>
-                <option value="legacy" ${p.inferencePipeline === 'legacy' ? 'selected' : ''}>Legacy (webGrainy ≤ v1.1)</option>
+                <option value="legacy" ${p.inferencePipeline === 'legacy' ? 'selected' : ''}>Legacy (whole-image tiling)</option>
               </select>
             </label>
             <label class="field-label">
@@ -374,6 +371,45 @@ export function bulkBarHtml(state: AppState): string {
     <button type="button" class="btn btn-xs" data-action="photo-bulk" data-bulk="reanalyse" ${dis}>Re-analyse</button>
     <button type="button" class="btn btn-xs btn-danger" data-action="photo-bulk" data-bulk="delete" ${dis}>Delete…</button>
   </div>`;
+}
+
+/** Site picker options: surveys grouped by place (oldest first), then sites without a place. */
+export function siteOptionsHtml(state: AppState): string {
+  const active = getActiveSite(state);
+  const byId = new Map(state.sites.map((s) => [s.siteId, s]));
+  const groups = groupSitesByPlace(state.sites);
+  const option = (id: string, label: string): string =>
+    `<option value="${esc(id)}" ${id === active?.siteId ? 'selected' : ''}>${esc(label)} (${byId.get(id)?.photoOrder.length ?? 0})</option>`;
+  const anyPlace = groups.some((g) => g.place !== null);
+  return groups
+    .map((g) => {
+      const opts = g.surveys.map((s) => option(s.siteId, g.place !== null && s.date ? `${s.date} · ${s.name}` : s.name)).join('');
+      if (!anyPlace) return opts;
+      return `<optgroup label="${esc(g.place ?? 'Other sites')}">${opts}</optgroup>`;
+    })
+    .join('');
+}
+
+/** Place of the open survey, plus "new survey" and "compare over time" for that place. */
+export function placeHtml(state: AppState): string {
+  const site = getActiveSite(state);
+  if (!site) return '';
+  const places = [...new Set(state.sites.map((s) => placeName(s.place)).filter((p): p is string => p !== null))].sort();
+  const place = placeName(site.place);
+  const surveys = surveysOfSamePlace(state.sites, site.siteId);
+  return `<label class="field-label site-place" style="margin-top:6px;">
+    <span class="label-row">Place ${helpButton('sitePlace')}</span>
+    <input class="input" type="text" list="place-list" maxlength="120" data-site-place="" value="${esc(place ?? '')}" placeholder="e.g. Rakaia reach 3 (same name for repeat surveys)" aria-label="Place of this survey" />
+    <datalist id="place-list">${places.map((p) => `<option value="${esc(p)}"></option>`).join('')}</datalist>
+  </label>
+  ${
+    place !== null
+      ? `<div class="row" style="margin-top:4px;gap:6px;flex-wrap:wrap;">
+          <button type="button" class="btn btn-sm" data-action="new-survey" title="Start the next survey of ${esc(place)} (same statistics settings, new photos)">+ New survey of this place</button>
+          ${surveys.length > 1 ? `<button type="button" class="btn btn-sm" data-action="compare-place" title="Compare the ${surveys.length} surveys of ${esc(place)} over time">Compare ${surveys.length} surveys over time</button>` : ''}
+        </div>`
+      : ''
+  }`;
 }
 
 /** Survey date of the open site: entered, or the earliest photo date as a placeholder. */

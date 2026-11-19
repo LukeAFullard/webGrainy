@@ -86,7 +86,7 @@ export interface SiteAnalysisOptions {
    * Lower size cutoff in mm (calibrated sites only), e.g. the smallest clast a field
    * Wolman/pebble count records. Grains below it are excluded before pooling, so photo
    * and field distributions describe the same size range. At the K1 site, matching the
-   * field count's 13 mm minimum turned a -42% D50 gap into +3% (audit/k1/).
+   * field count's 13 mm minimum turned a -42% D50 gap into +3% (validation/k1/).
    */
   minSizeMm?: number;
   /**
@@ -236,6 +236,8 @@ export interface SiteAnalysisReport {
   wentworthHistogram05Phi: WentworthBin[];
   wentworthHistogram10Phi: WentworthBin[];
   fabricRose: FabricRoseStats;
+  /** Grain shape of the pooled grains (each counted once): b/a in 10 bins over [0, 1]. */
+  shape: { aspectRatioCounts: number[]; medianAspectRatio: number; n: number };
   bootstrapMode: 'cluster' | 'two-stage-cluster' | 'single-photo-grain-fallback';
   bootstrapSeed: number;
   bootstrapReplicates: number;

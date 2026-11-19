@@ -97,7 +97,7 @@ export const MODEL_FILES: Record<ModelId, string> = {
 
 /**
  * Weight files kept on the WASM (CPU) backend even when WebGPU is available. The quantized
- * Cellpose-SAM files have only been verified on the CPU (audit/quantization/
+ * Cellpose-SAM files have only been verified on the CPU (validation/quantization/
  * APP_INTEGRATION_CHECK.md), and WebGPU has corrupted INT8 `DequantizeLinear` output in
  * another model (the NAFNet deblurrer). WebGPU can return plausible-looking wrong numbers
  * that the output checks cannot catch, so these run on the CPU until the GPU check page

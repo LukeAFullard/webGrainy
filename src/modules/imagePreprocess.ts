@@ -559,7 +559,7 @@ export function resizeRgbaBilinear(
  * Enlarges the working image by `factor` (e.g. 1.5) so that fine grains are larger for the
  * network. Measurements stay correct because `effectiveScaleFactor` is multiplied by the same
  * factor (every result is converted back to original-photo pixels with it). Tested in
- * audit/preprocessing: helps U-Net on fine gravel (working median b-axis < 20 px).
+ * validation/preprocessing: helps U-Net on fine gravel (working median b-axis < 20 px).
  */
 export function upscaleWorkingImage(wi: WorkingImageResult, factor: number): WorkingImageResult {
   if (!(factor > 1) || !Number.isFinite(factor)) return wi;

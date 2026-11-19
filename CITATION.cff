@@ -6,8 +6,7 @@ message: >-
   by the ImageGrains or Cellpose authors.
 title: "webGrainy (ImageGrains 2.0 Web): browser-native grain segmentation and grain-size statistics"
 type: software
-version: 1.1.0
-date-released: "2026-11-15"
+version: 0.1.0-dev
 license: BSD-3-Clause
 repository-code: "https://github.com/LukeAFullard/webGrainy"
 authors:

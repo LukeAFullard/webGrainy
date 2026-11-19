@@ -311,7 +311,7 @@ export function defaultAnalysisParams(): UiAnalysisParams {
   claheClipLimit: 2.0,
   excludeBorder: true,
   // Single source of truth: the engine defaults, which match the configuration
-  // benchmarked in full_dataset_validation_report.md (flow 0.45, min size 30 px).
+  // benchmarked in validation/heldout (flow 0.45, min size 30 px).
   flowThreshold: DEFAULT_POSTPROCESS_OPTIONS.flowThreshold,
   cellprobThreshold: DEFAULT_POSTPROCESS_OPTIONS.cellprobThreshold,
   minSize: DEFAULT_POSTPROCESS_OPTIONS.minSize,

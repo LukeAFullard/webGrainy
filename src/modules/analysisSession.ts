@@ -83,7 +83,7 @@ function rescaleGrainToOriginal(
  * Reactive analysis session holding segmentation masks, morphometrics,
  * undo/redo edit history, spatial calibration, statistics, and synchronous exports.
  */
-/** Working-image median b-axis (px) below which enlarging ×1.5 helped U-Net (audit/preprocessing). */
+/** Working-image median b-axis (px) below which enlarging ×1.5 helped U-Net (validation/preprocessing). */
 export const FINE_GRAIN_MEDIAN_PX = 20;
 
 export class AnalysisSession {
@@ -1013,7 +1013,7 @@ export class AnalysisSession {
 
   /**
    * Whether to suggest re-analysing enlarged ×1.5 for fine gravel. Rule from the
-   * pre-processing benchmark (audit/preprocessing): U-Net results, not already enlarged,
+   * pre-processing benchmark (validation/preprocessing): U-Net results, not already enlarged,
    * at least 5 grains, and a median b-axis below 20 px in the working image. On the 40-image
    * benchmark this raised outline accuracy (PQ +0.025, 95% CI +0.007 to +0.049) with no site
    * getting worse. The threshold was chosen after seeing the test set, so it is offered, not

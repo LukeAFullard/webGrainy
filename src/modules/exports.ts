@@ -78,6 +78,8 @@ export async function buildExport(kind: ExportKind, ctx: ExportContext): Promise
   // Site name first, then the usual provenance metadata.
   const siteMeta = (report: SiteAnalysisReport): Record<string, unknown> => ({
     ...(site?.name ? { siteName: site.name } : {}),
+    ...(site?.place ? { place: site.place } : {}),
+    ...(site?.surveyDate ? { surveyDate: site.surveyDate } : {}),
     ...buildSiteExportMetadata(siteInputs, report, ctx.siteOptions),
   });
 

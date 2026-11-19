@@ -28,7 +28,7 @@ export interface FlowQcResult {
 /**
  * Solve the 9-point Jacobi heat-diffusion PDE on a local bounding-box mask
  * using a coarse-to-fine multigrid schedule (`8x -> 4x -> 2x -> 1x`) matching
- * `eval_core.py` (Cell 11) and Browser Engine v4.1.
+ * `eval_core.py` (Cell 11).
  */
 export function multigridJacobiHeat(
   localMask: Uint8Array,
@@ -791,7 +791,7 @@ export function validatePostProcessOptions(o: Required<PostProcessOptions>): voi
 }
 
 /**
- * Browser Engine v4.1 post-processing: converts Cellpose/U-Net predicted flows
+ * Browser post-processing: converts Cellpose/U-Net predicted flows
  * `(flowY, flowX)` and `cellprob` into labeled instance `masks` and per-grain
  * morphometrics with exact parity to `eval_core.py` (Cell 11).
  */
@@ -1102,7 +1102,7 @@ export function flowsToMasksBrowser(
     }
   }
 
-  // 6. Flow QC (F5_MagWeightedQC), Mandatory v4.1 Upper-Area Guard, & F3_SplitOnFailure
+  // 6. Flow QC (F5_MagWeightedQC), upper-area guard, & F3_SplitOnFailure
   onProgress?.('flow-qc', 65);
   const maxArea = maxGrainAreaFraction * width * height;
   const finalMasks = new Int32Array(nPix);
@@ -1119,7 +1119,7 @@ export function flowsToMasksBrowser(
       continue;
     }
 
-    // Mandatory v4.1 Upper-Area Guard (3ca10b7c outlier fix):
+    // Upper-area guard (a single huge false mask would dominate the area-weighted PSD):
     // Check BEFORE evaluateGrainFlowQcV4 / trySplitDumbbellV4
     if (area > maxArea) {
       continue;
