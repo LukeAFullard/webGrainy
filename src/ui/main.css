@@ -405,13 +405,35 @@ input:not([type="range"]):user-invalid {
 
 .photo-item {
   display: grid;
-  grid-template-columns: 18px 1fr;
+  grid-template-columns: 18px 1fr auto;
   align-items: center;
   gap: 0.375rem;
   padding: 0.25rem 0.375rem;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);
   background: var(--bg-elevated);
+}
+
+.photo-remove-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.photo-remove-btn:hover,
+.photo-remove-btn:focus-visible {
+  color: var(--danger);
+  background: var(--danger-dim, rgba(220, 38, 38, 0.12));
+  border-color: color-mix(in oklab, var(--danger) 40%, transparent);
 }
 
 .photo-error {

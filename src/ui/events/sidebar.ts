@@ -113,6 +113,14 @@ export const sidebarActions: Record<string, ActionHandler> = {
       void ctx.actions.deletePhotos(ids).then(() => ctx.store.setState({ photoSelectMode: false }));
     }
   },
+  'delete-photo': (el, ctx) => {
+    const id = el.dataset['photoId'];
+    if (!id) return;
+    const ph = ctx.store.getState().photos.find((p) => p.photoId === id);
+    const label = ph?.label ?? 'this photo';
+    if (!ctx.ui.confirm(`Remove "${label}" and its results from this site? This cannot be undone (unless you have a backup).`)) return;
+    void ctx.actions.deletePhotos([id]);
+  },
 };
 
 /** Clicks outside `data-action` buttons: the drop zone and photo rows. */
