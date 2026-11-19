@@ -1,17 +1,19 @@
 /**
- * Optional, memory-isolated AI image enhancement (2x upscaling via PULSE,
- * motion deblurring via NAFNet).
+ * Optional, memory-isolated image enhancement (2x AI upscaling via PULSE,
+ * deterministic Total-Variation-regularized Richardson–Lucy deconvolution for deblurring).
  *
  * Scientific & memory guarantees:
- * - Both models are L1/Charbonnier/PSNR-trained (no GAN hallucination) and MIT-licensed.
- * - Weights are fetched from pinned Hugging Face commits under `inYourOwnBrowser/*`
- *   with `credentials: 'omit'`, `referrerPolicy: 'no-referrer'`, and WebCrypto SHA-256
- *   + byte-size verification, cached in IndexedDB alongside segmentation models.
- * - Tiled 256x256 inference (divisible by 16 for NAFNet) with 32 px overlap feathering
- *   keeps peak RAM/VRAM bounded.
+ * - PULSE 2x is L1/Charbonnier-trained (no GAN hallucination), MIT-licensed, and fetched
+ *   from a pinned Hugging Face commit under `inYourOwnBrowser/PULSE` with
+ *   `credentials: 'omit'`, `referrerPolicy: 'no-referrer'`, and WebCrypto SHA-256 +
+ *   byte-size verification, cached in IndexedDB alongside segmentation models.
+ * - Tiled 256x256 inference with 32 px overlap feathering keeps peak RAM/VRAM bounded.
+ * - Deblur runs built-in luminance Richardson–Lucy deconvolution with Total-Variation
+ *   regularization (Dey et al., 2006): 0 MB download, strictly bounded in [0, 1],
+ *   hue-preserving, and numerically stable on high-frequency gravel/sand textures.
  * - Callers release segmentation sessions first (`engine.releaseSessions()`), and
- *   `enhanceImageBuffer()` always calls `session.release()` in `finally` so the
- *   enhancer and ImageGrains are never loaded simultaneously.
+ *   `enhanceImageBuffer()` always calls `session.release()` in `finally` so ONNX
+ *   enhancers and ImageGrains are never loaded simultaneously.
  */
 import * as ort from 'onnxruntime-web';
 import type { CalibrationResult } from '../types/index.js';
@@ -24,6 +26,8 @@ export type EnhanceKind = 'upscale-2x' | 'deblur';
 
 export interface EnhanceModelSpec {
   kind: EnhanceKind;
+  /** Execution backend: ONNX neural model or built-in deterministic classical filter. */
+  engine: 'onnx' | 'classical';
   modelId: string;
   modelName: string;
   shortLabel: string;
@@ -35,9 +39,9 @@ export interface EnhanceModelSpec {
   sizeBytes: number;
   scaleFactor: 1 | 2;
   license: string;
-  /** Default square tile size (px, multiple of 16). */
+  /** Default square tile size (px, multiple of 16) for ONNX models. */
   defaultTileSize: number;
-  /** Minimum spatial input dimension (px) required by the ONNX graph (e.g. 384 for NAFNet TLC). */
+  /** Minimum spatial input dimension (px) required by the ONNX graph. */
   minTileSide: number;
   /** Optional override to start on WASM instead of WebGPU. */
   preferWasm?: boolean;
@@ -49,6 +53,7 @@ export const MAX_UPSCALE_OUTPUT_SIDE = 4096;
 export const ENHANCE_MODELS: Record<EnhanceKind, EnhanceModelSpec> = {
   'upscale-2x': {
     kind: 'upscale-2x',
+    engine: 'onnx',
     modelId: 'pulse_2x_fp32',
     modelName: 'PULSE 2× (MIT, Charbonnier L1)',
     shortLabel: '2× upscale',
@@ -65,23 +70,20 @@ export const ENHANCE_MODELS: Record<EnhanceKind, EnhanceModelSpec> = {
   },
   deblur: {
     kind: 'deblur',
-    modelId: 'nafnet_deblur_fp32',
-    modelName: 'NAFNet Deblur (MIT, PSNR/L1)',
+    engine: 'classical',
+    modelId: 'richardson_lucy_tv_deblur',
+    modelName: 'Richardson–Lucy TV Deblur (built-in)',
     shortLabel: 'deblur',
-    repoId: 'inYourOwnBrowser/deblurring_nafnet',
-    revision: 'e82b9f2df1f4211296215344f1946a10f876abf0',
-    filePath: 'deblurring_nafnet_2025may.onnx',
-    url: 'https://huggingface.co/inYourOwnBrowser/deblurring_nafnet/resolve/e82b9f2df1f4211296215344f1946a10f876abf0/deblurring_nafnet_2025may.onnx',
-    sha256: '07263f416febecce10193dd648e950b22e397cf521eedab1a114ef77b2bc9587',
-    sizeBytes: 91736251,
+    repoId: 'local/richardson-lucy-tv',
+    revision: 'builtin',
+    filePath: 'builtin',
+    url: '',
+    sha256: '',
+    sizeBytes: 0,
     scaleFactor: 1,
     license: 'MIT',
-    defaultTileSize: 384,
-    minTileSide: 384,
-    // deblurring_nafnet_2025may.onnx uses INT8 weights with 447 DequantizeLinear ops;
-    // ONNX Runtime Web's WebGPU EP silently produces corrupted rainbow/grid artifacts on
-    // INT8 DequantizeLinear graphs, whereas WASM produces accurate results.
-    preferWasm: true,
+    defaultTileSize: 256,
+    minTileSide: 16,
   },
 };
 
@@ -286,7 +288,7 @@ function featherWeight(pos: number, len: number, overlap: number, atStart: boole
 
 /**
  * Runs tiled RGB [0, 1] NCHW float32 inference with overlap feathering.
- * Tile dimensions are always multiples of 16 (required by NAFNet's encoder-decoder).
+ * Tile dimensions are always multiples of 16 for encoder-decoder ONNX models.
  */
 export async function runTiledImageEnhancement(
   rgba: Uint8ClampedArray,
@@ -338,7 +340,7 @@ export async function runTiledImageEnhancement(
   for (let yi = 0; yi < ys.length; yi++) {
     const y0 = ys[yi]!;
     const validH = Math.min(tileSize, height - y0);
-    // Pad tile height/width up to at least minSide (e.g. 384 for NAFNet TLC) and multiple of 16.
+    // Pad tile height/width up to at least minSide and a multiple of 16.
     const padH = Math.max(16, minSide, Math.ceil(validH / 16) * 16);
 
     for (let xi = 0; xi < xs.length; xi++) {
@@ -454,12 +456,206 @@ export async function runTiledImageEnhancement(
   return { data: result, width: outW, height: outH, spec };
 }
 
+/** Builds a normalized 1D Gaussian kernel of length `2 * radius + 1`. */
+function buildGaussianKernel1D(sigma: number): { kernel: Float32Array; radius: number } {
+  const s = Math.max(0.3, sigma);
+  const radius = Math.max(1, Math.ceil(3 * s));
+  const len = radius * 2 + 1;
+  const kernel = new Float32Array(len);
+  const inv2s2 = 1 / (2 * s * s);
+  let sum = 0;
+  for (let i = -radius; i <= radius; i++) {
+    const v = Math.exp(-(i * i) * inv2s2);
+    kernel[i + radius] = v;
+    sum += v;
+  }
+  for (let i = 0; i < len; i++) {
+    kernel[i] = kernel[i]! / sum;
+  }
+  return { kernel, radius };
+}
+
+/**
+ * Separable 2-pass 1D convolution with clamp-to-edge boundaries.
+ * Safe when `src === dst` because pass 1 writes into `tmp` and pass 2 reads from `tmp`.
+ */
+function convolveSeparable(
+  src: Float32Array,
+  tmp: Float32Array,
+  dst: Float32Array,
+  width: number,
+  height: number,
+  kernel: Float32Array,
+  radius: number,
+): void {
+  const maxX = width - 1;
+  const maxY = height - 1;
+
+  // Horizontal pass: src -> tmp
+  for (let y = 0; y < height; y++) {
+    const row = y * width;
+    for (let x = 0; x < width; x++) {
+      let acc = 0;
+      for (let k = -radius; k <= radius; k++) {
+        let sx = x + k;
+        if (sx < 0) sx = 0;
+        else if (sx > maxX) sx = maxX;
+        acc += src[row + sx]! * kernel[k + radius]!;
+      }
+      tmp[row + x] = acc;
+    }
+  }
+
+  // Vertical pass: tmp -> dst
+  for (let y = 0; y < height; y++) {
+    const row = y * width;
+    for (let x = 0; x < width; x++) {
+      let acc = 0;
+      for (let k = -radius; k <= radius; k++) {
+        let sy = y + k;
+        if (sy < 0) sy = 0;
+        else if (sy > maxY) sy = maxY;
+        acc += tmp[sy * width + x]! * kernel[k + radius]!;
+      }
+      dst[row + x] = acc;
+    }
+  }
+}
+
+export interface DeblurOptions {
+  /** Number of Richardson–Lucy iterations (default: 10). */
+  iterations?: number;
+  /** Assumed Gaussian PSF standard deviation in pixels (default: 1.4). */
+  sigma?: number;
+  /** Total-Variation regularization weight (Dey et al., 2006; default: 0.002). */
+  tvLambda?: number;
+  onProgress?: (ev: EnhanceProgressEvent) => void;
+  signal?: AbortSignal;
+}
+
+/**
+ * Built-in Total-Variation-regularized Richardson–Lucy deconvolution in Rec. 709
+ * luminance space (Dey et al., 2006).
+ *
+ * Properties:
+ * - Zero external model download, deterministic, and strictly bounded in [0, 1].
+ * - Preserves exact RGB hue (avoids color fringing / rainbow artifacts on gravel & sand).
+ * - Any uniform-intensity image is an exact fixed point.
+ */
+export async function deblurRichardsonLucy(
+  rgba: Uint8ClampedArray,
+  width: number,
+  height: number,
+  options?: DeblurOptions,
+): Promise<EnhanceResult> {
+  if (options?.signal?.aborted) throw createAbortError();
+
+  const spec = ENHANCE_MODELS.deblur;
+  const iterations = Math.max(1, Math.min(40, Math.round(options?.iterations ?? 10)));
+  const sigma = options?.sigma ?? 1.4;
+  const tvLambda = Math.max(0, options?.tvLambda ?? 0.002);
+
+  const n = width * height;
+  if (n === 0) {
+    return { data: new Uint8ClampedArray(0), width, height, spec };
+  }
+
+  const lum = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const o = i * 4;
+    lum[i] = (0.2126 * rgba[o]! + 0.7152 * rgba[o + 1]! + 0.0722 * rgba[o + 2]!) / 255;
+  }
+
+  const est = new Float32Array(lum);
+  const bufA = new Float32Array(n);
+  const bufB = new Float32Array(n);
+  const prevPy = new Float32Array(width);
+  const { kernel, radius } = buildGaussianKernel1D(sigma);
+  const eps = 1e-4;
+  const tvEps2 = 1e-8;
+  const shouldYield = n >= 262144;
+
+  for (let iter = 1; iter <= iterations; iter++) {
+    if (options?.signal?.aborted) throw createAbortError();
+
+    // Forward blur: bufA = H * est
+    convolveSeparable(est, bufB, bufA, width, height, kernel, radius);
+
+    // Damped ratio: bufA = clamp((lum + eps) / (blurred + eps), 0.1, 10)
+    for (let i = 0; i < n; i++) {
+      const r = (lum[i]! + eps) / (bufA[i]! + eps);
+      bufA[i] = r < 0.1 ? 0.1 : r > 10 ? 10 : r;
+    }
+
+    // Adjoint blur (symmetric Gaussian PSF => H^T = H): bufA = H^T * ratio
+    convolveSeparable(bufA, bufB, bufA, width, height, kernel, radius);
+
+    // Streaming TV-regularized multiplicative update (uses only 1-row prevPy buffer).
+    prevPy.fill(0);
+    for (let y = 0; y < height; y++) {
+      const row = y * width;
+      const hasNextY = y + 1 < height;
+      let prevPx = 0;
+      for (let x = 0; x < width; x++) {
+        const idx = row + x;
+        const c = est[idx]!;
+        let denom = 1;
+        if (tvLambda > 0) {
+          const ux = x + 1 < width ? est[idx + 1]! - c : 0;
+          const uy = hasNextY ? est[idx + width]! - c : 0;
+          const mag = Math.sqrt(ux * ux + uy * uy + tvEps2);
+          const px = ux / mag;
+          const py = uy / mag;
+          const div = px - prevPx + (py - prevPy[x]!);
+          prevPx = px;
+          prevPy[x] = py;
+          denom = Math.max(0.5, 1 - tvLambda * div);
+        }
+        const next = (c * bufA[idx]!) / denom;
+        est[idx] = next < 0 ? 0 : next > 1 ? 1 : next;
+      }
+    }
+
+    options?.onProgress?.({
+      phase: 'tile',
+      message: `Deblurring: iteration ${iter}/${iterations}`,
+      fraction: iter / iterations,
+    });
+
+    if (shouldYield && iter < iterations) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    }
+  }
+
+  // Hue-preserving RGB reconstruction from sharpened luminance.
+  const result = new Uint8ClampedArray(n * 4);
+  for (let i = 0; i < n; i++) {
+    const o = i * 4;
+    const y0 = lum[i]!;
+    const y1 = est[i]!;
+    if (y0 > eps) {
+      const gain = Math.min(4, y1 / y0);
+      result[o] = Math.max(0, Math.min(255, Math.round(rgba[o]! * gain)));
+      result[o + 1] = Math.max(0, Math.min(255, Math.round(rgba[o + 1]! * gain)));
+      result[o + 2] = Math.max(0, Math.min(255, Math.round(rgba[o + 2]! * gain)));
+    } else {
+      const delta = Math.round((y1 - y0) * 255);
+      result[o] = Math.max(0, Math.min(255, rgba[o]! + delta));
+      result[o + 1] = Math.max(0, Math.min(255, rgba[o + 1]! + delta));
+      result[o + 2] = Math.max(0, Math.min(255, rgba[o + 2]! + delta));
+    }
+    result[o + 3] = rgba[o + 3]!;
+  }
+
+  return { data: result, width, height, spec };
+}
+
 /**
  * Full memory-isolated enhancement run:
- * 1. Downloads/loads verified ONNX weights.
- * 2. Creates a temporary ONNX session (WebGPU or WASM).
- * 3. Runs tiled inference.
- * 4. Always releases the session in `finally` before returning.
+ * - For built-in classical enhancers (`deblur`), runs deterministic RL-TV deconvolution
+ *   with zero network requests or ONNX sessions.
+ * - For ONNX enhancers (`upscale-2x`), downloads/loads verified weights, creates a
+ *   temporary ONNX session, runs tiled inference, and always releases the session in `finally`.
  */
 export async function enhanceImageBuffer(
   rgba: Uint8ClampedArray,
@@ -476,6 +672,13 @@ export async function enhanceImageBuffer(
   },
 ): Promise<EnhanceResult> {
   const spec = ENHANCE_MODELS[kind];
+  if (spec.engine === 'classical') {
+    return deblurRichardsonLucy(rgba, width, height, {
+      ...(options?.onProgress ? { onProgress: options.onProgress } : {}),
+      ...(options?.signal ? { signal: options.signal } : {}),
+    });
+  }
+
   if (spec.scaleFactor === 2 && (width * 2 > MAX_UPSCALE_OUTPUT_SIDE || height * 2 > MAX_UPSCALE_OUTPUT_SIDE)) {
     throw new Error(
       `Photo is already ${width}×${height} px — 2× upscaling is limited to inputs up to ${MAX_UPSCALE_OUTPUT_SIDE / 2} px per side to avoid browser memory errors.`,

@@ -141,7 +141,7 @@ export function renderDashboardHtml(state: AppState, view: DashboardView): strin
         (w) =>
           `<div class="warning-banner" style="margin-top:6px;">${esc(w.message)}${
             w.kind === 'blur' && !activeEnh
-              ? `<div style="margin-top:6px;"><button type="button" class="btn btn-sm" data-action="enhance-deblur" ${state.batchRunning || state.enhancing ? 'disabled' : ''}>Try AI Deblur (NAFNet, 92 MB)</button></div>`
+              ? `<div style="margin-top:6px;"><button type="button" class="btn btn-sm" data-action="enhance-deblur" ${state.batchRunning || state.enhancing ? 'disabled' : ''}>Try Deblur (built-in, instant)</button></div>`
               : ''
           }</div>`,
       )

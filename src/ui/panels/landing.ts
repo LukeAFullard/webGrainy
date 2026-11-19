@@ -206,7 +206,7 @@ export const WORKFLOW_STEPS: ReadonlyArray<WorkflowStepSpec> = [
       {
         label: 'TIFF, GeoTIFF & optional pre-processing',
         detail:
-          'Imports JPEG, PNG, WebP, TIFF, and GeoTIFF locally (projected meter GeoTIFFs auto-calibrate mm/px). Optional 2× Upscale (PULSE) and Deblur (NAFNet) tools are available in the toolbar with 1-click Revert.',
+          'Imports JPEG, PNG, WebP, TIFF, and GeoTIFF locally (projected meter GeoTIFFs auto-calibrate mm/px). Optional 2× Upscale (PULSE) and built-in Deblur (Richardson–Lucy TV) tools are available in the toolbar with 1-click Revert.',
       },
       {
         label: 'Stored in your browser',
@@ -853,13 +853,13 @@ export function renderLandingHtml(state: AppState, view: LandingView): string {
               </tr>
               <tr>
                 <th scope="row">
-                  <strong>NAFNet Deblur (Optional)</strong>
-                  <span class="table-sub">ONNX FP32 · MIT</span>
+                  <strong>Deblur — Richardson&ndash;Lucy TV (Optional)</strong>
+                  <span class="table-sub">Built-in · Deterministic</span>
                 </th>
-                <td>92 MB</td>
-                <td>Soft or motion-blurred photos before analysis</td>
-                <td>Runs independently before segmentation and unloads automatically (WebGPU or CPU)</td>
-                <td>PSNR/L1-trained motion deblurring (no GAN); preserves original photo for 1-click Revert and discloses use in reports</td>
+                <td>0 MB (built-in)</td>
+                <td>Soft or slightly out-of-focus photos before analysis</td>
+                <td>Instant CPU luminance deconvolution; no download or GPU required</td>
+                <td>Total-Variation-regularized Richardson&ndash;Lucy deconvolution (hue-preserving, bounded); preserves original photo for 1-click Revert and discloses use in reports</td>
               </tr>
             </tbody>
           </table>
