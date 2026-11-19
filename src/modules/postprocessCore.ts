@@ -771,6 +771,26 @@ export function computeGrainMorphometrics(
 }
 
 /**
+ * Throws a RangeError for post-processing options that would give meaningless results or
+ * hang (e.g. a cleared field read as 0, NaN, or a huge iteration count), instead of
+ * silently computing with them.
+ */
+export function validatePostProcessOptions(o: Required<PostProcessOptions>): void {
+  const check = (name: string, v: number, lo: number, hi: number, integer = false): void => {
+    if (!Number.isFinite(v) || v < lo || v > hi || (integer && !Number.isInteger(v))) {
+      throw new RangeError(`Post-processing option ${name} = ${v} is invalid (allowed ${lo} to ${hi}${integer ? ', whole number' : ''}).`);
+    }
+  };
+  check('niter', o.niter, 0, 10_000, true);
+  check('cellprobThreshold', o.cellprobThreshold, -20, 20);
+  check('flowThreshold', o.flowThreshold, 0, 10);
+  check('minSize', o.minSize, 0, 1e7, true);
+  check('minSeedDensity', o.minSeedDensity, 0, 1e6);
+  check('excludeBorderMargin', o.excludeBorderMargin, 0, 1000, true);
+  check('maxGrainAreaFraction', o.maxGrainAreaFraction, 0, 1);
+}
+
+/**
  * Browser Engine v4.1 post-processing: converts Cellpose/U-Net predicted flows
  * `(flowY, flowX)` and `cellprob` into labeled instance `masks` and per-grain
  * morphometrics with exact parity to `eval_core.py` (Cell 11).
@@ -819,6 +839,8 @@ export function flowsToMasksBrowser(
   const maxGrainAreaFraction =
     options?.maxGrainAreaFraction ??
     DEFAULT_POSTPROCESS_OPTIONS.maxGrainAreaFraction;
+
+  validatePostProcessOptions({ niter, cellprobThreshold, flowThreshold, minSize, minSeedDensity, excludeBorderMargin, maxGrainAreaFraction });
 
   onProgress?.('foreground', 5);
 

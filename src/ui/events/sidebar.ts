@@ -1,5 +1,6 @@
 /** Left panel & landing page events: sites, photos, the guide, landing workflow tabs, batch buttons and analysis settings. */
 import type { PhotoRecord, SiteRecord } from '../../modules/projectStorage.js';
+import { parseParamInput } from '../savedSettings.js';
 import { defaultAnalysisParams, type EditorToolMode } from '../state.js';
 import { isIsoDate } from '../../modules/surveyDate.js';
 import { isWorkflowStepId, nextWorkflowStepForKey } from '../panels/landing.js';
@@ -241,9 +242,16 @@ export function handleSidebarChange(target: ControlLike, ctx: EventContext): boo
     const next = { ...st.analysisParams } as Record<string, unknown>;
     if (isInput(target) && target.type === 'checkbox') next[paramKey] = target.checked;
     else if (isInput(target) && target.type === 'number') {
-      const v = Number(target.value);
-      if (!Number.isFinite(v)) return true;
-      next[paramKey] = v;
+      const parsed = parseParamInput(paramKey, target.value);
+      if ('error' in parsed) {
+        // Keep the previous value (the re-render puts it back in the field).
+        ctx.store.setState({
+          analysisParams: { ...st.analysisParams },
+          statusMessage: `${parsed.error}; the setting was not changed (still ${String(next[paramKey])}).`,
+        });
+        return true;
+      }
+      next[paramKey] = parsed.value;
     } else if (isSelect(target)) next[paramKey] = target.value;
     ctx.store.setState({ analysisParams: next as unknown as typeof st.analysisParams });
     if (paramKey === 'excludeBorder' && isInput(target)) {
