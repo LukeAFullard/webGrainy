@@ -463,8 +463,22 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
         },
         onPhotoComplete: (photo, session) => {
           const prev = store.getState();
-          const roi = effectiveRoi(prev.photos.find((p) => p.photoId === photo.photoId) ?? photo, prev.siteOptions);
+          const latestPhoto = prev.photos.find((p) => p.photoId === photo.photoId) ?? photo;
+          const roi = effectiveRoi(latestPhoto, prev.siteOptions);
           if (roi) session.setRoiConfig(roi);
+          // If the photo was calibrated after runSiteBatch read IndexedDB (or while saving),
+          // keep the newer calibration on the completed session and persist it.
+          const latestCal = latestPhoto.calibration;
+          const sessCal = session.getCalibration();
+          if (
+            latestCal &&
+            (!sessCal ||
+              sessCal.mmPerPx !== latestCal.mmPerPx ||
+              sessCal.physicalLengthMm !== latestCal.physicalLengthMm)
+          ) {
+            session.setCalibration(latestCal);
+            void persistActiveSession(photo.photoId, session).catch(() => undefined);
+          }
           const nextSessions = new Map(prev.sessions);
           nextSessions.set(photo.photoId, session);
           const nextStatuses = new Map(prev.photoStatuses);
@@ -580,17 +594,26 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
     const state = store.getState();
     const photo = getActivePhoto(state);
     if (!photo) return;
-    const cal = ScaleCalibrator.calibrate(ptA, ptB, lengthVal, unit);
-    const updatedPhoto: PhotoRecord = { ...photo, calibration: cal };
-    await savePhoto(updatedPhoto);
+    let cal: CalibrationResult;
+    try {
+      cal = ScaleCalibrator.calibrate(ptA, ptB, lengthVal, unit);
+    } catch (err) {
+      store.setState({
+        pendingCalibrationPoints: [],
+        statusMessage: `Calibration failed: ${err instanceof Error ? err.message : String(err)}`,
+      });
+      await deps.syncViewport(false);
+      return;
+    }
 
+    const updatedPhoto: PhotoRecord = { ...photo, calibration: cal };
     const session = state.sessions.get(photo.photoId);
     if (session) {
       session.setCalibration(cal);
-      await persistActiveSession(photo.photoId, session);
     }
 
-    const photos = state.photos.map((p) => (p.photoId === photo.photoId ? updatedPhoto : p));
+    // Update live state & dashboard immediately so IndexedDB errors never block results from updating.
+    const photos = store.getState().photos.map((p) => (p.photoId === photo.photoId ? updatedPhoto : p));
     store.setState({
       photos,
       pendingCalibrationPoints: [],
@@ -598,6 +621,17 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
     });
     recomputeReports();
     await deps.syncViewport(false);
+
+    try {
+      await savePhoto(updatedPhoto);
+      if (session) {
+        await persistActiveSession(photo.photoId, session);
+      }
+    } catch (err) {
+      store.setState({
+        statusMessage: `Calibrated ${photo.label} (${cal.mmPerPx.toFixed(4)} mm/px), but could not save to browser storage: ${err instanceof Error ? err.message : String(err)}`,
+      });
+    }
   }
 
   async function applyRectificationToActive(
