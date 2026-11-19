@@ -243,7 +243,8 @@ export function exportSiteSummaryCsv(
       ['cumulative_D50_ci_half_width_pct', conv.get(p.photoId)?.relativeHalfWidthD50Pct, '%'],
     ];
     for (const [f, v, u] of rows) {
-      if (v !== undefined) lines.push(`per_photo_detail,${name(f)},${v},${u}`);
+      // NaN = not computed (e.g. convergence CI only at checkpoints): leave the row out.
+      if (v !== undefined && !(typeof v === 'number' && !Number.isFinite(v))) lines.push(`per_photo_detail,${name(f)},${v},${u}`);
     }
   }
   report.warnings.forEach((w, i) => lines.push(`warning,${i + 1},${csvCell(w)},text`));

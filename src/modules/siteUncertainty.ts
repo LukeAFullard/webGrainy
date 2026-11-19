@@ -215,7 +215,376 @@ export function computeBinomialCi(
   };
 }
 
+/** Grains of all photos, sorted once by size, for fast weighted percentiles. */
+interface SortedPool {
+  /** Grain count (valid grains only: finite size > 0). */
+  n: number;
+  /** Sizes, ascending (ties keep pooled order). */
+  values: Float64Array;
+  /** For each photo, its grains' positions in `values` (-1 for grains that never count). */
+  posOf: Int32Array[];
+}
+
+function buildSortedPool(photos: readonly PreparedPhoto[]): SortedPool {
+  const vals: number[] = [];
+  const owner: Array<[number, number]> = [];
+  photos.forEach((p, pi) => {
+    p.validGrains.forEach((g, gi) => {
+      if (Number.isFinite(g.sizeVal) && g.sizeVal > 0) {
+        vals.push(g.sizeVal);
+        owner.push([pi, gi]);
+      }
+    });
+  });
+  const idx = vals.map((_, i) => i);
+  idx.sort((a, b) => vals[a]! - vals[b]! || a - b);
+  const posOf = photos.map((p) => new Int32Array(p.validGrains.length).fill(-1));
+  const values = new Float64Array(idx.length);
+  idx.forEach((orig, pos) => {
+    values[pos] = vals[orig]!;
+    const [pi, gi] = owner[orig]!;
+    posOf[pi]![gi] = pos;
+  });
+  return { n: idx.length, values, posOf };
+}
+
+/** The pool of the first `k` photos, taken from the full pool without re-sorting. */
+function prefixPool(pool: SortedPool, k: number): SortedPool {
+  const keep = new Int32Array(pool.n).fill(-1);
+  for (let pi = 0; pi < k; pi++) for (const at of pool.posOf[pi]!) if (at >= 0) keep[at] = 0;
+  let next = 0;
+  const values: number[] = [];
+  for (let i = 0; i < pool.n; i++) {
+    if (keep[i] === 0) {
+      keep[i] = next++;
+      values.push(pool.values[i]!);
+    }
+  }
+  const posOf = pool.posOf.slice(0, k).map((pos) => pos.map((at) => (at >= 0 ? keep[at]! : -1)));
+  return { n: next, values: Float64Array.from(values), posOf };
+}
+
+/**
+ * Weighted percentiles from per-grain pooled weights in sorted order, identical to
+ * `weightedPsdPercentiles` on the expanded pair list: a grain pooled several times (photo
+ * drawn repeatedly) adds midpoint-CDF knots for its first and last copy, which are the only
+ * ones that affect interpolation. `first`/`last` are the first and last copy's weights.
+ */
+const PCT_TARGETS = Float64Array.from(PERCENTILE_NUMS, (p) => p / 100);
+
+function percentilesFromSorted(
+  values: Float64Array,
+  total: Float64Array,
+  first: Float64Array,
+  last: Float64Array,
+): PsdPercentiles {
+  const n = values.length;
+  let sum = 0;
+  for (let i = 0; i < n; i++) sum += total[i]!;
+  const out = emptyPsd();
+  if (!(sum > 0)) return out;
+  // Stream the midpoint-CDF knots once (targets ascending). For a target t between knots
+  // (c0, v0) and (c1, v1) with c0 <= t < c1, interpolate in log2 size; below the first knot
+  // take its size; at or above the last knot the largest size.
+  const nT = PCT_TARGETS.length;
+  const res = new Float64Array(nT);
+  let k = 0;
+  let t = PCT_TARGETS[0]!;
+  let havePrev = false;
+  let c0 = 0;
+  let v0 = 0;
+  let cum = 0;
+  const inv = 1 / sum;
+  for (let i = 0; i < n; i++) {
+    const w = total[i]!;
+    if (!(w > 0)) continue;
+    const v = values[i]!;
+    const lo = (cum + 0.5 * first[i]!) * inv;
+    const hi = (cum + w - 0.5 * last[i]!) * inv;
+    cum += w;
+    // knot 1: (lo, v)
+    while (t < lo) {
+      res[k] = !havePrev || lo === c0 ? v : 2 ** (Math.log2(v0) + ((t - c0) / (lo - c0)) * (Math.log2(v) - Math.log2(v0)));
+      if (++k === nT) break;
+      t = PCT_TARGETS[k]!;
+    }
+    if (k === nT) break;
+    havePrev = true;
+    c0 = lo;
+    v0 = v;
+    // knot 2 (same size): targets in [lo, hi) interpolate between equal sizes -> v
+    if (hi !== lo) {
+      while (t < hi) {
+        res[k] = v;
+        if (++k === nT) break;
+        t = PCT_TARGETS[k]!;
+      }
+      if (k === nT) break;
+      c0 = hi;
+    }
+  }
+  for (; k < nT; k++) res[k] = v0;
+  for (let j = 0; j < nT; j++) out[PSD_KEYS[j]!] = res[j]!;
+  return out;
+}
+
+/** Pooled weight of each grain for one copy of its photo (`buildPooledArrays` rules). */
+function singleCopyWeights(photos: readonly PreparedPhoto[], pool: SortedPool, mode: PoolingMode): Float64Array {
+  const w = new Float64Array(pool.n);
+  let anyFacies = false;
+  for (const p of photos) if (p.faciesWeight > 0) anyFacies = true;
+  photos.forEach((p, pi) => {
+    let areaSum = 0;
+    for (const g of p.validGrains) areaSum += g.areaVal;
+    const pos = pool.posOf[pi]!;
+    p.validGrains.forEach((g, gi) => {
+      const at = pos[gi]!;
+      if (at < 0) return;
+      let x = 0;
+      switch (mode) {
+        case 'physical-area': x = g.areaVal; break;
+        case 'equal-photo': x = areaSum > 0 ? g.areaVal / areaSum : 0; break;
+        case 'virtual-wolman-grid': x = g.gridHits; break;
+        case 'number-weighted': x = 1; break;
+        // A common factor (1 / total facies weight) does not change percentiles.
+        case 'facies-weighted': x = areaSum > 0 ? (anyFacies ? p.faciesWeight : 1) * (g.areaVal / areaSum) : 0; break;
+      }
+      w[at] = x > 0 ? x : 0;
+    });
+  });
+  return w;
+}
+
+/** PSD of the photos selected by `include` (each once), from the shared sorted pool. */
+function subsetPercentiles(
+  photos: readonly PreparedPhoto[],
+  pool: SortedPool,
+  base: Float64Array,
+  include: (pi: number) => boolean,
+  scratch: { total: Float64Array },
+): PsdPercentiles {
+  const total = scratch.total;
+  total.fill(0);
+  photos.forEach((_p, pi) => {
+    if (!include(pi)) return;
+    const pos = pool.posOf[pi]!;
+    for (let gi = 0; gi < pos.length; gi++) {
+      const at = pos[gi]!;
+      if (at >= 0) total[at] = base[at]!;
+    }
+  });
+  return percentilesFromSorted(pool.values, total, total, total);
+}
+
+/**
+ * Cluster / two-stage bootstrap of the site PSD (and Folk & Ward). Draws exactly the same
+ * resamples as `runBootstrapReference` (same seed -> same photos and grains), but sorts the
+ * grains once and evaluates each replicate's weighted percentiles in one pass, so a site of
+ * 60 photos x 300 grains takes well under a second instead of tens of seconds.
+ */
 export function runBootstrap(
+  photos: readonly PreparedPhoto[],
+  poolingMode: PoolingMode,
+  unit: 'mm' | 'px',
+  replicates: number,
+  seed: number,
+  twoStage: boolean,
+  confidenceLevel: 0.9 | 0.95,
+  /** Pre-sorted pool of exactly these photos (internal; saves re-sorting). */
+  presorted?: SortedPool,
+): {
+  mode: 'cluster' | 'two-stage-cluster' | 'single-photo-grain-fallback';
+  psdCi: PsdConfidenceInterval;
+  folkWardCi: FolkWardConfidenceInterval | null;
+} {
+  const alpha = confidenceLevel === 0.9 ? 0.1 : 0.05;
+  const qLo = alpha / 2;
+  const qHi = 1 - alpha / 2;
+  const rand = mulberry32(seed);
+  const B = Math.max(1, Math.round(replicates));
+  const nPhotos = photos.length;
+  const isSinglePhoto = nPhotos === 1;
+  const mode: 'cluster' | 'two-stage-cluster' | 'single-photo-grain-fallback' = isSinglePhoto
+    ? 'single-photo-grain-fallback'
+    : twoStage
+      ? 'two-stage-cluster'
+      : 'cluster';
+
+  const pool = presorted ?? buildSortedPool(photos);
+  const total = new Float64Array(pool.n);
+  const first = new Float64Array(pool.n);
+  const last = new Float64Array(pool.n);
+  const counts = photos.map((p) => new Int32Array(p.validGrains.length));
+  const totalFacies = (sampled: readonly number[]): number => {
+    let t = 0;
+    for (const pi of sampled) t += photos[pi]!.faciesWeight;
+    return t;
+  };
+
+  /** Adds one pooled copy of photo `pi` with grain multiplicities `mult` (null = each once). */
+  const addCopy = (pi: number, mult: Int32Array | null, faciesNorm: number): void => {
+    const p = photos[pi]!;
+    const grains = p.validGrains;
+    if (grains.length === 0) return;
+    let areaSum = 0;
+    if (poolingMode === 'equal-photo' || poolingMode === 'facies-weighted') {
+      for (let gi = 0; gi < grains.length; gi++) {
+        const m = mult ? mult[gi]! : 1;
+        if (m > 0) areaSum += m * grains[gi]!.areaVal;
+      }
+    }
+    const pos = pool.posOf[pi]!;
+    for (let gi = 0; gi < grains.length; gi++) {
+      const m = mult ? mult[gi]! : 1;
+      if (m <= 0) continue;
+      const at = pos[gi]!;
+      if (at < 0) continue;
+      const g = grains[gi]!;
+      let w = 0;
+      switch (poolingMode) {
+        case 'physical-area':
+          w = g.areaVal;
+          break;
+        case 'equal-photo':
+          w = areaSum > 0 ? g.areaVal / areaSum : 0;
+          break;
+        case 'virtual-wolman-grid':
+          w = g.gridHits;
+          break;
+        case 'number-weighted':
+          w = 1;
+          break;
+        case 'facies-weighted':
+          w = areaSum > 0 ? faciesNorm * (g.areaVal / areaSum) : 0;
+          break;
+      }
+      if (!(w > 0)) continue;
+      if (total[at] === 0) first[at] = w;
+      last[at] = w;
+      total[at]! += m * w;
+    }
+  };
+
+  const dists: Record<keyof PsdPercentiles, number[]> = {
+    D5: [], D10: [], D16: [], D25: [], D50: [], D75: [], D84: [], D90: [], D95: [],
+  };
+  const fwMeanPhi: number[] = [];
+  const fwSortingPhi: number[] = [];
+  const fwSkewnessPhi: number[] = [];
+  const fwKurtosisPhi: number[] = [];
+  const fwMeanMm: number[] = [];
+
+  // Cluster mode (the default): a replicate only changes how often each photo is drawn, so
+  // a grain's pooled weight is (draw count) x (its single-copy weight). Precompute those.
+  const clusterFast = !isSinglePhoto && !twoStage;
+  const baseW = clusterFast ? singleCopyWeights(photos, pool, poolingMode) : null;
+  const baseNoFacies =
+    clusterFast && poolingMode === 'facies-weighted' ? singleCopyWeights(photos, pool, 'equal-photo') : null;
+  const photoPos = photos.map((_, pi) => Array.from(pool.posOf[pi]!).filter((at) => at >= 0));
+  const draws = new Int32Array(nPhotos);
+
+  for (let b = 0; b < B; b++) {
+    total.fill(0);
+    if (clusterFast) {
+      draws.fill(0);
+      for (let k = 0; k < nPhotos; k++) draws[Math.floor(rand() * nPhotos)]!++;
+      // Facies weights: a common 1/total factor cancels; if the drawn photos all have weight
+      // 0 the reference falls back to equal photo weights.
+      let w = baseW!;
+      if (baseNoFacies !== null) {
+        let tf = 0;
+        for (let pi = 0; pi < nPhotos; pi++) if (draws[pi]! > 0) tf += draws[pi]! * photos[pi]!.faciesWeight;
+        if (!(tf > 0)) w = baseNoFacies;
+      }
+      for (let pi = 0; pi < nPhotos; pi++) {
+        const m = draws[pi]!;
+        if (m === 0) continue;
+        for (const at of photoPos[pi]!) {
+          const x = w[at]!;
+          total[at] = m * x;
+          first[at] = x;
+          last[at] = x;
+        }
+      }
+    } else if (isSinglePhoto) {
+      const only = photos[0];
+      if (!only || only.validGrains.length === 0) continue;
+      const c = counts[0]!;
+      c.fill(0);
+      const gCount = only.validGrains.length;
+      for (let i = 0; i < gCount; i++) c[Math.floor(rand() * gCount)]!++;
+      addCopy(0, c, 1);
+    } else {
+      // Same draw order as the reference: photo index, then (two-stage) its grains.
+      const sampled: number[] = [];
+      const grainDraws: Array<Int32Array | null> = [];
+      for (let k = 0; k < nPhotos; k++) {
+        const pIdx = Math.floor(rand() * nPhotos);
+        const p = photos[pIdx];
+        if (p === undefined) continue;
+        sampled.push(pIdx);
+        if (twoStage && p.validGrains.length > 0) {
+          const gCount = p.validGrains.length;
+          const c = new Int32Array(gCount);
+          for (let i = 0; i < gCount; i++) c[Math.floor(rand() * gCount)]!++;
+          grainDraws.push(c);
+        } else {
+          grainDraws.push(null);
+        }
+      }
+      const tf = poolingMode === 'facies-weighted' ? totalFacies(sampled) : 0;
+      for (let k = 0; k < sampled.length; k++) {
+        const pi = sampled[k]!;
+        const faciesNorm =
+          poolingMode === 'facies-weighted' ? (tf > 0 ? photos[pi]!.faciesWeight / tf : 1 / nPhotos) : 1;
+        addCopy(pi, grainDraws[k]!, faciesNorm);
+      }
+    }
+    const psd = percentilesFromSorted(pool.values, total, first, last);
+    if (!Number.isFinite(psd.D50)) continue; // nothing pooled in this replicate
+    for (const key of PSD_KEYS) {
+      const val = psd[key];
+      if (Number.isFinite(val)) dists[key].push(val);
+    }
+    if (unit === 'mm') {
+      const fw = computeFolkWardStats(psd);
+      if (fw !== null) {
+        fwMeanPhi.push(fw.meanPhi);
+        fwSortingPhi.push(fw.sortingPhi);
+        fwSkewnessPhi.push(fw.skewnessPhi);
+        fwKurtosisPhi.push(fw.kurtosisPhi);
+        fwMeanMm.push(fw.meanMm);
+      }
+    }
+  }
+
+  const lower = emptyPsd();
+  const upper = emptyPsd();
+  for (const key of PSD_KEYS) {
+    const arr = dists[key];
+    arr.sort((a, b) => a - b);
+    lower[key] = quantileSorted(arr, qLo);
+    upper[key] = quantileSorted(arr, qHi);
+  }
+  let folkWardCi: FolkWardConfidenceInterval | null = null;
+  if (unit === 'mm' && fwMeanPhi.length > 0) {
+    for (const a of [fwMeanPhi, fwSortingPhi, fwSkewnessPhi, fwKurtosisPhi, fwMeanMm]) a.sort((x, y) => x - y);
+    folkWardCi = {
+      meanPhi: [quantileSorted(fwMeanPhi, qLo), quantileSorted(fwMeanPhi, qHi)],
+      sortingPhi: [quantileSorted(fwSortingPhi, qLo), quantileSorted(fwSortingPhi, qHi)],
+      skewnessPhi: [quantileSorted(fwSkewnessPhi, qLo), quantileSorted(fwSkewnessPhi, qHi)],
+      kurtosisPhi: [quantileSorted(fwKurtosisPhi, qLo), quantileSorted(fwKurtosisPhi, qHi)],
+      meanMm: [quantileSorted(fwMeanMm, qLo), quantileSorted(fwMeanMm, qHi)],
+    };
+  }
+  return { mode, psdCi: { confidenceLevel, lower, upper }, folkWardCi };
+}
+
+/**
+ * Reference implementation of `runBootstrap` (re-pools and re-sorts every replicate).
+ * Kept to validate the fast path in tests; O(B * n log n), too slow for large sites.
+ */
+export function runBootstrapReference(
   photos: readonly PreparedPhoto[],
   poolingMode: PoolingMode,
   unit: 'mm' | 'px',
@@ -377,13 +746,15 @@ export function computeJackknife(
   const d50WithoutMap = new Map<string, number>();
 
   if (preparedPhotos.length >= 2) {
+    // One shared sorted pool: each leave-one-out PSD is a single pass (no re-sorting).
+    const pool = buildSortedPool(preparedPhotos);
+    const base = singleCopyWeights(preparedPhotos, pool, poolingMode);
+    const scratch = { total: new Float64Array(pool.n) };
     const perPhotoJack: JackknifePhotoSensitivity[] = [];
     for (let j = 0; j < preparedPhotos.length; j++) {
       const target = preparedPhotos[j];
       if (target === undefined) continue;
-      const subset = preparedPhotos.filter((_, idx) => idx !== j);
-      const subPool = buildPooledArrays(subset, poolingMode);
-      const subPsd = computePsdPercentiles(subPool.values, subPool.weights);
+      const subPsd = subsetPercentiles(preparedPhotos, pool, base, (pi) => pi !== j, scratch);
 
       d50WithoutMap.set(target.input.photoId, subPsd.D50);
 
@@ -438,7 +809,29 @@ export function computeJackknife(
   return { jackknife, d50WithoutMap };
 }
 
-/** D50 and its confidence interval as photos are added one by one (the last point uses the full bootstrap). */
+/** Bootstrap replicates per intermediate convergence CI (the final point uses the full bootstrap). */
+export const CONVERGENCE_REPLICATES = 100;
+
+/** At most this many photo counts get a bootstrap CI on the convergence curve. */
+export const MAX_CONVERGENCE_CI_POINTS = 15;
+
+/** Photo counts (1..n) that get a convergence CI: all when n <= max, else evenly spaced incl. 1 and n. */
+export function convergenceCheckpoints(n: number, max = MAX_CONVERGENCE_CI_POINTS): Set<number> {
+  const out = new Set<number>();
+  if (n <= max) {
+    for (let k = 1; k <= n; k++) out.add(k);
+    return out;
+  }
+  for (let i = 0; i < max; i++) out.add(1 + Math.round((i * (n - 1)) / (max - 1)));
+  return out;
+}
+
+/**
+ * D16/D50/D84 as photos are added one by one (every photo count), with the D50 bootstrap CI
+ * at up to `MAX_CONVERGENCE_CI_POINTS` evenly spaced counts (the last point uses the full
+ * bootstrap; the others use `CONVERGENCE_REPLICATES`). Other points have NaN CI fields. Bounding the CI points keeps the cost linear
+ * in the number of photos (it was quadratic: a 250-replicate bootstrap per photo count).
+ */
 export function computeConvergence(
   preparedPhotos: readonly PreparedPhoto[],
   psd: PsdPercentiles,
@@ -453,63 +846,52 @@ export function computeConvergence(
   },
 ): ConvergencePoint[] {
   const { poolingMode, unit, bootstrapReplicates, bootstrapSeed, bootstrapTwoStage, confidenceLevel } = opts;
+  const n = preparedPhotos.length;
   const convergence: ConvergencePoint[] = [];
+  if (n === 0) return convergence;
+  const pool = buildSortedPool(preparedPhotos);
+  const base = singleCopyWeights(preparedPhotos, pool, poolingMode);
+  const scratch = { total: new Float64Array(pool.n) };
+  const checkpoints = convergenceCheckpoints(n);
   let runningGrains = 0;
-  for (let k = 1; k <= preparedPhotos.length; k++) {
-    const prefix = preparedPhotos.slice(0, k);
-    const last = prefix[k - 1];
-    if (last === undefined) continue;
+  for (let k = 1; k <= n; k++) {
+    const last = preparedPhotos[k - 1]!;
     runningGrains += last.validGrains.length;
-
-    if (k === preparedPhotos.length) {
-      const ciLo = boot.psdCi.lower.D50;
-      const ciHi = boot.psdCi.upper.D50;
-      const width = ciHi - ciLo;
-      const relHalf = psd.D50 > 0 ? (width / (2 * psd.D50)) * 100 : Number.NaN;
-      convergence.push({
-        photoCount: k,
-        photoId: last.input.photoId,
-        label: last.input.label,
-        cumulativeGrains: runningGrains,
-        D16: psd.D16,
-        D50: psd.D50,
-        D84: psd.D84,
-        ciLoD50: ciLo,
-        ciHiD50: ciHi,
-        ciWidthD50: width,
-        relativeHalfWidthD50Pct: relHalf,
-      });
-    } else {
-      const subPool = buildPooledArrays(prefix, poolingMode);
-      const subPsd = computePsdPercentiles(subPool.values, subPool.weights);
+    const isLast = k === n;
+    const subPsd = isLast ? psd : subsetPercentiles(preparedPhotos, pool, base, (pi) => pi < k, scratch);
+    let ciLo = Number.NaN;
+    let ciHi = Number.NaN;
+    if (isLast) {
+      ciLo = boot.psdCi.lower.D50;
+      ciHi = boot.psdCi.upper.D50;
+    } else if (checkpoints.has(k)) {
       const subBoot = runBootstrap(
-        prefix,
+        preparedPhotos.slice(0, k),
         poolingMode,
         unit,
-        Math.min(bootstrapReplicates, 250),
+        Math.min(bootstrapReplicates, CONVERGENCE_REPLICATES),
         bootstrapSeed + k,
         bootstrapTwoStage,
         confidenceLevel,
+        prefixPool(pool, k),
       );
-      const ciLo = subBoot.psdCi.lower.D50;
-      const ciHi = subBoot.psdCi.upper.D50;
-      const width = ciHi - ciLo;
-      const relHalf =
-        subPsd.D50 > 0 ? (width / (2 * subPsd.D50)) * 100 : Number.NaN;
-      convergence.push({
-        photoCount: k,
-        photoId: last.input.photoId,
-        label: last.input.label,
-        cumulativeGrains: runningGrains,
-        D16: subPsd.D16,
-        D50: subPsd.D50,
-        D84: subPsd.D84,
-        ciLoD50: ciLo,
-        ciHiD50: ciHi,
-        ciWidthD50: width,
-        relativeHalfWidthD50Pct: relHalf,
-      });
+      ciLo = subBoot.psdCi.lower.D50;
+      ciHi = subBoot.psdCi.upper.D50;
     }
+    const width = ciHi - ciLo;
+    convergence.push({
+      photoCount: k,
+      photoId: last.input.photoId,
+      label: last.input.label,
+      cumulativeGrains: runningGrains,
+      D16: subPsd.D16,
+      D50: subPsd.D50,
+      D84: subPsd.D84,
+      ciLoD50: ciLo,
+      ciHiD50: ciHi,
+      ciWidthD50: width,
+      relativeHalfWidthD50Pct: subPsd.D50 > 0 ? (width / (2 * subPsd.D50)) * 100 : Number.NaN,
+    });
   }
   return convergence;
 }
