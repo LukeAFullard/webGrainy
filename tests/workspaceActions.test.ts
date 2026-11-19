@@ -225,4 +225,44 @@ describe('workspace actions', () => {
     expect(world.sites.get('a')!.photoOrder).toHaveLength(1);
     expect(changed).toContain('a');
   });
+
+  it('analyse -> calibrate updates singlePhotoStats and siteReport immediately even if IDB savePhotoResult fails, and re-analyse preserves calibration', async () => {
+    const world = fakeWorld();
+    world.sites.set('a', {
+      ...site('a', ['p1']),
+      options: { poolingMode: 'physical-area', minBaxisPx: 0 },
+    });
+    world.photos.set('p1', photo('p1', 'a'));
+    const { store, actions } = setup(world);
+    await actions.createDefaultOrLoadSites();
+
+    // 1. Analyse uncalibrated first -> results in px
+    await actions.runBatch();
+    expect(store.getState().singlePhotoStats?.unit).toBe('px');
+    expect(store.getState().singlePhotoStats?.includedGrains).toBeGreaterThan(0);
+    const pxD50 = store.getState().singlePhotoStats!.areaWeightedB.D50;
+
+    // Simulate IndexedDB quota/write failure during persistActiveSession
+    const origSaveResult = world.storage.savePhotoResult;
+    world.storage.savePhotoResult = async () => {
+      throw new Error('QuotaExceededError');
+    };
+
+    // 2. Calibrate after analysis (100 px = 500 mm -> 5 mm/px)
+    await actions.applyCalibrationToActive({ x: 0, y: 0 }, { x: 100, y: 0 }, 500, 'mm');
+    expect(store.getState().singlePhotoStats?.unit).toBe('mm');
+    expect(store.getState().singlePhotoStats!.areaWeightedB.D50).toBeCloseTo(pxD50 * 5, 3);
+    expect(store.getState().siteReport?.unit).toBe('mm');
+    expect(store.getState().siteReport!.psd.D50).toBeCloseTo(pxD50 * 5, 3);
+    expect(store.getState().statusMessage).toContain('could not save to browser storage');
+
+    // 3. Restore storage and re-analyse: even though fakeWorld's runSiteBatch creates an uncalibrated
+    // session, onPhotoComplete preserves the live photo's calibration.
+    world.storage.savePhotoResult = origSaveResult;
+    await actions.runBatch(['p1']);
+    expect(store.getState().singlePhotoStats?.unit).toBe('mm');
+    expect(store.getState().singlePhotoStats!.areaWeightedB.D50).toBeCloseTo(pxD50 * 5, 3);
+    expect(store.getState().siteReport?.unit).toBe('mm');
+  });
 });
+

@@ -62,26 +62,44 @@ export const toolbarActions: Record<string, ActionHandler> = {
     if (!active?.calibration) return;
     const cal = active.calibration;
     const activeFactor = photoUpscaleFactor(active);
+    const updatedPhotos: PhotoRecord[] = [];
+    const toPersist: Array<{ photo: PhotoRecord; session?: ReturnType<typeof state.sessions.get> }> = [];
+
+    for (const ph of state.photos) {
+      if (ph.photoId === active.photoId) {
+        updatedPhotos.push(ph);
+        continue;
+      }
+      const ratio = photoUpscaleFactor(ph) / activeFactor;
+      const phCal = scaleCalibrationAndRoi(cal, undefined, ratio).calibration ?? cal;
+      const updated: PhotoRecord = { ...ph, calibration: phCal };
+      const sess = state.sessions.get(ph.photoId);
+      if (sess) {
+        sess.setCalibration(phCal);
+      }
+      updatedPhotos.push(updated);
+      toPersist.push({ photo: updated, ...(sess ? { session: sess } : {}) });
+    }
+
+    // Update live state & dashboard immediately so IndexedDB errors never block results from updating.
+    ctx.store.setState({
+      photos: updatedPhotos,
+      statusMessage: `Copied scale (${cal.mmPerPx.toFixed(4)} mm/px) to all photos in site`,
+    });
+    ctx.actions.recomputeReports();
+    void ctx.ui.syncViewport(false);
+
     void Promise.all(
-      state.photos.map(async (ph) => {
-        if (ph.photoId === active.photoId) return ph;
-        const ratio = photoUpscaleFactor(ph) / activeFactor;
-        const phCal = scaleCalibrationAndRoi(cal, undefined, ratio).calibration ?? cal;
-        const updated: PhotoRecord = { ...ph, calibration: phCal };
-        await ctx.actions.savePhoto(updated);
-        const sess = state.sessions.get(ph.photoId);
-        if (sess) {
-          sess.setCalibration(phCal);
-          await ctx.actions.persistActiveSession(ph.photoId, sess);
+      toPersist.map(async ({ photo, session }) => {
+        await ctx.actions.savePhoto(photo);
+        if (session) {
+          await ctx.actions.persistActiveSession(photo.photoId, session);
         }
-        return updated;
       }),
-    ).then((photos) => {
+    ).catch((err: unknown) => {
       ctx.store.setState({
-        photos,
-        statusMessage: `Copied scale (${cal.mmPerPx.toFixed(4)} mm/px) to all photos in site`,
+        statusMessage: `Copied scale (${cal.mmPerPx.toFixed(4)} mm/px), but could not save all photos to browser storage: ${err instanceof Error ? err.message : String(err)}`,
       });
-      ctx.actions.recomputeReports();
     });
   },
   'enhance-upscale': (_el, ctx) => void ctx.actions.enhanceActivePhoto('upscale-2x'),
