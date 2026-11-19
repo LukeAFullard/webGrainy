@@ -1,5 +1,6 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
+import { renderToolbarHtml } from '../src/ui/panels/toolbar.js';
 import type { SiteRecord } from '../src/modules/projectStorage.js';
 import { AppStore, createInitialState, defaultAnalysisParams } from '../src/ui/state.js';
 import type { ControlLike, ElementLike, EventContext } from '../src/ui/events/context.js';
@@ -268,5 +269,39 @@ describe('form changes', () => {
     expect(ui.setFieldValue).toHaveBeenCalledWith('cal-unit', 'mm');
     routeChange(el({ 'data-landing-skip': '' }, { tagName: 'INPUT', type: 'checkbox', checked: true }), ctx);
     expect(prefs.setSkipLanding).toHaveBeenCalledWith(true);
+  });
+
+  it('preserves calibration preset/length/unit and rectify dimensions in state and toolbar re-renders', () => {
+    const { ctx, store } = setup();
+    store.setState({ activeTool: 'calibrate' });
+
+    // Select 500 mm Quadrat preset -> stored in state and rendered as selected
+    routeChange(el({}, { tagName: 'SELECT', id: 'cal-preset', value: '500|mm' }), ctx);
+    expect(store.getState().calibrationPreset).toBe('500|mm');
+    expect(store.getState().calibrationLength).toBe(500);
+    expect(store.getState().calibrationUnit).toBe('mm');
+
+    // Type custom length 35 and switch unit to cm -> switches preset to custom and survives re-render
+    routeChange(el({}, { tagName: 'INPUT', id: 'cal-length', type: 'number', value: '35' }), ctx);
+    routeChange(el({}, { tagName: 'SELECT', id: 'cal-unit', value: 'cm' }), ctx);
+    expect(store.getState().calibrationPreset).toBe('custom');
+    expect(store.getState().calibrationLength).toBe(35);
+    expect(store.getState().calibrationUnit).toBe('cm');
+
+    // Simulate point-1 click re-render (must NOT reset to 100 mm Ruler!)
+    store.setState({ pendingCalibrationPoints: [{ x: 10, y: 20 }] });
+    const calHtml = renderToolbarHtml(store.getState()).subToolbar;
+    expect(calHtml).toContain('value="35"');
+    expect(calHtml).toContain('<option value="cm" selected>');
+    expect(calHtml).toContain('<option value="custom" selected>');
+
+    // Rectify width/height also survive re-render after point-1 click
+    store.setState({ activeTool: 'rectify' });
+    routeChange(el({}, { tagName: 'INPUT', id: 'rect-w', type: 'number', value: '300' }), ctx);
+    routeChange(el({}, { tagName: 'INPUT', id: 'rect-h', type: 'number', value: '200' }), ctx);
+    store.setState({ pendingRectifyPoints: [{ x: 1, y: 1 }] });
+    const rectHtml = renderToolbarHtml(store.getState()).subToolbar;
+    expect(rectHtml).toContain('id="rect-w" type="number" value="300"');
+    expect(rectHtml).toContain('id="rect-h" type="number" value="200"');
   });
 });

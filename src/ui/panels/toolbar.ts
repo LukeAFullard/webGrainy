@@ -94,28 +94,33 @@ export function renderToolbarHtml(state: AppState): { toolbar: string; subToolba
     `;
   }
   if (state.activeTool === 'calibrate') {
+    const preset = state.calibrationPreset ?? '100|mm';
+    const calLen = state.calibrationLength ?? 100;
+    const calUnit = state.calibrationUnit ?? 'mm';
     toolPrompt = `
       <span class="toolbar-sep" aria-hidden="true"></span>
       <span>Calibrate (${state.pendingCalibrationPoints.length}/2 pts):</span>
       <select class="select" id="cal-preset" aria-label="Calibration reference preset" style="width:auto;padding:2px 6px;">
-        <option value="100|mm">100 mm Ruler</option>
-        <option value="25|mm">25 mm Coin</option>
-        <option value="500|mm">500 mm Quadrat</option>
-        <option value="custom">Custom…</option>
+        <option value="100|mm" ${preset === '100|mm' ? 'selected' : ''}>100 mm Ruler</option>
+        <option value="25|mm" ${preset === '25|mm' ? 'selected' : ''}>25 mm Coin</option>
+        <option value="500|mm" ${preset === '500|mm' ? 'selected' : ''}>500 mm Quadrat</option>
+        <option value="custom" ${preset === 'custom' ? 'selected' : ''}>Custom…</option>
       </select>
-      <input class="input" id="cal-length" type="number" value="100" step="1" min="0.1" aria-label="Calibration length" style="width:65px;padding:2px 6px;" />
+      <input class="input" id="cal-length" type="number" value="${calLen}" step="1" min="0.1" aria-label="Calibration length" style="width:65px;padding:2px 6px;" />
       <select class="select" id="cal-unit" aria-label="Calibration unit" style="width:auto;padding:2px 6px;">
-        <option value="mm">mm</option>
-        <option value="cm">cm</option>
+        <option value="mm" ${calUnit === 'mm' ? 'selected' : ''}>mm</option>
+        <option value="cm" ${calUnit === 'cm' ? 'selected' : ''}>cm</option>
       </select>
       <button type="button" class="btn btn-sm" data-action="copy-scale-all" ${activePhoto?.calibration ? '' : 'disabled'}>Copy Scale to Site</button>
     `;
   } else if (state.activeTool === 'rectify') {
+    const rectW = state.rectifyWidthMm ?? 500;
+    const rectH = state.rectifyHeightMm ?? 500;
     toolPrompt = `
       <span class="toolbar-sep" aria-hidden="true"></span>
       <span>4-Pt Rectify (${state.pendingRectifyPoints.length}/4 TL→TR→BR→BL):</span>
-      <input class="input" id="rect-w" type="number" value="500" step="10" min="10" aria-label="Rectification physical width in mm" style="width:60px;padding:2px 6px;" title="Width (mm)" />×
-      <input class="input" id="rect-h" type="number" value="500" step="10" min="10" aria-label="Rectification physical height in mm" style="width:60px;padding:2px 6px;" title="Height (mm)" />mm
+      <input class="input" id="rect-w" type="number" value="${rectW}" step="10" min="10" aria-label="Rectification physical width in mm" style="width:60px;padding:2px 6px;" title="Width (mm)" />×
+      <input class="input" id="rect-h" type="number" value="${rectH}" step="10" min="10" aria-label="Rectification physical height in mm" style="width:60px;padding:2px 6px;" title="Height (mm)" />mm
     `;
   }
 

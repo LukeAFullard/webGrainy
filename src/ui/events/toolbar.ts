@@ -103,13 +103,62 @@ export function handleToolbarClick(target: ElementLike, ctx: EventContext): bool
   return true;
 }
 
-/** Calibration presets and the Display menu; returns true when handled. */
+const KNOWN_CAL_PRESETS = new Set(['100|mm', '25|mm', '500|mm']);
+
+/** Calibration presets/inputs, rectify dimensions, and the Display menu; returns true when handled. */
 export function handleToolbarChange(target: ControlLike, ctx: EventContext): boolean {
   if (target.id === 'cal-preset') {
     if (target.value !== 'custom') {
       const [len, unit] = target.value.split('|');
+      const numLen = Number(len);
+      const nextUnit = unit === 'cm' ? 'cm' : 'mm';
+      if (Number.isFinite(numLen) && numLen >= 0.1) {
+        ctx.store.setState({
+          calibrationPreset: target.value,
+          calibrationLength: numLen,
+          calibrationUnit: nextUnit,
+        });
+      }
       if (len) ctx.ui.setFieldValue('cal-length', len);
       if (unit) ctx.ui.setFieldValue('cal-unit', unit);
+    } else {
+      ctx.store.setState({ calibrationPreset: 'custom' });
+    }
+    return true;
+  }
+  if (target.id === 'cal-length') {
+    const v = Number(target.value);
+    if (Number.isFinite(v) && v >= 0.1) {
+      const unit = ctx.store.getState().calibrationUnit;
+      const key = `${v}|${unit}`;
+      ctx.store.setState({
+        calibrationLength: v,
+        calibrationPreset: KNOWN_CAL_PRESETS.has(key) ? key : 'custom',
+      });
+    }
+    return true;
+  }
+  if (target.id === 'cal-unit') {
+    const unit: 'mm' | 'cm' = target.value === 'cm' ? 'cm' : 'mm';
+    const len = ctx.store.getState().calibrationLength;
+    const key = `${len}|${unit}`;
+    ctx.store.setState({
+      calibrationUnit: unit,
+      calibrationPreset: KNOWN_CAL_PRESETS.has(key) ? key : 'custom',
+    });
+    return true;
+  }
+  if (target.id === 'rect-w') {
+    const v = Number(target.value);
+    if (Number.isFinite(v) && v >= 10) {
+      ctx.store.setState({ rectifyWidthMm: v });
+    }
+    return true;
+  }
+  if (target.id === 'rect-h') {
+    const v = Number(target.value);
+    if (Number.isFinite(v) && v >= 10) {
+      ctx.store.setState({ rectifyHeightMm: v });
     }
     return true;
   }

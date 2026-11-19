@@ -117,6 +117,12 @@ export interface AppState {
   inspectedGrainId: number | null;
   pendingCalibrationPoints: Point2D[];
   pendingRectifyPoints: Point2D[];
+  /** Controlled toolbar inputs for Calibrate and 4-Pt Rectify so re-renders never reset them. */
+  calibrationPreset: string;
+  calibrationLength: number;
+  calibrationUnit: 'mm' | 'cm';
+  rectifyWidthMm: number;
+  rectifyHeightMm: number;
 
   analysisParams: UiAnalysisParams;
   siteOptions: SiteAnalysisOptions;
@@ -200,6 +206,11 @@ export function createInitialState(): AppState {
     inspectedGrainId: null,
     pendingCalibrationPoints: [],
     pendingRectifyPoints: [],
+    calibrationPreset: '100|mm',
+    calibrationLength: 100,
+    calibrationUnit: 'mm',
+    rectifyWidthMm: 500,
+    rectifyHeightMm: 500,
 
     analysisParams: defaultAnalysisParams(),
     siteOptions: {

@@ -849,28 +849,48 @@ function mountShell(): void {
         void syncViewport(false);
       },
       onCalibrationPoint: (pt) => {
-        const prev = store.getState().pendingCalibrationPoints;
+        const st = store.getState();
+        // Read live DOM values BEFORE store.setState re-renders the toolbar (in case the user typed without blurring).
+        const lenEl = document.getElementById('cal-length') as HTMLInputElement | null;
+        const unitEl = document.getElementById('cal-unit') as HTMLSelectElement | null;
+        const parsedLen = lenEl ? Number(lenEl.value) : st.calibrationLength;
+        const lenVal = Math.max(0.1, Number.isFinite(parsedLen) && parsedLen > 0 ? parsedLen : st.calibrationLength);
+        const unit: 'mm' | 'cm' = unitEl ? (unitEl.value === 'cm' ? 'cm' : 'mm') : st.calibrationUnit;
+        const key = `${lenVal}|${unit}`;
+        const preset = key === '100|mm' || key === '25|mm' || key === '500|mm' ? key : 'custom';
+
+        const prev = st.pendingCalibrationPoints;
         const next = prev.length >= 2 ? [pt] : [...prev, pt];
-        store.setState({ pendingCalibrationPoints: next });
+        store.setState({
+          pendingCalibrationPoints: next,
+          calibrationLength: lenVal,
+          calibrationUnit: unit,
+          calibrationPreset: preset,
+        });
         if (next.length === 2) {
-          const lenEl = document.getElementById('cal-length') as HTMLInputElement | null;
-          const unitEl = document.getElementById('cal-unit') as HTMLSelectElement | null;
-          const lenVal = Math.max(0.1, Number(lenEl?.value ?? 100));
-          const unit = (unitEl?.value === 'cm' ? 'cm' : 'mm') as 'mm' | 'cm';
           void applyCalibrationToActive(next[0]!, next[1]!, lenVal, unit);
         } else {
           void syncViewport(false);
         }
       },
       onRectifyPoint: (pt) => {
-        const prev = store.getState().pendingRectifyPoints;
+        const st = store.getState();
+        // Read live DOM values BEFORE store.setState re-renders the toolbar.
+        const wEl = document.getElementById('rect-w') as HTMLInputElement | null;
+        const hEl = document.getElementById('rect-h') as HTMLInputElement | null;
+        const parsedW = wEl ? Number(wEl.value) : st.rectifyWidthMm;
+        const parsedH = hEl ? Number(hEl.value) : st.rectifyHeightMm;
+        const pw = Math.max(10, Number.isFinite(parsedW) && parsedW > 0 ? parsedW : st.rectifyWidthMm);
+        const ph = Math.max(10, Number.isFinite(parsedH) && parsedH > 0 ? parsedH : st.rectifyHeightMm);
+
+        const prev = st.pendingRectifyPoints;
         const next = prev.length >= 4 ? [pt] : [...prev, pt];
-        store.setState({ pendingRectifyPoints: next });
+        store.setState({
+          pendingRectifyPoints: next,
+          rectifyWidthMm: pw,
+          rectifyHeightMm: ph,
+        });
         if (next.length === 4) {
-          const wEl = document.getElementById('rect-w') as HTMLInputElement | null;
-          const hEl = document.getElementById('rect-h') as HTMLInputElement | null;
-          const pw = Math.max(10, Number(wEl?.value ?? 500));
-          const ph = Math.max(10, Number(hEl?.value ?? 500));
           void applyRectificationToActive(
             [next[0]!, next[1]!, next[2]!, next[3]!],
             pw,
