@@ -52,11 +52,9 @@ export function filterBorderGrains(
  * `2 ** np.interp(p / 100, cdf, log2(v))`. Sizes outside the CDF range clamp to the
  * smallest / largest grain.
  *
- * Note: before v1.1.0's scientific-audit fixes (commit 48d64bc) this interpolated linearly
- * in size (`np.interp(p / 100, cdf, v)`, as `eval_core.py`). The held-out benchmark tables
- * in README.md were computed with that linear rule; the two agree closely for typical
- * samples (mean |difference| ~0.1-1% for D16/D50/D84) but can differ by 10-20% where few
- * grains span a wide size gap (small or very coarse-tailed samples).
+ * Linear interpolation in size (`np.interp(p / 100, cdf, v)`, as ImageGrains' `eval_core.py`)
+ * agrees closely for typical samples (mean |difference| ~0.1-1% for D16/D50/D84) but can
+ * differ by 10-20% where few grains span a wide size gap.
  */
 export function weightedPsdPercentiles(
   values: ArrayLike<number>,

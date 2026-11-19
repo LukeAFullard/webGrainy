@@ -206,7 +206,7 @@ upstream Cellpose default.
 
 When it appears, the *This photo* results show "Fine grains detected" with a **Re-analyse
 enlarged ×1.5** button. In the pre-processing benchmark (40 test photos,
-`audit/preprocessing/`), enlarging fine-gravel photos ×1.5 improved outline accuracy
+`validation/preprocessing/`), enlarging fine-gravel photos ×1.5 improved outline accuracy
 (PQ +0.025, 95% CI +0.007 to +0.049) and found more small grains, with no site getting
 worse, at about 20–50% more time per photo. Enlarging *every* photo did not pass: it over-split
 cobbles. The 20 px threshold was chosen after seeing the test results, so the app offers it
@@ -241,13 +241,13 @@ models (U-Net PQ −0.01 to −0.02, Cellpose-SAM −0.03 to −0.04) and made s
 ### Advanced: Inference pipeline
 | | |
 |---|---|
-| **Options** | `Cellpose (matches ImageGrains)` · `Legacy (webGrainy ≤ v1.1)` |
+| **Options** | `Cellpose (matches ImageGrains)` · `Legacy (whole-image tiling)` |
 | **Default** | **Cellpose** |
 | **What it does** | How the photo is prepared and cut into tiles before the neural network runs. "Cellpose" reproduces the original ImageGrains/Cellpose software exactly: identical grain outlines to the original in tests. |
 
 **When to change it:** keep **Cellpose**. In tests on 7 photos it gave clearly better
 outlines and D50 than Legacy (median D50 error 3.3 % vs 8.6 % for Cellpose-SAM). Choose
-**Legacy** only to reproduce results made with webGrainy v1.1 or earlier.
+**Legacy** only to reproduce results made with the earlier whole-image tiling.
 
 ### Advanced (rarely needed): Flow steps, Seed density
 | | |
@@ -646,8 +646,8 @@ Shortcuts are off while you type in a field.
   system notification for analyses over one minute that finish while the tab is in the
   background. The browser asks for permission the first time.
 - **Analysis settings are remembered** in this browser for your next visit. **Reset analysis
-  settings to defaults** returns to the tested configuration. Settings saved by an older
-  version that no longer apply fall back to their defaults.
+  settings to defaults** returns to the tested configuration. Saved settings that are not
+  valid fall back to their defaults.
 
 ### Comparing sites over time
 

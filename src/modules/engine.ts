@@ -320,7 +320,7 @@ export class ImageGrainsEngine {
 
     const fineGrainUpscale = config?.fineGrainUpscale !== undefined && config.fineGrainUpscale > 1 ? config.fineGrainUpscale : undefined;
     const prepared = prepareWorkingImage(preImg.data, preImg.width, preImg.height, config?.scaleMode ?? 'auto');
-    // Optional enlargement for fine gravel (audit/preprocessing); results are converted back
+    // Optional enlargement for fine gravel (validation/preprocessing); results are converted back
     // to original-photo pixels through effectiveScaleFactor, so sizes are unaffected.
     const scaledWorking = fineGrainUpscale !== undefined ? upscaleWorkingImage(prepared, fineGrainUpscale) : prepared;
     // A very large photo may have been decoded smaller (MAX_DECODE_PIXELS): report everything
@@ -368,7 +368,7 @@ export class ImageGrainsEngine {
     ): Promise<InferenceOutput> => {
       const onTileProgress = (progress: unknown): void => emit('inference', progress);
       if (pipeline === 'cellpose') {
-        // Upstream-exact Cellpose tiling (reproduces PyTorch ImageGrains; audit/parity/).
+        // Upstream-exact Cellpose tiling (reproduces PyTorch ImageGrains; validation/parity/).
         return selectedModel === 'unet'
           ? runUnetCellposeInference(
               session as ort.InferenceSession,

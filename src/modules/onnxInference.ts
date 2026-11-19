@@ -57,7 +57,7 @@ export class WebGpuDeviceLostError extends Error {
  * Cellpose flows are bounded (about +/-10) and cell probabilities are logits (about
  * +/-30). Float16 GPU arithmetic can overflow on unusual inputs, such as the zero
  * borders the Cellpose pipeline adds. Seen with ONNX Runtime's CUDA FP16 backend in
- * the Colab benchmark (audit/followup/); unverified for WebGPU.
+ * the Colab benchmark (validation/heldout/); unverified for WebGPU.
  */
 export class NumericInstabilityError extends Error {
   constructor(message: string) {
@@ -387,7 +387,7 @@ function decodeOutputTensorData(data: unknown): Float32Array {
  * WASM threads need `SharedArrayBuffer`, i.e. a cross-origin-isolated page (COOP/COEP
  * headers, see DEPLOYMENT.md). Without isolation ORT runs single-threaded whatever is
  * set. When isolated, ORT's own default uses only about half the logical cores; measured
- * on a 4-core machine (audit/perf/), using all cores made U-Net inference ~1.8x faster
+ * on a 4-core machine (validation/perf/), using all cores made U-Net inference ~1.8x faster
  * than the default and ~3x faster than single-threaded.
  *
  * Default: one fewer than the logical cores (at least 1), so one core stays free for the
@@ -795,7 +795,7 @@ export async function runCpsamTiledInference(
 // ---------------------------------------------------------------------------
 // Upstream-exact (Cellpose) inference pipelines. Running our ONNX exports through
 // these reproduces PyTorch Cellpose: PQ vs PyTorch 0.97 (U-Net) / 0.995 (Cellpose-SAM),
-// against 0.58 / 0.79 for the legacy webGrainy tiling (audit/parity/).
+// against 0.58 / 0.79 for the legacy webGrainy tiling (validation/parity/).
 // ---------------------------------------------------------------------------
 
 /** Settings for the upstream-exact U-Net pipeline (Cellpose 3.1, IG2 U-Net). */

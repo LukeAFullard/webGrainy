@@ -84,7 +84,7 @@ export const HELP_TOPICS = {
     group: 'Analysis',
     what: 'Boosts local contrast before analysis.',
     default: 'Off',
-    when: 'Leave it off. In the pre-processing benchmark (40 test photos, audit/preprocessing) it lowered outline accuracy with both models (U-Net PQ −0.01 to −0.02, Cellpose-SAM −0.03 to −0.04) and made some sites much worse (D50 error up to +22 percentage points; coarse cobble photos suffered most). Use it only for experiments, and record that you did (it is in the export metadata).',
+    when: 'Leave it off. In the pre-processing benchmark (40 test photos, validation/preprocessing) it lowered outline accuracy with both models (U-Net PQ −0.01 to −0.02, Cellpose-SAM −0.03 to −0.04) and made some sites much worse (D50 error up to +22 percentage points; coarse cobble photos suffered most). Use it only for experiments, and record that you did (it is in the export metadata).',
   },
   fineGrainUpscale: {
     title: 'Enlarge for fine grains',
@@ -124,9 +124,9 @@ export const HELP_TOPICS = {
   inferencePipeline: {
     title: 'Inference pipeline',
     group: 'Advanced analysis',
-    what: 'How the photo is prepared and cut into tiles before the neural network runs. "Cellpose" reproduces the original ImageGrains / Cellpose software exactly. "Legacy" is the method used by webGrainy up to v1.1.',
+    what: 'How the photo is prepared and cut into tiles before the neural network runs. "Cellpose" reproduces the original ImageGrains / Cellpose software exactly. "Legacy" runs U-Net on the whole image and blends overlapping tiles its own way.',
     default: 'Cellpose (matches ImageGrains)',
-    when: 'Keep "Cellpose". In tests it matched the original software exactly, and gave better outlines than Legacy (outline score 0.445 vs 0.413 for U-Net, 0.561 vs 0.485 for Cellpose-SAM on 7 test photos). Choose "Legacy" only to reproduce results made with an older version.',
+    when: 'Keep "Cellpose". In tests it matched the original software exactly, and gave better outlines than Legacy (outline score 0.445 vs 0.413 for U-Net, 0.561 vs 0.485 for Cellpose-SAM on 7 test photos). Choose "Legacy" only to reproduce earlier results made with it.',
   },
   cpuThreads: {
     title: 'CPU threads',

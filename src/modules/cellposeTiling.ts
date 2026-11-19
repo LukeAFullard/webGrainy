@@ -5,7 +5,7 @@
  * Why: running our (bit-exact) ONNX exports through Cellpose's own pipeline reproduces
  * PyTorch exactly, but webGrainy's earlier tiling (whole-image U-Net, reflect padding,
  * Hanning blending, no 8 px zero border) did not. Outlines then differed from PyTorch
- * (PQ vs PyTorch 0.58 for U-Net, 0.80 for Cellpose-SAM). See audit/parity/.
+ * (PQ vs PyTorch 0.58 for U-Net, 0.80 for Cellpose-SAM). See validation/parity/.
  *
  * Variants:
  *  - 'v3' (Cellpose 3.x, IG2 U-Net):         224 px tiles, 10 % overlap, pad to /16 + 8 px border

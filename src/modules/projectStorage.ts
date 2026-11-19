@@ -105,7 +105,7 @@ interface ArchivedSerializedSession
   /** v2: little-endian Int32 label mask in the binary payload. */
   workingMasksRef?: ArchiveRef;
   workingImage: Omit<SerializedAnalysisSession['workingImage'], 'data'> & {
-    /** v1 (may be empty: sessions no longer keep the working pixels). */
+    /** JSON format (may be empty: sessions do not keep the working pixels). */
     dataBase64?: string;
     dataRef?: ArchiveRef;
   };
@@ -455,7 +455,7 @@ function deserializeSessionFromArchive(
   };
 }
 
-/** Project archive file names (.webgrainy; older versions wrote .webgrainy.json). */
+/** Project archive file names: .webgrainy (binary) or .webgrainy.json / .json (JSON format). */
 export function isProjectArchiveFileName(name: string): boolean {
   const n = name.toLowerCase();
   return n.endsWith('.webgrainy') || n.endsWith('.json');
@@ -693,7 +693,7 @@ function validateArchivedSession(
   if (session.workingMasks.length !== w * h) {
     throw new ArchiveValidationError(`${ctx}: mask length ${session.workingMasks.length} != ${w}x${h}.`);
   }
-  // Empty is allowed: sessions no longer keep the working-image pixels after analysis.
+  // Empty is allowed: sessions do not keep the working-image pixels after analysis.
   if (session.workingImage.data.length !== 0 && session.workingImage.data.length !== w * h * 4) {
     throw new ArchiveValidationError(`${ctx}: RGBA image length ${session.workingImage.data.length} != ${w}x${h}x4.`);
   }

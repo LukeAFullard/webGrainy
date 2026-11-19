@@ -15,7 +15,7 @@ import { esc } from './html.js';
 
 /** Effective working-resolution scale factor for a photo under the selected Scale Mode. */
 export function workingScaleFactorFor(width: number, height: number, scaleMode: ScaleMode): number {
-  // The analysis's own rule (it used to differ here for 1025-4096 px photos).
+  // The analysis's own rule (imagePreprocess.workingScaleFor).
   return workingScaleFor(width, height, scaleMode);
 }
 
@@ -254,7 +254,7 @@ export function renderSidebarHtml(state: AppState, view: SidebarView): string {
               <span class="label-row">Inference pipeline ${helpButton('inferencePipeline')}</span>
               <select class="select" data-param="inferencePipeline">
                 <option value="cellpose" ${p.inferencePipeline === 'cellpose' ? 'selected' : ''}>Cellpose (matches ImageGrains)</option>
-                <option value="legacy" ${p.inferencePipeline === 'legacy' ? 'selected' : ''}>Legacy (webGrainy ≤ v1.1)</option>
+                <option value="legacy" ${p.inferencePipeline === 'legacy' ? 'selected' : ''}>Legacy (whole-image tiling)</option>
               </select>
             </label>
             <label class="field-label">

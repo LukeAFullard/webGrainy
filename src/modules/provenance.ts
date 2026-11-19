@@ -23,7 +23,7 @@ export const UNOFFICIAL_NOTICE =
 export const CITATION_NOTICE =
   'If you use these results, cite ImageGrains (Mair et al.; doi:10.1002/esp.5755; weights doi:10.5281/zenodo.15728186) and Cellpose (Stringer et al. 2021, doi:10.1038/s41592-020-01018-x).';
 
-/** Definition of the reported "b-axis" size metric (see AUDIT_REPORT.md F-06). */
+/** Definition of the reported "b-axis" size metric, included in every export. */
 export const SIZE_METRIC_DEFINITION =
   'b_axis = minor axis (4*sqrt(lambda2)) of the second-moment-equivalent ellipse of the exposed 2D grain outline (NOT a sieve or caliper b-axis; can differ from min-Feret by roughly +/-15% depending on grain shape). min_feret = minimum Feret (rotating-calipers) width of the pixel-edge convex hull (closest 2D analogue of a caliper b-axis). d_eq = diameter of the equal-area circle.';
 

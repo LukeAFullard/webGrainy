@@ -6,7 +6,7 @@
  * Background: ONNX Runtime's CUDA float16 backend diverged on Cellpose-SAM tiles with
  * Cellpose's zero border (Colab benchmark). WebGPU also computes in float16 when the
  * GPU supports `shader-f16`; this page measures whether WebGPU is affected.
- * Same cases and metrics as audit/review/webgpu_vs_wasm.mjs.
+ * Same cases and metrics as validation/gpu/webgpu_vs_wasm.mjs.
  */
 import { getModel } from '../modules/modelCache.js';
 import {

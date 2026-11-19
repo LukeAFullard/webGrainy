@@ -1,5 +1,5 @@
-// Regression tests for the findings in AUDIT_REPORT.md. Each block names the finding it
-// guards. Several target mutations that previously survived the whole suite.
+// Regression tests for numerical and statistical correctness. Several target mutations that
+// previously survived the whole suite.
 import { describe, expect, it } from 'vitest';
 import {
   computeFolkWardStats,

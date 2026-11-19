@@ -1,5 +1,5 @@
 // Cellpose tiling replica vs reference values produced by Cellpose's own code
-// (audit/parity/make_tiling_fixture.py, cellpose 3.1.1.1 and 4.1.1).
+// (validation/parity/make_tiling_fixture.py, cellpose 3.1.1.1 and 4.1.1).
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {

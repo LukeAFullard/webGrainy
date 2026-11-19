@@ -266,7 +266,7 @@ export interface SedimentStatsReport {
 
 /**
  * 'cellpose' (default): upstream-exact Cellpose tiling, which reproduces PyTorch ImageGrains.
- * 'legacy': the v1.1 webGrainy tiling (whole-image U-Net, reflect padding, Hanning blend).
+ * 'legacy': whole-image U-Net, reflect padding, Hanning-blended tiles (not ImageGrains' own tiling).
  */
 export type InferencePipeline = 'cellpose' | 'legacy';
 
@@ -290,7 +290,7 @@ export interface AnalysisConfig {
   scaleMode?: ScaleMode;
   /**
    * Enlarge the working image by this factor before inference (e.g. 1.5). In testing this
-   * helped U-Net on fine gravel (working median b-axis < 20 px); see audit/preprocessing.
+   * helped U-Net on fine gravel (working median b-axis < 20 px); see validation/preprocessing.
    */
   fineGrainUpscale?: number;
   applyClahe?: boolean;

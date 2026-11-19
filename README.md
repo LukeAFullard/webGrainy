@@ -1,251 +1,133 @@
-# webGrainy — ImageGrains 2.0 Web
+# webGrainy — ImageGrains 2.0 in the browser
 
-**Live app:** <https://lukeafullard.github.io/webGrainy/> · **GPU check:** <https://lukeafullard.github.io/webGrainy/gpucheck.html> (tests whether your graphics card gives the same results as the CPU; please send the report)
+**Live app:** <https://lukeafullard.github.io/webGrainy/> · **GPU check:** <https://lukeafullard.github.io/webGrainy/gpucheck.html> (tests whether your graphics card gives the same results as the CPU)
 
-A **100% browser-native, privacy-first, offline-first** gravel and sediment grain-sizing engine in TypeScript, built to run the pretrained **ImageGrains 2.0** segmentation models directly in the browser via ONNX Runtime Web.
+webGrainy measures gravel and other coarse sediment from photos, entirely in the web browser. It runs the pretrained [ImageGrains 2.0](https://github.com/dmair1989/imagegrains) segmentation models (U-Net and Cellpose-SAM) with ONNX Runtime Web, outlines every grain, and reports grain-size distributions and statistics for single photos, whole sites, and sites compared over time.
 
-All image preprocessing, neural inference (`onnxruntime-web` via WebGPU or SIMD WASM), gradient flow integration, multigrid PDE post-processing, interactive mask editing, and sedimentological statistics execute **entirely on the user's device**. No imagery or measurements are ever uploaded to a server, and no external CDNs are referenced at runtime.
+Photos and results never leave your device. The only network requests are the one-time downloads of the pinned, checksum-verified model files from Hugging Face; after that the app works offline.
 
-> **Disclaimer & Attribution:** This is an **independent, unofficial** browser implementation and is **not affiliated with, endorsed by, or maintained by** the original ImageGrains or Cellpose authors. It is an independent effort to convert and package the pretrained weights into ONNX ([`inYourOwnBrowser/imagegrains-2.0-onnx`](https://huggingface.co/inYourOwnBrowser/imagegrains-2.0-onnx)) and build a browser-native processing pipeline around them. The architecture, post-processing, and workflows differ from the official Python library at [**dmair1989/imagegrains**](https://github.com/dmair1989/imagegrains). Please cite the original authors' work below if you use these models or methods.
+> **Status: in development.** webGrainy has not been released yet. The first release will be **v0.1.0**. Results, file formats and settings may still change.
 
----
-
-## Features
-
-- **Zero Server-Side Processing & Zero External CDNs:** All ONNX Runtime WASM/WebGPU binaries and TypeScript modules are bundled locally (`dist/ort/`).
-- **Pinned, Integrity-Verified Model Caching (`modelCache.ts`):** Streams `.onnx` weights from a **pinned Hugging Face commit** (`inYourOwnBrowser/imagegrains-2.0-onnx@98e76b13`), verifies each file's **size and SHA-256** with WebCrypto before use, and persists the verified buffer in **IndexedDB** (`imagegrains-onnx-cache-v1`). Cache entries with a missing or mismatched hash are re-downloaded. This network request (to `huggingface.co` and its `*.hf.co` CDN) is the app's only one.
-- **Adaptive Preprocessing & Complexity Router (`imagePreprocess.ts`):**
-  - Optional pure-TypedArray **CLAHE** luminance normalization for harsh shadows and wet-stone glare.
-  - **Adaptive Input Scaling** (`'auto' | '1.0x' | '0.5x' | '0.25x'`) to prevent large boulders (`> 350 px`) from being under-predicted in `256×256` tiles, while tracking `effectiveScaleFactor` so all morphometrics scale back to original image pixels and millimeters.
-  - **Complexity Router (`recommendModel`)**, nominally ~5 ms on a 256×256 thumbnail on desktop hardware and slower on mobile or under load. It combines Sobel gradient entropy, multi-scale contrast variance, shadow/glare dynamic range, and hardware capability (WebGPU adapter, `shader-f16` support for FP16 CP-SAM, `deviceMemory`) to recommend U-Net vs. Cellpose-SAM. The recommendation is a heuristic; check the masks.
-- **WebGPU / WASM Inference (`onnxInference.ts`):**
-  - **Fast Model (`ig2_unet_fp32.onnx`, 25.3 MiB / 26.5 MB):** 16-px reflection padding, `[1, 2, H, W]` FP32 inference.
-  - **High-Accuracy Model (Cellpose-SAM; `ig2_cpsam_fp16.onnx` 617 MB, or the quantized `ig2_cpsam_int8_wo_fp32scale.onnx` 316 MB / `ig2_cpsam_fp4_e2m1_lut.onnx` 183 MB with the same benchmark accuracy; INT8 is used automatically on the CPU):** `256×256` overlapping tiles (`64 px` overlap / `192 px` stride), 2D clipped Hanning taper blending, zero-dependency IEEE-754 `Float32 <-> Float16` conversion, WebGPU `shader-f16` capability gating with explicit CPU WASM fallback warning, WebGPU `device.lost` recovery (evicting poisoned sessions), and `AbortSignal` cancellation.
-- **Browser Engine v4.1 Web Worker (`grainPostprocess.worker.ts` & `postprocessCore.ts`):**
-  - Zero-copy `ArrayBuffer` transfer.
-  - Two-phase bilinear Euler flow integration (`100` coarse + `150` `1.0 px` steps).
-  - 4-level coarse-to-fine Multigrid 9-point Jacobi PDE (`8× -> 4× -> 2× -> 1×`).
-  - `F5_MagWeightedQC` and `F3_SplitOnFailure` dumbbell recovery with **`maxGrainAreaFraction = 0.40`** (matching upstream Cellpose `max_size_fraction=0.4`, raised from `0.15` after the held-out ablation showed `0.15` dropped real cobbles on `10/40` CP-SAM test images). Configurable up to `1.0` in the sidebar. **This flow-QC is a custom criterion, not Cellpose's `flow_error`** (which compares `masks_to_flows` against `dP/5` with threshold 0.4), so masks differ from upstream Cellpose/ImageGrains output.
-  - Border-grain flagging (`margin = 2 px`) and second-order central moments (`aAxisPx`, `bAxisPx`, `dEqPx`, `centroidX`, `centroidY`, `orientationRad`), plus min/max **Feret (caliper) diameters** (`min_feret_*`, `max_feret_*`) computed on demand via rotating calipers with cached convex hulls.
-  - Other defaults (`flowThreshold 0.45`, `cellprobThreshold 0`, `minSize 30 px`, `niter 250`, border margin `2 px`) match the benchmarked configuration. `minSize` and the border margin apply at *working* resolution, so after auto-downscaling they correspond to larger sizes in original pixels.
-- **Interactive Human-in-the-Loop Editing (`interactiveEditor.ts`):**
-  - Deterministic TypedArray `splitGrainAtLine`, `mergeGrains`, `deleteGrain`, and `addPolygonGrain`.
-  - Bounding-box diff `Undo/Redo` history stack (about 1 ms per step on desktop).
-  - Two-point spatial `ScaleCalibrator` (`mmPerPx`) and 4-point perspective homography rectification.
-- **Sedimentology Statistics & Exports (`sedimentStats.ts` & `siteAnalysis.ts`):**
-  - Area-weighted and number-weighted PSD percentiles ($D_5 \dots D_{95}$). Area weighting approximates a grid-by-number (Wolman) sample in principle, because the chance of a grid point hitting a grain is proportional to its exposed area (Kellerhals & Bray 1971). It uses only the *exposed 2D* area, and fines below the detection limit are truncated.
-  - **Selectable Size Metric (`sizeMetric: 'bAxis' | 'minFeret' | 'dEq'`):** Both Pooled Site and Active Photo views support switching between **moment-ellipse minor axis (`bAxis`, default)**, **minimum Feret rotating-calipers width (`minFeret`)**, and **equal-area circle diameter (`dEq`)**, updating PSD percentiles, Folk & Ward statistics, Wentworth classes, and exports consistently. Note that ellipse `b_axis` is **not a sieve or caliper b-axis**; `minFeret` is the closest 2D analogue of a caliper b-axis.
-  - **Folk & Ward (1957)** $\phi$-unit graphic mean ($M_z$), sorting ($\sigma_I$), skewness ($Sk_I$), kurtosis ($K_G$), and Wentworth size class proportions.
-  - Client-side `Blob` exports: per-grain CSV, summary JSON/CSV, 16/32-bit PNG instance masks, and GeoJSON / SVG vector contours (Marching Squares, original-image coordinates).
-  - **Every export carries provenance metadata:** app and ORT versions, model id, revision and SHA-256, execution provider, post-processing parameters, scale factor, calibration, ROI use, date, the size-metric definition, and the unofficial-port and citation notice. CSV cells are protected against spreadsheet formula injection.
+> **Disclaimer.** webGrainy is an independent, unofficial port. It is not affiliated with or endorsed by the ImageGrains or Cellpose authors. Its post-processing differs from the official Python implementation, so outlines and sizes are close to, but not identical with, ImageGrains output. Please cite the original work (see [Citations](#citations)).
 
 ---
 
-## Hosted ONNX Models & Benchmark Accuracy
+## What it does
 
-Models are hosted at [`inYourOwnBrowser/imagegrains-2.0-onnx`](https://huggingface.co/inYourOwnBrowser/imagegrains-2.0-onnx) (pinned revision `98e76b1374dc22cfff8193aca71c308f2b4dd3b3`).
+- **Segmentation.**
+  - U-Net (fast) or Cellpose-SAM (more accurate). Cellpose-SAM comes as FP16 weights for WebGPU, or as INT8 / FP4 weights that are smaller and match FP16 accuracy.
+  - The tiling reproduces Cellpose's own pipeline.
+  - Inference runs on the GPU (WebGPU) where supported, otherwise on the CPU (WebAssembly) in a background worker, so the page stays responsive.
+- **Measurement.**
+  - Per grain: b-axis (moment-ellipse minor axis), minimum and maximum Feret width, equal-area diameter, shape and orientation.
+  - Sizes are in mm after two-point calibration, perspective rectification, or from GeoTIFF georeferencing.
+- **Editing.** Split, merge, delete and draw grains, with undo/redo. Regions of interest and exclusion areas.
+- **Statistics.**
+  - Area-weighted (grid-by-number) and number-weighted percentiles D5–D95.
+  - Folk & Ward statistics, Wentworth classes, moment statistics and fabric (orientation).
+  - Site-level pooling with bootstrap and binomial confidence intervals, a jackknife, a convergence curve and sample-adequacy checks.
+- **Sites and surveys.**
+  - Each site is one survey. Repeat surveys of a place share a place name and can be followed over time.
+  - Sites are compared side by side and over time like for like: same statistics settings and common size range, with a warning when photos were analysed differently.
+- **Exports.**
+  - Per-grain and summary CSV/JSON, label-mask PNGs, GeoJSON/SVG outlines, chart images and a printable report.
+  - Every export records the app version and commit, model and its SHA-256, and all settings.
+  - Projects can be saved and reopened as `.webgrainy` files.
 
-### Within-Site Held-Out Test Split (`IG2_data.zip`, `official_split == 'test'`, `n = 40` across 13 sites)
-
-Evaluated using the **actual shipped TypeScript engine** (`src/modules/onnxInference.ts` for both legacy tiling and the default Cellpose pipeline, plus `src/modules/postprocessCore.ts` with frozen defaults: `niter=250, cellprobThreshold=0.0, flowThreshold=0.45, minSize=30, minSeedDensity=2, excludeBorderMargin=2`), comparing **`maxGrainAreaFraction = 0.15`** (legacy v1.1.0), **`0.40`** (shipped default), and **`1.00`** (guard disabled), alongside **upstream PyTorch ImageGrains**, against **hand-digitised 2D pixel masks** (`bAxis`, moment-ellipse minor axis; *not* physical sieve/Wolman data):
-
-> **Note on reproducing these tables.** They were computed before two later method changes:
-> (1) D-percentiles are now interpolated in log2(size) (φ space) instead of linearly in size
-> (`weightedPsdPercentiles`, commit `48d64bc`); for typical samples the two agree within about
-> 0.1–1 %, but they can differ by 10–20 % where few grains span a wide size gap. (2) Photos are
-> now shrunk with area averaging (anti-aliased) instead of bilinear sampling, which changes the
-> network input for photos whose longest side exceeds 1024 px. Re-run the benchmark on a tagged
-> release before quoting these numbers for the current version.
-
-#### D50 Error vs Human GT (Primary Grain-Size Metric)
-
-| Model | Engine / Guard | D50 MAPE: mean [95% CI] | D50 MAPE: median [95% CI] | P90 / >25% / >50% | Signed bias (med / mean) | PQ vs GT |
-| :--- | :--- | :--- | :--- | :--- | :--- | ---: |
-| **U-Net** (`ig2_unet_fp32.onnx`, 26.5 MB) | **Shipped TS (Cellpose pipeline, guard = 0.40, default)** | `24.39%` `[13.69, 39.21]` | `9.44%` `[5.32, 14.86]` | `78.43%` / `22.5%` / `17.5%` | `+3.78%` / `+9.89%` | `0.539` |
-| **U-Net** (`ig2_unet_fp32.onnx`) | Shipped TS v4.1 (legacy tiling, `guard = 0.15`) | `31.02%` `[19.76, 45.54]` | `15.31%` `[9.17, 26.25]` | `83.31%` / `35.0%` / `20.0%` | `-8.93%` / `-10.10%` | `0.480` |
-| **U-Net** (`ig2_unet_fp32.onnx`) | Shipped TS v4.1 (legacy tiling, `guard = 0.40`) | `27.48%` `[16.93, 42.12]` | `14.84%` `[7.35, 23.02]` | `83.31%` / `30.0%` / `17.5%` | `-2.38%` / `-3.74%` | `0.485` |
-| **U-Net** (`ig2_unet_fp32.onnx`) | Shipped TS v4.1 (legacy tiling, `guard = 1.00`, ablation) | `27.48%` `[16.93, 42.12]` | `14.84%` `[7.35, 23.02]` | `83.31%` / `30.0%` / `17.5%` | `-2.38%` / `-3.74%` | `0.485` |
-| **U-Net** (`IG2_full_set.200525`) | Upstream PyTorch (`cellpose==3.1.1.1`) | `27.47%` `[14.83, 46.34]` | `9.26%` `[6.33, 17.04]` | `78.51%` / `27.5%` / `15.0%` | `+2.18%` / `+10.88%` | `0.528` |
-| **Cellpose-SAM** (`ig2_cpsam_fp16.onnx`, 617.4 MB) | **Shipped TS (Cellpose pipeline, guard = 0.40, default)** | `8.91%` `[4.00, 15.60]` | `2.87%` `[2.02, 4.93]` | `13.68%` / `7.5%` / `5.0%` | `-0.02%` / `-2.47%` | `0.652` |
-| **Cellpose-SAM** (`ig2_cpsam_fp16.onnx`) | Shipped TS v4.1 (legacy tiling, `guard = 0.15`) | `21.85%` `[13.74, 31.00]` | `6.50%` `[2.48, 17.90]` | `67.28%` / `30.0%` / `20.0%` | `-1.30%` / `-12.87%` | `0.562` |
-| **Cellpose-SAM** (`ig2_cpsam_fp16.onnx`) | Shipped TS v4.1 (legacy tiling, `guard = 0.40`) | `11.51%` `[6.01, 18.32]` | `2.63%` `[2.01, 4.98]` | `42.03%` / `12.5%` / `7.5%` | `+0.21%` / `-1.87%` | `0.571` |
-| **Cellpose-SAM** (`ig2_cpsam_fp16.onnx`) | Shipped TS v4.1 (legacy tiling, `guard = 1.00`, ablation) | `9.43%` `[4.91, 15.19]` | `2.63%` `[2.01, 4.74]` | `25.67%` / `10.0%` / `5.0%` | `+0.51%` / `+0.37%` | `0.571` |
-| **Cellpose-SAM** (`IG2_full_set_cp_SAM`) | Upstream PyTorch (`cellpose>=4.0.9,<4.2`) | `14.32%` `[7.98, 21.82]` | `4.42%` `[2.42, 8.33]` | `41.84%` / `20.0%` / `10.0%` | `-1.11%` / `-7.68%` | `0.642` |
-
-#### D16 and D84 Error vs Human GT
-
-| Model | Engine / Guard | D16 mean / median [95% CI] | D16 P90 / >25% / >50% | D84 mean / median [95% CI] | D84 P90 / >25% / >50% |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **U-Net** | **Shipped TS (Cellpose pipeline, guard = 0.40, default)** | `37.58%` / `23.81%` `[12.12, 42.53]` | `81.12%` / `50.0%` / `27.5%` | `11.45%` / `2.94%` `[0.98, 6.31]` | `35.55%` / `15.0%` / `7.5%` |
-| **U-Net** | TS v4.1 (legacy tiling, `guard = 0.15`) | `27.80%` / `17.44%` `[13.18, 31.78]` | `57.78%` / `42.5%` / `17.5%` | `25.41%` / `16.02%` `[2.43, 34.90]` | `72.47%` / `37.5%` / `15.0%` |
-| **U-Net** | TS v4.1 (legacy tiling, `guard = 0.40`) | `24.41%` / `14.18%` `[9.18, 28.57]` | `57.78%` / `37.5%` / `12.5%` | `18.71%` / `4.26%` `[1.40, 16.28]` | `48.65%` / `27.5%` / `7.5%` |
-| **U-Net** | TS v4.1 (legacy tiling, `guard = 1.00`) | `24.41%` / `14.18%` `[9.18, 28.57]` | `57.78%` / `37.5%` / `12.5%` | `18.71%` / `4.26%` `[1.40, 16.28]` | `48.65%` / `27.5%` / `7.5%` |
-| **U-Net** | Upstream PyTorch | `43.57%` / `21.50%` `[14.53, 34.65]` | `81.50%` / `47.5%` / `25.0%` | `14.61%` / `3.32%` `[1.18, 9.47]` | `51.22%` / `20.0%` / `12.5%` |
-| **Cellpose-SAM** | **Shipped TS (Cellpose pipeline, guard = 0.40, default)** | `13.27%` / `6.31%` `[3.67, 10.49]` | `34.43%` / `15.0%` / `7.5%` | `7.01%` / `1.28%` `[0.72, 2.88]` | `11.79%` / `5.0%` / `5.0%` |
-| **Cellpose-SAM** | TS v4.1 (legacy tiling, `guard = 0.15`) | `21.55%` / `11.14%` `[5.18, 30.25]` | `55.75%` / `37.5%` / `17.5%` | `20.78%` / `5.18%` `[2.03, 21.32]` | `64.89%` / `32.5%` / `15.0%` |
-| **Cellpose-SAM** | TS v4.1 (legacy tiling, `guard = 0.40`) | `16.16%` / `6.39%` `[4.23, 11.50]` | `55.26%` / `22.5%` / `12.5%` | `9.51%` / `2.03%` `[1.18, 4.75]` | `28.48%` / `12.5%` / `5.0%` |
-| **Cellpose-SAM** | TS v4.1 (legacy tiling, `guard = 1.00`) | `15.17%` / `6.39%` `[4.23, 11.50]` | `48.47%` / `20.0%` / `10.0%` | `7.38%` / `1.82%` `[1.09, 3.88]` | `15.64%` / `10.0%` / `2.5%` |
-| **Cellpose-SAM** | Upstream PyTorch | `15.80%` / `8.67%` `[5.22, 13.31]` | `42.35%` / `20.0%` / `7.5%` | `11.64%` / `2.01%` `[1.06, 6.60]` | `38.04%` / `20.0%` / `2.5%` |
-
-> **Cellpose pipeline 40-image benchmark result:** On the full `n = 40` held-out test set, the default **Cellpose pipeline** (`guard = 0.40`, `audit/followup/paired_comparison_results.txt`) largely closes the outline gap with PyTorch (`PQ vs PT` rises from `0.582 → 0.932` for U-Net and `0.778 → 0.935` for Cellpose-SAM). **Cellpose-SAM** improves across almost every metric: `PQ vs GT` rises from `0.571 → 0.652` (matching PyTorch `0.642`), D50 mean APE drops from `11.51% → 8.91%` (`P90` `42.03% → 13.68%`; paired vs PyTorch `-5.41` pp `[-11.05, -0.25]`, `23/40` wins, sign-test `p = 0.430`; paired vs legacy `-2.60` pp `[-6.23, +0.10]`, `24/40` wins, `p = 0.268`), and D16/D84 tail errors both drop; no CP-SAM image degrades sharply (worst D50 shift vs legacy is `+9.00` pp on `APF_2__test__L2_1_C1_DJI_0371_3`, `0.8% → 9.8%`, where `PQ vs GT` improved `0.596 → 0.648`). **U-Net** improves `PQ vs GT` (`0.485 → 0.539`), D50 (`27.48% / 14.84%` → `24.39% / 9.44%`; paired vs legacy `-3.10` pp `[-9.05, +2.64]`, `19/40` wins, `p = 0.875`; vs PyTorch `-3.09` pp `[-7.78, +0.38]`), and D84 (`18.71% → 11.45%`), but Cellpose 3's `17/30` downsampling drops small grains — hurting D16 (`24.41% / 14.18%` → `37.58% / 23.81%`, mirroring PyTorch `43.57% / 21.50%`) and degrading D50 on four fine-grained CT/outcrop images relative to legacy (`CT__test__SlicesY_..._David0015_1`: `22.1% → 78.4%`; `DV_4__test__CTsample_016_...`: `1.4% → 26.8%`; `NB2__test__P5220768_2_cut`: `214.7% → 234.8%`; `NB2__test__P5240929_Crop_3`: `38.4% → 55.0%`). *(CP-SAM was benchmarked via `CPUExecutionProvider` verified within `0.004`/`0.006` of `onnxruntime-web` WASM after finding Colab `CUDAExecutionProvider` FP16 diverged on single zero-border Cellpose tiles; U-Net used `CUDAExecutionProvider` verified against WASM.)*
-
-> **Legacy comparison with upstream PyTorch (pre-Cellpose pipeline):** Paired on the same 40 images (`audit/followup/paired_comparison.py`), legacy `v4.1` (`guard = 0.40`) was not distinguishable from upstream PyTorch on D50 error (CP-SAM `-2.81` pp `[-7.77, +1.49]`, `19/40` wins, p = `0.875`; U-Net `+0.01` pp `[-8.04, +7.30]`, `22/40` wins, p = `0.636`), with lower PQ (`0.571` vs `0.642`; `0.485` vs `0.528`). Only the guard effect on legacy tiling was significant: for CP-SAM, `0.40` beat `0.15` by `-10.34` pp `[-17.86, -4.04]`, p = `0.004` (`1.00` beat `0.15` by `-12.41` pp `[-21.00, -5.20]`, p = `0.002`), while `0.40` vs `1.00` (`+2.08` pp `[+0.00, +6.23]`, `39/40` ties, p = `1.000`) was not distinguishable; for U-Net `0.40` and `1.00` were identical on `40/40` images.
-
-> ⚠️ **Ablation Finding (`maxGrainAreaFraction`):** The legacy v1.1.0 `0.15` upper-area guard silently dropped legitimate cobbles occupying >15% of the image frame (`10/40` test images with D50 shifts for CP-SAM, `6/40` for U-Net; `14/40` and `8/40` across any mask/percentile metric), doubling legacy CP-SAM D50 error relative to `1.00` (`9.43%` → `21.85%` mean APE) and introducing a `-12.87%` mean fine bias. The shipped default **`0.40`** (matching upstream Cellpose `max_size_fraction=0.4`) recovered `13/14` affected CP-SAM images (`9/10` with D50 differences) and all `8/8` U-Net images, reducing legacy CP-SAM D50 error to **`11.51%` mean / `2.63%` median APE** (`PQ = 0.571`) and matching `1.00` identically on U-Net (`0/40` mask diffs). Across the `40` legacy images, `0.40` and `1.00` differed on **`0/40` U-Net** and **`1/40` CP-SAM** image (`NB2__test__P5251741_Crop2`, containing a `49.99%`-frame cobble, where `0.40` drops it: `n = 21` vs `22`, pred D50 `36.61 px` vs `273.68 px` under `1.00`, GT `265.27 px`, and similarly under `ts_cellpose_guard040`: `n = 21`, pred D50 `36.76 px`, matching PyTorch `36.46 px`). Note that **`0.40` was chosen after inspecting these 40 test images**, so this split is not an independent estimate for the `0.40` threshold; users can raise the sidebar slider up to `1.00` when single boulders span >40% of the frame. Full reproduction manifests, paired comparisons, and data are in [`FOLLOWUP_REPORT.md`](FOLLOWUP_REPORT.md), [`audit/followup/paired_comparison_results.txt`](audit/followup/paired_comparison_results.txt), and [`audit/followup/heldout_summary.json`](audit/followup/heldout_summary.json).
-
-> ⚠️ **Within-Site Scope Caveat:** `IG2_data.zip` contains `243` image/mask pairs (`40` `test`, `203` `train`) across `13` sites. **All 13 sites contributed `train/` images** to the IG2 models (`0` completely unseen sites). The `n = 40` `test` split measures **within-site held-out performance**, not cross-site generalisation to unseen rivers.
+A plain-language guide to every setting is in **[docs/SETTINGS_GUIDE.md](docs/SETTINGS_GUIDE.md)**.
 
 ---
 
-## User Guide
+## Accuracy
 
-New users: see **[docs/SETTINGS_GUIDE.md](docs/SETTINGS_GUIDE.md)** for a plain-language walkthrough of every setting, its default, and when to change it.
+Measured on the held-out test split of the ImageGrains 2.0 data (`IG2_data.zip`, 40 images from 13 sites) against hand-digitised grain outlines, using webGrainy's own engine and the upstream PyTorch ImageGrains for reference. Errors are absolute percentage errors of the per-image percentile (b-axis, in pixels); PQ is panoptic quality of the outlines.
+
+| Model | Engine | D50 error: mean [95% CI] | D50 error: median [95% CI] | D16 / D84 median error | PQ vs hand outlines |
+| :--- | :--- | :--- | :--- | :--- | ---: |
+| U-Net | webGrainy | 24.4% [13.7, 39.2] | 9.4% [5.3, 14.9] | 23.8% / 2.9% | 0.539 |
+| U-Net | ImageGrains (PyTorch) | 27.5% [14.8, 46.3] | 9.3% [6.3, 17.0] | 21.5% / 3.3% | 0.528 |
+| Cellpose-SAM | webGrainy | 8.9% [4.0, 15.6] | 2.9% [2.0, 4.9] | 6.3% / 1.3% | 0.652 |
+| Cellpose-SAM | ImageGrains (PyTorch) | 14.3% [8.0, 21.8] | 4.4% [2.4, 8.3] | 8.7% / 2.0% | 0.642 |
+
+- **Within-site, not unseen sites.** All 13 sites also contributed training images, so these figures describe new photos of familiar sites, not new rivers.
+- **Tails are long.** For example, 5% of Cellpose-SAM images and 17.5% of U-Net images have D50 errors above 50%. Check the outlines.
+- **Quantized weights.** INT8 and FP4 Cellpose-SAM give the same benchmark accuracy as FP16 (outline agreement with FP16: PQ 0.994 and 0.966).
+- **Field comparison (one site).** At the K1 site, the photo D50 is about 42% finer than a pebble count until the count's 13 mm minimum is applied; with that cutoff they agree within about 4%. To compare with a field count, set **Field-count cutoff (mm)** to its minimum size.
+- **Re-run before release.** The figures above will be re-run on the release build. The data, scripts and notebooks to reproduce them are in [`validation/`](validation/).
+
+## Limitations
+
+- **b-axis is not a sieve or caliper b-axis.** It is the minor axis of the ellipse fitted to the visible 2D outline. Partial burial, imbrication and the 2D view of 3D grains add bias. Minimum Feret width is the closest 2D equivalent of a caliper b-axis.
+- **Fine grains are truncated.** Grains smaller than the detection limit (shown in the app, in mm) are missed. Large photos are analysed at up to 1024 px unless you choose a larger image scale.
+- **Lens distortion is not corrected.** It is small for most phones, but wide-angle and action cameras can bias sizes by 7–22%. Undistort such photos first. Oblique photos must be rectified.
+- **Hard conditions:** wet or shiny surfaces, strong shadows, vegetation, sand matrix, single grains covering a large part of the frame, and fewer than about 100 grains.
+
+**Before using absolute values in publications:** calibrate the scale, inspect and correct the outlines, report n and the model hash (both are in every export), and check against field measurements at your site.
 
 ---
 
-## Limitations & Scientific Validity
+## Development
 
-webGrainy is an unofficial browser port of ImageGrains 2.0 and is not endorsed by its authors. Its post-processing (`F5_MagWeightedQC` + `F3_SplitOnFailure`) differs from Cellpose/ImageGrains `flow_error`.
-
-- **Size metric definitions (`bAxis` vs `minFeret` vs `dEq`):** Reported `bAxis` values are **ellipse minor axes of the visible 2D outline**, not sieve or caliper b-axes. On the `n = 40` held-out IG2 test set, median image D50 shifts by **`+3.09%`** (CP-SAM) / **`+4.04%`** (U-Net) for `minFeret` vs `bAxis`, and by **`+23.02%`** (CP-SAM) / **`+23.00%`** (U-Net) for `dEq` vs `bAxis`. Partial burial, imbrication, and 2D projection of 3D clasts add further physical bias.
-- **No unseen-site or independent physical GT validation yet:** On the held-out `n = 40` within-site test set against hand-digitised 2D masks, shipped default (Cellpose pipeline, `guard = 0.40`) D50 median error is **`2.9%`** for CP-SAM (legacy `2.6%–6.5%`) and **`9.4%`** for U-Net (legacy `14.8%–15.3%`), with **`5%`** (CP-SAM default) to **`20%`** of images exceeding `50%` error depending on model, pipeline, and area guard. On the only co-located physical dataset (K1, `dmair1989/imagegrains` demo data, n = 251 field b-axes), raw photo D50 is about 42% finer than the field count. **This is explained by truncation:** the field count records nothing below 13 mm, while the photo includes grains down to a few mm (about 43% of the bed area). With the same 13 mm cutoff, photo D50 matches the field within +3% (U-Net) / +4% (Cellpose-SAM), and D84 within −6% (`audit/k1/`). The cutoff is the smallest field value, not a documented protocol, and the result shifts from −8% to +14% for cutoffs of 10–16 mm. **To compare with a pebble count, set "Field-count cutoff (mm)" to your protocol's minimum size.** This is one site, and its photos are in the training set, so it is a consistency check, not independent validation. See [`audit/followup/physical_gt_and_protocol.md`](audit/followup/physical_gt_and_protocol.md) and [`AUDIT_REPORT.md`](AUDIT_REPORT.md) §7 for the field validation protocol.
-- **Lens distortion is not corrected:** Modeling Brown-Conrady distortion shows `< 1%` mean center-bar D50 bias on OEM-corrected smartphones and `-3.3%` on moderate DJI drone lenses, but **`-7.4%` to `-22.2%`** (`33%` max) on uncorrected wide-FOV/GoPro cameras; pre-undistort wide-angle footage before upload. Oblique photos must be rectified (4-point tool) and calibrated (2-point tool).
-- **Fine-tail truncation & hardware constraints:** Fines below about `30` working-resolution pixels are not detected (`D5–D16` are truncated unless validated; consider `minSize = 15` on unscaled high-detail frames). CP-SAM WebGPU execution requires adapter `shader-f16` support (devices without `shader-f16` fall back to slow CPU WASM with a warning and have not yet been benchmarked on physical consumer GPUs in CI).
-- **Degrading conditions:** Wet or shiny surfaces, strong shadows, vegetation, sand matrix, very large clasts relative to the frame (`> maxGrainAreaFraction`), and images with fewer than about `100` interior grains (the app warns below `30` and `100`).
-
-**Always calibrate scale, inspect and edit the masks, report `n` and the pinned model hash (included in every export), and validate against field measurements (Wolman count `n >= 100` or bulk sieve) for your site before using absolute values in publications.**
-
-
----
-
-## Module Architecture
-
-```text
-src/
-├── index.ts                        # Public library exports
-├── types/
-│   └── index.ts                    # Shared TypeScript interfaces & types
-├── modules/                        # Analysis and data (no UI code)
-│   ├── modelCache.ts               # Pinned, SHA-256-verified model download + IndexedDB cache (Blobs)
-│   ├── imagePreprocess.ts          # CLAHE, adaptive scaling, complexity router, mobile detection
-│   ├── onnxInference.ts            # WebGPU/WASM sessions, Cellpose pipelines, FP16 utilities, GPU guards
-│   ├── cellposeTiling.ts           # Upstream-exact Cellpose tiling, padding, taper blending
-│   ├── roiTileSkip.ts              # Skipping inference tiles outside the ROI
-│   ├── postprocessCore.ts          # Flow integration, Multigrid PDE, QC, moments
-│   ├── orientationGeometry.ts      # Grain orientation convention (measurements and overlays)
-│   ├── interactiveEditor.ts        # Split/merge/delete/add, undo/redo, calibration
-│   ├── analysisSession.ts          # One photo's results: edits, ROI, stats, cached values, photo exports
-│   ├── engine.ts                   # ImageGrainsEngine: models, inference, post-processing, provenance
-│   ├── pipelineController.ts       # Compatibility re-export of analysisSession + engine
-│   ├── sedimentStats.ts            # PSD percentiles, Folk & Ward, Wentworth, summary rows
-│   ├── grainStatsExtra.ts          # Sauter/De Brouckère means, Dg/σg, φ moments, Cu/Cc, Trask, Fredle
-│   ├── histograms.ts               # Size-class and aspect-ratio histogram data for the charts
-│   ├── morphometricsExt.ts         # Shape metrics, Feret diameters, fabric statistics, size classes
-│   ├── siteAnalysis.ts             # analyzeSite: pools a site's photos into one report (re-exports the site API)
-│   ├── siteTypes.ts                # Site inputs, options and report types; citations
-│   ├── siteCalibration.ts          # Can photos be pooled in mm? ROI exclusion tolerance
-│   ├── sitePooling.ts              # Grain sizes and weights per pooling mode, virtual Wolman grid, Wentworth
-│   ├── siteUncertainty.ts          # Bootstrap and binomial CIs, jackknife, convergence curve
-│   ├── siteAdequacy.ts             # Sample adequacy, largest clast, per-photo breakdown, outliers
-│   ├── siteExportFormats.ts        # Site summary CSV/JSON and pooled grains CSV
-│   ├── siteComparison.ts           # Comparing sites: stored inputs, D50 differences, comparison CSV
-│   ├── siteWorkspace.ts            # App state -> site inputs and dashboard reports
-│   ├── exportFormats.ts            # PNG mask encoder, outline tracing, GeoJSON/SVG writers
-│   ├── exports.ts                  # Every download: contents, metadata and file name
-│   ├── provenance.ts               # Export metadata, versions, notices, CSV-safe cells
-│   ├── roiAndRectify.ts            # ROI/exclusion masks, 4-point homography rectification
-│   ├── projectStorage.ts           # IndexedDB projects, validated archive import/export
-│   └── abort.ts, gpuCheckVerdict.ts
-├── ui/                             # The app (browser only)
-│   ├── main.ts                     # Start-up, DOM containers, render loop, screen hooks
-│   ├── state.ts                    # App state store and analysis settings
-│   ├── workspaceActions.ts         # App actions: load sites, add photos, run batches, calibrate, compare
-│   ├── panels/                     # Pure state -> HTML renderers: topbar, sidebar, toolbar, dashboard, compare
-│   ├── events/                     # Click/change/key handlers by area, routed by events/router.ts
-│   ├── canvasViewport.ts           # Photo canvas, overlays, editing gestures
-│   ├── charts.ts, chartExport.ts   # SVG charts and their SVG/PNG export
-│   ├── modals.ts, help.ts          # Dialogs and the settings help text
-│   ├── onboarding.ts, progress.ts  # Getting-started guide; activity bar (stages, tiles, time left)
-│   ├── gpucheck.ts                 # The GPU check page (compares GPU and CPU results)
-│   └── backup.ts, wakeLock.ts, doneSignal.ts, savedSettings.ts, cpuThreads.ts, prefs.ts, exif.ts
-└── workers/
-    └── grainPostprocess.worker.ts  # Transferable Web Worker wrapper (v4.1)
+```bash
+npm ci
+npm run typecheck          # TypeScript (strict)
+npm test                   # unit, numerical-parity and end-to-end tests (Vitest)
+npm run build              # builds the static app into dist/
+npm run test:e2e:browser   # headless Chromium on dist/ with a real U-Net analysis
+                           # (SMOKE_MODEL=cpsam for Cellpose-SAM)
+npm run test:perf          # strict timing budgets (run on an idle machine)
 ```
 
----
+CI runs all of these except `test:perf` on every push and pull request. The app is a static site: [DEPLOYMENT.md](DEPLOYMENT.md) explains hosting, including the headers needed for multi-threaded CPU inference.
 
-## Quick Start
+### Repository layout
+
+```text
+src/modules/     analysis engine and data (no UI): models, inference, post-processing,
+                 measurements, statistics, sites, exports, storage
+src/ui/          the browser app: state, panels, event handlers, charts, canvas
+src/workers/     post-processing and CPU-inference workers
+tests/           Vitest unit, parity and end-to-end tests
+scripts/         browser smoke test of the built app
+validation/      benchmarks and their data: held-out accuracy, parity with upstream
+                 Cellpose/ImageGrains, K1 field comparison, preprocessing and
+                 quantization studies, GPU-vs-CPU checks, numerical oracle
+docs/            settings guide
+```
+
+### Library use
+
+The engine can be used without the app:
 
 ```ts
 import { ImageGrainsEngine, ScaleCalibrator } from './dist/index.js';
 
-const engine = new ImageGrainsEngine({
-  // Relative paths are resolved against the page (document.baseURI).
-  sessionCreateOptions: { wasmPaths: './ort/' },
-});
-
+const engine = new ImageGrainsEngine({ sessionCreateOptions: { wasmPaths: './ort/' } });
 await engine.initialize();
 
 const session = await engine.analyzeImage(imageBitmap, {
-  model: 'auto',          // Complexity Router picks 'unet' or 'cpsam'
-  scaleMode: 'auto',      // Downscales longest edge > 1024 px, tracks effectiveScaleFactor
-  applyClahe: false,
-  // Optional two-point calibration in original-image pixels:
-  calibration: ScaleCalibrator.calibrate({ x: 100, y: 200 }, { x: 600, y: 200 }, 250),
-  onProgress: (stage, detail) => console.log(stage, detail),
+  model: 'auto', // 'unet' or 'cpsam'
+  calibration: ScaleCalibrator.calibrate({ x: 100, y: 200 }, { x: 600, y: 200 }, 250), // 250 mm
 });
 
 const stats = session.getStats();
-console.log('D50:', stats.areaWeightedB.D50, stats.unit, 'n =', stats.includedGrains);
-console.log('Warnings:', stats.warnings);
-console.log('Folk & Ward mean (phi):', stats.folkWard?.meanPhi);
-
-// Interactive correction & export (CSV with '#' provenance header lines)
-session.splitGrainAtLine(42, [{ x: 120, y: 80 }, { x: 155, y: 110 }]);
+console.log('D50', stats.areaWeightedB.D50, stats.unit, 'n =', stats.includedGrains);
 const csv = session.exportCsv({ includeMetadata: true });
 ```
 
 ---
 
-## Development & Verification
+## Citations
 
-```bash
-npm ci
-npm run typecheck          # Strict TypeScript check (tsc --noEmit)
-npm test                   # Unit, numerical-parity and mocked E2E tests (Vitest)
-npm run build              # dist/: app, worker, ORT JSEP runtime, content-hashed service worker
-npm run test:e2e:browser   # Headless Chromium on dist/: real U-Net analysis (pinned, SHA-256 verified)
-npm run test:perf          # Micro-benchmarks with strict nominal time budgets (idle machine)
-```
+If you use webGrainy in scientific work, please cite the ImageGrains and Cellpose papers (the methods and model weights), and optionally this software ([CITATION.cff](CITATION.cff)):
 
-CI (`.github/workflows/ci.yml`) runs all of the above except `test:perf` on every push and pull request. See [DEPLOYMENT.md](DEPLOYMENT.md) for hosting requirements and [CHANGELOG.md](CHANGELOG.md) for release notes. Audit scripts that reproduce `AUDIT_REPORT.md` are in [`audit/`](audit/README.md).
+- Mair, D., Witz, G., Do Prado, A., Garefalakis, P., Wild, A., Ville, F., Schuster, B., Horn, M., Österle, J., Fabbri, S. C., Litty, C., Achleitner, S., Leistner, S., Hiller, C., and Schlunegger, F. (2026): *ImageGrains 2.0: Improved precision and generalization for grain segmentation*, Earth Surf. Dyn., 14, 527–551, https://doi.org/10.5194/esurf-14-527-2026
+- Mair, D., Witz, G., Do Prado, A.H., Garefalakis, P. & Schlunegger, F. (2023): *Automated detecting, segmenting and measuring of grains in images of fluvial sediments*, Earth Surface Processes and Landforms, https://doi.org/10.1002/esp.5755
+- Pachitariu, M., Rariden, M., Stringer, C. (2025): *Cellpose-SAM: superhuman generalization for cellular segmentation*, bioRxiv, https://doi.org/10.1101/2025.04.28.651001
+- Stringer, C.A., Pachitariu, M. (2021): *Cellpose: a generalist algorithm for cellular segmentation*, Nat Methods 18, 100–106, https://doi.org/10.1038/s41592-020-01018-x
 
----
-
-## Citations & Acknowledgments
-
-This project builds directly upon the research, pretrained models, and algorithms of [**dmair1989/imagegrains**](https://github.com/dmair1989/imagegrains). If you use **webGrainy / ImageGrains 2.0 Web** in scientific work, please cite the upstream ImageGrains and Cellpose papers:
-
-- **ImageGrains 2.0:**
-  Mair, D., Witz, G., Do Prado, A., Garefalakis, P., Wild, A., Ville, F., Schuster, B., Horn, M., Österle, J., Fabbri, S. C., Litty, C., Achleitner, S., Leistner, S., Hiller, C., and Schlunegger, F. (2026): *ImageGrains 2.0: Improved precision and generalization for grain segmentation*, Earth Surf. Dyn., 14, 527–551, https://doi.org/10.5194/esurf-14-527-2026
-
-- **Cellpose-SAM:**
-  Pachitariu, M., Rariden, M., Stringer, C. (2025): *Cellpose-SAM: superhuman generalization for cellular segmentation*, bioRxiv 2025.04.28.651001, https://doi.org/10.1101/2025.04.28.651001
-
-- **ImageGrains 1.0 (legacy IG1 / Cellpose 2 models):**
-  Mair, D., Witz, G., Do Prado, A.H., Garefalakis, P. & Schlunegger, F. (2023): *Automated detecting, segmenting and measuring of grains in images of fluvial sediments: The potential for large and precise data from specialist deep learning models and transfer learning*, Earth Surface Processes and Landforms, 1–18, https://doi.org/10.1002/esp.5755
-
-- **Cellpose 1.0:**
-  Stringer, C.A., Pachitariu, M. (2021): *Cellpose: a generalist algorithm for cellular segmentation*, Nat Methods 18, 100–106, https://doi.org/10.1038/s41592-020-01018-x
-
-- **Grain-Size Percentile Uncertainties:**
-  Mair, D., Henrique, A., Prado, D., Garefalakis, P., Lechmann, A., Whittaker, A., and Schlunegger, F. (2022): *Grain size of fluvial gravel bars from close-range UAV imagery—uncertainty in segmentation-based data*, Earth Surf. Dyn., 10, 953–973, https://doi.org/10.5194/esurf-10-953-2022
-
-- **Folk & Ward Graphic Statistics:**
-  Folk, R. L., & Ward, W. C. (1957): *Brazos River bar: a study in the significance of grain size parameters*, Journal of Sedimentary Petrology, 27(1), 3–26.
-
----
+Model weights: ImageGrains 2.0 pretrained models, https://doi.org/10.5281/zenodo.15728186, converted to ONNX at [`inYourOwnBrowser/imagegrains-2.0-onnx`](https://huggingface.co/inYourOwnBrowser/imagegrains-2.0-onnx).
 
 ## License
 
-The webGrainy source code is licensed under the **BSD 3-Clause License** (see [LICENSE](LICENSE)). The model weights are distributed separately by Hugging Face under **CC BY 4.0**, derived from the ImageGrains release (Zenodo [10.5281/zenodo.15728186](https://doi.org/10.5281/zenodo.15728186)). Bundled third-party software (ONNX Runtime Web, MIT) and the model lineage (Cellpose, BSD-3; SAM, Apache-2.0) are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Citation metadata is in [CITATION.cff](CITATION.cff).
+BSD 3-Clause ([LICENSE](LICENSE)). Third-party components and model weights are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

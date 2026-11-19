@@ -17,7 +17,7 @@ import { getStatisticalBasisLabel, type PreparedGrain, type PreparedPhoto, compu
 import { type SitePhotoInput, type SiteAnalysisOptions, type SiteAnalysisReport, SITE_BIBLIOGRAPHIC_CITATIONS } from './siteTypes.js';
 import { computeBinomialCi, runBootstrap, computeJackknife, computeConvergence } from './siteUncertainty.js';
 
-// Public API, unchanged: everything that used to be defined here is re-exported.
+// Public API: re-exports the parts from the site modules.
 export * from './siteTypes.js';
 export { validateSiteCalibration, withExclusionTolerance } from './siteCalibration.js';
 export { getStatisticalBasisLabel } from './sitePooling.js';

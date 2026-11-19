@@ -830,7 +830,7 @@ export function convergenceCheckpoints(n: number, max = MAX_CONVERGENCE_CI_POINT
  * D16/D50/D84 as photos are added one by one (every photo count), with the D50 bootstrap CI
  * at up to `MAX_CONVERGENCE_CI_POINTS` evenly spaced counts (the last point uses the full
  * bootstrap; the others use `CONVERGENCE_REPLICATES`). Other points have NaN CI fields. Bounding the CI points keeps the cost linear
- * in the number of photos (it was quadratic: a 250-replicate bootstrap per photo count).
+ * in the number of photos (a bootstrap at every photo count would be quadratic).
  */
 export function computeConvergence(
   preparedPhotos: readonly PreparedPhoto[],

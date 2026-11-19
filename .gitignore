@@ -6,10 +6,11 @@ coverage/
 *.tsbuildinfo
 /tmp/
 .cache/
-audit/followup/data/
-audit/followup/weights/
+validation/heldout/data/
+validation/heldout/weights/
 *.onnx
 *.zip
 __pycache__/
 *.pyc
 
+validation/oracle/ts_dump.json
