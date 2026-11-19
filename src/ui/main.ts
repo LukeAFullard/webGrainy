@@ -20,6 +20,7 @@ import { CanvasViewport } from './canvasViewport.js';
 import { parseJpegExifMetadata } from './exif.js';
 import { computeBlurScoreFromRgba, computeEffectiveDetectionLimit } from '../modules/photoQuality.js';
 import { enhanceImageBuffer, type EnhanceKind, type EnhanceProgressEvent } from '../modules/imageEnhance.js';
+import { OrtWorkerHost } from '../modules/ortWorkerSession.js';
 import { decodeTiffBuffer, isSupportedImageFile, isTiffFile } from '../modules/tiffDecode.js';
 import { renderHelpModalHtml } from './help.js';
 import { wasmThreadsFor } from '../modules/onnxInference.js';
@@ -145,6 +146,12 @@ async function refreshStorageInfo(): Promise<void> {
 const cpuThreadPref = readCpuThreadPref();
 const cpuThreads = wasmThreadsFor(cpuThreadPref);
 
+// CPU (WASM) inference runs in its own worker so the page never freezes during analysis.
+const ortWorkerHost =
+  typeof Worker !== 'undefined'
+    ? new OrtWorkerHost(() => new Worker('./workers/ortWasm.worker.js', { type: 'module' }))
+    : undefined;
+
 const engine = new ImageGrainsEngine({
   useWorker: true,
   workerFactory: () =>
@@ -152,6 +159,7 @@ const engine = new ImageGrainsEngine({
   sessionCreateOptions: {
     wasmPaths: './ort/',
     ...(cpuThreads !== undefined ? { numThreads: cpuThreads } : {}),
+    ...(ortWorkerHost ? { wasmWorker: ortWorkerHost } : {}),
   },
 });
 
@@ -1124,6 +1132,7 @@ async function enhanceWithCanvas(
     sessionOptions: {
       wasmPaths: './ort/',
       ...(threads !== undefined ? { numThreads: threads } : {}),
+      ...(ortWorkerHost ? { wasmWorker: ortWorkerHost } : {}),
     },
     ...(onProgress ? { onProgress } : {}),
   });

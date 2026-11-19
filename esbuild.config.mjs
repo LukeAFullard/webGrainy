@@ -86,6 +86,19 @@ if (fs.existsSync(workerFile)) {
   console.log('[build] Notice: src/workers/grainPostprocess.worker.ts not found; skipping worker bundle.');
 }
 
+// 3b. Inference worker: runs WASM (CPU) onnxruntime-web sessions off the main thread.
+await build({
+  entryPoints: [path.join(srcDir, 'workers', 'ortWasm.worker.ts')],
+  outfile: path.join(distDir, 'workers', 'ortWasm.worker.js'),
+  format: 'esm',
+  platform: 'browser',
+  target: 'es2022',
+  bundle: true,
+  sourcemap: true,
+  define,
+});
+console.log('[build] Bundled ortWasm.worker.ts to dist/workers/ortWasm.worker.js.');
+
 // 4. Copy onnxruntime-web WASM/MJS assets into dist/ort/ for zero-CDN offline execution
 fs.mkdirSync(ortDistDir, { recursive: true });
 if (fs.existsSync(ortSrcDir)) {
@@ -167,6 +180,7 @@ const SHELL_ASSETS = [
   './ui/main.js',
   './ui/main.css',
   './workers/grainPostprocess.worker.js',
+  './workers/ortWasm.worker.js',
   './gpucheck.html',
   './ui/gpucheck.js',
 ];

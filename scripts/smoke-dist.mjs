@@ -8,18 +8,33 @@
 //      downloads the pinned revision and verifies SHA-256), serves them in place of the
 //      Hugging Face URL, analyses a generated test image with the WASM backend, and
 //      requires the photo to finish "done" with > 0 grains.
+//   4. Records main-thread long tasks during the analysis and fails if any is longer than
+//      SMOKE_MAX_LONGTASK_MS (default 5000): CPU inference must run in the worker.
+//
+// SMOKE_MODEL=cpsam runs Cellpose-SAM (INT8 weights, 316 MB) on a small image instead of
+// U-Net. Weights are served by the local server (a 302 from the Hugging Face URL), because
+// passing a body that large through Playwright's protocol crashes the browser.
 //
 // Usage: npm run build && npm run test:e2e:browser
 import { createServer } from 'node:http';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { createReadStream, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { extname, join, normalize, resolve } from 'node:path';
 import { chromium } from 'playwright';
 
 const DIST = resolve('dist');
 const MODEL_REVISION = '98e76b1374dc22cfff8193aca71c308f2b4dd3b3';
-const UNET_SHA256 = '5e692c5593ac15e614b77602e1d4f8c2f84dd939f4386b1f7e5641dbcd62053c';
-const UNET_URL = `https://huggingface.co/inYourOwnBrowser/imagegrains-2.0-onnx/resolve/${MODEL_REVISION}/ig2_unet_fp32.onnx`;
+const MODELS = {
+  unet: { file: 'ig2_unet_fp32.onnx', sha256: '5e692c5593ac15e614b77602e1d4f8c2f84dd939f4386b1f7e5641dbcd62053c', select: 'unet' },
+  cpsam: { file: 'ig2_cpsam_int8_wo_fp32scale.onnx', sha256: '2cda0be5b81f1d0c0ac36998beb9f741e11833aacd089c4f5cee92488bab6f43', select: 'cpsam', weights: 'int8' },
+};
+const SMOKE_MODEL = process.env.SMOKE_MODEL === 'cpsam' ? 'cpsam' : 'unet';
+const M = MODELS[SMOKE_MODEL];
+const MODEL_URL = `https://huggingface.co/inYourOwnBrowser/imagegrains-2.0-onnx/resolve/${MODEL_REVISION}/${M.file}`;
+const MAX_LONGTASK_MS = Number(process.env.SMOKE_MAX_LONGTASK_MS ?? 5000);
+// Smaller image for Cellpose-SAM (several seconds per tile on a CPU).
+const IMG = SMOKE_MODEL === 'cpsam' ? { w: 400, h: 300, n: 60, r0: 10, dr: 16 } : { w: 384, h: 288, n: 70, r0: 8, dr: 16 };
+let modelFile = null;
 const TIMEOUT_MS = Number(process.env.SMOKE_TIMEOUT_MS ?? 15 * 60 * 1000);
 
 const MIME = {
@@ -42,6 +57,16 @@ function fail(msg) {
 if (!existsSync(join(DIST, 'index.html'))) fail('dist/ not built; run `npm run build` first.');
 
 const server = createServer((req, res) => {
+  if (req.url.startsWith('/__smoke_model') && modelFile) {
+    res.writeHead(200, {
+      'Content-Type': 'application/octet-stream',
+      'Content-Length': String(statSync(modelFile).size),
+      'Access-Control-Allow-Origin': '*',
+      'Cross-Origin-Resource-Policy': 'cross-origin',
+    });
+    createReadStream(modelFile).pipe(res);
+    return;
+  }
   const urlPath = decodeURIComponent(new URL(req.url, 'http://x').pathname);
   let file = normalize(join(DIST, urlPath));
   if (!file.startsWith(DIST)) {
@@ -70,31 +95,33 @@ for (const asset of lists.flat()) {
 }
 console.log(`ok: ${lists.flat().length} precache assets reachable`);
 
-async function getModelBytes() {
-  let bytes;
-  if (process.env.MODEL_PATH) {
-    bytes = readFileSync(process.env.MODEL_PATH);
-  } else {
+/** Path of the SHA-256-verified pinned weights (MODEL_PATH, or downloaded into .cache/). */
+async function getModelFile() {
+  let path = process.env.MODEL_PATH;
+  if (!path) {
     const cacheDir = resolve('.cache');
-    const cached = join(cacheDir, `ig2_unet_fp32.${MODEL_REVISION.slice(0, 8)}.onnx`);
-    if (existsSync(cached)) {
-      bytes = readFileSync(cached);
-    } else {
-      console.log(`downloading pinned U-Net (${MODEL_REVISION.slice(0, 8)})...`);
-      const r = await fetch(UNET_URL);
+    path = join(cacheDir, `${M.file.replace(/\.onnx$/, '')}.${MODEL_REVISION.slice(0, 8)}.onnx`);
+    if (!existsSync(path)) {
+      console.log(`downloading pinned ${SMOKE_MODEL} (${MODEL_REVISION.slice(0, 8)})...`);
+      const r = await fetch(MODEL_URL);
       if (!r.ok) fail(`model download HTTP ${r.status}`);
-      bytes = Buffer.from(await r.arrayBuffer());
       mkdirSync(cacheDir, { recursive: true });
-      writeFileSync(cached, bytes);
+      writeFileSync(path, Buffer.from(await r.arrayBuffer()));
     }
   }
-  const sha = createHash('sha256').update(bytes).digest('hex');
-  if (sha !== UNET_SHA256) fail(`U-Net SHA-256 mismatch: ${sha}`);
-  return bytes;
+  const sha = createHash('sha256').update(readFileSync(path)).digest('hex');
+  if (sha !== M.sha256) fail(`${SMOKE_MODEL} SHA-256 mismatch: ${sha}`);
+  return path;
 }
 
 const browser = await chromium.launch({ args: ['--disable-features=WebGPU'] });
 const page = await browser.newPage();
+await page.addInitScript(() => {
+  window.__longTasks = [];
+  new PerformanceObserver((list) => {
+    for (const e of list.getEntries()) window.__longTasks.push(e.duration);
+  }).observe({ type: 'longtask', buffered: true });
+});
 const problems = [];
 page.on('console', (m) => {
   if (m.type() === 'error') problems.push(`console.error: ${m.text()}`);
@@ -107,19 +134,14 @@ page.on('response', (r) => {
 try {
   const skipInference = process.env.SMOKE_SKIP_INFERENCE === '1';
   if (!skipInference) {
-    const model = await getModelBytes();
+    modelFile = await getModelFile();
     await page.route('https://huggingface.co/**', (route) => {
-      if (route.request().url() !== UNET_URL) {
+      if (route.request().url() !== MODEL_URL) {
         problems.push(`unexpected model URL (not pinned): ${route.request().url()}`);
       }
       return route.fulfill({
-        status: 200,
-        body: model,
-        headers: {
-          'content-type': 'application/octet-stream',
-          'content-length': String(model.length),
-          'access-control-allow-origin': '*',
-        },
+        status: 302,
+        headers: { location: `${base}__smoke_model`, 'access-control-allow-origin': '*' },
       });
     });
   }
@@ -133,17 +155,17 @@ try {
     console.log('SMOKE PASS (inference skipped)');
   } else {
     // Small synthetic "gravel" image drawn in the browser.
-    const pngB64 = await page.evaluate(async () => {
-      const c = new OffscreenCanvas(384, 288);
+    const pngB64 = await page.evaluate(async (img) => {
+      const c = new OffscreenCanvas(img.w, img.h);
       const g = c.getContext('2d');
       g.fillStyle = '#3a3630';
-      g.fillRect(0, 0, 384, 288);
+      g.fillRect(0, 0, img.w, img.h);
       let seed = 7;
       const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-      for (let i = 0; i < 70; i++) {
-        const r = 8 + rnd() * 16;
-        const x = r + rnd() * (384 - 2 * r);
-        const y = r + rnd() * (288 - 2 * r);
+      for (let i = 0; i < img.n; i++) {
+        const r = img.r0 + rnd() * img.dr;
+        const x = r + rnd() * (img.w - 2 * r);
+        const y = r + rnd() * (img.h - 2 * r);
         const grad = g.createRadialGradient(x - r / 3, y - r / 3, 1, x, y, r);
         const v = 150 + Math.floor(rnd() * 90);
         grad.addColorStop(0, `rgb(${v},${v - 8},${v - 20})`);
@@ -158,7 +180,7 @@ try {
       let s = '';
       for (const b of buf) s += String.fromCharCode(b);
       return btoa(s);
-    });
+    }, IMG);
     await page.setInputFiles('#photo-file-input', {
       name: 'smoke.png',
       mimeType: 'image/png',
@@ -167,7 +189,8 @@ try {
     await page.waitForSelector('.photo-item', { timeout: 30000 });
     // Settings are collapsed by default: open them to choose the model.
     await page.click('details.settings-block > summary');
-    await page.selectOption('select[data-param="model"]', 'unet');
+    await page.selectOption('select[data-param="model"]', M.select);
+    if (M.weights) await page.selectOption('select[data-param="cpsamWeights"]', M.weights);
     await page.click('button[data-action="run-active"]');
 
     const t0 = Date.now();
@@ -179,6 +202,12 @@ try {
     const footer = await page.evaluate(() => document.body.innerText.match(/Batch[^\n]*/)?.[0] ?? '');
     console.log(`analysis finished in ${((Date.now() - t0) / 1000).toFixed(0)} s: ${footer}`);
     if (!/1 done, 0 failed/.test(footer)) fail(`analysis did not succeed: ${footer}`);
+    const longTasks = await page.evaluate(() => window.__longTasks.slice());
+    const longest = Math.max(0, ...longTasks);
+    console.log(`main thread: ${longTasks.length} long tasks, longest ${(longest / 1000).toFixed(2)} s`);
+    if (longest > MAX_LONGTASK_MS) {
+      fail(`the page froze for ${(longest / 1000).toFixed(1)} s (limit ${MAX_LONGTASK_MS / 1000} s): CPU inference must run in its worker`);
+    }
     // Switch to the single-photo view and require a numeric D50.
     await page.click('[data-scope="photo"]');
     await page.waitForTimeout(500);

@@ -7,6 +7,7 @@ import {
   runCellposeTiled,
   type CellposeTilingOptions,
 } from './cellposeTiling.js';
+import type { OrtWorkerHost } from './ortWorkerSession.js';
 import type {
   CpsamInferenceOptions,
   ExecutionProvider,
@@ -27,6 +28,11 @@ export interface SessionCreateOptions {
    * WebGPU session would fail, so only a page reload can restore GPU inference.
    */
   forceWasm?: boolean;
+  /**
+   * Runs WASM (CPU) sessions in this worker instead of on the page's main thread, so long
+   * CPU inference never freezes the page (see ortWorkerSession.ts). Browser only.
+   */
+  wasmWorker?: OrtWorkerHost;
 }
 
 export interface WebGpuCapabilities {
@@ -469,6 +475,15 @@ export async function createInferenceSession(
     } catch {
       // fall through to WASM
     }
+  }
+  if (options?.wasmWorker !== undefined) {
+    const session = await options.wasmWorker.createSession(bytes, {
+      wasmPaths: ort.env.wasm.wasmPaths as string,
+      simd: ort.env.wasm.simd ?? true,
+      ...(threads !== undefined ? { numThreads: threads } : {}),
+    });
+    // Same `run` / `release` shape the inference code uses.
+    return { session: session as unknown as ort.InferenceSession, executionProvider: 'wasm' };
   }
   const session = await ort.InferenceSession.create(bytes, {
     executionProviders: ['wasm'],
