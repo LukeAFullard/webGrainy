@@ -10,8 +10,10 @@ export const BACKUP_KEY = 'webgrainy-backup-v1';
 export interface SiteBackupInfo {
   /** Last time the site's photos, results, scale or ROI changed (ms since epoch). */
   changedAt?: number;
-  /** Last time the site was exported as a .webgrainy project (ms since epoch). */
+  /** Last time the site's results were downloaded (zip or project file; ms since epoch). */
   backedUpAt?: number;
+  /** Last time the site was opened or "Keep longer" was chosen (ms since epoch). */
+  usedAt?: number;
 }
 
 export type BackupRecords = Record<string, SiteBackupInfo>;
@@ -41,6 +43,7 @@ export function readBackupRecords(store: KeyValueStore | null = storage()): Back
       out[id] = {
         ...(typeof r['changedAt'] === 'number' ? { changedAt: r['changedAt'] } : {}),
         ...(typeof r['backedUpAt'] === 'number' ? { backedUpAt: r['backedUpAt'] } : {}),
+        ...(typeof r['usedAt'] === 'number' ? { usedAt: r['usedAt'] } : {}),
       };
     }
     return out;
@@ -60,6 +63,20 @@ function write(records: BackupRecords, store: KeyValueStore | null): void {
 export function markSiteChanged(siteId: string, now = Date.now(), store: KeyValueStore | null = storage()): void {
   const r = readBackupRecords(store);
   r[siteId] = { ...r[siteId], changedAt: now };
+  write(r, store);
+}
+
+/** The site was opened (or kept longer): its storage clock restarts. */
+export function markSiteUsed(siteId: string, now = Date.now(), store: KeyValueStore | null = storage()): void {
+  const r = readBackupRecords(store);
+  r[siteId] = { ...r[siteId], usedAt: now };
+  write(r, store);
+}
+
+/** Forgets a deleted site. */
+export function forgetSite(siteId: string, store: KeyValueStore | null = storage()): void {
+  const r = readBackupRecords(store);
+  delete r[siteId];
   write(r, store);
 }
 
