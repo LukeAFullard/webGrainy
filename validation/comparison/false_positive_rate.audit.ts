@@ -8,8 +8,10 @@
  *
  * Run: npx vitest run --config validation/comparison/vitest.config.ts
  *
- * Before the fix, one-photo surveys gave ~30% false "significant" changes at patch 0.15
- * (their bootstrap only resamples grains). One-photo surveys now get no p-value.
+ * Before the fixes, one-photo surveys gave ~30% false "significant" changes at patch 0.15
+ * (their bootstrap only resamples grains) and 2-4 photo surveys 17-40% (z-test on a cluster
+ * bootstrap with few clusters). One-photo surveys now get no p-value; the others use a Welch
+ * t-test with each site's error inflated by sqrt(n/(n-1)).
  */
 import { it } from 'vitest';
 import { computeComparedSites, surveyChanges } from '../../src/modules/siteComparison';
@@ -38,7 +40,7 @@ function fakeSession(sizesMm: number[], mmPerPx = 0.5) {
 it('false-positive rate of survey-change D50 p-values on an unchanged bed', () => {
   const N = Number(process.env.FPR_TRIALS ?? 150);
   const rows: string[] = [];
-  for (const [photos, patch] of [[1, 0.15], [3, 0.15], [6, 0.15], [20, 0.15], [6, 0], [20, 0]] as const) {
+  for (const [photos, patch] of [[1, 0.15], [2, 0.15], [3, 0.15], [6, 0.15], [20, 0.15], [3, 0], [6, 0], [20, 0]] as const) {
     const rand = mulberry32(1000 + photos * 7 + Math.round(patch * 100));
     const gauss = () => Math.sqrt(-2 * Math.log(1 - rand())) * Math.cos(2 * Math.PI * rand());
     const photo = () => {

@@ -82,6 +82,13 @@ describe('comparison over time and between sites', () => {
     expect(ch[0]!.changes.D50.ratio).toBeLessThan(0.75); // finer in 2025
     expect(ch[0]!.changes.D50.p).toBeLessThan(0.05);
     expect(ch[0]!.changes.D50.basis).toBe('photos');
+    // Welch t-test: 1 <= df <= 8 (5 + 5 photos), interval wider than a z interval would be.
+    const c = ch[0]!.changes.D50;
+    expect(c.df).toBeGreaterThanOrEqual(1);
+    expect(c.df).toBeLessThanOrEqual(8);
+    const halfWidth = Math.log(c.ratioHi / c.ratio);
+    expect(halfWidth).toBeGreaterThan(0);
+    expect(Math.log(c.ratio / c.ratioLo)).toBeCloseTo(halfWidth, 9);
     expect(ch[0]!.changes.D16.key).toBe('D16');
     expect(ch[0]!.changes.D84.ratioLo).toBeLessThan(ch[0]!.changes.D84.ratio);
     const csv = comparisonCsv(cmp, {});
@@ -104,6 +111,7 @@ describe('comparison over time and between sites', () => {
     expect(p!.changes.D50.ratio).toBeLessThan(0.75);
     expect(Number.isNaN(p!.changes.D50.p)).toBe(true);
     expect(Number.isNaN(p!.changes.D50.ratioLo)).toBe(true);
+    expect(Number.isNaN(p!.changes.D50.df)).toBe(true);
     expect(q!.changes.D50.basis).toBe('few-photos');
     expect(Number.isFinite(q!.changes.D50.p)).toBe(true);
     const csv = comparisonCsv(cmp, {});

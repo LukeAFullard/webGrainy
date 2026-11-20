@@ -2,17 +2,19 @@
  * Comparing two or more sites: load each site's saved photos and analyses, compute their
  * site reports with the same settings, and summarise the differences.
  *
- * The pairwise D50 test is approximate: each site's bootstrap confidence interval for D50
- * is converted to a standard error on the log scale (assuming a roughly log-normal sampling
- * distribution), and the log-ratio of the two D50s is compared with a z-test. It is a
- * screening tool in the spirit of Eaton et al. (2019, GSDtools), not a replacement for a
- * full two-sample bootstrap.
+ * The pairwise D16/D50/D84 test is approximate: each site's photo-level bootstrap
+ * interval is converted to a standard error on the log scale (assuming a roughly log-normal
+ * sampling distribution), inflated by sqrt(n/(n-1)) for its n photos, and the log-ratio of the
+ * two sites is compared with a Welch t-test (n-1 degrees of freedom per site). One-photo sites
+ * get no test. It is a screening tool in the spirit of Eaton et al. (2019, GSDtools), not a
+ * replacement for a full two-sample bootstrap.
  */
 import { placeName } from './sitePlaces.js';
 import { siteSurveyDate } from './surveyDate.js';
 import { AnalysisSession } from './analysisSession.js';
 import { getPhotoResult, listSitePhotos, type ProjectStorageOptions } from './projectStorage.js';
 import { csvCell } from './provenance.js';
+import { tTwoSidedP, tTwoSidedQuantile } from './studentT.js';
 import { analyzeSite, type SiteAnalysisOptions, type SiteAnalysisReport, type SitePhotoInput } from './siteAnalysis.js';
 import { buildSiteInputs } from './siteWorkspace.js';
 import { photoProcessingHistory } from './siteTypes.js';
@@ -193,6 +195,8 @@ export interface D50Comparison {
    * misses patch-to-patch variation of the bed; the interval and p-value are then not given.
    */
   basis: ComparisonBasis;
+  /** Welch degrees of freedom of the t-test (NaN when not computed). */
+  df: number;
 }
 
 export type ComparisonBasis = 'photos' | 'few-photos' | 'single-photo';
@@ -216,23 +220,40 @@ function logSe(r: SiteAnalysisReport, key: ComparedPercentile): number {
   return lo > 0 && hi > lo ? (Math.log(hi) - Math.log(lo)) / (2 * zFor(r.bootstrapCi.confidenceLevel)) : Number.NaN;
 }
 
+/**
+ * Small-sample test of the log-ratio of a percentile between two sites (Welch t-test).
+ * Each site's log-scale standard error comes from its photo-level (cluster) bootstrap
+ * interval, inflated by sqrt(n/(n-1)) for its n photos (the bootstrap's variance is biased
+ * low by (n-1)/n); degrees of freedom by Welch-Satterthwaite with n-1 per site. With few
+ * photos the plain z-test reported 17-40% false "significant" changes on an unchanged bed;
+ * this test stays at about 3-8% (validation/comparison/).
+ */
 function comparePair(A: WithReport, B: WithReport, key: ComparedPercentile): D50Comparison {
   const lr = Math.log(A.report.psd[key] / B.report.psd[key]);
   const basis = comparisonBasis(A.report, B.report);
-  const z95 = zFor(0.95);
-  // Single-photo sites: their grain-only bootstrap interval is far too narrow for a
-  // comparison between surveys (about 30% false "significant" changes on an unchanged,
-  // mildly patchy bed in simulation), so no interval or p-value is given.
-  const s = basis === 'single-photo' ? Number.NaN : Math.hypot(logSe(A.report, key), logSe(B.report, key));
+  // Single-photo sites: their grain-only bootstrap interval cannot see patch-to-patch
+  // variation (about 30% false "significant" changes in simulation): no interval or p-value.
+  if (basis === 'single-photo') {
+    return { a: A.name, b: B.name, key, ratio: Math.exp(lr), ratioLo: Number.NaN, ratioHi: Number.NaN, p: Number.NaN, basis, df: Number.NaN };
+  }
+  const nA = A.report.includedPhotoCount;
+  const nB = B.report.includedPhotoCount;
+  const seA = logSe(A.report, key) * Math.sqrt(nA / (nA - 1));
+  const seB = logSe(B.report, key) * Math.sqrt(nB / (nB - 1));
+  const s = Math.hypot(seA, seB);
+  const df = (seA * seA + seB * seB) ** 2 / (seA ** 4 / (nA - 1) + seB ** 4 / (nB - 1));
+  const ok = Number.isFinite(s) && s > 0 && Number.isFinite(df) && df > 0;
+  const q = ok ? tTwoSidedQuantile(0.95, df) : Number.NaN;
   return {
     a: A.name,
     b: B.name,
     key,
     ratio: Math.exp(lr),
-    ratioLo: Math.exp(lr - z95 * s),
-    ratioHi: Math.exp(lr + z95 * s),
-    p: Number.isFinite(s) && s > 0 ? 2 * (1 - normalCdf(Math.abs(lr / s))) : Number.NaN,
+    ratioLo: ok ? Math.exp(lr - q * s) : Number.NaN,
+    ratioHi: ok ? Math.exp(lr + q * s) : Number.NaN,
+    p: ok ? tTwoSidedP(lr / s, df) : Number.NaN,
     basis,
+    df: ok ? df : Number.NaN,
   };
 }
 
@@ -328,7 +349,7 @@ export function comparisonWarnings(sites: readonly ComparedSite[]): string[] {
   }
   if (few.length > 0) {
     out.push(
-      `${few.map((s) => `${s.name} (${s.report.includedPhotoCount} photos)`).join(', ')}: fewer than ${MIN_PHOTOS_FOR_TEST} photos, so intervals and p-values involving ${few.length === 1 ? 'this site' : 'these sites'} are rough and tend to overstate differences.`,
+      `${few.map((s) => `${s.name} (${s.report.includedPhotoCount} photos)`).join(', ')}: fewer than ${MIN_PHOTOS_FOR_TEST} photos, so intervals involving ${few.length === 1 ? 'this site' : 'these sites'} are wide and only large differences can be detected.`,
     );
   }
   return out;
@@ -395,6 +416,7 @@ export function comparisonCsv(sites: readonly ComparedSite[], metadata: Record<s
       lines.push(`${sec},${pair},ratio_ci95_lo,${num(c.ratioLo)},ratio`);
       lines.push(`${sec},${pair},ratio_ci95_hi,${num(c.ratioHi)},ratio`);
       lines.push(`${sec},${pair},p_value_approx,${num(c.p)},p`);
+      lines.push(`${sec},${pair},t_test_df,${num(c.df)},df`);
       lines.push(`${sec},${pair},test_basis,${c.basis},label`);
     }
   }
@@ -406,6 +428,7 @@ export function comparisonCsv(sites: readonly ComparedSite[], metadata: Record<s
       lines.push(`survey_change,${label},${key}_ratio_ci95_lo,${num(c.ratioLo)},ratio`);
       lines.push(`survey_change,${label},${key}_ratio_ci95_hi,${num(c.ratioHi)},ratio`);
       lines.push(`survey_change,${label},${key}_p_value_approx,${num(c.p)},p`);
+      lines.push(`survey_change,${label},${key}_t_test_df,${num(c.df)},df`);
       lines.push(`survey_change,${label},${key}_test_basis,${c.basis},label`);
     }
   }

@@ -437,9 +437,12 @@ the same camera and height). *Compare in pixels* compares uncalibrated sites dir
 only meaningful if all photos were taken with the same camera at the same height.
 *Analyse all sites* (under the site selector) analyses every photo not yet analysed in all sites.
 
-For each pair of sites, *D50 differences* gives the ratio of their D50s with a 95% interval
-and a p-value. This is approximate: it combines each site's bootstrap interval on a log
-scale (z-test). Treat p < 0.05 as "likely different" and look at the curves; for a formal
+For each pair of sites, *Differences between sites* gives the ratio of their D16, D50 and D84
+with a 95% interval and a p-value. This is approximate: it combines each site's photo-level
+bootstrap interval on a log scale and allows for the number of photos (Welch t-test). One-photo
+sites get no test (one photo cannot show how much the bed varies), and with fewer than 5 photos
+per site only large differences show. Treat p < 0.05 as "likely different" and look at the
+curves; for a formal
 test use a full two-sample method such as GSDtools (Eaton et al. 2019). *Download
 comparison CSV* saves the table and the pairwise results; each chart has SVG/PNG buttons.
 
