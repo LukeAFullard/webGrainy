@@ -204,6 +204,8 @@ export function traceGrainContours(
     }
   }
 
+  // Outline points lie on pixel edges in pixel-CORNER coordinates (pixel x spans x to x + 1).
+  // A working pixel x covers photo pixels [x / s, (x + 1) / s), so corners scale exactly by 1 / s.
   const decodePoint = (key: number): [number, number] => {
     const y2 = Math.floor(key / strideX) - 2;
     const x2 = (key % strideX) - 2;

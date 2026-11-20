@@ -6,6 +6,7 @@ import type { SizeMetric } from '../types/index.js';
 import type { AnalysisSession } from './pipelineController.js';
 import { exportSiteArchive, type PhotoRecord, type SiteRecord } from './projectStorage.js';
 import { photoProcessingHistory } from './siteTypes.js';
+import { geoJsonToMap, photoGeoreference, worldFile } from './georef.js';
 import {
   buildSiteExportMetadata,
   exportSiteGrainsCsv,
@@ -28,6 +29,8 @@ export const EXPORT_KINDS = [
   'photo-mask-16',
   'photo-mask-32',
   'photo-geojson',
+  'photo-geojson-map',
+  'photo-mask-worldfile',
   'photo-svg',
 ] as const;
 export type ExportKind = (typeof EXPORT_KINDS)[number];
@@ -166,6 +169,21 @@ export async function buildExport(kind: ExportKind, ctx: ExportContext): Promise
             filename: `${photoFile}_contours.geojson`,
           }
         : null;
+    case 'photo-geojson-map': {
+      // Map coordinates from the photo's GeoTIFF (null when the photo is not georeferenced).
+      const g = photo ? photoGeoreference(photo).georef : null;
+      return session && g
+        ? {
+            blob: new Blob([geoJsonToMap(session.exportGeoJson(photoMeta), g)], { type: 'application/geo+json' }),
+            filename: `${photoFile}_outlines_map.geojson`,
+          }
+        : null;
+    }
+    case 'photo-mask-worldfile': {
+      // World file placing the 16-bit mask PNG (same base name) on the map.
+      const g = photo ? photoGeoreference(photo).georef : null;
+      return session && g ? { blob: new Blob([worldFile(g)], { type: 'text/plain' }), filename: `${photoFile}_mask16.pgw` } : null;
+    }
     case 'photo-svg':
       return session
         ? { blob: new Blob([session.exportSvg(photoMeta)], { type: 'image/svg+xml' }), filename: `${photoFile}_contours.svg` }

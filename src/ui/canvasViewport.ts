@@ -756,8 +756,9 @@ export class CanvasViewport {
       const grains = this.session.getResult().grains;
       const excludedIds = this.session.getRoiFilterResult()?.excludedGrainIds;
       for (const g of grains) {
-        const cx = toSx(g.centroidX);
-        const cy = toSy(g.centroidY);
+        // Centroids use pixel-centre coordinates; the photo is drawn with pixel corners at integers.
+        const cx = toSx(g.centroidX + 0.5);
+        const cy = toSy(g.centroidY + 0.5);
         if (cx < -100 || cy < -100 || cx > w + 100 || cy > h + 100) continue;
 
         const isSelected = this.selectedIds.has(g.id) || this.inspectedId === g.id;

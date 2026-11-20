@@ -4,6 +4,7 @@ import type { PhotoRecord, SiteRecord } from '../modules/projectStorage.js';
 import type { SiteAnalysisOptions, SiteAnalysisReport, SitePhotoInput } from '../modules/siteAnalysis.js';
 import { buildExport, isExportKind } from '../modules/exports.js';
 import { renderPrintablePsdSvg } from './charts.js';
+import { photoGeoreference } from '../modules/georef.js';
 import type { AppState } from './state.js';
 
 export const FULL_SCIENTIFIC_CITATIONS: ReadonlyArray<{ title: string; citation: string }> = [
@@ -243,6 +244,53 @@ export function renderModelsModalHtml(
   `;
 }
 
+const fmtNum = (n: number, d = 1): string => n.toLocaleString(undefined, { maximumFractionDigits: d });
+
+/**
+ * Warning shown with outline exports when outlines are coarser than the photo: they are traced
+ * on the working image, so each step is several photo pixels. Empty when they are not coarse.
+ */
+export function outlineResolutionWarningHtml(session: AnalysisSession | null): string {
+  if (!session) return '';
+  const r = session.getOutlineResolution();
+  if (!r.coarse) return '';
+  const wi = session.workingImage;
+  return `<div class="warning-banner" role="note" style="margin-top:8px;"><strong>Outlines are coarser than the photo.</strong>
+    They were traced on a ${fmtNum(r.workingWidth, 0)} × ${fmtNum(r.workingHeight, 0)} px working copy of this ${fmtNum(wi.originalWidth, 0)} × ${fmtNum(wi.originalHeight, 0)} px photo, so each outline step is ${fmtNum(r.stepPhotoPx)} photo pixels${r.stepMm !== null ? ` (${fmtNum(r.stepMm, 2)} mm)` : ''}. Mask, GeoJSON and SVG edges are stepped at that size.
+    For finer outlines, re-analyse with <em>Scale Mode: 1.0x Full</em> (slower; photos over 16.7 megapixels are still read at 16.7 MP).</div>`;
+}
+
+/**
+ * Map-coordinate exports for a georeferenced photo (from its GeoTIFF), or a note that the
+ * pixel exports are not map coordinates (and why a GeoTIFF's position no longer applies).
+ */
+function mapExportHtml(photo: PhotoRecord): string {
+  const { georef, reason } = photoGeoreference(photo);
+  if (georef) {
+    return `<div class="row" style="flex-wrap:wrap;margin-top:6px;">
+        <button type="button" class="btn btn-sm btn-primary" data-export="photo-geojson-map" title="Grain outlines in the map coordinates of the source GeoTIFF">GeoJSON (map coordinates)</button>
+        <button type="button" class="btn btn-sm" data-export="photo-mask-worldfile" title="World file that places the 16-bit PNG mask on the map (keep it next to the mask, same name)">World file for 16-bit mask (.pgw)</button>
+      </div>
+      <p class="field-hint" style="margin-top:4px;">This photo is a GeoTIFF${georef.epsg !== null ? ` (EPSG:${georef.epsg})` : ' with a custom coordinate system (assign it in your GIS)'}: these exports drop straight onto the map in QGIS or ArcGIS. The other exports use photo pixels.</p>`;
+  }
+  return `<p class="field-hint" style="margin-top:6px;">Mask, GeoJSON and SVG coordinates are photo pixels (x right, y down), not map coordinates.${reason ? ` ${esc(reason)}` : ' Map-coordinate exports are offered for GeoTIFF photos.'}</p>`;
+}
+
+/** Download dialog: how many photos have outlines coarser than the photo, and the worst step. */
+function coarseOutlineNote(state: AppState): string {
+  let coarse = 0;
+  let worst = 0;
+  for (const p of state.photos) {
+    const r = state.sessions.get(p.photoId)?.getOutlineResolution();
+    if (r?.coarse) {
+      coarse++;
+      worst = Math.max(worst, r.stepPhotoPx);
+    }
+  }
+  if (coarse === 0) return '';
+  return `<div class="warning-banner" role="note" style="margin:8px 0;"><strong>Outlines are coarser than the photos.</strong> In ${coarse} photo${coarse === 1 ? '' : 's'} the outlines were traced on a smaller working copy, so masks and GeoJSON outlines are stepped at up to ${fmtNum(worst)} photo pixels. Re-analyse with <em>Scale Mode: 1.0x Full</em> for finer outlines.</div>`;
+}
+
 /** "Download results" dialog: what the .zip holds, and the optional project file (off by default). */
 export function renderDownloadResultsModalHtml(state: AppState): string {
   const site = state.sites.find((x) => x.siteId === state.activeSiteId) ?? null;
@@ -258,7 +306,12 @@ export function renderDownloadResultsModalHtml(state: AppState): string {
         <button type="button" class="btn btn-sm" data-action="close-modal">Close</button>
       </div>
       <div class="modal-body">
-        <p>One .zip with every result file of this site (${analysed} analysed photo${analysed === 1 ? '' : 's'}): site summary (CSV and JSON), pooled grains, grain-size curve and printable report; for each photo its grains, summary, label mask and outlines; and a README describing the files.</p>
+        <p>One .zip with every result file of this site (${analysed} analysed photo${analysed === 1 ? '' : 's'}): site summary (CSV and JSON), pooled grains, grain-size curve and printable report; for each photo its grains, summary, label mask and outlines; and a README describing the files.${
+          state.photos.some((p) => state.sessions.has(p.photoId) && photoGeoreference(p).georef)
+            ? ' GeoTIFF photos also get their outlines in map coordinates and a world file that places the mask on the map; the other files use photo pixels.'
+            : ' Outline and mask coordinates are photo pixels, not map coordinates.'
+        }</p>
+        ${coarseOutlineNote(state)}
         <label class="checkbox-label">
           <input type="checkbox" id="download-include-project" ${include ? 'checked' : ''} />
           Include the project file with the photos (about ${mb} MB more), to reopen this site in webGrainy later
@@ -326,6 +379,8 @@ export function renderExportModalHtml(state: AppState): string {
             <button type="button" class="btn btn-sm" data-export="photo-geojson" ${activeSession ? '' : 'disabled'}>GeoJSON Contours</button>
             <button type="button" class="btn btn-sm" data-export="photo-svg" ${activeSession ? '' : 'disabled'}>SVG Contours</button>
           </div>
+          ${activeSession && activePhoto ? mapExportHtml(activePhoto) : ''}
+          ${outlineResolutionWarningHtml(activeSession)}
         </div>
       </div>
     </div>
