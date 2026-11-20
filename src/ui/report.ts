@@ -147,7 +147,7 @@ export function buildSiteReportHtml(input: ReportInput): string {
 <h2>Key statistics (${esc(u)}, size metric: ${esc(r.sizeMetric)})</h2>
 <div class="grid2">
   <table>
-    <tr><th></th><th>Value</th><th>${ciPct}% bootstrap CI</th></tr>
+    <tr><th></th><th>Value</th><th>${ciPct}% CI (photo bootstrap)${r.ciStatus === 'few-photos' ? ' · approximate: fewer than 5 photos' : r.ciStatus === 'single-photo' ? ' · one photo: grain resampling only' : r.ciStatus === 'degenerate' ? ' · not estimable (identical photos?)' : ''}</th></tr>
     ${pctRow('D16')}${pctRow('D50')}${pctRow('D84')}
   </table>
   <table>

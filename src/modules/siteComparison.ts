@@ -213,11 +213,16 @@ export function comparisonBasis(a: SiteAnalysisReport, b: SiteAnalysisReport): C
 
 type WithReport = ComparedSite & { report: SiteAnalysisReport };
 
-/** Log-scale standard error of a percentile from its bootstrap CI. */
+/**
+ * Log-scale standard error of a percentile from its raw percentile bootstrap CI (the test below
+ * applies its own small-sample correction, so it must not start from the already-corrected
+ * reported interval).
+ */
 function logSe(r: SiteAnalysisReport, key: ComparedPercentile): number {
-  const lo = r.bootstrapCi.lower[key];
-  const hi = r.bootstrapCi.upper[key];
-  return lo > 0 && hi > lo ? (Math.log(hi) - Math.log(lo)) / (2 * zFor(r.bootstrapCi.confidenceLevel)) : Number.NaN;
+  const ci = r.bootstrapPercentileCi ?? r.bootstrapCi;
+  const lo = ci.lower[key];
+  const hi = ci.upper[key];
+  return lo > 0 && hi > lo ? (Math.log(hi) - Math.log(lo)) / (2 * zFor(ci.confidenceLevel)) : Number.NaN;
 }
 
 /**
@@ -374,6 +379,7 @@ export function comparisonCsv(sites: readonly ComparedSite[], metadata: Record<s
       ['grains', r.validGrainCount, 'count'],
       ['pooling_mode', r.poolingMode, 'mode'],
       ['bootstrap_mode', r.bootstrapMode, 'mode'],
+      ['ci_status', r.ciStatus, 'label'],
       ['size_metric', r.sizeMetric, 'metric'],
       ['size_cutoff', r.dCutoffCommonMm, 'mm'],
       ['D16', r.psd.D16, u],

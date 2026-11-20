@@ -11,6 +11,9 @@ import { filterBorderGrains } from './sedimentStats.js';
 import { PSD_KEYS, siteCutoffReason } from './sitePooling.js';
 import { photoProcessingHistory, type SitePhotoInput, type SiteAnalysisOptions, type SiteAnalysisReport } from './siteTypes.js';
 
+/** A number for a CSV cell: empty when not available (NaN/Infinity), never the text "NaN". */
+const numCell = (v: number): string => (Number.isFinite(v) ? String(v) : '');
+
 /**
  * Provenance block for site-level exports: app/ORT versions, notices, and the
  * model hash, parameters, and calibration used for each included photo.
@@ -140,6 +143,8 @@ export function exportSiteSummaryCsv(
   lines.push(
     `metadata,bootstrap_mode,${csvCell(report.bootstrapMode)},mode`,
   );
+  lines.push(`metadata,ci_method,${csvCell(report.ciStatus === 'single-photo' ? 'grain bootstrap percentile (single photo)' : 'cluster bootstrap, t-interval on log scale: SE x sqrt(n/(n-1)), t with n-1 df')},label`);
+  lines.push(`metadata,ci_status,${report.ciStatus},label`);
   lines.push(`metadata,bootstrap_seed,${report.bootstrapSeed},seed`);
   lines.push(
     `metadata,bootstrap_replicates,${report.bootstrapReplicates},count`,
@@ -148,10 +153,10 @@ export function exportSiteSummaryCsv(
   for (const key of PSD_KEYS) {
     lines.push(`psd,${key},${report.psd[key]},${report.unit}`);
     lines.push(
-      `psd_bootstrap_ci_lo,${key},${report.bootstrapCi.lower[key]},${report.unit}`,
+      `psd_bootstrap_ci_lo,${key},${numCell(report.bootstrapCi.lower[key])},${report.unit}`,
     );
     lines.push(
-      `psd_bootstrap_ci_hi,${key},${report.bootstrapCi.upper[key]},${report.unit}`,
+      `psd_bootstrap_ci_hi,${key},${numCell(report.bootstrapCi.upper[key])},${report.unit}`,
     );
     lines.push(
       `psd_binomial_ci_lo,${key},${report.binomialCi.lower[key]},${report.unit}`,
@@ -190,8 +195,8 @@ export function exportSiteSummaryCsv(
     for (const [k, v] of Object.entries(ci) as Array<[string, [number, number]]>) {
       const unit = k === 'meanMm' ? 'mm' : 'phi';
       const name = k.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
-      lines.push(`folk_ward_ci_lo,${name},${v[0]},${unit}`);
-      lines.push(`folk_ward_ci_hi,${name},${v[1]},${unit}`);
+      lines.push(`folk_ward_ci_lo,${name},${numCell(v[0])},${unit}`);
+      lines.push(`folk_ward_ci_hi,${name},${numCell(v[1])},${unit}`);
     }
   }
   for (const [sec, bins] of [
@@ -214,6 +219,7 @@ export function exportSiteSummaryCsv(
   for (const b of fr.bins) lines.push(`fabric_bin,${b.startDeg}-${b.endDeg}deg,${b.proportionPct},%`);
   const adq = report.adequacy;
   lines.push(`adequacy,effective_grain_count,${adq.effectiveGrainCount},count`);
+  lines.push(`adequacy,rating_limited_by_photo_count,${adq.limitedByPhotoCount},flag`);
   lines.push(`adequacy,largest_clast_area_ratio,${adq.largestClastAreaRatio},fraction`);
   lines.push(`adequacy,largest_clast_warning,${adq.largestClastWarning},label`);
   for (const o of adq.outlierPhotos) {

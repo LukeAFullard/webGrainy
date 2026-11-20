@@ -16,6 +16,14 @@ import { getActivePhoto } from '../workspaceActions.js';
 import { scopeButtonsHtml } from './compare.js';
 import { chartBoxFor, esc, type ChartRegistry } from './html.js';
 
+/** Shown after the site interval, so an approximate or missing interval is never read as precise. */
+const CI_STATUS_NOTE: Record<'ok' | 'few-photos' | 'single-photo' | 'degenerate', string> = {
+  ok: '',
+  'few-photos': ' · approximate (fewer than 5 photos)',
+  'single-photo': ' · one photo: counting only',
+  degenerate: ' · photos identical?',
+};
+
 export interface DashboardView {
   lightTheme: boolean;
   /** Filled with this render's charts, for the SVG/PNG download buttons. */
@@ -156,7 +164,11 @@ export function renderDashboardHtml(state: AppState, view: DashboardView): strin
         </div>
         ${
           isSite && report
-            ? `<span style="font-size:0.65rem;color:var(--text-secondary);">${Math.round(report.bootstrapCi.confidenceLevel * 100)}% CI: [${report.bootstrapCi.lower.D50.toFixed(1)}, ${report.bootstrapCi.upper.D50.toFixed(1)}] ${unit}</span>`
+            ? `<span style="font-size:0.65rem;color:var(--text-secondary);">${Math.round(report.bootstrapCi.confidenceLevel * 100)}% CI (D50): ${
+                Number.isFinite(report.bootstrapCi.lower.D50) && Number.isFinite(report.bootstrapCi.upper.D50)
+                  ? `[${report.bootstrapCi.lower.D50.toFixed(1)}, ${report.bootstrapCi.upper.D50.toFixed(1)}] ${unit}`
+                  : 'not available'
+              }${CI_STATUS_NOTE[report.ciStatus]}</span>`
             : ''
         }
       </div>

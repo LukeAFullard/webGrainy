@@ -450,8 +450,20 @@ you have:
 1. Draw as many photos as you have, **at random with replacement** (some photos appear twice,
    others not at all).
 2. Pool their grains and compute D5–D95 and the Folk & Ward measures.
-3. Repeat 1,000 times. The **95% interval** is the range between the 2.5th and 97.5th of the
-   1,000 results (90% can be chosen).
+3. Repeat 500 times (the *Bootstrap repeats* setting; use 1,000–2,000 for reported results).
+4. Turn the spread of the results into the **95% interval** (90% can be chosen). The plain
+   bootstrap range (2.5th to 97.5th of the results) is too narrow when a site has few photos:
+   in simulation, nominal 95% ranges contained the true D50 only about 45–50% of the time with
+   2 photos, 65–75% with 3 and 75–80% with 5. The app therefore reports a *t-interval on the
+   log scale* around the site value:
+
+   > SE = (ln upper − ln lower) / (2 × 1.96) × √(n/(n−1)),  interval = D × exp(± t × SE)
+
+   where n is the number of photos and t the Student-t value with n − 1 degrees of freedom
+   (12.7 for 2 photos, 4.3 for 3, 2.8 for 5). In the same simulation this interval contained
+   the truth 88–97% of the time for 2–30 photos. Folk & Ward φ measures use the same rule on
+   their own scale. The plain bootstrap range is kept in the JSON export
+   (`bootstrapPercentileCi`) and is what the site comparison test starts from.
 
 This is a **cluster bootstrap**: photos, not grains, are re-drawn. Grains within a photo are not
 independent (neighbouring grains are alike), so treating each grain as independent would make
@@ -461,6 +473,12 @@ bed. Options:
 - **Two-stage**: also re-draws grains within each drawn photo, adding counting variation.
 - **One photo only**: with a single photo, only grains can be re-drawn. The interval then
   shows counting uncertainty only, not how representative that one patch is. The app warns.
+- **Fewer than 5 photos**: the interval is marked *approximate* and the app warns. It is wide
+  because the photo-to-photo variation is estimated from very few photos.
+- **No interval**: when the photos give identical bootstrap results (for example the same photo
+  added twice) the uncertainty cannot be estimated. The interval is shown as not available,
+  never as a precise [x, x], and the app warns. Photos with identical grains are reported as
+  likely duplicates.
 
 The random draws use a fixed seed (42), so the same data always give the same interval.
 
@@ -494,7 +512,9 @@ Based on n_eff (grid hits for the Wolman mode; grains for number-weighted):
 | ≥ 400 | High precision |
 
 About 100 grains is the usual minimum for a stable D50 in pebble counts. D84 and D95 need
-more. Also flagged:
+more. Many grains from few photos still say little about how the bed varies from patch to
+patch, so the rating is also capped by the number of photos: at most *Minimal* for one photo
+and *Adequate* for 2–4 photos (the export notes when the photo count limits it). Also flagged:
 
 - a **single very large clast** carrying over 5% (moderate) or 10% (critical) of the total
   grain area;
@@ -573,7 +593,7 @@ spacing are ignored) and are drawn as one line over time.
 - all analysis settings, and whether the graphics card or CPU was used;
 - image steps (enhancement, rectification), the scale and how it was set;
 - ROI use, manual edits, and the statistics settings (pooling, size measure, cutoffs);
-- bootstrap seed and number of draws, and the date.
+- bootstrap seed and number of draws, the interval method and its status (ok, approximate, single photo, not estimable), and the date.
 
 CSV files start with this information in lines beginning with `#`; read them with, for
 example, `pandas.read_csv(path, comment='#')`. In those lines, commas, semicolons and tabs are
@@ -594,6 +614,9 @@ browser, and a site is removed after a set number of days without use (30 by def
 - for each photo: its grains table, summary, label mask (an image whose pixel values are
   grain numbers) and outlines (GeoJSON);
 - optionally, the project file that reopens the site.
+
+When a project file is opened, its statistics settings are checked: only values the app itself
+can set are kept (others fall back to the defaults), and dates in the future are reset.
 
 **GIS.** For a GeoTIFF photo (e.g. a drone orthomosaic tile), the app keeps the file's pixel-to-map
 transform and coordinate system. It then also exports the outlines as GeoJSON in map coordinates

@@ -715,7 +715,12 @@ describe('minFeret size metric', () => {
     expect(repFeret.folkWard!.meanMm).toBeCloseTo(10.0, 2);
     expect(repFeret.wentworth!.gravelPct).toBeCloseTo(100, 4);
     expect(repFeret.wentworthHistogram10Phi.reduce((s, b) => s + b.weightPct, 0)).toBeCloseTo(100, 4);
-    expect(repFeret.bootstrapCi.lower.D50).toBeCloseTo(10.0, 4);
+    // Every grain is 10 mm in both photos: the bootstrap cannot show any uncertainty, so the
+    // interval is reported as not estimable (never as a precise [10, 10]); the raw one is kept.
+    expect(repFeret.bootstrapPercentileCi.lower.D50).toBeCloseTo(10.0, 4);
+    expect(repFeret.ciStatus).toBe('degenerate');
+    expect(Number.isNaN(repFeret.bootstrapCi.lower.D50)).toBe(true);
+    expect(repFeret.warnings.some((w) => w.includes('cannot be estimated'))).toBe(true);
     expect(repFeret.binomialCi.lower.D50).toBeCloseTo(10.0, 4);
     expect(repFeret.perPhoto[0]?.D50).toBeCloseTo(10.0, 4);
 

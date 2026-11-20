@@ -4,6 +4,9 @@
  */
 import type { PsdPercentiles } from '../types/index.js';
 import { computeFolkWardStats, computePsdPercentiles } from './sedimentStats.js';
+import { lnGamma, tTwoSidedQuantile } from './studentT.js';
+
+export { lnGamma };
 import { PSD_KEYS, PERCENTILE_NUMS, type PreparedGrain, type PreparedPhoto, emptyPsd, quantileSorted, buildPooledArrays } from './sitePooling.js';
 import type { PoolingMode, PsdConfidenceInterval, FolkWardConfidenceInterval, BinomialCiResult, JackknifePhotoSensitivity, JackknifeSensitivityReport, ConvergencePoint } from './siteTypes.js';
 
@@ -18,36 +21,6 @@ export function mulberry32(seed: number): () => number {
     t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
-}
-
-export function lnGamma(z: number): number {
-  const g = 7;
-  const p = [
-    0.99999999999980993,
-    676.5203681218851,
-    -1259.1392167224028,
-    771.32342877765313,
-    -176.61502916214059,
-    12.507343278686905,
-    -0.13857109526572012,
-    9.9843695780195716e-6,
-    1.5056327351493116e-7,
-  ];
-  if (z < 0.5) {
-    return Math.log(Math.PI / Math.sin(Math.PI * z)) - lnGamma(1 - z);
-  }
-  const zm1 = z - 1;
-  let x = p[0] ?? 1;
-  for (let i = 1; i < g + 2; i++) {
-    x += (p[i] ?? 0) / (zm1 + i);
-  }
-  const t = zm1 + g + 0.5;
-  return (
-    0.5 * Math.log(2 * Math.PI) +
-    (zm1 + 0.5) * Math.log(t) -
-    t +
-    Math.log(x)
-  );
 }
 
 export function binomialConfidenceRanks(
@@ -736,6 +709,80 @@ export function runBootstrapReference(
   };
 }
 
+/** Photos per site below which the site interval is marked approximate (as the site comparison). */
+export const MIN_PHOTOS_FOR_RELIABLE_CI = 5;
+
+/** How far a site interval can be trusted (see `calibrateSiteInterval`). */
+export type SiteCiStatus = 'ok' | 'few-photos' | 'single-photo' | 'degenerate';
+
+/**
+ * Turns a cluster-bootstrap percentile interval into the reported site interval.
+ *
+ * A percentile bootstrap over n photos is too narrow: its variance is biased low by (n-1)/n and
+ * it ignores that the spread is itself estimated from n photos. In simulation (2-30 photos,
+ * realistic patch-to-patch variation) nominal 95% intervals covered the true D50 only 43-94% of
+ * the time. The reported interval is therefore a t-interval on the log scale around the site
+ * value: SE = (ln upper - ln lower) / (2 z) x sqrt(n/(n-1)), half-width t(n-1) x SE. The same
+ * simulation gives 88-97% coverage. Folk & Ward phi measures use the same rule on their own
+ * (linear) scale; the mean in mm uses the log scale.
+ *
+ * Single-photo sites keep the within-photo grain bootstrap (status 'single-photo', warned
+ * separately). When the photos give identical bootstrap results (zero-width interval, e.g. the
+ * same photo added twice) the interval cannot be estimated: it is reported as NaN, status
+ * 'degenerate', never as a precise [x, x].
+ */
+export function calibrateSiteInterval(
+  raw: { psdCi: PsdConfidenceInterval; folkWardCi: FolkWardConfidenceInterval | null },
+  estimate: { psd: PsdPercentiles; folkWard: { meanPhi: number; sortingPhi: number; skewnessPhi: number; kurtosisPhi: number; meanMm: number } | null },
+  nPhotos: number,
+  confidenceLevel: 0.9 | 0.95,
+): { psdCi: PsdConfidenceInterval; folkWardCi: FolkWardConfidenceInterval | null; status: SiteCiStatus } {
+  if (nPhotos < 2) {
+    return { psdCi: raw.psdCi, folkWardCi: raw.folkWardCi, status: 'single-photo' };
+  }
+  const z = confidenceLevel === 0.9 ? 1.6448536269514722 : 1.959963984540054;
+  const inflate = Math.sqrt(nPhotos / (nPhotos - 1));
+  const t = tTwoSidedQuantile(confidenceLevel, nPhotos - 1);
+  const lower = emptyPsd();
+  const upper = emptyPsd();
+  let degenerate = false;
+  for (const key of PSD_KEYS) {
+    const lo = raw.psdCi.lower[key];
+    const hi = raw.psdCi.upper[key];
+    const est = estimate.psd[key];
+    if (!(lo > 0) || !(hi > 0) || !(est > 0) || !Number.isFinite(t)) continue;
+    const se = ((Math.log(hi) - Math.log(lo)) / (2 * z)) * inflate;
+    if (!(se > 1e-12)) {
+      degenerate = true;
+      continue; // stays NaN: not estimable
+    }
+    lower[key] = Math.exp(Math.log(est) - t * se);
+    upper[key] = Math.exp(Math.log(est) + t * se);
+  }
+  let folkWardCi: FolkWardConfidenceInterval | null = null;
+  if (raw.folkWardCi !== null && estimate.folkWard !== null && Number.isFinite(t)) {
+    const fw = estimate.folkWard;
+    const lin = (r: [number, number], e: number): [number, number] => {
+      const se = ((r[1] - r[0]) / (2 * z)) * inflate;
+      return se > 1e-12 && Number.isFinite(e) ? [e - t * se, e + t * se] : [Number.NaN, Number.NaN];
+    };
+    const logS = (r: [number, number], e: number): [number, number] => {
+      if (!(r[0] > 0) || !(r[1] > 0) || !(e > 0)) return [Number.NaN, Number.NaN];
+      const se = ((Math.log(r[1]) - Math.log(r[0])) / (2 * z)) * inflate;
+      return se > 1e-12 ? [Math.exp(Math.log(e) - t * se), Math.exp(Math.log(e) + t * se)] : [Number.NaN, Number.NaN];
+    };
+    folkWardCi = {
+      meanPhi: lin(raw.folkWardCi.meanPhi, fw.meanPhi),
+      sortingPhi: lin(raw.folkWardCi.sortingPhi, fw.sortingPhi),
+      skewnessPhi: lin(raw.folkWardCi.skewnessPhi, fw.skewnessPhi),
+      kurtosisPhi: lin(raw.folkWardCi.kurtosisPhi, fw.kurtosisPhi),
+      meanMm: logS(raw.folkWardCi.meanMm, fw.meanMm),
+    };
+  }
+  const status: SiteCiStatus = degenerate ? 'degenerate' : nPhotos < MIN_PHOTOS_FOR_RELIABLE_CI ? 'few-photos' : 'ok';
+  return { psdCi: { confidenceLevel, lower, upper }, folkWardCi, status };
+}
+
 /** Leave-one-photo-out jackknife of D16/D50/D84, and each photo's D50 without it. */
 export function computeJackknife(
   preparedPhotos: readonly PreparedPhoto[],
@@ -827,7 +874,8 @@ export function convergenceCheckpoints(n: number, max = MAX_CONVERGENCE_CI_POINT
 }
 
 /**
- * D16/D50/D84 as photos are added one by one (every photo count), with the D50 bootstrap CI
+ * D16/D50/D84 as photos are added one by one (every photo count), with the D50 site interval
+ * (`calibrateSiteInterval`; `boot` is the interval reported for all photos)
  * at up to `MAX_CONVERGENCE_CI_POINTS` evenly spaced counts (the last point uses the full
  * bootstrap; the others use `CONVERGENCE_REPLICATES`). Other points have NaN CI fields. Bounding the CI points keeps the cost linear
  * in the number of photos (a bootstrap at every photo count would be quadratic).
@@ -875,8 +923,11 @@ export function computeConvergence(
         confidenceLevel,
         prefixPool(pool, k),
       );
-      ciLo = subBoot.psdCi.lower.D50;
-      ciHi = subBoot.psdCi.upper.D50;
+      // Same calibrated interval as the final point (t-interval on the log scale for k photos).
+      const fwSub = unit === 'mm' ? computeFolkWardStats(subPsd) : null;
+      const cal = calibrateSiteInterval(subBoot, { psd: subPsd, folkWard: fwSub }, k, confidenceLevel);
+      ciLo = cal.psdCi.lower.D50;
+      ciHi = cal.psdCi.upper.D50;
     }
     const width = ciHi - ciLo;
     convergence.push({
