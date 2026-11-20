@@ -375,6 +375,14 @@ export function retentionBannerHtml(state: AppState, now = Date.now(), since = r
       <div class="row" style="margin-top:6px;"><button type="button" class="btn btn-xs" data-action="dismiss-retention-explained">Got it</button> ${helpButton('backup')}</div>
     </div>`);
   }
+  if (state.storageFullNotice) {
+    parts.push(`<div class="warning-banner" role="alert"><strong>Browser storage is full.</strong> ${esc(state.storageFullNotice)}
+      <div class="row" style="margin-top:6px;gap:4px;flex-wrap:wrap;">
+        <button type="button" class="btn btn-xs btn-primary" data-action="open-download-results">Download results…</button>
+        <button type="button" class="btn btn-xs" data-action="free-space" title="Remove other sites whose results were downloaded and have not changed since">Free space…</button>
+        <button type="button" class="btn btn-xs" data-action="dismiss-storage-full">OK</button>
+      </div></div>`);
+  }
   if (state.retentionNotice) {
     parts.push(`<div class="warning-banner" role="status">${esc(state.retentionNotice)}
       <div class="row" style="margin-top:6px;"><button type="button" class="btn btn-xs" data-action="dismiss-retention-notice">OK</button></div></div>`);

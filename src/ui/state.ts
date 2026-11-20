@@ -87,6 +87,8 @@ export interface AppState {
   retentionDays: number;
   /** What the last automatic removal deleted (shown until dismissed). */
   retentionNotice: string | null;
+  /** Browser storage is full: what failed and what to do (shown until dismissed). */
+  storageFullNotice: string | null;
   /** "Download results": also include the project file with the photos. */
   downloadIncludeProject: boolean;
   /** A results download is being prepared. */
@@ -183,6 +185,7 @@ export function createInitialState(): AppState {
     staleBuild: false,
     retentionDays: DEFAULT_RETENTION_DAYS,
     retentionNotice: null,
+    storageFullNotice: null,
     downloadIncludeProject: false,
     downloadingResults: false,
 

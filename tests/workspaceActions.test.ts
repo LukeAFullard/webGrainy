@@ -460,3 +460,36 @@ describe('sites are removed after the chosen days without use', () => {
     expect(world.sites.has('mine')).toBe(true);
   });
 });
+
+describe('browser storage full', () => {
+  it('shows the storage-full notice and keeps the finished photo in the page', async () => {
+    const { StorageFullError } = await import('../src/modules/projectStorage.js');
+    const { squareGrainSession } = await import('./helpers/squareSession.js');
+    const world = fakeWorld();
+    world.sites.set('a', site('a', ['p1']));
+    world.photos.set('p1', photo('p1', 'a'));
+    const { store, actions } = setup(world);
+    await actions.createDefaultOrLoadSites();
+    world.storage.runSiteBatch = async (o) => {
+      const p = world.photos.get('p1')!;
+      o.onPhotoComplete?.(p, squareGrainSession([20, 30]) as never);
+      throw new StorageFullError(p.label);
+    };
+    await actions.runBatch();
+    const st = store.getState();
+    expect(st.storageFullNotice).toMatch(/p1\.jpg was analysed but could not be saved/);
+    expect(st.sessions.has('p1')).toBe(true);
+    expect(st.photoStatuses.get('p1')).toBe('done');
+  });
+
+  it('removeSites removes the given sites but never the one open here', async () => {
+    const world = fakeWorld();
+    for (const id of ['a', 'b', 'c']) world.sites.set(id, site(id, []));
+    const { store, actions } = setup(world, { ifSiteNotOpen: async (id, here, fn) => (id === here ? false : (await fn(), true)) });
+    await actions.loadSiteData('a');
+    const removed = await actions.removeSites([...world.sites.values()], 'Removed to free space');
+    expect(removed.sort()).toEqual(['b', 'c']);
+    expect([...world.sites.keys()]).toEqual(['a']);
+    expect(store.getState().retentionNotice).toMatch(/^Removed to free space: Site b \(results never downloaded\); Site c/);
+  });
+});

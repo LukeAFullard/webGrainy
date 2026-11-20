@@ -1033,6 +1033,23 @@ export function describeEngineError(err: unknown): Error {
   return e;
 }
 
+/** The browser refused to store more data (quota exceeded / disk full). */
+export function isStorageFullError(err: unknown): boolean {
+  if (typeof err !== 'object' || err === null) return false;
+  const e = err as { name?: unknown; message?: unknown };
+  return e.name === 'QuotaExceededError' || /quota|storage is full|disk is full|no space/i.test(String(e.message ?? ''));
+}
+
+/** A batch stopped because browser storage is full (the finished analysis stays in the page). */
+export class StorageFullError extends Error {
+  constructor(readonly photoLabel: string) {
+    super(
+      `Browser storage is full: ${photoLabel} was analysed but could not be saved, so the batch stopped. Its results are still shown: download them now (Download results…), then free space (Free space…, or a shorter storage period) and analyse the remaining photos.`,
+    );
+    this.name = 'StorageFullError';
+  }
+}
+
 export async function runSiteBatch(
   opts: BatchRunOptions,
 ): Promise<BatchRunResult> {
@@ -1147,19 +1164,28 @@ export async function runSiteBatch(
       };
 
       const session = await opts.engine.analyzeImage(decoded, mergedConfig);
-      await savePhotoResult(
-        {
-          photoId: photo.photoId,
-          status: 'done',
-          serializedSession: session.toSerialized(),
-          updatedAt: Date.now(),
-        },
-        opts,
-      );
+      try {
+        await savePhotoResult(
+          {
+            photoId: photo.photoId,
+            status: 'done',
+            serializedSession: session.toSerialized(),
+            updatedAt: Date.now(),
+          },
+          opts,
+        );
+      } catch (saveErr) {
+        if (!isStorageFullError(saveErr)) throw saveErr;
+        // Browser storage is full: keep the finished analysis in the page (it can still be
+        // viewed and downloaded) and stop; further photos could not be saved either.
+        opts.onPhotoComplete?.(photo, session);
+        throw new StorageFullError(photo.label);
+      }
 
       completedPhotoIds.push(photo.photoId);
       opts.onPhotoComplete?.(photo, session);
     } catch (err) {
+      if (err instanceof StorageFullError) throw err;
       if (err instanceof Error && err.name === 'BuildMismatchError') {
         // A newer version took over in another tab: nothing is wrong with the photo. Leave it
         // pending and stop; the message tells the user to reload.

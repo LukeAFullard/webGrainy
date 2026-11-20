@@ -1,6 +1,6 @@
 /** Left panel & landing page events: sites, photos, the guide, landing workflow tabs, batch buttons and analysis settings. */
 import { parseRetentionDays } from '../../modules/retention.js';
-import { markSiteUsed } from '../backup.js';
+import { backupStatus, markSiteUsed, readBackupRecords } from '../backup.js';
 import { RETENTION_EXPLAINED_KEY, writeFlag, writeRetentionDays } from '../prefs.js';
 import type { PhotoRecord, SiteRecord } from '../../modules/projectStorage.js';
 import { parseParamInput } from '../savedSettings.js';
@@ -142,6 +142,23 @@ export const sidebarActions: Record<string, ActionHandler> = {
     });
   },
   'dismiss-retention-notice': (_el, ctx) => ctx.store.setState({ retentionNotice: null }),
+  'dismiss-storage-full': (_el, ctx) => ctx.store.setState({ storageFullNotice: null }),
+  'free-space': (_el, ctx) => {
+    const st = ctx.store.getState();
+    if (st.batchRunning) return;
+    const records = readBackupRecords();
+    // Only sites whose results were downloaded and have not changed since (nothing is lost).
+    const safe = st.sites.filter((s) => s.siteId !== st.activeSiteId && records[s.siteId]?.backedUpAt !== undefined && !backupStatus(records[s.siteId], true).needsBackup);
+    if (safe.length === 0) {
+      ctx.store.setState({
+        statusMessage: 'No other site has downloaded, unchanged results to remove. Open a site and use Download results… first, or choose a shorter storage period.',
+      });
+      return;
+    }
+    const names = safe.map((s) => `• ${s.name}`).join('\n');
+    if (!ctx.ui.confirm(`Remove these ${safe.length} site${safe.length === 1 ? '' : 's'} from this browser? Their results were downloaded and have not changed since.\n\n${names}`)) return;
+    void ctx.actions.removeSites(safe, 'Removed to free space').then(() => ctx.store.setState({ storageFullNotice: null }));
+  },
   'dismiss-retention-explained': (_el, ctx) => {
     writeFlag(RETENTION_EXPLAINED_KEY, true);
     ctx.ui.renderSidebar();
@@ -356,7 +373,7 @@ export function handleSidebarChange(target: ControlLike, ctx: EventContext): boo
       const checked = target.checked === true;
       for (const [photoId, sess] of st.sessions.entries()) {
         sess.setExcludeBorder(checked);
-        void ctx.actions.persistActiveSession(photoId, sess).catch(() => undefined);
+        void ctx.actions.persistActiveSession(photoId, sess).catch((err: unknown) => ctx.actions.reportSaveFailure(err, 'the border setting'));
       }
       ctx.actions.recomputeReports();
       void ctx.ui.syncViewport(false);

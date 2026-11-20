@@ -11,7 +11,7 @@ import { readRetentionSince } from './prefs.js';
 import { AnalysisSession } from '../modules/analysisSession.js';
 import type { ImageGrainsEngine } from '../modules/engine.js';
 import * as projectStorage from '../modules/projectStorage.js';
-import type { PhotoRecord, SiteRecord } from '../modules/projectStorage.js';
+import { isStorageFullError, type PhotoRecord, type SiteRecord } from '../modules/projectStorage.js';
 import { buildSiteInputs, computeWorkspaceReports, effectiveRoi } from '../modules/siteWorkspace.js';
 import type { SiteAnalysisOptions, SitePhotoInput } from '../modules/siteAnalysis.js';
 import {
@@ -264,9 +264,22 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
     const sites = await storage.listSites();
     const info = readBackupRecords();
     const { due } = siteRetention(sites, info, st.retentionDays, now, (deps.retentionSince ?? readRetentionSince)());
+    return removeSites(
+      due.map((d) => d.site),
+      `Removed from this browser after ${st.retentionDays} days without use`,
+      now,
+    );
+  }
+
+  /**
+   * Removes these sites (photos and results) from this browser, except any open in a tab, and
+   * shows `${reason}: <site> (results downloaded …)`. Returns the removed site ids.
+   */
+  async function removeSites(sites: readonly SiteRecord[], reason: string, now = Date.now()): Promise<string[]> {
+    const info = readBackupRecords();
     const removed: string[] = [];
     const parts: string[] = [];
-    for (const { site } of due) {
+    for (const site of sites) {
       const ran = await (deps.ifSiteNotOpen ?? ifSiteNotOpen)(site.siteId, store.getState().activeSiteId, () => storage.deleteSite(site.siteId));
       if (!ran) continue;
       const downloadedAt = info[site.siteId]?.backedUpAt;
@@ -276,11 +289,9 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
     }
     if (removed.length > 0) {
       deps.notifyRecords?.(removed, []);
-      store.setState({
-        sites: await storage.listSites(),
-        retentionNotice: `Removed from this browser after ${st.retentionDays} days without use: ${parts.join('; ')}.`,
-      });
+      store.setState({ sites: await storage.listSites(), retentionNotice: `${reason}: ${parts.join('; ')}.` });
     }
+    deps.onStorageChanged();
     return removed;
   }
 
@@ -523,7 +534,10 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
       });
       job.finish(aborted, `All sites: ${done} photos analysed${failed > 0 ? `, ${failed} failed` : ''}.`);
     } catch (err) {
-      store.setState({ statusMessage: `Batch error: ${err instanceof Error ? err.message : String(err)}` });
+      store.setState({
+        statusMessage: `Batch error: ${err instanceof Error ? err.message : String(err)}`,
+        ...(err instanceof Error && err.name === 'StorageFullError' ? { storageFullNotice: err.message } : {}),
+      });
     } finally {
       batchAbortController = null;
       store.setState({ batchRunning: false, batchProgress: null });
@@ -607,7 +621,7 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
               sessCal.physicalLengthMm !== latestCal.physicalLengthMm)
           ) {
             session.setCalibration(latestCal);
-            void persistActiveSession(photo.photoId, session).catch(() => undefined);
+            void persistActiveSession(photo.photoId, session).catch((err: unknown) => reportSaveFailure(err, `the scale of ${photo.label}`));
           }
           const nextSessions = new Map(prev.sessions);
           nextSessions.set(photo.photoId, session);
@@ -663,6 +677,7 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
     } catch (err) {
       store.setState({
         statusMessage: `Batch error: ${err instanceof Error ? err.message : String(err)}`,
+        ...(err instanceof Error && err.name === 'StorageFullError' ? { storageFullNotice: err.message } : {}),
       });
     } finally {
       batchAbortController = null;
@@ -703,6 +718,18 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
   /** Stops the running batch (and, for "Analyse all sites", the whole job). */
   function cancelBatch(): void {
     batchAbortController?.abort();
+  }
+
+  /**
+   * A save to browser storage failed: say so plainly (the change is shown but not stored),
+   * and when storage is full, show the storage-full notice with what to do.
+   */
+  function reportSaveFailure(err: unknown, what: string): void {
+    const full = isStorageFullError(err);
+    const message = full
+      ? `Browser storage is full: ${what} could not be saved (it is shown, but will be lost when the page closes). Download results now, then free space.`
+      : `Could not save ${what}: ${err instanceof Error ? err.message : String(err)}`;
+    store.setState({ statusMessage: message, ...(full ? { storageFullNotice: message } : {}) });
   }
 
   async function persistActiveSession(photoId: string, session: AnalysisSession): Promise<void> {
@@ -1080,6 +1107,8 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
     loadSiteData,
     refreshFromStorage,
     purgeExpiredSites,
+    removeSites,
+    reportSaveFailure,
     createDefaultOrLoadSites,
     handleFilesAdded,
     runBatch,

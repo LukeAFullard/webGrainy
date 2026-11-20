@@ -612,6 +612,9 @@ in your own folders and download your results:
   it with **Download results…** and **Keep longer**; afterwards a notice says what was removed.
 - Removal happens when the app is open (a closed page cannot run). A site open in any tab is
   never removed. Sites from before this feature start their count on its first use.
+- **When browser storage is full**, an analysis that cannot be saved stays on screen and the
+  batch stops with a warning: use **Download results…**, then **Free space…**, which removes
+  other sites whose results were downloaded and have not changed since (after asking).
 - webGrainy asks the browser not to clear its storage on its own; the storage line says
   whether it agreed. Browsers can still clear it sooner: Safari removes website data after
   7 days without a visit unless the app is installed, and private windows keep nothing.

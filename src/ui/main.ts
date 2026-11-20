@@ -672,7 +672,8 @@ function renderAll(state: AppState): void {
     prev.enhancing !== state.enhancing ||
     prev.siteOptions.poolingMode !== state.siteOptions.poolingMode ||
     prev.retentionDays !== state.retentionDays ||
-    prev.retentionNotice !== state.retentionNotice
+    prev.retentionNotice !== state.retentionNotice ||
+    prev.storageFullNotice !== state.storageFullNotice
   ) {
     renderSidebar(state);
   }
@@ -864,7 +865,7 @@ function mountShell(): void {
           }
           if (Object.keys(patch).length > 0) store.setState(patch);
           void persistActiveSession(photo.photoId, session).catch((err: unknown) => {
-            store.setState({ statusMessage: `Could not save edit: ${err instanceof Error ? err.message : String(err)}` });
+            actions.reportSaveFailure(err, 'this outline edit');
           });
           recomputeReports();
           viewport?.markMasksDirty();
@@ -885,7 +886,7 @@ function mountShell(): void {
           }
           if (Object.keys(patch).length > 0) store.setState(patch);
           void persistActiveSession(photo.photoId, session).catch((err: unknown) => {
-            store.setState({ statusMessage: `Could not save edit: ${err instanceof Error ? err.message : String(err)}` });
+            actions.reportSaveFailure(err, 'this outline edit');
           });
           recomputeReports();
           viewport?.markMasksDirty();
@@ -898,7 +899,7 @@ function mountShell(): void {
         if (!photo || !session) return;
         if (session.addPolygonGrain(points) > 0) {
           void persistActiveSession(photo.photoId, session).catch((err: unknown) => {
-            store.setState({ statusMessage: `Could not save edit: ${err instanceof Error ? err.message : String(err)}` });
+            actions.reportSaveFailure(err, 'this outline edit');
           });
           recomputeReports();
           viewport?.markMasksDirty();
@@ -918,7 +919,7 @@ function mountShell(): void {
         };
         if (updated.roiConfig) state.sessions.get(photo.photoId)?.setRoiConfig(effectiveRoi(updated, state.siteOptions));
         void savePhoto(updated).catch((err: unknown) => {
-          store.setState({ statusMessage: `Could not save exclusion: ${err instanceof Error ? err.message : String(err)}` });
+          actions.reportSaveFailure(err, 'this exclusion area');
         });
         store.setState({
           photos: state.photos.map((p) => (p.photoId === photo.photoId ? updated : p)),
@@ -940,7 +941,7 @@ function mountShell(): void {
         };
         if (updated.roiConfig) state.sessions.get(photo.photoId)?.setRoiConfig(effectiveRoi(updated, state.siteOptions));
         void savePhoto(updated).catch((err: unknown) => {
-          store.setState({ statusMessage: `Could not save exclusion: ${err instanceof Error ? err.message : String(err)}` });
+          actions.reportSaveFailure(err, 'this exclusion area');
         });
         store.setState({
           photos: state.photos.map((p) => (p.photoId === photo.photoId ? updated : p)),
