@@ -15,7 +15,7 @@ import { createReadStream, existsSync, mkdirSync, readFileSync, rmSync, statSync
 import { dirname, extname, join, normalize, resolve } from 'node:path';
 import { chromium } from 'playwright';
 
-export const ROOT = resolve('.');
+export const ROOT = resolve(import.meta.dirname, '..', '..');
 const DIST = join(ROOT, 'dist');
 const CACHE = join(ROOT, '.cache');
 export const OUT = join(ROOT, 'tutorials', 'out');
@@ -31,6 +31,12 @@ const PHOTO_COMMIT = '52c12bf7a6317f4c24408647d499cfe2cb6a6ea2';
 export const PHOTOS = {
   'K1_C2_385.jpg': 'a1c639254522a81806160b9ad1adf102559b8726024b1c02405da7b68cf27f8c',
   'K1_C3_0449.jpg': '19e3efb0ddc48ce477a789b64d0588ee018274f4aaa5796059974c6413a11d10',
+};
+
+/** Pixel size of each sample photo (to turn photo coordinates into screen positions). */
+export const PHOTO_SIZE = {
+  'K1_C2_385.jpg': { width: 1200, height: 1350 },
+  'K1_C3_0449.jpg': { width: 1287, height: 1267 },
 };
 
 const MIME = {
@@ -111,7 +117,10 @@ function overlayInit() {
     if (window.__tut) return;
     const root = document.createElement('div');
     root.id = '__tut';
-    root.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:2147483647;font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;';
+    root.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;max-width:none;max-height:none;margin:0;padding:0;border:0;background:transparent;overflow:visible;pointer-events:none;z-index:2147483647;font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;';
+    // A manual popover lives in the top layer, like the app's modal <dialog>s; re-showing
+    // it puts it above any dialog opened since.
+    root.popover = 'manual';
     root.innerHTML = `
       <style>
         #__tut .cursor{position:fixed;left:0;top:0;width:26px;height:26px;transform:translate(-100px,-100px);transition:none;filter:drop-shadow(0 2px 3px rgba(0,0,0,.45))}
@@ -127,13 +136,28 @@ function overlayInit() {
         #__tut .card.on{opacity:1}
         #__tut .card .kicker{font-size:18px;letter-spacing:.14em;text-transform:uppercase;color:#9cc3ff}
         #__tut .card .title{font-size:46px;font-weight:700;max-width:1000px;line-height:1.15}
-        #__tut .card .sub{font-size:22px;color:#cbd5e1;max-width:900px;line-height:1.45}
+        #__tut .card .sub{font-size:22px;color:#cbd5e1;max-width:900px;line-height:1.45;white-space:pre-line}
+        #__tut .card .sub.mono{font:17px/1.55 ui-monospace,Menlo,Consolas,monospace;text-align:left;background:rgba(0,0,0,.25);padding:14px 22px;border-radius:10px}
       </style>
       <svg class="cursor" viewBox="0 0 26 26"><path d="M3 2 L3 21 L8.2 16.4 L11.6 24 L15 22.5 L11.7 15 L18.6 15 Z" fill="#fff" stroke="#111" stroke-width="1.6" stroke-linejoin="round"/></svg>
       <div class="ring"></div>
       <div class="caption"></div>
       <div class="card"><div class="kicker"></div><div class="title"></div><div class="sub"></div></div>`;
     document.documentElement.appendChild(root);
+    const front = () => {
+      if (!root.isConnected) document.documentElement.appendChild(root);
+      try {
+        if (root.matches(':popover-open')) root.hidePopover();
+        root.showPopover();
+      } catch {
+        /* not yet rendered */
+      }
+    };
+    front();
+    // Keep the overlay above dialogs as they open.
+    new MutationObserver(() => {
+      if (document.querySelector('dialog[open]')) front();
+    }).observe(document.body ?? document.documentElement, { subtree: true, attributes: true, attributeFilter: ['open'], childList: true });
     const $ = (s) => root.querySelector(s);
     const cursor = $('.cursor');
     addEventListener('mousemove', (e) => {
@@ -148,7 +172,9 @@ function overlayInit() {
       setTimeout(() => r.remove(), 700);
     }, true);
     window.__tut = {
+      front,
       caption(html, pos) {
+        front();
         const c = $('.caption');
         if (!html) return c.classList.remove('on');
         c.innerHTML = html;
@@ -156,6 +182,7 @@ function overlayInit() {
         c.classList.add('on');
       },
       ring(rect, pad = 6) {
+        front();
         const r = $('.ring');
         if (!rect) return r.classList.remove('on');
         Object.assign(r.style, {
@@ -164,12 +191,14 @@ function overlayInit() {
         });
         r.classList.add('on');
       },
-      card(kicker, title, sub) {
+      card(kicker, title, sub, mono) {
+        front();
         const c = $('.card');
         if (title == null) return c.classList.remove('on');
         $('.kicker').textContent = kicker ?? '';
         $('.title').textContent = title;
         $('.sub').textContent = sub ?? '';
+        $('.sub').classList.toggle('mono', !!mono);
         c.classList.add('on');
       },
     };
@@ -185,7 +214,7 @@ function overlayInit() {
  * Opens the app and starts recording. Returns the tutorial "director": helpers that move
  * the cursor, click, caption and wait, plus finish() which writes the MP4.
  */
-export async function startTutorial(name, { width = 1280, height = 720 } = {}) {
+export async function startTutorial(name, { width = 1280, height = 720, prepare } = {}) {
   const { server, base } = await serve();
   const browser = await chromium.launch({ args: ['--disable-features=WebGPU'] });
   const context = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: 1 });
@@ -204,23 +233,7 @@ export async function startTutorial(name, { width = 1280, height = 720 } = {}) {
   await page.goto(base, { waitUntil: 'networkidle' });
   await page.waitForFunction(() => !!window.__tut);
 
-  // Screencast frames, each with its capture time and the playback speed at that moment.
-  const frameDir = join(OUT, `${name}.frames`);
-  rmSync(frameDir, { recursive: true, force: true });
-  mkdirSync(frameDir, { recursive: true });
-  const frames = [];
-  let speed = 1;
-  const cdp = await context.newCDPSession(page);
-  cdp.on('Page.screencastFrame', async ({ data, metadata, sessionId }) => {
-    const file = join(frameDir, `f${String(frames.length).padStart(6, '0')}.jpg`);
-    writeFileSync(file, Buffer.from(data, 'base64'));
-    frames.push({ file, t: metadata.timestamp ?? Date.now() / 1000, speed });
-    await cdp.send('Page.screencastFrameAck', { sessionId }).catch(() => {});
-  });
-  await cdp.send('Page.startScreencast', {
-    format: 'jpeg', quality: 92, maxWidth: width, maxHeight: height, everyNthFrame: 1,
-  });
-
+  let view = null; // photo-to-stage transform while known: { file, z, px, py }
   let mouse = { x: width * 0.55, y: height * 0.6 };
   await page.mouse.move(mouse.x, mouse.y);
   const ease = (t) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
@@ -228,27 +241,45 @@ export async function startTutorial(name, { width = 1280, height = 720 } = {}) {
   const d = {
     page,
     base,
-    wait: (ms) => page.waitForTimeout(ms),
+    wait: (ms) => page.waitForTimeout(d.instant ? Math.min(ms, 150) : ms),
     /** Seconds of reading time for a caption: about 3.3 words a second, at least 2.5 s. */
     readTime: (html) => Math.max(2500, (html.replace(/<[^>]+>/g, '').split(/\s+/).length / 3.3) * 1000),
     async caption(html, { hold, pos } = {}) {
+      if (d.instant) return;
       await page.evaluate(([h, p]) => window.__tut.caption(h, p), [html, pos]);
       if (html && hold !== 0) await page.waitForTimeout(hold ?? d.readTime(html));
     },
-    async card(kicker, title, sub, hold = 3500) {
-      await page.evaluate(([k, t, s]) => window.__tut.card(k, t, s), [kicker, title, sub]);
+    async card(kicker, title, sub, hold = 3500, { mono = false } = {}) {
+      if (d.instant) return;
+      await page.evaluate(([k, t, s, m]) => window.__tut.card(k, t, s, m), [kicker, title, sub, mono]);
       await page.waitForTimeout(hold);
       await page.evaluate(() => window.__tut.card(null, null));
       await page.waitForTimeout(600);
     },
     async ring(target, pad) {
+      if (d.instant) return;
       if (!target) return page.evaluate(() => window.__tut.ring(null));
       const loc = typeof target === 'string' ? page.locator(target).first() : target;
-      await loc.scrollIntoViewIfNeeded();
-      const box = await loc.boundingBox();
-      await page.evaluate(([b, p]) => window.__tut.ring(b, p), [box, pad]);
+      // The app re-renders panels often: retry if the element is replaced mid-way.
+      for (let attempt = 0; ; attempt++) {
+        try {
+          await loc.scrollIntoViewIfNeeded({ timeout: 5000 });
+          const box = await loc.boundingBox({ timeout: 5000 });
+          if (!box) throw new Error(`not visible: ${target}`);
+          await page.evaluate(([b, p]) => window.__tut.ring(b, p), [box, pad]);
+          return;
+        } catch (e) {
+          if (attempt >= 3) throw e;
+          await page.waitForTimeout(300);
+        }
+      }
     },
     async moveTo(x, y, ms = 650) {
+      if (d.instant) {
+        await page.mouse.move(x, y);
+        mouse = { x, y };
+        return;
+      }
       const from = { ...mouse };
       const steps = Math.max(8, Math.round(ms / 16));
       for (let i = 1; i <= steps; i++) {
@@ -269,17 +300,94 @@ export async function startTutorial(name, { width = 1280, height = 720 } = {}) {
     },
     async click(target, opts = {}) {
       await d.point(target, opts);
-      await page.waitForTimeout(250);
+      await d.wait(250);
       await page.mouse.down();
       await page.waitForTimeout(90);
       await page.mouse.up();
-      await page.waitForTimeout(opts.after ?? 500);
+      await d.wait(opts.after ?? 500);
     },
     /** Clicks a button that opens a file picker and answers it with `files`. */
     async chooseFiles(target, files, opts) {
       const chooser = page.waitForEvent('filechooser');
       await d.click(target, opts);
       await (await chooser).setFiles(files);
+    },
+    /**
+     * Screen position of a photo pixel, assuming the photo is fitted to the view (press
+     * Fit first): the viewer fits the photo inside the stage with a 12 px margin.
+     */
+    async photoPoint(file, x, y) {
+      const r = await page.locator('#canvas-stage').boundingBox();
+      if (!view || view.file !== file) {
+        const { width: w, height: h } = PHOTO_SIZE[file];
+        const z = Math.max(0.05, Math.min(4, Math.min((r.width - 24) / w, (r.height - 24) / h)));
+        view = { file, z, px: (r.width - w * z) / 2, py: (r.height - h * z) / 2 };
+      }
+      return { x: r.x + view.px + x * view.z, y: r.y + view.py + y * view.z };
+    },
+    /** Zooms by wheel notches (negative = in) about a photo pixel, tracking the view. */
+    async zoomAt(file, x, y, notches, opts) {
+      const p = await d.photoPoint(file, x, y);
+      await d.moveTo(p.x, p.y, opts?.ms);
+      const r = await page.locator('#canvas-stage').boundingBox();
+      const sx = p.x - r.x, sy = p.y - r.y;
+      for (let i = 0; i < Math.abs(notches); i++) {
+        const f = notches < 0 ? 1.14 : 1 / 1.14;
+        const z = Math.max(0.1, Math.min(24, view.z * f));
+        view = { ...view, z, px: sx - (sx - view.px) * (z / view.z), py: sy - (sy - view.py) * (z / view.z) };
+        await page.mouse.wheel(0, notches < 0 ? -100 : 100);
+        await page.waitForTimeout(d.instant ? 30 : 110);
+      }
+    },
+    /** Presses Fit (the view tracking then assumes the fitted photo). */
+    async fit(opts) {
+      await d.click('[data-action="fit-view"]', opts);
+      view = null;
+    },
+    /** Glides to a photo pixel and clicks it. */
+    async clickPhoto(file, x, y, opts = {}) {
+      const p = await d.photoPoint(file, x, y);
+      await d.moveTo(p.x, p.y, opts.ms);
+      await d.wait(200);
+      await page.mouse.down();
+      await page.waitForTimeout(80);
+      await page.mouse.up();
+      await d.wait(opts.after ?? 400);
+    },
+    /** Shows a photo by clicking its row in the photo list. */
+    async openPhoto(file, opts) {
+      await d.click(page.locator('.photo-item', { hasText: file }).first(), opts);
+      view = null;
+    },
+    /** Types into a field, a character at a time. */
+    async type(target, text, { clear = true, delay = 90 } = {}) {
+      const loc = typeof target === 'string' ? page.locator(target).first() : target;
+      await d.click(loc, { after: 150 });
+      if (clear) await loc.fill('');
+      await loc.pressSequentially(text, { delay: d.instant ? 0 : delay });
+    },
+    /** Answers the next window.prompt() (site names) with `value`. */
+    answerPrompt(value) {
+      page.once('dialog', (dlg) => dlg.accept(value));
+    },
+    /** Clicks something that downloads a file; returns the saved file's path. */
+    async download(target, opts) {
+      const dl = page.waitForEvent('download');
+      await d.click(target, opts);
+      const file = await dl;
+      const dir = join(OUT, 'downloads');
+      mkdirSync(dir, { recursive: true });
+      const path = join(dir, file.suggestedFilename());
+      await file.saveAs(path);
+      return path;
+    },
+    /** Waits for the batch to end; fails unless every photo finished. */
+    async waitForBatch() {
+      await page.waitForFunction(() => /Batch complete|Batch error|Batch cancelled/.test(document.body.innerText), null, {
+        timeout: 15 * 60 * 1000, polling: 500,
+      });
+      const footer = await page.evaluate(() => document.body.innerText.match(/Batch[^\n]*/)?.[0] ?? '');
+      if (!/Batch complete: \d+ done, 0 failed/.test(footer)) throw new Error(`analysis failed: ${footer}`);
     },
     /** Scrolls the wheel over the cursor's position, `clicks` notches (negative zooms in). */
     async wheel(clicks, gap = 110) {
@@ -293,6 +401,8 @@ export async function startTutorial(name, { width = 1280, height = 720 } = {}) {
       speed = x;
     },
     problems,
+    /** While true (during prepare), moves and pauses are instant and captions are skipped. */
+    instant: false,
     async finish({ fps = 30, tail = 1500 } = {}) {
       await page.waitForTimeout(tail);
       await cdp.send('Page.stopScreencast').catch(() => {});
@@ -319,5 +429,28 @@ export async function startTutorial(name, { width = 1280, height = 720 } = {}) {
       return mp4;
     },
   };
+  if (prepare) {
+    d.instant = true;
+    await prepare(d);
+    d.instant = false;
+  }
+  // Screencast frames, each with its capture time and the playback speed at that moment.
+  const frameDir = join(OUT, `${name}.frames`);
+  rmSync(frameDir, { recursive: true, force: true });
+  mkdirSync(frameDir, { recursive: true });
+  const frames = [];
+  let speed = 1;
+  const cdp = await context.newCDPSession(page);
+  cdp.on('Page.screencastFrame', async ({ data, metadata, sessionId }) => {
+    const file = join(frameDir, `f${String(frames.length).padStart(6, '0')}.jpg`);
+    writeFileSync(file, Buffer.from(data, 'base64'));
+    frames.push({ file, t: metadata.timestamp ?? Date.now() / 1000, speed });
+    await cdp.send('Page.screencastFrameAck', { sessionId }).catch(() => {});
+  });
+  const startCast = () => cdp.send('Page.startScreencast', {
+    format: 'jpeg', quality: 92, maxWidth: width, maxHeight: height, everyNthFrame: 1,
+  });
+  await startCast();
+  await page.waitForTimeout(300);
   return d;
 }

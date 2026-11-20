@@ -27,7 +27,7 @@ for (const f of files) {
   const mod = await import(pathToFileURL(join(dir, f)).href);
   console.log(`recording ${name}: ${mod.title}`);
   const t0 = Date.now();
-  const d = await startTutorial(name);
+  const d = await startTutorial(name, { prepare: mod.prepare });
   try {
     await mod.run(d);
   } catch (e) {
