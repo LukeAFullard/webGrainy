@@ -30,6 +30,8 @@ import { wasmThreadsFor } from '../modules/onnxInference.js';
 import { GUIDE_HIDDEN_KEY, guideInputFrom, guideSteps, renderGuideHtml } from './onboarding.js';
 import { EXPORTED_ONCE_KEY, SKIP_LANDING_KEY, readFlag, readRetentionDaysRaw, writeFlag } from './prefs.js';
 import { parseRetentionDays } from '../modules/retention.js';
+import { buildResultsBundle } from '../modules/resultsBundle.js';
+import { renderPrintablePsdSvg } from './charts.js';
 import { markSiteBackedUp, markSiteChanged } from './backup.js';
 import { ScreenWakeLock } from './wakeLock.js';
 import { DoneSignal, NOTIFY_PREF_KEY, requestNotifyPermission } from './doneSignal.js';
@@ -61,6 +63,7 @@ import {
   triggerBlobDownload,
   renderAboutModalHtml,
   renderExportModalHtml,
+  renderDownloadResultsModalHtml,
   renderModelsModalHtml,
 } from './modals.js';
 import {
@@ -581,6 +584,8 @@ function renderModals(state: AppState): void {
     appDialogEl.innerHTML = renderModelsModalHtml(state, actions.getCachedQuota());
   } else if (state.activeModal === 'export') {
     appDialogEl.innerHTML = renderExportModalHtml(state);
+  } else if (state.activeModal === 'download-results') {
+    appDialogEl.innerHTML = renderDownloadResultsModalHtml(state);
   } else if (state.activeModal === 'about') {
     appDialogEl.innerHTML = renderAboutModalHtml();
   } else if (state.activeModal === 'help') {
@@ -665,7 +670,9 @@ function renderAll(state: AppState): void {
     prev.photoSelectMode !== state.photoSelectMode ||
     prev.selectedPhotoIds !== state.selectedPhotoIds ||
     prev.enhancing !== state.enhancing ||
-    prev.siteOptions.poolingMode !== state.siteOptions.poolingMode
+    prev.siteOptions.poolingMode !== state.siteOptions.poolingMode ||
+    prev.retentionDays !== state.retentionDays ||
+    prev.retentionNotice !== state.retentionNotice
   ) {
     renderSidebar(state);
   }
@@ -720,6 +727,8 @@ function renderAll(state: AppState): void {
     prev.helpTopic !== state.helpTopic ||
     (state.activeModal === 'models' &&
       (prev.modelDownloads !== state.modelDownloads || prev.capabilities !== state.capabilities)) ||
+    (state.activeModal === 'download-results' &&
+      (prev.downloadIncludeProject !== state.downloadIncludeProject || prev.downloadingResults !== state.downloadingResults)) ||
     (state.activeModal === 'export' &&
       (prev.siteReport !== state.siteReport ||
         prev.activeSiteId !== state.activeSiteId ||
@@ -1078,6 +1087,7 @@ function eventContext(): EventContext {
       focusGrain: (id) => viewport?.focusOnGrain(id),
       applyUpdate: () => swUpdates?.applyUpdate() ?? false,
       reloadPage: () => location.reload(),
+      downloadResults,
       isTyping: () => {
         const el = document.activeElement;
         if (!el) return false;
@@ -1353,6 +1363,40 @@ async function buildReport(): Promise<string | null> {
   });
   store.setState({ statusMessage: 'Printable report ready.' });
   return html;
+}
+
+/** "Download results": every result file of the open site in one .zip (see resultsBundle.ts). */
+async function downloadResults(includeProject: boolean): Promise<void> {
+  const st = store.getState();
+  const site = getActiveSite(st);
+  if (!site) return;
+  store.setState({ downloadingResults: true, statusMessage: 'Preparing the results download…' });
+  try {
+    const reportHtml = st.siteReport ? await buildReport() : null;
+    const { blob, filename } = await buildResultsBundle({
+      site,
+      photos: st.photos,
+      siteInputs: buildSiteInputs(st),
+      siteReport: st.siteReport,
+      siteOptions: st.siteOptions,
+      sizeMetric: st.siteOptions.sizeMetric ?? 'bAxis',
+      psdXAxis: st.psdXAxis,
+      renderPsdSvg: renderPrintablePsdSvg,
+      reportHtml,
+      includeProject,
+    });
+    triggerBlobDownload(blob, filename);
+    markSiteBackedUp(site.siteId);
+    renderSidebar(store.getState());
+    store.setState({
+      activeModal: null,
+      statusMessage: `Downloaded ${filename} (${(blob.size / 1e6).toFixed(1)} MB)${includeProject ? ', with the project file' : ': results only; keep your original photos'}.`,
+    });
+  } catch (err) {
+    store.setState({ statusMessage: `Could not prepare the download: ${err instanceof Error ? err.message : String(err)}` });
+  } finally {
+    store.setState({ downloadingResults: false });
+  }
 }
 
 /** Runs an export; a saved project file counts as a backup of the site. */

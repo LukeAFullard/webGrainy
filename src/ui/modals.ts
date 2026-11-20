@@ -243,6 +243,39 @@ export function renderModelsModalHtml(
   `;
 }
 
+/** "Download results" dialog: what the .zip holds, and the optional project file (off by default). */
+export function renderDownloadResultsModalHtml(state: AppState): string {
+  const site = state.sites.find((x) => x.siteId === state.activeSiteId) ?? null;
+  const analysed = state.photos.filter((p) => state.sessions.has(p.photoId)).length;
+  let photoBytes = 0;
+  for (const p of state.photos) photoBytes += p.imageBlob.size + (p.originalBackup?.imageBlob.size ?? 0);
+  const mb = Math.max(1, Math.round(photoBytes / 1e6));
+  const include = state.downloadIncludeProject;
+  return `
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2 id="dialog-title" class="modal-title">Download results${site ? `: ${esc(site.name)}` : ''}</h2>
+        <button type="button" class="btn btn-sm" data-action="close-modal">Close</button>
+      </div>
+      <div class="modal-body">
+        <p>One .zip with every result file of this site (${analysed} analysed photo${analysed === 1 ? '' : 's'}): site summary (CSV and JSON), pooled grains, grain-size curve and printable report; for each photo its grains, summary, label mask and outlines; and a README describing the files.</p>
+        <label class="checkbox-label">
+          <input type="checkbox" id="download-include-project" ${include ? 'checked' : ''} />
+          Include the project file with the photos (about ${mb} MB more), to reopen this site in webGrainy later
+        </label>
+        <div class="warning-banner" role="note" style="margin-top:8px;">${
+          include
+            ? `The download will be about ${mb} MB larger: it contains the photos. Photos can include GPS locations, so take care when sharing the file.`
+            : 'Without the project file, this site cannot be reopened in webGrainy once it is removed from this browser: only the result files are kept. Keep your original photos in your own folders.'
+        }</div>
+        <div class="row" style="margin-top:10px;justify-content:flex-end;gap:6px;">
+          <button type="button" class="btn btn-sm btn-primary" data-action="download-results" ${analysed === 0 || state.downloadingResults ? 'disabled' : ''} autofocus>${state.downloadingResults ? 'Preparing…' : 'Download .zip'}</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 export function renderExportModalHtml(state: AppState): string {
   const activeSite = state.sites.find((s) => s.siteId === state.activeSiteId) ?? null;
   const activePhoto = state.photos.find((p) => p.photoId === state.activePhotoId) ?? null;

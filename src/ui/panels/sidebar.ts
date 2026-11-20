@@ -2,6 +2,8 @@
 import { workingScaleFor } from '../../modules/imagePreprocess.js';
 import { logicalCores, wasmThreadsFor } from '../../modules/onnxInference.js';
 import { backupStatus, readBackupRecords } from '../backup.js';
+import { RETENTION_CHOICES, siteExpiry, siteLastUsed, siteRetention } from '../../modules/retention.js';
+import { RETENTION_EXPLAINED_KEY, readFlag, readRetentionSince } from '../prefs.js';
 import type { readCpuThreadPref } from '../cpuThreads.js';
 import { helpButton } from '../help.js';
 import { defaultAnalysisParams, type AppState } from '../state.js';
@@ -58,6 +60,7 @@ export function renderSidebarHtml(state: AppState, view: SidebarView): string {
 
   const guide = view.guideHtml;
   return `
+    ${retentionBannerHtml(state)}
     ${guide ? `<div class="panel-section">${guide}</div>` : ''}
     <div class="panel-section">
       <div class="panel-header">
@@ -314,25 +317,85 @@ export function formatBytes(n: number): string {
   return `${Math.round(n / 1e3)} kB`;
 }
 
-/** "Last backed up" line with a Back up now button, and the browser storage status. */
+const fmtDate = (ms: number): string => new Date(ms).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+
+/**
+ * Site storage line: when results were last downloaded (with "Download results…"), until when
+ * the site stays in this browser (with "Keep longer"), how long sites are kept, and the
+ * browser storage status.
+ */
 export function backupLineHtml(state: AppState, analysedCount: number, storageInfo: StorageInfo | null): string {
   const site = getActiveSite(state);
   if (!site) return '';
-  const status = backupStatus(readBackupRecords()[site.siteId], analysedCount > 0);
+  const info = readBackupRecords()[site.siteId];
+  const status = backupStatus(info, analysedCount > 0);
+  const days = state.retentionDays;
+  const expiresAt = siteExpiry(siteLastUsed(site, info, readRetentionSince()), days);
   const storage = storageInfo
     ? `<span class="field-hint">Browser storage: ${formatBytes(storageInfo.usage)} used${storageInfo.quota > 0 ? ` of ${formatBytes(storageInfo.quota)}` : ''} · ${
-        storageInfo.persisted ? 'protected from automatic clearing' : 'the browser may clear it if space runs low'
-      } ${helpButton('backup')}</span>`
+        storageInfo.persisted ? 'the browser will not clear it on its own' : 'the browser may clear it if space runs low'
+      }</span>`
     : '';
-  if (analysedCount === 0 && status.backedUpAt === null) return storage ? `<div class="backup-line">${storage}</div>` : '';
+  const keepFor = `<label class="field-hint row" style="gap:6px;align-items:center;">Keep sites in this browser for
+      <select class="select select-xs" id="retention-days" aria-label="How long sites stay in this browser after their last use">
+        ${RETENTION_CHOICES.map((d) => `<option value="${d}" ${d === days ? 'selected' : ''}>${d === 0 ? 'until I delete them' : `${d} days`}</option>`).join('')}
+      </select> after last use ${helpButton('backup')}</label>`;
+  // A site without results yet: only the storage choice and status.
+  if (analysedCount === 0 && status.backedUpAt === null) return `<div class="backup-line">${keepFor}${storage}</div>`;
   return `<div class="backup-line ${status.needsBackup ? 'needs-backup' : ''}">
     <div class="row" style="justify-content:space-between;gap:6px;">
-      <span>${status.needsBackup ? '⚠ ' : ''}Last backed up: ${esc(status.ago)}${status.needsBackup && status.backedUpAt !== null ? ' (changed since)' : ''}</span>
-      <button type="button" class="btn btn-sm ${status.needsBackup ? 'btn-primary' : ''}" data-export="site-archive" title="Save this site (photos and results) as a .webgrainy project file">Back up now</button>
+      <span>${status.needsBackup ? '⚠ ' : ''}Results downloaded: ${esc(status.ago)}${status.needsBackup && status.backedUpAt !== null ? ' (changed since)' : ''}</span>
+      <button type="button" class="btn btn-sm ${status.needsBackup ? 'btn-primary' : ''}" data-action="open-download-results" title="Download every result file of this site as one .zip" ${analysedCount > 0 ? '' : 'disabled'}>Download results…</button>
     </div>
-    ${status.needsBackup ? '<span class="field-hint">Your work is stored only in this browser. Save a project file to keep it safe or move it to another computer.</span>' : ''}
+    ${
+      expiresAt !== null
+        ? `<div class="row" style="justify-content:space-between;gap:6px;">
+            <span class="field-hint">Stored in this browser until ${esc(fmtDate(expiresAt))}</span>
+            <button type="button" class="btn btn-xs" data-action="keep-site-longer" title="Keep this site for another ${days} days from today">Keep longer</button>
+          </div>`
+        : '<span class="field-hint">Kept in this browser until you delete it.</span>'
+    }
+    ${status.needsBackup ? '<span class="field-hint">This browser is a working space, not an archive: download your results to keep them.</span>' : ''}
+    ${keepFor}
     ${storage}
   </div>`;
+}
+
+/**
+ * Top-of-panel notices: how storage works (until dismissed), what was just removed, and the
+ * sites to be removed within a few days.
+ */
+export function retentionBannerHtml(state: AppState, now = Date.now(), since = readRetentionSince(now)): string {
+  const parts: string[] = [];
+  const days = state.retentionDays;
+  if (!readFlag(RETENTION_EXPLAINED_KEY)) {
+    parts.push(`<div class="basis-banner" role="note">
+      <strong>Your photos and results are kept in this browser for up to ${days > 0 ? `${days} days` : 'as long as you keep them'} after you last use a site.</strong>
+      ${days > 0 ? 'After that the site is removed from this browser. ' : ''}Use <em>Download results</em> (Site panel) to keep your results on your computer. The browser may also clear its storage sooner on its own (Safari after 7 days without a visit, unless the app is installed).
+      <div class="row" style="margin-top:6px;"><button type="button" class="btn btn-xs" data-action="dismiss-retention-explained">Got it</button> ${helpButton('backup')}</div>
+    </div>`);
+  }
+  if (state.retentionNotice) {
+    parts.push(`<div class="warning-banner" role="status">${esc(state.retentionNotice)}
+      <div class="row" style="margin-top:6px;"><button type="button" class="btn btn-xs" data-action="dismiss-retention-notice">OK</button></div></div>`);
+  }
+  if (days > 0) {
+    const { soon } = siteRetention(state.sites, readBackupRecords(), days, now, since);
+    if (soon.length > 0) {
+      parts.push(`<div class="warning-banner" role="alert"><strong>To be removed from this browser soon:</strong>
+        ${soon
+          .map(({ site, expiresAt, daysLeft }) => `<div class="row" style="justify-content:space-between;gap:6px;margin-top:4px;">
+            <span>${esc(site.name)}: ${esc(fmtDate(expiresAt))} (${daysLeft <= 1 ? 'within a day' : `in ${daysLeft} days`})</span>
+            ${
+              site.siteId === state.activeSiteId
+                ? '<span class="row" style="gap:4px;"><button type="button" class="btn btn-xs btn-primary" data-action="open-download-results">Download results…</button><button type="button" class="btn btn-xs" data-action="keep-site-longer">Keep longer</button></span>'
+                : `<button type="button" class="btn btn-xs" data-action="open-site" data-site-id="${esc(site.siteId)}" title="Open it to download its results or keep it longer">Open</button>`
+            }
+          </div>`)
+          .join('')}</div>`);
+    }
+  }
+  return parts.length > 0 ? `<div class="panel-section">${parts.join('')}</div>` : '';
 }
 
 /** "8 photos · 6 analysed · 2 not calibrated · 1 failed": each part filters the list. */

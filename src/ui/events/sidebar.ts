@@ -1,4 +1,7 @@
 /** Left panel & landing page events: sites, photos, the guide, landing workflow tabs, batch buttons and analysis settings. */
+import { parseRetentionDays } from '../../modules/retention.js';
+import { markSiteUsed } from '../backup.js';
+import { RETENTION_EXPLAINED_KEY, writeFlag, writeRetentionDays } from '../prefs.js';
 import type { PhotoRecord, SiteRecord } from '../../modules/projectStorage.js';
 import { parseParamInput } from '../savedSettings.js';
 import { defaultAnalysisParams, type EditorToolMode } from '../state.js';
@@ -120,6 +123,29 @@ export const sidebarActions: Record<string, ActionHandler> = {
   },
   'run-batch': (_el, ctx) => void ctx.actions.runBatch(),
   'cancel-batch': (_el, ctx) => ctx.actions.cancelBatch(),
+  'open-download-results': (_el, ctx) => {
+    ctx.store.setState({ activeModal: 'download-results' });
+  },
+  'download-results': (_el, ctx) => {
+    const st = ctx.store.getState();
+    if (st.downloadingResults) return;
+    void ctx.ui.downloadResults?.(st.downloadIncludeProject);
+  },
+  'keep-site-longer': (_el, ctx) => {
+    const st = ctx.store.getState();
+    const site = getActiveSite(st);
+    if (!site) return;
+    markSiteUsed(site.siteId);
+    ctx.ui.renderSidebar();
+    ctx.store.setState({
+      statusMessage: st.retentionDays > 0 ? `${site.name} will be kept for another ${st.retentionDays} days from today.` : `${site.name} is kept until you delete it.`,
+    });
+  },
+  'dismiss-retention-notice': (_el, ctx) => ctx.store.setState({ retentionNotice: null }),
+  'dismiss-retention-explained': (_el, ctx) => {
+    writeFlag(RETENTION_EXPLAINED_KEY, true);
+    ctx.ui.renderSidebar();
+  },
   'reload-stale': (_el, ctx) => {
     if (ctx.store.getState().batchRunning) return;
     ctx.ui.reloadPage?.();
@@ -211,6 +237,19 @@ function updatePhoto(ctx: EventContext, pid: string, change: Partial<PhotoRecord
 export function handleSidebarChange(target: ControlLike, ctx: EventContext): boolean {
   if (target.id === 'site-select') {
     void ctx.actions.loadSiteData(target.value);
+    return true;
+  }
+  if (target.id === 'retention-days') {
+    const days = parseRetentionDays(target.value);
+    writeRetentionDays(days);
+    ctx.store.setState({
+      retentionDays: days,
+      statusMessage: days > 0 ? `Sites are now kept in this browser for ${days} days after their last use.` : 'Sites are now kept in this browser until you delete them.',
+    });
+    return true;
+  }
+  if (target.id === 'download-include-project' && isInput(target)) {
+    ctx.store.setState({ downloadIncludeProject: target.checked === true });
     return true;
   }
   if (isInput(target) && target.dataset['photoFacies']) {

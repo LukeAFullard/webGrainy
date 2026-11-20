@@ -563,7 +563,7 @@ SHA-256, all settings, site name) so results can be reproduced.
 | **Site Summary JSON** | Everything above, plus the convergence series and per-photo jackknife detail, in one structured file. |
 | **Pooled Grains CSV** | One row per grain inside the ROI (border grains left out) from all included photos: size (px and mm), axes, Feret widths, orientation, perimeter, circularity, aspect ratio, elongation, convexity/solidity, 2D sphericity. `included_in_stats` says whether the grain counts in the site statistics, and `exclusion_reason` why not (`below_px_cutoff` or `below_mm_cutoff`); the rows marked `true` reproduce the site D-values. |
 | **Printable SVG PSD Figure** | The grain-size curve with confidence band, for reports. |
-| **.webgrainy.json archive** | The whole project (photos, scale, ROIs, results) to reopen later or share. |
+| **.webgrainy archive** | The whole project (photos, scale, ROIs, results) to reopen later or share. **Download results…** in the Site panel gives every result file in one .zip, optionally with this project file. |
 
 **Charts:** every chart on the right-hand panel has **SVG** and **PNG** buttons. The file is
 drawn on a white background for reports (PNG at 3× resolution) and carries the same
@@ -593,15 +593,28 @@ Use its button, or Ctrl+P / ⌘P, to print it or save it as a PDF. It contains:
 Its numbers are the same as in the Site Summary CSV. If pop-ups are blocked, the report is
 downloaded as an HTML file instead: open it and print it from the browser.
 
-### Backups: your work lives only in this browser
+### Your results: download them, the browser only keeps them for a while
 
-Photos and results are stored in this browser's storage on this computer, not online.
-Clearing browsing data, a private window, or the browser freeing space can delete them.
-The **Site** panel shows **Last backed up** for the open site. It turns into a warning when
-the site has results that changed since its last backup (or was never backed up).
-**Back up now** saves the `.webgrainy.json` project (the same file as *Export → .webgrainy.json
-archive*). Below it, the storage line shows how much space is used and whether the browser
-agreed to protect it from automatic clearing.
+webGrainy is a working space, not an archive. Photos and results are stored in this browser
+while you work, and a site is **removed from this browser after a number of days without use**
+(30 by default; choose 7, 14, 30 or 90 days, or *until I delete them*, in the **Site** panel).
+Opening a site, changing it, or **Keep longer** restarts the count. Keep your original photos
+in your own folders and download your results:
+
+- **Download results…** (Site panel) saves one `.zip` with every result file of the site:
+  site summary (CSV and JSON), pooled grains, grain-size curve, printable report, and for each
+  photo its grains, summary, label mask and outlines, with a `README.txt` describing the files.
+- Tick **Include the project file with the photos** to add a `.webgrainy` project that reopens
+  the site in webGrainy later (**Open**). It is off by default: it adds the photos' size, and
+  photos can carry GPS locations. Without it, the site cannot be reopened once removed.
+- The Site panel shows **Results downloaded** (a warning when the site changed since) and
+  **Stored in this browser until** a date. Three days before a site is removed, a warning lists
+  it with **Download results…** and **Keep longer**; afterwards a notice says what was removed.
+- Removal happens when the app is open (a closed page cannot run). A site open in any tab is
+  never removed. Sites from before this feature start their count on its first use.
+- webGrainy asks the browser not to clear its storage on its own; the storage line says
+  whether it agreed. Browsers can still clear it sooner: Safari removes website data after
+  7 days without a visit unless the app is installed, and private windows keep nothing.
 
 ### Working with many photos
 

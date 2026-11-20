@@ -59,6 +59,8 @@ export interface EventContext {
     applyUpdate?(): boolean;
     /** Reloads the page (after a newer version took over in another tab). */
     reloadPage?(): void;
+    /** Builds and saves the open site's results .zip (optionally with the project file). */
+    downloadResults?(includeProject: boolean): Promise<void>;
     downloadChart(id: string, format: 'svg' | 'png'): Promise<void>;
     download(blob: Blob, filename: string): void;
     /** Opens the printable site report in a new tab (or downloads it if pop-ups are blocked). */

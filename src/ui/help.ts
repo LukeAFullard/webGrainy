@@ -157,11 +157,11 @@ export const HELP_TOPICS = {
     when: 'Set it when the photos have no camera date, when the camera clock was wrong, or when photos from several days belong to one survey.',
   },
   backup: {
-    title: 'Backups and browser storage',
+    title: 'Results, downloads and browser storage',
     group: 'Site statistics',
-    what: 'Your photos and results are stored only in this browser, on this computer. Clearing browsing data, a private window, or the browser freeing space can delete them. "Back up now" saves the open site (photos, results, scale, ROI and edits) as one .webgrainy project file; Open loads it again here or on another computer (older .webgrainy.json backups open too). "Last backed up" turns into a warning when the site has changed since its last backup.',
-    default: 'webGrainy asks the browser to protect its storage from automatic clearing; the storage line says whether the browser agreed',
-    when: 'Back up after each analysis session and before clearing browsing data, changing computers, or uninstalling the app.',
+    what: 'webGrainy keeps your photos and results in this browser only while you work: a site is removed from this browser after the chosen number of days without use (opening it, changing it or "Keep longer" restarts the count), so the browser does not fill up with photos. Removal happens when the app is opened; a site open in any tab is never removed, and a warning appears 3 days before. "Download results…" saves every result file of the site in one .zip: site summaries, pooled grains, the grain-size curve and printable report, and for each photo its grains, summary, label mask and outlines, with a README. Tick "Include the project file" to add a .webgrainy file with the photos, which reopens the site in webGrainy later (Open). "Results downloaded" turns into a warning when the site has changed since its last download.',
+    default: 'Sites are kept 30 days after last use. webGrainy asks the browser not to clear its storage on its own; the storage line says whether it agreed. Browsers can still clear it sooner (e.g. Safari after 7 days without a visit, unless the app is installed).',
+    when: 'Download the results after each analysis session; keep your original photos in your own folders. Choose "until I delete them" only if you manage the browser storage yourself.',
   },
   skipTilesOutsideRoi: {
     title: 'Skip areas outside the ROI',
