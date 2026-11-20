@@ -125,3 +125,21 @@ describe('project archive v2', () => {
     await expect(importProjectArchive(tampered, { indexedDB: createProjectMockIDB() })).rejects.toThrow(/invalid byte reference/);
   });
 });
+
+describe('archive limits match the analysis settings', () => {
+  it('a project analysed with a large border margin (engine allows up to 1000 px) round-trips', async () => {
+    const { AnalysisSession } = await import('../src/modules/analysisSession.js');
+    const { exportProjectArchive, importProjectArchive, getPhotoResult, saveSite, savePhoto, savePhotoResult } = await import('../src/modules/projectStorage.js');
+    const { createProjectMockIDB } = await import('./helpers/projectMockIdb.js');
+    const { squareGrainSession } = await import('./helpers/squareSession.js');
+    const sess = AnalysisSession.fromSerialized({ ...squareGrainSession([20, 30]).toSerialized(), borderMargin: 300 });
+    const opts = { indexedDB: createProjectMockIDB() };
+    await saveSite({ siteId: 'S', name: 'S', createdAt: 0, updatedAt: 0, options: { poolingMode: 'physical-area' }, photoOrder: ['p'] }, opts);
+    await savePhoto({ photoId: 'p', siteId: 'S', label: 'p', imageBlob: new Blob([new Uint8Array(8)], { type: 'image/png' }), width: 600, height: 600, addedAt: 0, included: true }, opts);
+    await savePhotoResult({ photoId: 'p', status: 'done', serializedSession: sess.toSerialized(), updatedAt: 0 }, opts);
+    const target = { indexedDB: createProjectMockIDB() };
+    const siteId = await importProjectArchive(await exportProjectArchive('S', opts), target);
+    expect(siteId).toBe('S');
+    expect((await getPhotoResult('p', target))?.serializedSession?.borderMargin).toBe(300);
+  });
+});

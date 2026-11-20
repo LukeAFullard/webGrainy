@@ -682,8 +682,10 @@ function validateArchivedSession(
     throw new ArchiveValidationError(`${ctx}: excludeBorder must be boolean.`);
   }
   const bm = ss['borderMargin'];
-  if (typeof bm !== 'number' || !Number.isInteger(bm) || bm < 0 || bm > 256) {
-    throw new ArchiveValidationError(`${ctx}: borderMargin must be an integer in [0, 256].`);
+  // Same limit as the post-processing options (validatePostProcessOptions), so every project
+  // the engine can produce can be restored.
+  if (typeof bm !== 'number' || !Number.isInteger(bm) || bm < 0 || bm > 1000) {
+    throw new ArchiveValidationError(`${ctx}: borderMargin must be an integer in [0, 1000].`);
   }
   validateCalibration(ss['calibration'], ctx);
 
