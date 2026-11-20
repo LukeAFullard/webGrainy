@@ -143,3 +143,21 @@ describe('archive limits match the analysis settings', () => {
     expect((await getPhotoResult('p', target))?.serializedSession?.borderMargin).toBe(300);
   });
 });
+
+describe('imported places join existing places', () => {
+  it('reuses an existing place spelling (case and spacing ignored) and tidies the name', async () => {
+    const { exportProjectArchive, importProjectArchive, getSite, saveSite, savePhoto } = await import('../src/modules/projectStorage.js');
+    const { createProjectMockIDB } = await import('./helpers/projectMockIdb.js');
+    const src = { indexedDB: createProjectMockIDB() };
+    await saveSite({ siteId: 'NEW', name: 'Spring', createdAt: 0, updatedAt: 0, options: { poolingMode: 'physical-area' }, photoOrder: ['p'], place: '  rakaia   REACH 3 ' }, src);
+    await savePhoto({ photoId: 'p', siteId: 'NEW', label: 'p', imageBlob: new Blob([new Uint8Array(8)], { type: 'image/png' }), width: 10, height: 10, addedAt: 0, included: true }, src);
+    const dst = { indexedDB: createProjectMockIDB() };
+    await saveSite({ siteId: 'OLD', name: 'Autumn', createdAt: 0, updatedAt: 0, options: { poolingMode: 'physical-area' }, photoOrder: [], place: 'Rakaia reach 3' }, dst);
+    const id = await importProjectArchive(await exportProjectArchive('NEW', src), dst);
+    expect((await getSite(id, dst))?.place).toBe('Rakaia reach 3');
+    // A new place is kept, tidied.
+    const dst2 = { indexedDB: createProjectMockIDB() };
+    const id2 = await importProjectArchive(await exportProjectArchive('NEW', src), dst2);
+    expect((await getSite(id2, dst2))?.place).toBe('rakaia REACH 3');
+  });
+});

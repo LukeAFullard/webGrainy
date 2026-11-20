@@ -3,6 +3,7 @@ import type {
   CalibrationResult,
   SerializedAnalysisSession,
 } from '../types/index.js';
+import { placeName } from './sitePlaces.js';
 import { isIsoDate } from './surveyDate.js';
 import type { ImageBufferLike } from './imagePreprocess.js';
 import type { AnalysisSession, ImageGrainsEngine } from './pipelineController.js';
@@ -906,6 +907,18 @@ export async function importProjectArchive(
     for (const r of decodedResults) {
       r.photoId = idMap.get(r.photoId) ?? r.photoId;
     }
+  }
+
+  // Tidy the place name and reuse an existing place's spelling (case and spacing ignored),
+  // as the Site panel does, so an imported survey joins its place's other surveys.
+  const importedPlace = placeName(site.place);
+  if (importedPlace === null) {
+    delete (site as { place?: string }).place;
+  } else {
+    const existingPlace = (await listSites(options))
+      .map((x) => placeName(x.place))
+      .find((p) => p !== null && p.toLowerCase() === importedPlace.toLowerCase());
+    site = { ...site, place: existingPlace ?? importedPlace };
   }
 
   // Every imported photo belongs to the imported site (an inconsistent archive would

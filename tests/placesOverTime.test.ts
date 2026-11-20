@@ -115,6 +115,21 @@ describe('comparison over time and between sites', () => {
     expect(csv).toContain('site,One 2024,bootstrap_mode,single-photo-grain-fallback,mode');
   });
 
+  it('follows a place over time whatever its case or spacing', () => {
+    const five = (id: string, size: number) => [0, 1, 2, 3, 4].map((k) => photo(`${id}${k}`, size + (k % 3), { mmPerPx: 1 }));
+    const cmp = computeComparedSites(
+      [
+        entry('r1', 'Survey 1', five('r1p', 40), { place: 'Reach A', surveyDate: '2024-05-01' }),
+        entry('r2', 'Survey 2', five('r2p', 30), { place: '  reach   a ', surveyDate: '2025-05-01' }),
+      ],
+      opts,
+    );
+    expect(cmp.map((s) => s.place)).toEqual(['Reach A', 'Reach A']);
+    const ch = surveyChanges(cmp);
+    expect(ch).toHaveLength(1);
+    expect(ch[0]).toMatchObject({ place: 'Reach A', from: 'Survey 1', to: 'Survey 2' });
+  });
+
   it('tests D16 and D84 as well as D50 between sites', () => {
     const cmp = computeComparedSites([entry('a', 'Fine', [photo('f', 20, { mmPerPx: 1 })]), entry('b', 'Coarse', [photo('c', 44, { mmPerPx: 1 })])], opts);
     for (const k of ['D16', 'D50', 'D84'] as const) {

@@ -8,6 +8,7 @@
  * screening tool in the spirit of Eaton et al. (2019, GSDtools), not a replacement for a
  * full two-sample bootstrap.
  */
+import { placeName } from './sitePlaces.js';
 import { siteSurveyDate } from './surveyDate.js';
 import { AnalysisSession } from './analysisSession.js';
 import { getPhotoResult, listSitePhotos, type ProjectStorageOptions } from './projectStorage.js';
@@ -127,11 +128,22 @@ export function settingsMismatches(sites: readonly ComparedSite[]): string[] {
  * all of them, so differences are not just different truncation.
  */
 export function computeComparedSites(sites: readonly SiteForComparison[], options: SiteAnalysisOptions): ComparedSite[] {
+  // One spelling per place (case and spacing ignored, first spelling kept), as in the site
+  // list, so "Reach A" and "reach  a" are followed over time as one place.
+  const spelling = new Map<string, string>();
+  const canonicalPlace = (raw: string | undefined): string | null => {
+    const p = placeName(raw);
+    if (p === null) return null;
+    const key = p.toLowerCase();
+    if (!spelling.has(key)) spelling.set(key, p);
+    return spelling.get(key)!;
+  };
+  const places = sites.map((s) => canonicalPlace(s.place));
   const run = (opts: SiteAnalysisOptions): ComparedSite[] =>
     sites.map((s, i) => {
       const color = s.color ?? COMPARE_COLORS[i % COMPARE_COLORS.length]!;
       const { date, source: dateSource } = siteSurveyDate(s.surveyDate, s.inputs.map((p) => p.metadata?.timestamp));
-      const place = s.place?.trim() ? s.place.trim() : null;
+      const place = places[i]!;
       const base = { siteId: s.siteId, name: s.name, color, date, dateSource, place, analysisSettings: analysisSettingsOf(s.inputs) };
       if (!s.inputs.some((p) => p.included)) {
         return { ...base, report: null, error: 'No analysed photos' };
