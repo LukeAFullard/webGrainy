@@ -19,7 +19,7 @@ export async function prepare(d) {
 
 export async function run(d) {
   const { page } = d;
-  await d.card('webGrainy tutorial 5', title, 'About 90 seconds · no sound');
+  await d.card('webGrainy tutorial 5', title, 'About a minute · no sound');
 
   await d.ring(page.locator('.site-place').first());
   await d.caption('This survey of <b>Example beach</b> was done in March. Now add the September survey of the same place.');

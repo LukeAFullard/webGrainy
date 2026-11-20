@@ -23,7 +23,7 @@ export async function prepare(d) {
 
 export async function run(d) {
   const { page } = d;
-  await d.card('webGrainy tutorial 6', title, 'About 90 seconds · no sound');
+  await d.card('webGrainy tutorial 6', title, 'About 80 seconds · no sound');
 
   await d.ring('[data-scale-readout]');
   await d.caption('This photo is a <b>GeoTIFF</b> (an example, at a made-up location). Its scale was read from the georeferencing, so no ruler was needed.');

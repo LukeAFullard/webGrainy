@@ -14,7 +14,7 @@ export async function prepare(d) {
 
 export async function run(d) {
   const { page } = d;
-  await d.card('webGrainy tutorial 4', title, 'About 90 seconds · no sound');
+  await d.card('webGrainy tutorial 4', title, 'About a minute · no sound');
 
   await d.caption('A <b>site</b> is one survey: photos from one place on one day. Give it a name you will recognise.', { hold: 0 });
   d.answerPrompt('Example beach, upper bar');
