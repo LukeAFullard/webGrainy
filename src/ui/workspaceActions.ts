@@ -9,7 +9,7 @@ import type { ImageGrainsEngine } from '../modules/engine.js';
 import * as projectStorage from '../modules/projectStorage.js';
 import type { PhotoRecord, SiteRecord } from '../modules/projectStorage.js';
 import { buildSiteInputs, computeWorkspaceReports, effectiveRoi } from '../modules/siteWorkspace.js';
-import type { SitePhotoInput } from '../modules/siteAnalysis.js';
+import type { SiteAnalysisOptions, SitePhotoInput } from '../modules/siteAnalysis.js';
 import {
   COMPARE_COLORS,
   computeComparedSites,
@@ -93,6 +93,8 @@ export interface WorkspaceDeps {
   /** Engine passed to the batch runner (the real one in the app). */
   batchEngine: Parameters<WorkspaceStorage['runSiteBatch']>[0]['engine'];
   storage?: WorkspaceStorage;
+  /** Tells other open tabs that these sites / photos (records or results) changed. */
+  notifyRecords?: (siteIds: string[], photoIds: string[]) => void;
   loadStoredSiteInputs?: typeof loadStoredSiteInputs;
   checkStorageQuota?: () => Promise<StorageQuotaInfo>;
   images: ImageIo;
@@ -160,6 +162,89 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
     }
   }
 
+  /** Reads a photo's stored result into the session / status / error maps. */
+  async function loadPhotoResult(
+    p: PhotoRecord,
+    siteOptions: SiteAnalysisOptions,
+    sessions: Map<string, AnalysisSession>,
+    photoStatuses: Map<string, 'pending' | 'running' | 'done' | 'error'>,
+    photoErrors: Map<string, string>,
+  ): Promise<void> {
+    sessions.delete(p.photoId);
+    photoErrors.delete(p.photoId);
+    const res = await storage.getPhotoResult(p.photoId);
+    if (!res) {
+      photoStatuses.set(p.photoId, 'pending');
+      return;
+    }
+    photoStatuses.set(p.photoId, res.status === 'running' ? 'pending' : res.status);
+    if (res.errorMessage) photoErrors.set(p.photoId, res.errorMessage);
+    if (res.serializedSession) {
+      try {
+        const sess = AnalysisSession.fromSerialized(res.serializedSession);
+        if (p.calibration) sess.setCalibration(p.calibration);
+        if (p.roiConfig) sess.setRoiConfig(effectiveRoi(p, siteOptions));
+        sessions.set(p.photoId, sess);
+      } catch {
+        photoStatuses.set(p.photoId, 'pending');
+      }
+    }
+  }
+
+  /**
+   * Another tab changed these sites / photos: reload the site list, and the open site's
+   * changed photos (records and results) in place, keeping the open photo. Skipped while
+   * this tab analyses or enhances (its own writes would race); its next save still merges.
+   */
+  async function refreshFromStorage(notice: { siteIds: readonly string[]; photoIds: readonly string[] }): Promise<void> {
+    const sites = await storage.listSites();
+    const st = store.getState();
+    const siteId = st.activeSiteId;
+    const site = sites.find((x) => x.siteId === siteId);
+    if (!siteId || !site || st.batchRunning || enhancing) {
+      store.setState({ sites });
+      return;
+    }
+    const touched = notice.siteIds.includes(siteId) || notice.photoIds.some((id) => st.photos.some((p) => p.photoId === id));
+    if (!touched) {
+      store.setState({ sites });
+      return;
+    }
+    const siteOptions = { ...site.options };
+    const photos = await storage.listSitePhotos(siteId);
+    const changed = new Set(notice.photoIds);
+    const sessions = new Map(st.sessions);
+    const photoStatuses = new Map(st.photoStatuses);
+    const photoErrors = new Map(st.photoErrors);
+    const thumbUrls = new Map(st.thumbUrls);
+    const ids = new Set(photos.map((p) => p.photoId));
+    for (const [id, url] of st.thumbUrls) {
+      if (!ids.has(id)) {
+        revokeUrl(url);
+        thumbUrls.delete(id);
+        sessions.delete(id);
+        photoStatuses.delete(id);
+        photoErrors.delete(id);
+      }
+    }
+    for (const p of photos) {
+      const isNew = !st.thumbUrls.has(p.photoId);
+      if (isNew || changed.has(p.photoId)) {
+        if (!isNew && st.photos.find((x) => x.photoId === p.photoId)?.imageBlob !== p.imageBlob) {
+          revokeUrl(st.thumbUrls.get(p.photoId)!);
+          thumbUrls.set(p.photoId, createUrl(p.imageBlob));
+        } else if (isNew) {
+          thumbUrls.set(p.photoId, createUrl(p.imageBlob));
+        }
+        await loadPhotoResult(p, siteOptions, sessions, photoStatuses, photoErrors);
+      }
+    }
+    const activePhotoId = st.activePhotoId !== null && ids.has(st.activePhotoId) ? st.activePhotoId : (photos[0]?.photoId ?? null);
+    store.setState({ sites, photos, sessions, photoStatuses, photoErrors, thumbUrls, siteOptions, activePhotoId });
+    recomputeReports();
+    await deps.syncViewport(false);
+  }
+
   async function loadSiteData(siteId: string): Promise<void> {
     const state = store.getState();
     // Revoke the previous thumbnails only after the new ones are in state: revoking them
@@ -180,23 +265,7 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
 
     for (const p of photos) {
       thumbUrls.set(p.photoId, createUrl(p.imageBlob));
-      const res = await storage.getPhotoResult(p.photoId);
-      if (res) {
-        photoStatuses.set(p.photoId, res.status === 'running' ? 'pending' : res.status);
-        if (res.errorMessage) photoErrors.set(p.photoId, res.errorMessage);
-        if (res.serializedSession) {
-          try {
-            const sess = AnalysisSession.fromSerialized(res.serializedSession);
-            if (p.calibration) sess.setCalibration(p.calibration);
-            if (p.roiConfig) sess.setRoiConfig(effectiveRoi(p, nextSiteOptions));
-            sessions.set(p.photoId, sess);
-          } catch {
-            photoStatuses.set(p.photoId, 'pending');
-          }
-        }
-      } else {
-        photoStatuses.set(p.photoId, 'pending');
-      }
+      await loadPhotoResult(p, nextSiteOptions, sessions, photoStatuses, photoErrors);
     }
 
     store.setState({
@@ -501,6 +570,7 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
           const nextStatuses = new Map(prev.photoStatuses);
           nextStatuses.set(photo.photoId, 'done');
           deps.markSiteChanged(site.siteId);
+          deps.notifyRecords?.([site.siteId], [photo.photoId]);
           const nextErrors = new Map(prev.photoErrors);
           nextErrors.delete(photo.photoId);
           store.setState({
@@ -600,6 +670,7 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
       serializedSession: session.toSerialized(),
       updatedAt: Date.now(),
     });
+    deps.notifyRecords?.(owner ? [owner.siteId] : [], [photoId]);
   }
 
   async function applyCalibrationToActive(
@@ -963,6 +1034,7 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
     recomputeReports,
     refreshCapabilities,
     loadSiteData,
+    refreshFromStorage,
     createDefaultOrLoadSites,
     handleFilesAdded,
     runBatch,

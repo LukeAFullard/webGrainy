@@ -4,13 +4,14 @@ import {
 import {
   ImageGrainsEngine,
 } from '../modules/pipelineController.js';
+import * as projectStorage from '../modules/projectStorage.js';
 import {
   importSiteArchive,
   isProjectArchiveFileName,
-  listSites,
-  saveSite,
   type PhotoRecord,
+  type SiteRecord,
 } from '../modules/projectStorage.js';
+import { broadcastNoticeChannel, createSyncedRecords } from '../modules/recordSync.js';
 import { rectifyPerspective } from '../modules/roiAndRectify.js';
 import { grainPassesSizeCutoffs } from '../modules/sedimentStats.js';
 import {
@@ -228,7 +229,52 @@ engine.onProgress((stage, detail) => {
 let viewport: CanvasViewport | null = null;
 
 // ---- App actions (data changes), with the screen hooks they need ----
+// Photo and site records stay consistent when the app is open in several tabs: saves merge
+// with what another tab saved, and the other tabs refresh (modules/recordSync.ts).
+const TAB_ID = typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `tab-${Date.now()}-${Math.random()}`;
+const noticeChannel = broadcastNoticeChannel();
+const syncedRecords = createSyncedRecords(
+  {
+    listSites: () => projectStorage.listSites(),
+    getSite: (id) => projectStorage.getSite(id),
+    saveSite: (x) => projectStorage.saveSite(x),
+    listSitePhotos: (id) => projectStorage.listSitePhotos(id),
+    getPhoto: (id) => projectStorage.getPhoto(id),
+    savePhoto: (x) => projectStorage.savePhoto(x),
+    deletePhoto: (id) => projectStorage.deletePhoto(id),
+  },
+  {
+    tabId: TAB_ID,
+    channel: noticeChannel,
+    hooks: {
+      onMerged: (kind, rec) => {
+        const st = store.getState();
+        if (kind === 'photo') {
+          const p = rec as PhotoRecord;
+          store.setState({ photos: st.photos.map((x) => (x.photoId === p.photoId ? p : x)) });
+        } else {
+          const site = rec as SiteRecord;
+          store.setState({ sites: st.sites.map((x) => (x.siteId === site.siteId ? site : x)) });
+        }
+      },
+    },
+  },
+);
+const listSites = (): Promise<SiteRecord[]> => syncedRecords.listSites();
+const saveSite = (site: SiteRecord): Promise<void> => syncedRecords.saveSite(site);
+
 const actions = createWorkspaceActions({
+  storage: {
+    listSitePhotos: (id) => syncedRecords.listSitePhotos(id),
+    listSites,
+    getPhotoResult: (id) => projectStorage.getPhotoResult(id),
+    runSiteBatch: (o) => projectStorage.runSiteBatch(o),
+    savePhoto: (x) => syncedRecords.savePhoto(x),
+    savePhotoResult: (r) => projectStorage.savePhotoResult(r),
+    saveSite,
+    deletePhoto: (id) => syncedRecords.deletePhoto(id),
+  },
+  notifyRecords: (siteIds, photoIds) => syncedRecords.notify(siteIds, photoIds),
   store,
   engine,
   batchEngine: engine,
@@ -289,6 +335,13 @@ const actions = createWorkspaceActions({
   makeId,
   yieldToMain,
 });
+// Another tab saved records or results: refresh this tab's copy (serialised, latest wins).
+let refreshing: Promise<void> = Promise.resolve();
+noticeChannel?.onMessage((notice) => {
+  if (notice.from === TAB_ID) return;
+  refreshing = refreshing.then(() => actions.refreshFromStorage(notice)).catch(() => undefined);
+});
+
 const {
   savePhoto,
   recomputeReports,
@@ -1387,6 +1440,7 @@ function attachDelegatedHandlers(): void {
         .then(async (siteId) => {
           const sites = await listSites();
           store.setState({ sites, statusMessage: 'Imported project archive' });
+          syncedRecords.notify([siteId], []);
           await loadSiteData(siteId);
         })
         .catch((err: unknown) => {
@@ -1438,6 +1492,7 @@ function attachDelegatedHandlers(): void {
         .then(async (siteId) => {
           const sites = await listSites();
           store.setState({ sites, statusMessage: 'Imported project archive' });
+          syncedRecords.notify([siteId], []);
           await loadSiteData(siteId);
         })
         .catch((err: unknown) => {
@@ -1545,6 +1600,7 @@ function setupLaunchQueue(): void {
           const siteId = await importSiteArchive(archive);
           const sites = await listSites();
           store.setState({ sites, statusMessage: `Opened ${archive.name}` });
+          syncedRecords.notify([siteId], []);
           await loadSiteData(siteId);
         } catch (err) {
           store.setState({
