@@ -75,6 +75,7 @@ npm test                   # unit, numerical-parity and end-to-end tests (Vitest
 npm run build              # builds the static app into dist/
 npm run test:e2e:browser   # headless Chromium on dist/ with a real U-Net analysis
                            # (SMOKE_MODEL=cpsam for Cellpose-SAM)
+npm run test:e2e:sw        # service-worker updates with two builds and several tabs (dist/)
 npm run test:perf          # strict timing budgets (run on an idle machine)
 ```
 
