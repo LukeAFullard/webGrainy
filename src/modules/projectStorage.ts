@@ -682,8 +682,10 @@ function validateArchivedSession(
     throw new ArchiveValidationError(`${ctx}: excludeBorder must be boolean.`);
   }
   const bm = ss['borderMargin'];
-  if (typeof bm !== 'number' || !Number.isInteger(bm) || bm < 0 || bm > 256) {
-    throw new ArchiveValidationError(`${ctx}: borderMargin must be an integer in [0, 256].`);
+  // Same limit as the post-processing options (validatePostProcessOptions), so every project
+  // the engine can produce can be restored.
+  if (typeof bm !== 'number' || !Number.isInteger(bm) || bm < 0 || bm > 1000) {
+    throw new ArchiveValidationError(`${ctx}: borderMargin must be an integer in [0, 1000].`);
   }
   validateCalibration(ss['calibration'], ctx);
 
@@ -966,11 +968,13 @@ export interface BatchRunResult {
   failedPhotoIds: string[];
 }
 
+/**
+ * A cancellation, not a failure: only an AbortError counts. Engine errors whose message merely
+ * contains "abort" (e.g. onnxruntime-web's Emscripten "Aborted(...)" on out of memory) are
+ * real failures and must be recorded as such.
+ */
 function isAbortError(err: unknown): boolean {
-  return (
-    err instanceof Error &&
-    (err.name === 'AbortError' || err.message.toLowerCase().includes('abort'))
-  );
+  return typeof err === 'object' && err !== null && (err as { name?: unknown }).name === 'AbortError';
 }
 
 /**
@@ -1000,6 +1004,20 @@ export async function decodeWithinPixelLimit(
   const resizeHeight = Math.max(1, Math.floor(bmp.height * k));
   bmp.close();
   return createBitmap(blob, { resizeWidth, resizeHeight, resizeQuality: 'high' });
+}
+
+/**
+ * The engine error as recorded for the photo. onnxruntime-web reports running out of memory
+ * as an Emscripten abort ("Aborted(...)", or a bad_alloc / allocation failure); say so in words.
+ */
+export function describeEngineError(err: unknown): Error {
+  const e = err instanceof Error ? err : new Error(String(err));
+  if (/^(RuntimeError: )?Aborted\(|bad_alloc|out of memory|allocation failed/i.test(e.message)) {
+    return new Error(
+      `Out of memory during analysis (${e.message}). Try U-Net, a smaller image scale, or the INT8 Cellpose-SAM weights.`,
+    );
+  }
+  return e;
 }
 
 export async function runSiteBatch(
@@ -1129,6 +1147,12 @@ export async function runSiteBatch(
       completedPhotoIds.push(photo.photoId);
       opts.onPhotoComplete?.(photo, session);
     } catch (err) {
+      if (err instanceof Error && err.name === 'BuildMismatchError') {
+        // A newer version took over in another tab: nothing is wrong with the photo. Leave it
+        // pending and stop; the message tells the user to reload.
+        await savePhotoResult({ photoId: photo.photoId, status: 'pending', updatedAt: Date.now() }, opts);
+        throw err;
+      }
       if (opts.signal?.aborted || isAbortError(err)) {
         aborted = true;
         await savePhotoResult(
@@ -1141,7 +1165,7 @@ export async function runSiteBatch(
         );
         break;
       }
-      const errorObj = err instanceof Error ? err : new Error(String(err));
+      const errorObj = describeEngineError(err);
       failedPhotoIds.push(photo.photoId);
       await savePhotoResult(
         {

@@ -58,8 +58,21 @@ self.addEventListener('install', (event) => {
 });
 
 self.addEventListener('message', (event) => {
-  if (event.data && event.data.type === 'SKIP_WAITING') {
+  const type = event.data && event.data.type;
+  if (type === 'SKIP_WAITING') {
+    // The user chose "Reload to update".
     self.skipWaiting();
+  } else if (type === 'SKIP_WAITING_IF_ALONE') {
+    // Automatic switch at page start-up: only when the asking page is the app's only tab.
+    // Otherwise other open tabs would be taken over and load this build's workers under
+    // their old code (and this activation would delete their cache).
+    event.waitUntil(
+      self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windows) => {
+        if (windows.length <= 1) return self.skipWaiting();
+        if (event.source) event.source.postMessage({ type: 'SKIP_WAITING_DEFERRED' });
+        return undefined;
+      }),
+    );
   }
 });
 

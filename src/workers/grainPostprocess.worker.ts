@@ -1,3 +1,4 @@
+import { BUILD_ID } from '../modules/buildId.js';
 import { flowsToMasksBrowser } from '../modules/postprocessCore.js';
 import type { WorkerRequest, WorkerResponse } from '../types/index.js';
 
@@ -52,6 +53,7 @@ export function handleWorkerMessage(
         type: 'result',
         requestId,
         result,
+        build: BUILD_ID,
       },
       [result.masks.buffer],
     );
@@ -62,6 +64,7 @@ export function handleWorkerMessage(
       type: 'error',
       requestId,
       message,
+      build: BUILD_ID,
     });
   }
 }

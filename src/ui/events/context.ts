@@ -57,6 +57,8 @@ export interface EventContext {
     scrollSidebarToTop(): void;
     /** Activate the waiting app version and reload; false if none waits or work is running. */
     applyUpdate?(): boolean;
+    /** Reloads the page (after a newer version took over in another tab). */
+    reloadPage?(): void;
     downloadChart(id: string, format: 'svg' | 'png'): Promise<void>;
     download(blob: Blob, filename: string): void;
     /** Opens the printable site report in a new tab (or downloads it if pop-ups are blocked). */

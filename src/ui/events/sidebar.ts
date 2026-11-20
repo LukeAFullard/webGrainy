@@ -120,6 +120,10 @@ export const sidebarActions: Record<string, ActionHandler> = {
   },
   'run-batch': (_el, ctx) => void ctx.actions.runBatch(),
   'cancel-batch': (_el, ctx) => ctx.actions.cancelBatch(),
+  'reload-stale': (_el, ctx) => {
+    if (ctx.store.getState().batchRunning) return;
+    ctx.ui.reloadPage?.();
+  },
   'apply-update': (_el, ctx) => {
     if (ctx.ui.applyUpdate?.()) ctx.store.setState({ statusMessage: 'Updating webGrainy…' });
     else ctx.store.setState({ statusMessage: 'The update will be available when the current analysis finishes.' });

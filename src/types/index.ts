@@ -180,6 +180,8 @@ export type WorkerResponse =
       type: 'result';
       requestId: string;
       result: PostProcessResult;
+      /** Build of the worker code (see modules/buildId.ts). */
+      build?: string;
     }
   | {
       type: 'progress';
@@ -191,6 +193,7 @@ export type WorkerResponse =
       type: 'error';
       requestId: string;
       message: string;
+      build?: string;
     };
 
 export interface Point2D {

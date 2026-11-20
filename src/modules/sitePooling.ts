@@ -306,6 +306,26 @@ export function getGrainMmSize(
   return grain.bAxisMm;
 }
 
+/** Why a grain that passed the border and ROI rules is left out of the site statistics. */
+export type SiteCutoffReason = 'below_px_cutoff' | 'below_mm_cutoff';
+
+/**
+ * The site size-cutoff rule, shared by `analyzeSite` and the pooled grains CSV so they always
+ * agree: a grain is left out when its size (original-photo px) is below `minBaxisPx`, or its
+ * mm size is below the common cutoff. Returns null when the grain counts.
+ */
+export function siteCutoffReason(
+  grain: GrainMorphometrics,
+  sizeMetric: SizeMetric,
+  minBaxisPx: number,
+  dCutoffCommonMm: number | null,
+): SiteCutoffReason | null {
+  if (minBaxisPx > 0 && getGrainSize(grain, sizeMetric, 'px') < minBaxisPx) return 'below_px_cutoff';
+  const mmSize = getGrainMmSize(grain, sizeMetric);
+  if (dCutoffCommonMm !== null && mmSize !== undefined && mmSize < dCutoffCommonMm) return 'below_mm_cutoff';
+  return null;
+}
+
 export function computeSiteWentworth(
   photos: readonly PreparedPhoto[],
   poolingMode: PoolingMode,

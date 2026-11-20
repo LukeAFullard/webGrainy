@@ -21,7 +21,7 @@ export const PARAM_RANGES: Partial<Record<keyof UiAnalysisParams, [number, numbe
   cellprobThreshold: [-20, 20],
   minSize: [0, 1e7],
   maxGrainAreaFraction: [0, 1],
-  excludeBorderMargin: [0, 1000],
+  excludeBorderMargin: [0, 100],
   niter: [1, 10_000],
   minSeedDensity: [0, 1e6],
 };

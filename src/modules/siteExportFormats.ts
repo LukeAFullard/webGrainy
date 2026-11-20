@@ -2,12 +2,13 @@
  * Site export writers: summary CSV/JSON and pooled grains CSV.
  * Split out of siteAnalysis.ts, which re-exports the public parts.
  */
+import type { GrainMorphometrics } from '../types/index.js';
 import { extraStatsCsvRows } from './grainStatsExtra.js';
 import { computeExtendedMorphometrics, type ExtendedGrainMorphometrics } from './morphometricsExt.js';
 import { baseExportMetadata, csvCell, metadataCommentLines, metadataSummaryRows } from './provenance.js';
 import { filterGrainsByRoiAndExclusion } from './roiAndRectify.js';
 import { filterBorderGrains } from './sedimentStats.js';
-import { PSD_KEYS } from './sitePooling.js';
+import { PSD_KEYS, siteCutoffReason } from './sitePooling.js';
 import { photoProcessingHistory, type SitePhotoInput, type SiteAnalysisOptions, type SiteAnalysisReport } from './siteTypes.js';
 
 /**
@@ -70,6 +71,7 @@ export function buildSiteExportMetadata(
           sizeMetric: report.sizeMetric,
           unit: report.unit,
           bootstrapConfidenceLevel: report.bootstrapCi.confidenceLevel,
+          minBaxisPx: report.minBaxisPx,
           dCutoffCommonMm: report.dCutoffCommonMm,
         }
       : {}),
@@ -124,6 +126,7 @@ export function exportSiteSummaryCsv(
   );
   lines.push(`metadata,total_grain_count,${report.totalGrainCount},count`);
   lines.push(`metadata,valid_grain_count,${report.validGrainCount},count`);
+  lines.push(`metadata,min_b_axis_px,${report.minBaxisPx},px`);
   lines.push(
     `metadata,d_cutoff_common_mm,${report.dCutoffCommonMm ?? ''},mm`,
   );
@@ -278,7 +281,7 @@ export function exportSiteSummaryCsv(
  */
 export function exportPooledGrainsCsv(
   entries: readonly SitePhotoInput[],
-  _report?: SiteAnalysisReport,
+  report?: SiteAnalysisReport,
   options?: { metadata?: Record<string, unknown> },
 ): Blob {
   const header = [
@@ -311,6 +314,8 @@ export function exportPooledGrainsCsv(
     'max_feret_px',
     'min_feret_mm',
     'max_feret_mm',
+    'included_in_stats',
+    'exclusion_reason',
   ].join(',');
 
   const lines: string[] =
@@ -318,9 +323,21 @@ export function exportPooledGrainsCsv(
       ? [...metadataCommentLines(options.metadata), header]
       : [header];
 
+  // Same size-cutoff rule as the site statistics (rows already pass the border and ROI rules).
+  // Without a report the cutoffs are unknown and both columns are left empty.
+  const byId = new Map<number, GrainMorphometrics>();
+  const inclusion = (g: { id: number }): [string | boolean, string] => {
+    if (report === undefined) return ['', ''];
+    const grain = byId.get(g.id);
+    const reason = grain ? siteCutoffReason(grain, report.sizeMetric, report.minBaxisPx, report.dCutoffCommonMm) : null;
+    return [reason === null, reason ?? ''];
+  };
+
   for (const entry of entries) {
     if (!entry.included) continue;
     const res = entry.session.getResult();
+    byId.clear();
+    for (const g of res.grains) byId.set(g.id, g);
     const cal = entry.session.getCalibration();
     const mmPerPx = cal?.mmPerPx;
     const excludeBorder = entry.session.getExcludeBorder();
@@ -382,6 +399,7 @@ export function exportPooledGrainsCsv(
           g.maxFeretPx,
           g.minFeretMm ?? '',
           g.maxFeretMm ?? '',
+          ...inclusion(g),
         ].join(','),
       );
     }

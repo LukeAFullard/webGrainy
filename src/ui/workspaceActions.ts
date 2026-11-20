@@ -330,9 +330,16 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
    * appear as usual), then the others, whose results are saved for when they are opened or
    * compared.
    */
+  /** True (and says so) when a newer version took over this page: no new analyses. */
+  function refuseIfStale(): boolean {
+    if (!store.getState().staleBuild) return false;
+    store.setState({ statusMessage: STALE_BUILD_MESSAGE });
+    return true;
+  }
+
   async function runAllSites(): Promise<void> {
     const start = store.getState();
-    if (start.batchRunning || enhancing) return;
+    if (start.batchRunning || enhancing || refuseIfStale()) return;
     const activeId = start.activeSiteId;
     allSitesJobActive = true;
     job.acquireWakeLock();
@@ -431,7 +438,7 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
     lastBatchCancelled = false;
     const state = store.getState();
     const site = getActiveSite(state);
-    if (!site || state.batchRunning || enhancing) return;
+    if (!site || state.batchRunning || enhancing || refuseIfStale()) return;
 
     const controller = new AbortController();
     batchAbortController = controller;
@@ -743,7 +750,7 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
   let enhancing = false;
 
   async function enhanceActivePhoto(kind: EnhanceKind): Promise<void> {
-    if (enhancing || store.getState().batchRunning) return;
+    if (enhancing || store.getState().batchRunning || refuseIfStale()) return;
     if (!images.enhance) {
       store.setState({ statusMessage: 'Image enhancement is not available in this environment.' });
       return;
@@ -990,6 +997,10 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
 export const SITE_PHOTO_SOFT_LIMIT = 100;
 
 /** Browser implementation of `ImageIo.rectify` (canvas + perspective correction). */
+/** Shown when a newer version took over this page from another tab. */
+export const STALE_BUILD_MESSAGE =
+  'A newer version of webGrainy was installed in another tab. Reload this page before analysing (your data is kept).';
+
 export async function rectifyWithCanvas(
   image: Blob,
   corners: [Point2D, Point2D, Point2D, Point2D],

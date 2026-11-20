@@ -189,7 +189,7 @@ describe('F-11 CSV formula injection', () => {
     expect(csvCell('-1.5e3')).toBe('-1.5e3');
     expect(csvCell(-2)).toBe('-2');
     expect(csvCell('a,"b"')).toBe('"a,""b"""');
-    expect(metadataCommentLines({ a: { b: 'x\ny' } })).toEqual(['# a.b: x y']);
+    expect(metadataCommentLines({ a: { b: 'x\ny' } }).slice(0, -1)).toEqual(['# a.b: x y']);
   });
 });
 

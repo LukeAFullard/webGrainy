@@ -68,8 +68,9 @@ describe('comparison over time and between sites', () => {
   it('lists the change between consecutive surveys of each place (later / earlier), D16-D84', () => {
     const cmp = computeComparedSites(
       [
-        entry('a2', 'R3 2025', [photo('a2p', 24, { mmPerPx: 1 })], { place: 'R3', surveyDate: '2025-05-01' }),
-        entry('a1', 'R3 2024', [photo('a1p', 40, { mmPerPx: 1 })], { place: 'R3', surveyDate: '2024-05-01' }),
+        // Five photos per survey: enough for an interval and p-value.
+        entry('a2', 'R3 2025', [0, 1, 2, 3, 4].map((k) => photo(`a2p${k}`, 23 + k % 3, { mmPerPx: 1 })), { place: 'R3', surveyDate: '2025-05-01' }),
+        entry('a1', 'R3 2024', [0, 1, 2, 3, 4].map((k) => photo(`a1p${k}`, 39 + k % 3, { mmPerPx: 1 })), { place: 'R3', surveyDate: '2024-05-01' }),
         entry('b1', 'Other', [photo('b1p', 30, { mmPerPx: 1 })], { place: 'Elsewhere', surveyDate: '2024-06-01' }),
         entry('c1', 'Undated R3', [photo('c1p', 30, { mmPerPx: 1 })], { place: 'R3' }),
       ],
@@ -80,11 +81,38 @@ describe('comparison over time and between sites', () => {
     expect(ch[0]).toMatchObject({ place: 'R3', fromDate: '2024-05-01', toDate: '2025-05-01', from: 'R3 2024', to: 'R3 2025' });
     expect(ch[0]!.changes.D50.ratio).toBeLessThan(0.75); // finer in 2025
     expect(ch[0]!.changes.D50.p).toBeLessThan(0.05);
+    expect(ch[0]!.changes.D50.basis).toBe('photos');
     expect(ch[0]!.changes.D16.key).toBe('D16');
     expect(ch[0]!.changes.D84.ratioLo).toBeLessThan(ch[0]!.changes.D84.ratio);
     const csv = comparisonCsv(cmp, {});
     expect(csv).toContain('survey_change,R3: 2024-05-01 -> 2025-05-01,D50_ratio_later_over_earlier,');
     expect(csv).toContain('site,R3 2025,place,R3,text');
+  });
+
+  it('gives no interval or p-value for one-photo surveys, and flags surveys with few photos', () => {
+    const cmp = computeComparedSites(
+      [
+        entry('x1', 'One 2024', [photo('x1p', 40, { mmPerPx: 1 })], { place: 'P', surveyDate: '2024-05-01' }),
+        entry('x2', 'One 2025', [photo('x2p', 24, { mmPerPx: 1 })], { place: 'P', surveyDate: '2025-05-01' }),
+        entry('y1', 'Three', [0, 1, 2].map((k) => photo(`y1p${k}`, 30 + k, { mmPerPx: 1 })), { place: 'Q', surveyDate: '2024-05-01' }),
+        entry('y2', 'Three later', [0, 1, 2].map((k) => photo(`y2p${k}`, 26 + k, { mmPerPx: 1 })), { place: 'Q', surveyDate: '2025-05-01' }),
+      ],
+      opts,
+    );
+    const [p, q] = surveyChanges(cmp);
+    expect(p!.changes.D50.basis).toBe('single-photo');
+    expect(p!.changes.D50.ratio).toBeLessThan(0.75);
+    expect(Number.isNaN(p!.changes.D50.p)).toBe(true);
+    expect(Number.isNaN(p!.changes.D50.ratioLo)).toBe(true);
+    expect(q!.changes.D50.basis).toBe('few-photos');
+    expect(Number.isFinite(q!.changes.D50.p)).toBe(true);
+    const csv = comparisonCsv(cmp, {});
+    expect(csv).toContain('survey_change,P: 2024-05-01 -> 2025-05-01,D50_p_value_approx,,p');
+    expect(csv).toContain('survey_change,P: 2024-05-01 -> 2025-05-01,D50_test_basis,single-photo,label');
+    expect(csv).not.toContain('NaN');
+    expect(csv).toMatch(/warning,\d+,"?One 2024, One 2025: one photo only/);
+    expect(csv).toMatch(/Three \(3 photos\), Three later \(3 photos\): fewer than 5 photos/);
+    expect(csv).toContain('site,One 2024,bootstrap_mode,single-photo-grain-fallback,mode');
   });
 
   it('tests D16 and D84 as well as D50 between sites', () => {
