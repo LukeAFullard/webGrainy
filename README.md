@@ -35,6 +35,7 @@ Photos and results never leave your device. The only network requests are the on
   - Projects can be saved and reopened as `.webgrainy` files.
 
 A plain-language guide to every setting is in **[docs/SETTINGS_GUIDE.md](docs/SETTINGS_GUIDE.md)**.
+How every step works (models, outlines, measurements, statistics, uncertainty, comparisons), for writing up your methods, is in **[docs/METHODS.md](docs/METHODS.md)**.
 
 ---
 
