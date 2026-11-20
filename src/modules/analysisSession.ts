@@ -62,8 +62,10 @@ function rescaleGrainToOriginal(
   const invSq = inv * inv;
   return {
     ...grain,
-    centroidX: grain.centroidX * inv,
-    centroidY: grain.centroidY * inv,
+    // Pixel centres sit at integer coordinates in both images: working pixel x covers photo
+    // pixels [x / s, (x + 1) / s) (area resampling), so its centre is (x + 0.5) / s - 0.5.
+    centroidX: (grain.centroidX + 0.5) * inv - 0.5,
+    centroidY: (grain.centroidY + 0.5) * inv - 0.5,
     aAxisPx: grain.aAxisPx * inv,
     bAxisPx: grain.bAxisPx * inv,
     dEqPx: grain.dEqPx * inv,
@@ -291,7 +293,7 @@ export class AnalysisSession {
         workingWidth: wi.width,
         workingHeight: wi.height,
         effectiveScaleFactor: wi.effectiveScaleFactor,
-        coordinateSystem: 'original-image pixels (x right, y down); not georeferenced map coordinates',
+        coordinateSystem: 'original-image pixels, x right, y down. Outlines (GeoJSON, SVG): pixel corners at integer coordinates (pixel (0,0) spans 0 to 1). Centroids in the grain tables: pixel-index coordinates (centre of pixel (0,0) = 0,0). Not georeferenced map coordinates.',
         outlineStepPhotoPx: 1 / (wi.effectiveScaleFactor > 0 ? wi.effectiveScaleFactor : 1),
         outlineNote:
           'Outlines and masks are traced on the working image, so edges are stepped at outlineStepPhotoPx photo pixels. Analyse at a larger image scale for finer outlines.',

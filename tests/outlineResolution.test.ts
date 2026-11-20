@@ -36,6 +36,6 @@ describe('outline resolution warnings', () => {
   it("records the outline step in every export's metadata", () => {
     const meta = squareGrainSession([20], { scale: 0.25 }).getExportMetadata() as { image: Record<string, unknown> };
     expect(meta.image['outlineStepPhotoPx']).toBe(4);
-    expect(String(meta.image['coordinateSystem'])).toContain('not georeferenced');
+    expect(String(meta.image['coordinateSystem'])).toContain('Not georeferenced');
   });
 });

@@ -322,11 +322,11 @@ export function filterGrainsByRoiAndExclusion(
   for (const grain of grains) {
     const cx = Math.min(
       workingWidth - 1,
-      Math.max(0, Math.round(grain.centroidX * effectiveScaleFactor)),
+      Math.max(0, Math.round((grain.centroidX + 0.5) * effectiveScaleFactor - 0.5)),
     );
     const cy = Math.min(
       workingHeight - 1,
-      Math.max(0, Math.round(grain.centroidY * effectiveScaleFactor)),
+      Math.max(0, Math.round((grain.centroidY + 0.5) * effectiveScaleFactor - 0.5)),
     );
 
     if (validBedMask.valid[cy * workingWidth + cx] === 0) {
