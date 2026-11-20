@@ -28,7 +28,8 @@ import { decodeTiffBuffer, isSupportedImageFile, isTiffFile } from '../modules/t
 import { renderHelpModalHtml } from './help.js';
 import { wasmThreadsFor } from '../modules/onnxInference.js';
 import { GUIDE_HIDDEN_KEY, guideInputFrom, guideSteps, renderGuideHtml } from './onboarding.js';
-import { EXPORTED_ONCE_KEY, SKIP_LANDING_KEY, readFlag, writeFlag } from './prefs.js';
+import { EXPORTED_ONCE_KEY, SKIP_LANDING_KEY, readFlag, readRetentionDaysRaw, writeFlag } from './prefs.js';
+import { parseRetentionDays } from '../modules/retention.js';
 import { markSiteBackedUp, markSiteChanged } from './backup.js';
 import { ScreenWakeLock } from './wakeLock.js';
 import { DoneSignal, NOTIFY_PREF_KEY, requestNotifyPermission } from './doneSignal.js';
@@ -273,6 +274,7 @@ const actions = createWorkspaceActions({
     savePhotoResult: (r) => projectStorage.savePhotoResult(r),
     saveSite,
     deletePhoto: (id) => syncedRecords.deletePhoto(id),
+    deleteSite: (id) => projectStorage.deleteSite(id),
   },
   notifyRecords: (siteIds, photoIds) => syncedRecords.notify(siteIds, photoIds),
   store,
@@ -1623,12 +1625,21 @@ async function bootstrap(): Promise<void> {
   void refreshStorageInfo();
   renderAll(store.getState());
 
+  // How long sites stay in this browser (Site panel); read before sites are loaded, since
+  // start-up removes expired sites first.
+  store.setState({ retentionDays: parseRetentionDays(readRetentionDaysRaw()) });
+  // Ask the browser not to clear this site's storage on its own (Chrome may otherwise when
+  // the disk is low). Removal then follows the user's choice only.
+  void navigator.storage?.persist?.().then(() => refreshStorageInfo()).catch(() => undefined);
+
   await Promise.all([
     refreshCapabilities(),
     registerServiceWorker(),
     createDefaultOrLoadSites(),
   ]);
   setupLaunchQueue();
+  // A tab left open for days still removes sites past their date (hourly check).
+  setInterval(() => void actions.purgeExpiredSites().catch(() => undefined), 3_600_000);
 }
 
 void bootstrap();

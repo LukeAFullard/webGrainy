@@ -18,9 +18,13 @@ export interface SiteUseInfo {
   usedAt?: number;
 }
 
-/** Last time the site was used: opened, changed or kept longer (falls back to its record dates). */
-export function siteLastUsed(site: { createdAt: number; updatedAt: number }, info: SiteUseInfo | undefined): number {
-  return Math.max(site.createdAt || 0, site.updatedAt || 0, info?.changedAt ?? 0, info?.usedAt ?? 0);
+/**
+ * Last time the site was used: opened, changed or kept longer (falls back to its record
+ * dates). Never before `since`, when this browser first ran the retention feature, so sites
+ * that existed before it get the full period (and the warning) instead of vanishing at once.
+ */
+export function siteLastUsed(site: { createdAt: number; updatedAt: number }, info: SiteUseInfo | undefined, since = 0): number {
+  return Math.max(site.createdAt || 0, site.updatedAt || 0, info?.changedAt ?? 0, info?.usedAt ?? 0, since);
 }
 
 /** When the site will be removed (ms since epoch), or null when sites are kept. */
@@ -41,11 +45,12 @@ export function siteRetention<S extends { siteId: string; createdAt: number; upd
   info: Readonly<Record<string, SiteUseInfo | undefined>>,
   retentionDays: number,
   now = Date.now(),
+  since = 0,
 ): { due: Array<SiteRetention<S>>; soon: Array<SiteRetention<S>> } {
   const due: Array<SiteRetention<S>> = [];
   const soon: Array<SiteRetention<S>> = [];
   for (const site of sites) {
-    const expiresAt = siteExpiry(siteLastUsed(site, info[site.siteId]), retentionDays);
+    const expiresAt = siteExpiry(siteLastUsed(site, info[site.siteId], since), retentionDays);
     if (expiresAt === null) continue;
     const daysLeft = Math.max(0, Math.ceil((expiresAt - now) / DAY_MS));
     if (expiresAt <= now) due.push({ site, expiresAt, daysLeft: 0 });

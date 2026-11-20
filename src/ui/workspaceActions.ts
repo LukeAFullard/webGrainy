@@ -4,6 +4,10 @@
  * in-memory storage and no-op UI hooks. `main.ts` owns the DOM and calls these.
  */
 import type { CalibrationResult, Point2D, StorageQuotaInfo } from '../types/index.js';
+import { siteRetention } from '../modules/retention.js';
+import { forgetSite, formatAgo, markSiteUsed, readBackupRecords } from './backup.js';
+import { holdSiteLock, ifSiteNotOpen } from './siteLocks.js';
+import { readRetentionSince } from './prefs.js';
 import { AnalysisSession } from '../modules/analysisSession.js';
 import type { ImageGrainsEngine } from '../modules/engine.js';
 import * as projectStorage from '../modules/projectStorage.js';
@@ -29,7 +33,7 @@ import { toAnalysisConfig, type AppState, type AppStore } from './state.js';
 /** The storage functions the actions use (projectStorage by default). */
 export type WorkspaceStorage = Pick<
   typeof projectStorage,
-  'listSitePhotos' | 'listSites' | 'getPhotoResult' | 'runSiteBatch' | 'savePhoto' | 'savePhotoResult' | 'saveSite' | 'deletePhoto'
+  'listSitePhotos' | 'listSites' | 'getPhotoResult' | 'runSiteBatch' | 'savePhoto' | 'savePhotoResult' | 'saveSite' | 'deletePhoto' | 'deleteSite'
 >;
 
 /** The engine methods the actions use. */
@@ -95,6 +99,10 @@ export interface WorkspaceDeps {
   storage?: WorkspaceStorage;
   /** Tells other open tabs that these sites / photos (records or results) changed. */
   notifyRecords?: (siteIds: string[], photoIds: string[]) => void;
+  /** Runs `fn` only if no tab has the site open (default: Web Locks, see siteLocks.ts). */
+  ifSiteNotOpen?: (siteId: string, openHere: string | null, fn: () => Promise<void>) => Promise<boolean>;
+  /** Start of the retention clock in this browser (default: prefs.readRetentionSince). */
+  retentionSince?: () => number;
   loadStoredSiteInputs?: typeof loadStoredSiteInputs;
   checkStorageQuota?: () => Promise<StorageQuotaInfo>;
   images: ImageIo;
@@ -245,7 +253,41 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
     await deps.syncViewport(false);
   }
 
+  /**
+   * Removes sites not used for the chosen number of days (photos and results), except sites
+   * open in any tab, and says what was removed. Runs at start-up (before a site is opened)
+   * and periodically. Returns the removed site ids.
+   */
+  async function purgeExpiredSites(now = Date.now()): Promise<string[]> {
+    const st = store.getState();
+    if (st.retentionDays <= 0 || st.batchRunning || enhancing) return [];
+    const sites = await storage.listSites();
+    const info = readBackupRecords();
+    const { due } = siteRetention(sites, info, st.retentionDays, now, (deps.retentionSince ?? readRetentionSince)());
+    const removed: string[] = [];
+    const parts: string[] = [];
+    for (const { site } of due) {
+      const ran = await (deps.ifSiteNotOpen ?? ifSiteNotOpen)(site.siteId, store.getState().activeSiteId, () => storage.deleteSite(site.siteId));
+      if (!ran) continue;
+      const downloadedAt = info[site.siteId]?.backedUpAt;
+      parts.push(`${site.name} (${downloadedAt !== undefined ? `results downloaded ${formatAgo(now - downloadedAt)}` : 'results never downloaded'})`);
+      removed.push(site.siteId);
+      forgetSite(site.siteId);
+    }
+    if (removed.length > 0) {
+      deps.notifyRecords?.(removed, []);
+      store.setState({
+        sites: await storage.listSites(),
+        retentionNotice: `Removed from this browser after ${st.retentionDays} days without use: ${parts.join('; ')}.`,
+      });
+    }
+    return removed;
+  }
+
   async function loadSiteData(siteId: string): Promise<void> {
+    // Opening a site restarts its storage clock and marks it open in this tab.
+    markSiteUsed(siteId);
+    holdSiteLock(siteId);
     const state = store.getState();
     // Revoke the previous thumbnails only after the new ones are in state: revoking them
     // up front left <img> elements pointing at dead blob: URLs if anything re-rendered the
@@ -292,6 +334,8 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
   }
 
   async function createDefaultOrLoadSites(): Promise<void> {
+    // Remove expired sites before any site is opened (opening one restarts its clock).
+    await purgeExpiredSites().catch(() => undefined);
     let sites = await storage.listSites();
     if (sites.length === 0) {
       const defaultSite: SiteRecord = {
@@ -1035,6 +1079,7 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
     refreshCapabilities,
     loadSiteData,
     refreshFromStorage,
+    purgeExpiredSites,
     createDefaultOrLoadSites,
     handleFilesAdded,
     runBatch,

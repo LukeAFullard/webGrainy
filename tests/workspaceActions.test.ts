@@ -48,6 +48,10 @@ function fakeWorld(opts: { failIds?: string[]; abortAfter?: number } = {}) {
       photos.delete(id);
       results.delete(id);
     },
+    deleteSite: async (id: string) => {
+      for (const p of [...photos.values()]) if (p.siteId === id) { photos.delete(p.photoId); results.delete(p.photoId); }
+      sites.delete(id);
+    },
     runSiteBatch: async (o: BatchRunOptions): Promise<BatchRunResult> => {
       batchCalls.push({ siteId: o.siteId, ...(o.photoIds ? { photoIds: o.photoIds } : {}) });
       const queue = [...photos.values()].filter(
@@ -81,7 +85,12 @@ function fakeWorld(opts: { failIds?: string[]; abortAfter?: number } = {}) {
 
 function setup(
   world: ReturnType<typeof fakeWorld>,
-  overrides: { rectify?: () => Promise<unknown>; enhance?: () => Promise<unknown> } = {},
+  overrides: {
+    rectify?: () => Promise<unknown>;
+    enhance?: () => Promise<unknown>;
+    ifSiteNotOpen?: (siteId: string, openHere: string | null, fn: () => Promise<void>) => Promise<boolean>;
+    retentionSince?: () => number;
+  } = {},
 ) {
   const store = new AppStore(createInitialState());
   const log: string[] = [];
@@ -119,6 +128,9 @@ function setup(
     yieldToMain: async () => {},
     createObjectUrl: () => 'blob:x',
     revokeObjectUrl: () => {},
+    ...(overrides.ifSiteNotOpen ? { ifSiteNotOpen: overrides.ifSiteNotOpen } : {}),
+    // Existing tests' sites have 1970 dates: the retention clock starts "now" unless a test sets it.
+    retentionSince: overrides.retentionSince ?? (() => Date.now()),
   });
   world.actionsRef.current = actions;
   return { store, actions, log, changed };
@@ -391,3 +403,60 @@ describe('workspace actions', () => {
   });
 });
 
+describe('sites are removed after the chosen days without use', () => {
+  const DAY = 86_400_000;
+  it('removes expired sites at start-up (photos and results), keeps recent ones and those open in another tab', async () => {
+    const world = fakeWorld();
+    const now = Date.now();
+    const add = (id: string, ageDays: number) => {
+      world.sites.set(id, { ...site(id, [`${id}p`]), updatedAt: now - ageDays * DAY, createdAt: now - ageDays * DAY });
+      world.photos.set(`${id}p`, photo(`${id}p`, id));
+      world.results.set(`${id}p`, { photoId: `${id}p`, status: 'error', updatedAt: 0 });
+    };
+    add('old', 40);
+    add('busy', 45);
+    add('recent', 3);
+    const { store, actions } = setup(world, {
+      ifSiteNotOpen: async (id, here, fn) => {
+        if (id === 'busy' || id === here) return false; // open in another tab
+        await fn();
+        return true;
+      },
+      retentionSince: () => 0,
+    });
+    store.setState({ retentionDays: 30 });
+    await actions.createDefaultOrLoadSites();
+    expect([...world.sites.keys()].sort()).toEqual(['busy', 'recent']);
+    expect(world.photos.has('oldp')).toBe(false);
+    expect(world.results.has('oldp')).toBe(false);
+    expect(store.getState().retentionNotice).toMatch(/Removed from this browser after 30 days without use: Site old \(results never downloaded\)/);
+  });
+
+  it('sites that existed before this feature get the full period, not removal at once', async () => {
+    const world = fakeWorld();
+    world.sites.set('legacy', { ...site('legacy', []), updatedAt: 0, createdAt: 0 });
+    const { store, actions } = setup(world, { retentionSince: () => Date.now() - 2 * DAY });
+    store.setState({ retentionDays: 7 });
+    expect(await actions.purgeExpiredSites()).toEqual([]);
+    expect(await actions.purgeExpiredSites(Date.now() + 6 * DAY)).toEqual(['legacy']);
+  });
+
+  it('keeps everything when the choice is "until I delete them"', async () => {
+    const world = fakeWorld();
+    world.sites.set('ancient', { ...site('ancient', []), updatedAt: 0, createdAt: 0 });
+    const { store, actions } = setup(world);
+    store.setState({ retentionDays: 0 });
+    await actions.createDefaultOrLoadSites();
+    expect(world.sites.has('ancient')).toBe(true);
+    expect(store.getState().retentionNotice).toBeNull();
+  });
+
+  it('never removes the site open in this tab', async () => {
+    const world = fakeWorld();
+    world.sites.set('mine', { ...site('mine', []), updatedAt: 0, createdAt: 0 });
+    const { store, actions } = setup(world, { ifSiteNotOpen: async (id, here, fn) => (id === here ? false : (await fn(), true)), retentionSince: () => 0 });
+    store.setState({ retentionDays: 7, activeSiteId: 'mine' });
+    expect(await actions.purgeExpiredSites()).toEqual([]);
+    expect(world.sites.has('mine')).toBe(true);
+  });
+});
