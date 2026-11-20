@@ -109,7 +109,7 @@ reported in pixels and cannot be pooled with calibrated photos.
 
 **Working size.** The models were trained on photos of moderate size, and big photos would
 be slow, so each photo is resized to a **working image** before analysis. With the default
-*Auto* image scale:
+*Scale Mode: Auto*:
 
 | Longest side of the photo | Working image |
 |---|---|
