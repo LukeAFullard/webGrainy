@@ -50,6 +50,22 @@ export function photoProcessingHistory(meta: SitePhotoMetadata | undefined): Pho
   return meta?.enhancement !== undefined ? [{ step: 'enhancement', ...meta.enhancement }] : [];
 }
 
+/**
+ * Pixel-to-map transform of a georeferenced photo (from its GeoTIFF). With (u, v) the
+ * pixel-CORNER coordinates of the raster (pixel (0,0) spans 0..1 on both axes):
+ * X = a + b u + c v,  Y = d + e u + f v  (map units of the CRS).
+ */
+export interface PhotoGeoreference {
+  transform: [number, number, number, number, number, number];
+  /** EPSG code of the CRS, or null when the file uses a user-defined CRS. */
+  epsg: number | null;
+  /** 'projected' (metres/feet) or 'geographic' (degrees). */
+  kind: 'projected' | 'geographic' | 'unknown';
+  /** Raster size the transform belongs to (the photo must still have this size). */
+  width: number;
+  height: number;
+}
+
 export interface SitePhotoMetadata {
   timestamp?: string;
   gps?: { lat: number; lon: number };
@@ -62,6 +78,8 @@ export interface SitePhotoMetadata {
   /** Provenance: every image-modifying step, kept across later steps (see photoProcessingHistory). */
   processingHistory?: PhotoProcessingStep[];
   notes?: string;
+  /** Map georeferencing from the photo's GeoTIFF, if it had one. */
+  georef?: PhotoGeoreference;
 }
 
 export interface SitePhotoInput {

@@ -595,6 +595,12 @@ browser, and a site is removed after a set number of days without use (30 by def
   grain numbers) and outlines (GeoJSON);
 - optionally, the project file that reopens the site.
 
+**GIS.** For a GeoTIFF photo (e.g. a drone orthomosaic tile), the app keeps the file's pixel-to-map
+transform and coordinate system. It then also exports the outlines as GeoJSON in map coordinates
+(with the coordinate system, read directly by QGIS and ArcGIS, and each grain's centroid in map
+coordinates), and a world file that places the label mask on the map. This is checked against GDAL.
+It applies while the photo is still the GeoTIFF raster: not after rectification or a 2× enhancement.
+
 ---
 
 ## 15. Validation
@@ -649,7 +655,7 @@ site-comparison test was checked by simulation (Section 13).
 - **Lens distortion is not corrected.** It is small for most phone cameras, but wide-angle and
   action cameras can change sizes by 7–22% towards the photo edges. Undistort such photos
   first.
-- **Outline resolution.** Outlines are traced on the working image (section 4), so on a large photo analysed at *Auto* each outline step is several photo pixels: exported masks and GeoJSON/SVG outlines have stepped edges. Analyse at *Scale Mode: 1.0x Full* for finer outlines (photos over 16.7 megapixels are still read at 16.7 MP). Exported outline coordinates are photo pixels, not map coordinates.
+- **Outline resolution.** Outlines are traced on the working image (section 4), so on a large photo analysed at *Auto* each outline step is several photo pixels: exported masks and GeoJSON/SVG outlines have stepped edges. Analyse at *Scale Mode: 1.0x Full* for finer outlines (photos over 16.7 megapixels are still read at 16.7 MP). Outline coordinates are photo pixels, except the map-coordinate exports of GeoTIFF photos (section 14).
 - **One scale per photo.** Photos must be taken straight down over a roughly flat bed, or be
   rectified. Tilted photos change the scale across the image.
 - **Model limits.** The models were trained on the ImageGrains photo collection. On very

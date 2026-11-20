@@ -16,6 +16,7 @@
 import UTIF from 'utif2';
 import type { CalibrationResult } from '../types/index.js';
 import type { SitePhotoMetadata } from './siteTypes.js';
+import { extractGeoReference } from './georef.js';
 
 export interface DecodedTiffImage {
   data: Uint8ClampedArray;
@@ -241,12 +242,14 @@ export function decodeTiffBuffer(buf: ArrayBuffer): DecodedTiffImage {
   const cameraMake = cleanStringTag(rawIfd['t271']);
   const cameraModel = cleanStringTag(rawIfd['t272']);
   const timestamp = parseTiffDate(cleanStringTag(rawIfd['t306']));
+  const georef = extractGeoReference(rawIfd, width, height);
   const metadata: SitePhotoMetadata | undefined =
-    cameraMake || cameraModel || timestamp
+    cameraMake || cameraModel || timestamp || georef
       ? {
           ...(timestamp ? { timestamp } : {}),
           ...(cameraMake ? { cameraMake } : {}),
           ...(cameraModel ? { cameraModel } : {}),
+          ...(georef ? { georef } : {}),
         }
       : undefined;
 

@@ -581,6 +581,7 @@ pixel classes before calibration); the Shape tab shows the aspect-ratio distribu
 | **Photo Grains CSV** | One row per grain: as in the pooled grains CSV, plus whether the grain is inside the ROI and whether it counts in the statistics. |
 | **Photo Summary CSV / JSON** | D5–D95 for the area- and number-weighted b-axis, equivalent diameter and min-Feret; Folk & Ward; the *More statistics* values (as in the site summary); Wentworth classes and size-class histograms (φ classes in mm, or pixel classes before calibration); fabric statistics; warnings. |
 | **16/32-bit PNG mask** | The grain label image (each grain a different value), for GIS or Python. |
+| **GeoJSON (map coordinates)**, **World file for 16-bit mask** | GeoTIFF photos only: the outlines in the map coordinates and coordinate system of the source GeoTIFF, and a `.pgw` world file that places the 16-bit mask on the map (keep it next to the mask PNG, same name). They open directly in QGIS or ArcGIS. Not offered once the photo is rectified or enhanced to another size. Also in *Download results* (`outlines_map.geojson`, `mask16.pgw`). |
 | **GeoJSON / SVG contours** | Grain outlines in original photo coordinates (pixels, x right, y down; not map coordinates). Outlines are traced on the working image, so on a photo analysed at a smaller scale their edges are stepped (the Export dialog says by how many photo pixels); use *Scale Mode: 1.0x Full* for finer outlines. |
 
 ### Printable report

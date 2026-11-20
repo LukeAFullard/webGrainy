@@ -71,6 +71,7 @@ export async function resultsBundleEntries(input: ResultsBundleInput): Promise<Z
   const used = new Set<string>();
   let photoCount = 0;
   const coarse: string[] = [];
+  let georeferenced = 0;
   for (const photo of input.photos) {
     const session = input.siteInputs.find((i) => i.photoId === photo.photoId)?.session ?? null;
     if (!session) continue;
@@ -83,6 +84,14 @@ export async function resultsBundleEntries(input: ResultsBundleInput): Promise<Z
     for (const [kind, name] of PHOTO_FILES) {
       const f = await buildExport(kind, { ...base, photo, session });
       if (f) entries.push({ name: `${dir}/${name}`, data: f.blob });
+    }
+    // GeoTIFF photos: outlines in map coordinates, and a world file placing the mask.
+    for (const [kind, name] of [['photo-geojson-map', 'outlines_map.geojson'], ['photo-mask-worldfile', 'mask16.pgw']] as const) {
+      const f = await buildExport(kind, { ...base, photo, session });
+      if (f) {
+        entries.push({ name: `${dir}/${name}`, data: f.blob });
+        georeferenced++;
+      }
     }
   }
   if (photoCount > 0) {
@@ -111,7 +120,9 @@ export async function resultsBundleEntries(input: ResultsBundleInput): Promise<Z
     'Every CSV starts with metadata: app and model versions, model SHA-256 and all settings. Read it with',
     "e.g. pandas.read_csv(path, comment='#'). In the '#' lines, % , ; and TAB are written as %25 %2C %3B %09.",
     '',
-    'Mask and outline coordinates are photo pixels (x right, y down), not map coordinates.',
+    georeferenced > 0
+      ? 'Mask and outline coordinates are photo pixels (x right, y down). GeoTIFF photos also have outlines_map.geojson (map coordinates, with the CRS) and mask16.pgw (a world file that places mask16.png on the map).'
+      : 'Mask and outline coordinates are photo pixels (x right, y down), not map coordinates.',
     ...(coarse.length > 0
       ? [
           'Outlines are traced on the smaller working copy each photo was analysed at, so their edges are',

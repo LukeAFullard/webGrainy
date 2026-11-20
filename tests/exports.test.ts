@@ -34,9 +34,13 @@ describe('exports module', () => {
   };
 
   it('builds every export kind with a sensible file name (except the archive, which needs storage)', async () => {
+    // Map-coordinate exports need a georeferenced (GeoTIFF) photo.
+    const photo = ctx.photo!;
+    const georef = { transform: [1000, 0.01, 0, 5000, 0, -0.01] as [number, number, number, number, number, number], epsg: 2193, kind: 'projected' as const, width: photo.width, height: photo.height };
+    const geoCtx: ExportContext = { ...ctx, photo: { ...photo, metadata: { ...(photo.metadata ?? {}), georef } } };
     for (const kind of EXPORT_KINDS) {
       if (kind === 'site-archive') continue;
-      const f = await buildExport(kind, ctx);
+      const f = await buildExport(kind, kind === 'photo-geojson-map' || kind === 'photo-mask-worldfile' ? geoCtx : ctx);
       expect(f, kind).not.toBeNull();
       expect(f!.blob.size, kind).toBeGreaterThan(0);
       expect(f!.filename, kind).toMatch(kind.startsWith('site') ? /^Rakaia_reach_3_/ : /^IMG_001_jpg_/);
