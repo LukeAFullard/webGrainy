@@ -107,22 +107,47 @@ export function flattenMetadata(meta: Record<string, unknown>): Array<[string, s
   return out;
 }
 
-/** `# key: value` comment lines for prefixing tabular CSV exports. */
+/** Note written above the comment lines, so readers know how to decode them. */
+export const COMMENT_ESCAPE_NOTE = '# escaping: in these # lines %25 = percent  %2C = comma  %3B = semicolon  %09 = tab';
+
+/**
+ * Text of one `#` comment line with every spreadsheet cell delimiter (comma, semicolon, TAB)
+ * percent-escaped, so a spreadsheet keeps the whole line in its first cell (which starts with
+ * `#`) and a user-controlled value (photo label, site name, place) can never begin a new cell
+ * holding a formula. Reversible with `decodeURIComponent`-style replacement of the 4 escapes.
+ */
+export function escapeCommentText(text: string): string {
+  return text
+    .replace(/[\r\n]+/g, ' ')
+    .replace(/%/g, '%25')
+    .replace(/,/g, '%2C')
+    .replace(/;/g, '%3B')
+    .replace(/\t/g, '%09');
+}
+
+/** `# key: value` comment lines for prefixing tabular CSV exports (delimiters escaped). */
 export function metadataCommentLines(meta: Record<string, unknown>): string[] {
-  return flattenMetadata(meta).map(([k, v]) => `# ${k}: ${v.replace(/[\r\n]+/g, ' ')}`);
+  return [...flattenMetadata(meta).map(([k, v]) => `# ${escapeCommentText(`${k}: ${v}`)}`), COMMENT_ESCAPE_NOTE];
 }
 
 /**
  * Neutralises spreadsheet formula injection (OWASP "CSV injection") and quotes a CSV cell.
  * Cells beginning with `=`, `+`, `-`, `@`, TAB or CR are prefixed with `'` unless they are
- * plain numbers.
+ * plain numbers. Inside text, a formula character right after a delimiter (`,` `;` TAB or a
+ * line break) is prefixed too: a spreadsheet that splits on another delimiter than the comma
+ * (e.g. `;` in many European locales) ignores quotes in the middle of its cells, so that
+ * character could otherwise start a cell.
  */
 export function csvCell(val: string | number | boolean): string {
   let str = String(val);
-  if (typeof val === 'string' && /^[=+\-@\t\r]/.test(str) && !/^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(str)) {
-    str = `'${str}`;
+  if (typeof val === 'string') {
+    if (/^[=+\-@\t\r]/.test(str) && !/^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(str)) {
+      str = `'${str}`;
+    }
+    str = str.replace(/([,;\t\r\n])([=+\-@])/g, "$1'$2");
   }
-  if (/[",\n\r]/.test(str)) {
+  // Quote on `;` and TAB too: spreadsheets in many locales split CSV files on them.
+  if (/[",\n\r;\t]/.test(str)) {
     return `"${str.replace(/"/g, '""')}"`;
   }
   return str;
