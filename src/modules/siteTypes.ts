@@ -225,6 +225,8 @@ export interface SiteAnalysisReport {
   includedPhotoCount: number;
   totalGrainCount: number;
   validGrainCount: number;
+  /** Pixel size cutoff applied (original-photo px, active size metric). */
+  minBaxisPx: number;
   dCutoffCommonMm: number | null;
   excludedTruncationCount: number;
   excludedTruncationAreaMm2: number;

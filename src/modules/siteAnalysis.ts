@@ -13,7 +13,7 @@ import { DEFAULT_POSTPROCESS_OPTIONS } from './postprocessCore.js';
 import type { AnalysisSession } from './pipelineController.js';
 import { assessSampleAdequacy, buildPerPhotoBreakdown } from './siteAdequacy.js';
 import { validateSiteCalibration, withExclusionTolerance } from './siteCalibration.js';
-import { getStatisticalBasisLabel, type PreparedGrain, type PreparedPhoto, computeVirtualWolmanHits, buildPooledArrays, getGrainSize, getGrainMmSize, computeSiteWentworth } from './sitePooling.js';
+import { getStatisticalBasisLabel, type PreparedGrain, type PreparedPhoto, computeVirtualWolmanHits, buildPooledArrays, getGrainSize, computeSiteWentworth, siteCutoffReason } from './sitePooling.js';
 import { type SitePhotoInput, type SiteAnalysisOptions, type SiteAnalysisReport, SITE_BIBLIOGRAPHIC_CITATIONS } from './siteTypes.js';
 import { computeBinomialCi, runBootstrap, computeJackknife, computeConvergence } from './siteUncertainty.js';
 
@@ -170,15 +170,7 @@ export function analyzeSite(
     let photoTruncAreaMm2 = 0;
 
     for (const g of preCutoffGrains) {
-      const pxSize = getGrainSize(g, sizeMetric, 'px');
-      const mmSize = getGrainMmSize(g, sizeMetric);
-      const failsPx = minBaxisPx > 0 && pxSize < minBaxisPx;
-      const failsCommonMm =
-        dCutoffCommonMm !== null &&
-        mmSize !== undefined &&
-        mmSize < dCutoffCommonMm;
-
-      if (failsPx || failsCommonMm) {
+      if (siteCutoffReason(g, sizeMetric, minBaxisPx, dCutoffCommonMm) !== null) {
         photoTruncCount++;
         subCutoffGrainIds.add(g.id);
         if (g.areaMm2 !== undefined) {
@@ -357,6 +349,7 @@ export function analyzeSite(
     includedPhotoCount: preparedPhotos.length,
     totalGrainCount,
     validGrainCount,
+    minBaxisPx,
     dCutoffCommonMm,
     excludedTruncationCount,
     excludedTruncationAreaMm2,
