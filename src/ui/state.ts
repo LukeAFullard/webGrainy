@@ -80,6 +80,8 @@ export interface AppState {
   swStatus: SwStatus;
   /** A new app version is installed and waits for "Reload to update". */
   updateReady: boolean;
+  /** A newer version took over this page from another tab: reload before analysing. */
+  staleBuild: boolean;
 
   sites: SiteRecord[];
   activeSiteId: string | null;
@@ -169,6 +171,7 @@ export function createInitialState(): AppState {
     isOnline: typeof navigator !== 'undefined' ? navigator.onLine : true,
     swStatus: 'unsupported',
     updateReady: false,
+    staleBuild: false,
 
     sites: [],
     activeSiteId: null,

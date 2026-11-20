@@ -5,6 +5,7 @@
  * `AnalysisSession` with full provenance.
  */
 import type * as ort from 'onnxruntime-web';
+import { buildMismatchError } from './buildId.js';
 import type {
   AnalysisConfig,
   EngineCapabilities,
@@ -809,6 +810,13 @@ export class ImageGrainsEngine {
         }
         if (data.type === 'progress') {
           onProgress?.(data.stage, data.percent);
+          return;
+        }
+        // A worker from another build (a newer version took over in another tab): its result
+        // must not be recorded under this page's provenance.
+        const mismatch = buildMismatchError(data.build);
+        if (mismatch !== null) {
+          rejectRequest(mismatch);
           return;
         }
         if (data.type === 'result') {

@@ -6,6 +6,7 @@
  * Tensors are copied to the worker and outputs transferred back; the object exposes the
  * same `run(feeds)` / `release()` shape the inference code uses.
  */
+import { buildMismatchError } from './buildId.js';
 
 export interface WireTensor {
   type: string;
@@ -27,10 +28,10 @@ export type OrtWorkerRequest =
   | { type: 'release'; id: number; sessionId: number };
 
 export type OrtWorkerResponse =
-  | { type: 'created'; id: number }
-  | { type: 'ran'; id: number; outputs: Record<string, WireTensor> }
-  | { type: 'released'; id: number }
-  | { type: 'error'; id: number; message: string };
+  | { type: 'created'; id: number; build?: string }
+  | { type: 'ran'; id: number; outputs: Record<string, WireTensor>; build?: string }
+  | { type: 'released'; id: number; build?: string }
+  | { type: 'error'; id: number; message: string; build?: string };
 
 export interface WorkerLike {
   postMessage(message: unknown, transfer?: Transferable[]): void;
@@ -61,7 +62,10 @@ export class OrtWorkerHost {
       const p = msg ? this.pending.get(msg.id) : undefined;
       if (!p) return;
       this.pending.delete(msg.id);
-      if (msg.type === 'error') p.reject(new Error(msg.message));
+      // Inference code from another build (newer version activated in another tab).
+      const mismatch = buildMismatchError(msg.build);
+      if (mismatch !== null) p.reject(mismatch);
+      else if (msg.type === 'error') p.reject(new Error(msg.message));
       else p.resolve(msg);
     });
     w.addEventListener('error', (ev) => {

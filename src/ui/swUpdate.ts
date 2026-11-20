@@ -8,7 +8,13 @@
  * Rule: a new version waits until the user chooses to reload. The page shows "Reload to
  * update"; only then is the waiting worker activated, and the page reloads as soon as it
  * takes control. On a page that has just loaded with nothing to lose (no analysis running),
- * a waiting worker found at start-up is activated and the page reloaded once.
+ * a waiting worker found at start-up is activated and the page reloaded once, but only when
+ * no other tab of the app is open (the worker checks, `SKIP_WAITING_IF_ALONE`): otherwise
+ * those tabs would be taken over and load the new build's workers under their old code.
+ *
+ * A page taken over without asking (the user updated in another tab) is out of date: it is
+ * reported through `onStale` so the UI can stop new analyses until it is reloaded. (Workers
+ * also refuse to serve a page of another build; see modules/buildId.ts.)
  */
 
 export interface WorkerLike {
@@ -33,6 +39,10 @@ export interface SwUpdateDeps {
   isBusy: () => boolean;
   addControllerChangeListener: (cb: () => void) => void;
   onStateChange: (worker: WorkerLike, cb: () => void) => void;
+  /** Messages from service workers (e.g. `SKIP_WAITING_DEFERRED`). */
+  addMessageListener?: (cb: (data: unknown) => void) => void;
+  /** This page was taken over by another version without asking: it is out of date. */
+  onStale?: () => void;
 }
 
 export interface SwUpdateController {
@@ -49,13 +59,21 @@ export function manageSwUpdates(reg: RegistrationLike, deps: SwUpdateDeps): SwUp
     deps.onUpdateReady();
   };
 
-  // A worker already waiting when this page loaded: nothing has started yet, so switch now.
+  // A worker already waiting when this page loaded: nothing has started yet, so switch now,
+  // unless other tabs are open (the worker then declines and the update is offered instead).
   if (reg.waiting && deps.hadController) {
+    const atLoad = reg.waiting;
     if (!deps.isBusy()) {
       reloadRequested = true;
-      reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+      deps.addMessageListener?.((data) => {
+        if ((data as { type?: unknown } | null)?.type === 'SKIP_WAITING_DEFERRED') {
+          reloadRequested = false;
+          markWaiting(atLoad);
+        }
+      });
+      atLoad.postMessage({ type: 'SKIP_WAITING_IF_ALONE' });
     } else {
-      markWaiting(reg.waiting);
+      markWaiting(atLoad);
     }
   }
 
@@ -69,8 +87,16 @@ export function manageSwUpdates(reg: RegistrationLike, deps: SwUpdateDeps): SwUp
     });
   });
 
+  let controllerChanges = 0;
   deps.addControllerChangeListener(() => {
-    if (reloadRequested) deps.reload();
+    controllerChanges++;
+    if (reloadRequested && !deps.isBusy()) {
+      deps.reload();
+      return;
+    }
+    // The first take-over of a page that loaded uncontrolled is the same build installing
+    // itself; any other unrequested take-over is a newer version from another tab.
+    if (reloadRequested || deps.hadController || controllerChanges > 1) deps.onStale?.();
   });
 
   return {

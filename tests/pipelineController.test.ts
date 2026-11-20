@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as ort from 'onnxruntime-web';
+import { BUILD_ID } from '../src/modules/buildId.js';
 
 // Serve model bytes without IndexedDB/network for tests that use real session creation.
 vi.mock('../src/modules/modelCache.js', async (importOriginal) => {
@@ -855,4 +856,45 @@ describe('pipelineController (ImageGrainsEngine & AnalysisSession)', () => {
 
     await engine.dispose();
   });
+});
+
+/** Post-process worker stand-in that answers as build `build`. */
+function postprocessWorkerOfBuild(build: string | undefined): Worker {
+  const listeners = new Map<string, Set<(ev: unknown) => void>>();
+  return {
+    addEventListener(type: string, fn: (ev: unknown) => void) {
+      (listeners.get(type) ?? listeners.set(type, new Set()).get(type)!).add(fn);
+    },
+    removeEventListener(type: string, fn: (ev: unknown) => void) {
+      listeners.get(type)?.delete(fn);
+    },
+    postMessage(msg: WorkerRequest) {
+      queueMicrotask(() => {
+        const result = flowsToMasksBrowser(msg.flowY, msg.flowX, msg.cellprob, msg.width, msg.height, msg.options);
+        const res: WorkerResponse = { type: 'result', requestId: msg.requestId, result, ...(build !== undefined ? { build } : {}) };
+        for (const fn of listeners.get('message') ?? []) fn({ data: res });
+      });
+    },
+    terminate() {},
+  } as unknown as Worker;
+}
+
+describe('build mismatch (newer version activated in another tab)', () => {
+  it('the engine refuses a post-processing result from another build, and accepts its own', async () => {
+    const img = makeRgbaImage(64, 64, 'uniform');
+    const cfg = { inferencePipeline: 'legacy' as const, model: 'unet' as const, scaleMode: '1.0x' as const };
+    const other = new ImageGrainsEngine({
+      sessionFactory: async (kind) => createMockSession(kind, [{ cx: 32, cy: 32, rx: 12, ry: 10 }]),
+      workerFactory: () => postprocessWorkerOfBuild('newer@2099-01-01'),
+    });
+    await expect(other.analyzeImage(img, cfg)).rejects.toMatchObject({ name: 'BuildMismatchError' });
+    await other.dispose();
+    const same = new ImageGrainsEngine({
+      sessionFactory: async (kind) => createMockSession(kind, [{ cx: 32, cy: 32, rx: 12, ry: 10 }]),
+      workerFactory: () => postprocessWorkerOfBuild(BUILD_ID),
+    });
+    expect((await same.analyzeImage(img, cfg)).getResult().grainCount).toBe(1);
+    await same.dispose();
+  });
+
 });

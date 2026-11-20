@@ -7,6 +7,7 @@
  * `OrtWorkerRequest` / `OrtWorkerResponse` in modules/ortWorkerSession.ts.
  */
 import * as ort from 'onnxruntime-web';
+import { BUILD_ID } from '../modules/buildId.js';
 import type { OrtWorkerRequest, OrtWorkerResponse, WireTensor } from '../modules/ortWorkerSession.js';
 
 interface WorkerScopeLike {
@@ -34,7 +35,7 @@ export async function handleOrtWorkerMessage(
         executionProviders: ['wasm'],
       });
       sessions.set(req.sessionId, session);
-      post({ type: 'created', id: req.id });
+      post({ type: 'created', id: req.id, build: BUILD_ID });
       return;
     }
     if (req.type === 'run') {
@@ -53,17 +54,17 @@ export async function handleOrtWorkerMessage(
         const buf = (w.data as { buffer?: unknown }).buffer;
         if (buf instanceof ArrayBuffer && !transfer.includes(buf)) transfer.push(buf);
       }
-      post({ type: 'ran', id: req.id, outputs: out }, transfer);
+      post({ type: 'ran', id: req.id, outputs: out, build: BUILD_ID }, transfer);
       return;
     }
     if (req.type === 'release') {
       const session = sessions.get(req.sessionId);
       sessions.delete(req.sessionId);
       await session?.release();
-      post({ type: 'released', id: req.id });
+      post({ type: 'released', id: req.id, build: BUILD_ID });
     }
   } catch (err) {
-    post({ type: 'error', id: req.id, message: err instanceof Error ? err.message : String(err) });
+    post({ type: 'error', id: req.id, message: err instanceof Error ? err.message : String(err), build: BUILD_ID });
   }
 }
 

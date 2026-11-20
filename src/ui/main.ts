@@ -49,7 +49,7 @@ import { buildSiteReportHtml, type ReportPhoto } from './report.js';
 import { renderPsdChartSvg, renderSizeHistogramSvg } from './charts.js';
 import { sizeHistogramFromWentworth } from '../modules/histograms.js';
 import { countFlagged, grainFlags, navGrainsFor } from './grainNav.js';
-import { createWorkspaceActions, getActivePhoto, getActiveSite, rectifyWithCanvas } from './workspaceActions.js';
+import { createWorkspaceActions, getActivePhoto, getActiveSite, rectifyWithCanvas, STALE_BUILD_MESSAGE } from './workspaceActions.js';
 import { applyEvent, newActivity, renderActivityHtml, startPhoto, type ActivityState } from './progress.js';
 import { CPU_THREADS_KEY, readCpuThreadPref } from './cpuThreads.js';
 import { svgToPngBlob, withSvgMetadata } from './chartExport.js';
@@ -394,7 +394,7 @@ function renderViewportExtras(state: AppState): void {
   const pt = viewport?.getCursorImgPt();
   const zoomPct = viewport ? Math.round(viewport.getZoom() * 100) : 100;
   footerEl.innerHTML = `
-    <span>${state.updateReady ? `<button type="button" class="btn btn-xs btn-primary" data-action="apply-update" ${state.batchRunning || state.enhancing ? 'disabled title="Available when the analysis finishes"' : 'title="A new version is installed. Reload to use it (your data is kept)."'}>Reload to update</button> ` : ''}${esc(state.statusMessage)}</span>
+    <span>${state.staleBuild ? `<button type="button" class="btn btn-xs btn-primary" data-action="reload-stale" ${state.batchRunning ? 'disabled title="Available when the analysis finishes"' : 'title="A newer version was installed in another tab. Reload to use it (your data is kept)."'}>Reload now</button> ` : ''}${state.updateReady ? `<button type="button" class="btn btn-xs btn-primary" data-action="apply-update" ${state.batchRunning || state.enhancing ? 'disabled title="Available when the analysis finishes"' : 'title="A new version is installed. Reload to use it (your data is kept)."'}>Reload to update</button> ` : ''}${esc(state.statusMessage)}</span>
     <span>${activePhoto ? `${activePhoto.width}×${activePhoto.height}px | Zoom ${zoomPct}%` : ''}${pt ? ` | (${Math.round(pt.x)}, ${Math.round(pt.y)})` : ''}</span>
   `;
 
@@ -1022,6 +1022,7 @@ function eventContext(): EventContext {
       },
       focusGrain: (id) => viewport?.focusOnGrain(id),
       applyUpdate: () => swUpdates?.applyUpdate() ?? false,
+      reloadPage: () => location.reload(),
       isTyping: () => {
         const el = document.activeElement;
         if (!el) return false;
@@ -1479,6 +1480,13 @@ async function registerServiceWorker(): Promise<void> {
         isBusy: () => store.getState().batchRunning || store.getState().enhancing === true,
         addControllerChangeListener: (cb) => navigator.serviceWorker.addEventListener('controllerchange', cb),
         onStateChange: (w, cb) => (w as ServiceWorker).addEventListener('statechange', cb),
+        addMessageListener: (cb) => navigator.serviceWorker.addEventListener('message', (e) => cb(e.data)),
+        onStale: () =>
+          store.setState({
+            staleBuild: true,
+            updateReady: false,
+            statusMessage: STALE_BUILD_MESSAGE,
+          }),
       });
       // The service worker adds COOP/COEP headers, but a page is only cross-origin
       // isolated if its own navigation response carried them. On the first visit (or

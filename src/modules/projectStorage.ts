@@ -1145,6 +1145,12 @@ export async function runSiteBatch(
       completedPhotoIds.push(photo.photoId);
       opts.onPhotoComplete?.(photo, session);
     } catch (err) {
+      if (err instanceof Error && err.name === 'BuildMismatchError') {
+        // A newer version took over in another tab: nothing is wrong with the photo. Leave it
+        // pending and stop; the message tells the user to reload.
+        await savePhotoResult({ photoId: photo.photoId, status: 'pending', updatedAt: Date.now() }, opts);
+        throw err;
+      }
       if (opts.signal?.aborted || isAbortError(err)) {
         aborted = true;
         await savePhotoResult(
