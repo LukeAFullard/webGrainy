@@ -4,13 +4,14 @@ import {
 import {
   ImageGrainsEngine,
 } from '../modules/pipelineController.js';
+import * as projectStorage from '../modules/projectStorage.js';
 import {
   importSiteArchive,
   isProjectArchiveFileName,
-  listSites,
-  saveSite,
   type PhotoRecord,
+  type SiteRecord,
 } from '../modules/projectStorage.js';
+import { broadcastNoticeChannel, createSyncedRecords } from '../modules/recordSync.js';
 import { rectifyPerspective } from '../modules/roiAndRectify.js';
 import { grainPassesSizeCutoffs } from '../modules/sedimentStats.js';
 import {
@@ -27,7 +28,10 @@ import { decodeTiffBuffer, isSupportedImageFile, isTiffFile } from '../modules/t
 import { renderHelpModalHtml } from './help.js';
 import { wasmThreadsFor } from '../modules/onnxInference.js';
 import { GUIDE_HIDDEN_KEY, guideInputFrom, guideSteps, renderGuideHtml } from './onboarding.js';
-import { EXPORTED_ONCE_KEY, SKIP_LANDING_KEY, readFlag, writeFlag } from './prefs.js';
+import { EXPORTED_ONCE_KEY, SKIP_LANDING_KEY, readFlag, readRetentionDaysRaw, writeFlag } from './prefs.js';
+import { parseRetentionDays } from '../modules/retention.js';
+import { buildResultsBundle } from '../modules/resultsBundle.js';
+import { renderPrintablePsdSvg } from './charts.js';
 import { markSiteBackedUp, markSiteChanged } from './backup.js';
 import { ScreenWakeLock } from './wakeLock.js';
 import { DoneSignal, NOTIFY_PREF_KEY, requestNotifyPermission } from './doneSignal.js';
@@ -59,6 +63,7 @@ import {
   triggerBlobDownload,
   renderAboutModalHtml,
   renderExportModalHtml,
+  renderDownloadResultsModalHtml,
   renderModelsModalHtml,
 } from './modals.js';
 import {
@@ -228,7 +233,53 @@ engine.onProgress((stage, detail) => {
 let viewport: CanvasViewport | null = null;
 
 // ---- App actions (data changes), with the screen hooks they need ----
+// Photo and site records stay consistent when the app is open in several tabs: saves merge
+// with what another tab saved, and the other tabs refresh (modules/recordSync.ts).
+const TAB_ID = typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `tab-${Date.now()}-${Math.random()}`;
+const noticeChannel = broadcastNoticeChannel();
+const syncedRecords = createSyncedRecords(
+  {
+    listSites: () => projectStorage.listSites(),
+    getSite: (id) => projectStorage.getSite(id),
+    saveSite: (x) => projectStorage.saveSite(x),
+    listSitePhotos: (id) => projectStorage.listSitePhotos(id),
+    getPhoto: (id) => projectStorage.getPhoto(id),
+    savePhoto: (x) => projectStorage.savePhoto(x),
+    deletePhoto: (id) => projectStorage.deletePhoto(id),
+  },
+  {
+    tabId: TAB_ID,
+    channel: noticeChannel,
+    hooks: {
+      onMerged: (kind, rec) => {
+        const st = store.getState();
+        if (kind === 'photo') {
+          const p = rec as PhotoRecord;
+          store.setState({ photos: st.photos.map((x) => (x.photoId === p.photoId ? p : x)) });
+        } else {
+          const site = rec as SiteRecord;
+          store.setState({ sites: st.sites.map((x) => (x.siteId === site.siteId ? site : x)) });
+        }
+      },
+    },
+  },
+);
+const listSites = (): Promise<SiteRecord[]> => syncedRecords.listSites();
+const saveSite = (site: SiteRecord): Promise<void> => syncedRecords.saveSite(site);
+
 const actions = createWorkspaceActions({
+  storage: {
+    listSitePhotos: (id) => syncedRecords.listSitePhotos(id),
+    listSites,
+    getPhotoResult: (id) => projectStorage.getPhotoResult(id),
+    runSiteBatch: (o) => projectStorage.runSiteBatch(o),
+    savePhoto: (x) => syncedRecords.savePhoto(x),
+    savePhotoResult: (r) => projectStorage.savePhotoResult(r),
+    saveSite,
+    deletePhoto: (id) => syncedRecords.deletePhoto(id),
+    deleteSite: (id) => projectStorage.deleteSite(id),
+  },
+  notifyRecords: (siteIds, photoIds) => syncedRecords.notify(siteIds, photoIds),
   store,
   engine,
   batchEngine: engine,
@@ -289,6 +340,13 @@ const actions = createWorkspaceActions({
   makeId,
   yieldToMain,
 });
+// Another tab saved records or results: refresh this tab's copy (serialised, latest wins).
+let refreshing: Promise<void> = Promise.resolve();
+noticeChannel?.onMessage((notice) => {
+  if (notice.from === TAB_ID) return;
+  refreshing = refreshing.then(() => actions.refreshFromStorage(notice)).catch(() => undefined);
+});
+
 const {
   savePhoto,
   recomputeReports,
@@ -526,6 +584,8 @@ function renderModals(state: AppState): void {
     appDialogEl.innerHTML = renderModelsModalHtml(state, actions.getCachedQuota());
   } else if (state.activeModal === 'export') {
     appDialogEl.innerHTML = renderExportModalHtml(state);
+  } else if (state.activeModal === 'download-results') {
+    appDialogEl.innerHTML = renderDownloadResultsModalHtml(state);
   } else if (state.activeModal === 'about') {
     appDialogEl.innerHTML = renderAboutModalHtml();
   } else if (state.activeModal === 'help') {
@@ -610,7 +670,10 @@ function renderAll(state: AppState): void {
     prev.photoSelectMode !== state.photoSelectMode ||
     prev.selectedPhotoIds !== state.selectedPhotoIds ||
     prev.enhancing !== state.enhancing ||
-    prev.siteOptions.poolingMode !== state.siteOptions.poolingMode
+    prev.siteOptions.poolingMode !== state.siteOptions.poolingMode ||
+    prev.retentionDays !== state.retentionDays ||
+    prev.retentionNotice !== state.retentionNotice ||
+    prev.storageFullNotice !== state.storageFullNotice
   ) {
     renderSidebar(state);
   }
@@ -665,6 +728,8 @@ function renderAll(state: AppState): void {
     prev.helpTopic !== state.helpTopic ||
     (state.activeModal === 'models' &&
       (prev.modelDownloads !== state.modelDownloads || prev.capabilities !== state.capabilities)) ||
+    (state.activeModal === 'download-results' &&
+      (prev.downloadIncludeProject !== state.downloadIncludeProject || prev.downloadingResults !== state.downloadingResults)) ||
     (state.activeModal === 'export' &&
       (prev.siteReport !== state.siteReport ||
         prev.activeSiteId !== state.activeSiteId ||
@@ -800,7 +865,7 @@ function mountShell(): void {
           }
           if (Object.keys(patch).length > 0) store.setState(patch);
           void persistActiveSession(photo.photoId, session).catch((err: unknown) => {
-            store.setState({ statusMessage: `Could not save edit: ${err instanceof Error ? err.message : String(err)}` });
+            actions.reportSaveFailure(err, 'this outline edit');
           });
           recomputeReports();
           viewport?.markMasksDirty();
@@ -821,7 +886,7 @@ function mountShell(): void {
           }
           if (Object.keys(patch).length > 0) store.setState(patch);
           void persistActiveSession(photo.photoId, session).catch((err: unknown) => {
-            store.setState({ statusMessage: `Could not save edit: ${err instanceof Error ? err.message : String(err)}` });
+            actions.reportSaveFailure(err, 'this outline edit');
           });
           recomputeReports();
           viewport?.markMasksDirty();
@@ -834,7 +899,7 @@ function mountShell(): void {
         if (!photo || !session) return;
         if (session.addPolygonGrain(points) > 0) {
           void persistActiveSession(photo.photoId, session).catch((err: unknown) => {
-            store.setState({ statusMessage: `Could not save edit: ${err instanceof Error ? err.message : String(err)}` });
+            actions.reportSaveFailure(err, 'this outline edit');
           });
           recomputeReports();
           viewport?.markMasksDirty();
@@ -854,7 +919,7 @@ function mountShell(): void {
         };
         if (updated.roiConfig) state.sessions.get(photo.photoId)?.setRoiConfig(effectiveRoi(updated, state.siteOptions));
         void savePhoto(updated).catch((err: unknown) => {
-          store.setState({ statusMessage: `Could not save exclusion: ${err instanceof Error ? err.message : String(err)}` });
+          actions.reportSaveFailure(err, 'this exclusion area');
         });
         store.setState({
           photos: state.photos.map((p) => (p.photoId === photo.photoId ? updated : p)),
@@ -876,7 +941,7 @@ function mountShell(): void {
         };
         if (updated.roiConfig) state.sessions.get(photo.photoId)?.setRoiConfig(effectiveRoi(updated, state.siteOptions));
         void savePhoto(updated).catch((err: unknown) => {
-          store.setState({ statusMessage: `Could not save exclusion: ${err instanceof Error ? err.message : String(err)}` });
+          actions.reportSaveFailure(err, 'this exclusion area');
         });
         store.setState({
           photos: state.photos.map((p) => (p.photoId === photo.photoId ? updated : p)),
@@ -1023,6 +1088,7 @@ function eventContext(): EventContext {
       focusGrain: (id) => viewport?.focusOnGrain(id),
       applyUpdate: () => swUpdates?.applyUpdate() ?? false,
       reloadPage: () => location.reload(),
+      downloadResults,
       isTyping: () => {
         const el = document.activeElement;
         if (!el) return false;
@@ -1300,6 +1366,40 @@ async function buildReport(): Promise<string | null> {
   return html;
 }
 
+/** "Download results": every result file of the open site in one .zip (see resultsBundle.ts). */
+async function downloadResults(includeProject: boolean): Promise<void> {
+  const st = store.getState();
+  const site = getActiveSite(st);
+  if (!site) return;
+  store.setState({ downloadingResults: true, statusMessage: 'Preparing the results download…' });
+  try {
+    const reportHtml = st.siteReport ? await buildReport() : null;
+    const { blob, filename } = await buildResultsBundle({
+      site,
+      photos: st.photos,
+      siteInputs: buildSiteInputs(st),
+      siteReport: st.siteReport,
+      siteOptions: st.siteOptions,
+      sizeMetric: st.siteOptions.sizeMetric ?? 'bAxis',
+      psdXAxis: st.psdXAxis,
+      renderPsdSvg: renderPrintablePsdSvg,
+      reportHtml,
+      includeProject,
+    });
+    triggerBlobDownload(blob, filename);
+    markSiteBackedUp(site.siteId);
+    renderSidebar(store.getState());
+    store.setState({
+      activeModal: null,
+      statusMessage: `Downloaded ${filename} (${(blob.size / 1e6).toFixed(1)} MB)${includeProject ? ', with the project file' : ': results only; keep your original photos'}.`,
+    });
+  } catch (err) {
+    store.setState({ statusMessage: `Could not prepare the download: ${err instanceof Error ? err.message : String(err)}` });
+  } finally {
+    store.setState({ downloadingResults: false });
+  }
+}
+
 /** Runs an export; a saved project file counts as a backup of the site. */
 function runExport(kind: string): void {
   const st = store.getState();
@@ -1387,6 +1487,7 @@ function attachDelegatedHandlers(): void {
         .then(async (siteId) => {
           const sites = await listSites();
           store.setState({ sites, statusMessage: 'Imported project archive' });
+          syncedRecords.notify([siteId], []);
           await loadSiteData(siteId);
         })
         .catch((err: unknown) => {
@@ -1438,6 +1539,7 @@ function attachDelegatedHandlers(): void {
         .then(async (siteId) => {
           const sites = await listSites();
           store.setState({ sites, statusMessage: 'Imported project archive' });
+          syncedRecords.notify([siteId], []);
           await loadSiteData(siteId);
         })
         .catch((err: unknown) => {
@@ -1545,6 +1647,7 @@ function setupLaunchQueue(): void {
           const siteId = await importSiteArchive(archive);
           const sites = await listSites();
           store.setState({ sites, statusMessage: `Opened ${archive.name}` });
+          syncedRecords.notify([siteId], []);
           await loadSiteData(siteId);
         } catch (err) {
           store.setState({
@@ -1567,12 +1670,21 @@ async function bootstrap(): Promise<void> {
   void refreshStorageInfo();
   renderAll(store.getState());
 
+  // How long sites stay in this browser (Site panel); read before sites are loaded, since
+  // start-up removes expired sites first.
+  store.setState({ retentionDays: parseRetentionDays(readRetentionDaysRaw()) });
+  // Ask the browser not to clear this site's storage on its own (Chrome may otherwise when
+  // the disk is low). Removal then follows the user's choice only.
+  void navigator.storage?.persist?.().then(() => refreshStorageInfo()).catch(() => undefined);
+
   await Promise.all([
     refreshCapabilities(),
     registerServiceWorker(),
     createDefaultOrLoadSites(),
   ]);
   setupLaunchQueue();
+  // A tab left open for days still removes sites past their date (hourly check).
+  setInterval(() => void actions.purgeExpiredSites().catch(() => undefined), 3_600_000);
 }
 
 void bootstrap();

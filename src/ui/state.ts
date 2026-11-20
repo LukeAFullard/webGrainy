@@ -2,6 +2,7 @@ import type { ComparedSite } from '../modules/siteComparison.js';
 import type { PhotoFilter } from './photoList.js';
 import type { HelpKey } from './help.js';
 import { DEFAULT_POSTPROCESS_OPTIONS } from '../modules/postprocessCore.js';
+import { DEFAULT_RETENTION_DAYS } from '../modules/retention.js';
 import type {
   AnalysisConfig,
   EngineCapabilities,
@@ -36,7 +37,7 @@ export type EditorToolMode =
 
 export type DashboardTab = 'psd' | 'adequacy' | 'shape' | 'fabric';
 export type WorkflowStepId = 'calibrate' | 'exclude' | 'segment' | 'edit' | 'export';
-export type ModalKind = 'models' | 'export' | 'about' | 'help' | 'shortcuts' | null;
+export type ModalKind = 'models' | 'export' | 'download-results' | 'about' | 'help' | 'shortcuts' | null;
 export type SwStatus = 'unsupported' | 'registering' | 'ready' | 'error';
 
 export interface OverlaySettings {
@@ -82,6 +83,16 @@ export interface AppState {
   updateReady: boolean;
   /** A newer version took over this page from another tab: reload before analysing. */
   staleBuild: boolean;
+  /** Days sites are kept in this browser after their last use (0 = until deleted). */
+  retentionDays: number;
+  /** What the last automatic removal deleted (shown until dismissed). */
+  retentionNotice: string | null;
+  /** Browser storage is full: what failed and what to do (shown until dismissed). */
+  storageFullNotice: string | null;
+  /** "Download results": also include the project file with the photos. */
+  downloadIncludeProject: boolean;
+  /** A results download is being prepared. */
+  downloadingResults: boolean;
 
   sites: SiteRecord[];
   activeSiteId: string | null;
@@ -172,6 +183,11 @@ export function createInitialState(): AppState {
     swStatus: 'unsupported',
     updateReady: false,
     staleBuild: false,
+    retentionDays: DEFAULT_RETENTION_DAYS,
+    retentionNotice: null,
+    storageFullNotice: null,
+    downloadIncludeProject: false,
+    downloadingResults: false,
 
     sites: [],
     activeSiteId: null,

@@ -1,4 +1,7 @@
 /** Left panel & landing page events: sites, photos, the guide, landing workflow tabs, batch buttons and analysis settings. */
+import { parseRetentionDays } from '../../modules/retention.js';
+import { backupStatus, markSiteUsed, readBackupRecords } from '../backup.js';
+import { RETENTION_EXPLAINED_KEY, writeFlag, writeRetentionDays } from '../prefs.js';
 import type { PhotoRecord, SiteRecord } from '../../modules/projectStorage.js';
 import { parseParamInput } from '../savedSettings.js';
 import { defaultAnalysisParams, type EditorToolMode } from '../state.js';
@@ -120,6 +123,46 @@ export const sidebarActions: Record<string, ActionHandler> = {
   },
   'run-batch': (_el, ctx) => void ctx.actions.runBatch(),
   'cancel-batch': (_el, ctx) => ctx.actions.cancelBatch(),
+  'open-download-results': (_el, ctx) => {
+    ctx.store.setState({ activeModal: 'download-results' });
+  },
+  'download-results': (_el, ctx) => {
+    const st = ctx.store.getState();
+    if (st.downloadingResults) return;
+    void ctx.ui.downloadResults?.(st.downloadIncludeProject);
+  },
+  'keep-site-longer': (_el, ctx) => {
+    const st = ctx.store.getState();
+    const site = getActiveSite(st);
+    if (!site) return;
+    markSiteUsed(site.siteId);
+    ctx.ui.renderSidebar();
+    ctx.store.setState({
+      statusMessage: st.retentionDays > 0 ? `${site.name} will be kept for another ${st.retentionDays} days from today.` : `${site.name} is kept until you delete it.`,
+    });
+  },
+  'dismiss-retention-notice': (_el, ctx) => ctx.store.setState({ retentionNotice: null }),
+  'dismiss-storage-full': (_el, ctx) => ctx.store.setState({ storageFullNotice: null }),
+  'free-space': (_el, ctx) => {
+    const st = ctx.store.getState();
+    if (st.batchRunning) return;
+    const records = readBackupRecords();
+    // Only sites whose results were downloaded and have not changed since (nothing is lost).
+    const safe = st.sites.filter((s) => s.siteId !== st.activeSiteId && records[s.siteId]?.backedUpAt !== undefined && !backupStatus(records[s.siteId], true).needsBackup);
+    if (safe.length === 0) {
+      ctx.store.setState({
+        statusMessage: 'No other site has downloaded, unchanged results to remove. Open a site and use Download results… first, or choose a shorter storage period.',
+      });
+      return;
+    }
+    const names = safe.map((s) => `• ${s.name}`).join('\n');
+    if (!ctx.ui.confirm(`Remove these ${safe.length} site${safe.length === 1 ? '' : 's'} from this browser? Their results were downloaded and have not changed since.\n\n${names}`)) return;
+    void ctx.actions.removeSites(safe, 'Removed to free space').then(() => ctx.store.setState({ storageFullNotice: null }));
+  },
+  'dismiss-retention-explained': (_el, ctx) => {
+    writeFlag(RETENTION_EXPLAINED_KEY, true);
+    ctx.ui.renderSidebar();
+  },
   'reload-stale': (_el, ctx) => {
     if (ctx.store.getState().batchRunning) return;
     ctx.ui.reloadPage?.();
@@ -211,6 +254,19 @@ function updatePhoto(ctx: EventContext, pid: string, change: Partial<PhotoRecord
 export function handleSidebarChange(target: ControlLike, ctx: EventContext): boolean {
   if (target.id === 'site-select') {
     void ctx.actions.loadSiteData(target.value);
+    return true;
+  }
+  if (target.id === 'retention-days') {
+    const days = parseRetentionDays(target.value);
+    writeRetentionDays(days);
+    ctx.store.setState({
+      retentionDays: days,
+      statusMessage: days > 0 ? `Sites are now kept in this browser for ${days} days after their last use.` : 'Sites are now kept in this browser until you delete them.',
+    });
+    return true;
+  }
+  if (target.id === 'download-include-project' && isInput(target)) {
+    ctx.store.setState({ downloadIncludeProject: target.checked === true });
     return true;
   }
   if (isInput(target) && target.dataset['photoFacies']) {
@@ -317,7 +373,7 @@ export function handleSidebarChange(target: ControlLike, ctx: EventContext): boo
       const checked = target.checked === true;
       for (const [photoId, sess] of st.sessions.entries()) {
         sess.setExcludeBorder(checked);
-        void ctx.actions.persistActiveSession(photoId, sess).catch(() => undefined);
+        void ctx.actions.persistActiveSession(photoId, sess).catch((err: unknown) => ctx.actions.reportSaveFailure(err, 'the border setting'));
       }
       ctx.actions.recomputeReports();
       void ctx.ui.syncViewport(false);

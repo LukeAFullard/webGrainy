@@ -42,6 +42,19 @@ jobs:
       - name: Unit, parity and E2E tests
         run: npm test
 
+      # Independent numerical check: percentiles, Folk & Ward, moment-ellipse axes and
+      # orientation, Feret widths, float16 encoding, tiling and homography against
+      # numpy / scipy / scikit-image. Fails on any difference beyond its tolerance.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Numerical oracle (numpy / scipy / scikit-image)
+        run: |
+          python -m pip install --quiet numpy==2.5.5 scipy==1.18.1 scikit-image==0.26.0
+          npx vitest run --config validation/oracle/vitest.config.ts
+          python -I validation/oracle/oracle.py validation/oracle/ts_dump.json --check
+
       - name: Build
         run: npm run build
 
@@ -65,3 +78,8 @@ jobs:
         run: npm run test:e2e:browser
         env:
           SMOKE_MODEL: cpsam
+
+      # Service-worker updates with two builds and several tabs: an open tab is never
+      # switched to a new build's workers, and a tab taken over by an update locks itself.
+      - name: Service-worker update check (dist/)
+        run: npm run test:e2e:sw

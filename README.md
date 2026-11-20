@@ -53,12 +53,13 @@ Measured on the held-out test split of the ImageGrains 2.0 data (`IG2_data.zip`,
 - **Tails are long.** For example, 5% of Cellpose-SAM images and 17.5% of U-Net images have D50 errors above 50%. Check the outlines.
 - **Quantized weights.** INT8 and FP4 Cellpose-SAM give the same benchmark accuracy as FP16 (outline agreement with FP16: PQ 0.994 and 0.966).
 - **Field comparison (one site).** At the K1 site, the photo D50 is about 42% finer than a pebble count until the count's 13 mm minimum is applied; with that cutoff they agree within about 4%. To compare with a field count, set **Field-count cutoff (mm)** to its minimum size.
-- **Re-run before release.** The figures above will be re-run on the release build. The data, scripts and notebooks to reproduce them are in [`validation/`](validation/).
+- **Re-run before release.** The figures above will be re-run on the release build. They were computed with linear interpolation between grain sizes and no minimum size; the notebook now uses the app's own rule (interpolation in log2 size, grains under 15 px left out of both the prediction and the hand outlines), so the re-run measures exactly the numbers the app reports and the figures may shift slightly. The data, scripts and notebooks to reproduce them are in [`validation/`](validation/).
 
 ## Limitations
 
 - **b-axis is not a sieve or caliper b-axis.** It is the minor axis of the ellipse fitted to the visible 2D outline. Partial burial, imbrication and the 2D view of 3D grains add bias. Minimum Feret width is the closest 2D equivalent of a caliper b-axis.
 - **Fine grains are truncated.** Grains smaller than the detection limit (shown in the app, in mm) are missed. Large photos are analysed at up to 1024 px unless you choose a larger image scale.
+- **The browser is not an archive.** Photos and results stay in the browser only for a set number of days after a site was last used (30 by default). Use **Download results…** to keep them; keep your original photos in your own folders.
 - **Lens distortion is not corrected.** It is small for most phones, but wide-angle and action cameras can bias sizes by 7–22%. Undistort such photos first. Oblique photos must be rectified.
 - **Hard conditions:** wet or shiny surfaces, strong shadows, vegetation, sand matrix, single grains covering a large part of the frame, and fewer than about 100 grains.
 

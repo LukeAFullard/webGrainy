@@ -20,7 +20,7 @@ Run the numerical oracle:
 ```bash
 npx vitest run --config validation/oracle/vitest.config.ts   # writes validation/oracle/ts_dump.json
 pip install numpy scipy scikit-image
-python3 -I validation/oracle/oracle.py validation/oracle/ts_dump.json
+python3 -I validation/oracle/oracle.py validation/oracle/ts_dump.json --check   # exit 1 on any mismatch (CI runs this)
 ```
 
 Scripts that load the built engine (`dist/`) need `npm run build` first.

@@ -5,9 +5,9 @@ import type { PhotoRecord, SiteRecord } from '../src/modules/projectStorage.js';
 import { computeWorkspaceReports } from '../src/modules/siteWorkspace.js';
 import { createInitialState, type AppState } from '../src/ui/state.js';
 import { renderTopbarHtml } from '../src/ui/panels/topbar.js';
-import { renderSidebarHtml, backupLineHtml, formatBytes, type SidebarView } from '../src/ui/panels/sidebar.js';
+import { renderSidebarHtml, backupLineHtml, formatBytes, retentionBannerHtml, type SidebarView } from '../src/ui/panels/sidebar.js';
 import { renderToolbarHtml } from '../src/ui/panels/toolbar.js';
-import { renderExportModalHtml } from '../src/ui/modals.js';
+import { renderDownloadResultsModalHtml, renderExportModalHtml } from '../src/ui/modals.js';
 import { renderDashboardHtml } from '../src/ui/panels/dashboard.js';
 import { renderCompareHtml } from '../src/ui/panels/compare.js';
 import {
@@ -137,7 +137,7 @@ describe('panel renderers', () => {
     const html = renderSidebarHtml(analysed, sidebarView);
     expect(html).toContain('2 analysed');
     expect(html).toContain('IMG_1.jpg');
-    expect(html).toContain('Last backed up: never');
+    expect(html).toContain('Results downloaded: never');
     const running = renderSidebarHtml({ ...analysed, batchRunning: true, photoStatuses: new Map([['p1', 'running'], ['p2', 'pending']] as const) }, sidebarView);
     expect(running).toMatch(/data-action="cancel-batch"|Cancel/);
     expect(running).toMatch(/data-action="run-active"[^>]*disabled/);
@@ -153,7 +153,13 @@ describe('panel renderers', () => {
     expect(formatBytes(37e6)).toBe('37 MB');
     expect(formatBytes(2e3)).toBe('2 kB');
     expect(backupLineHtml(analysedState(), 2, null)).toContain('needs-backup');
-    expect(backupLineHtml(emptyState(), 0, null)).toBe('');
+    const line = backupLineHtml(analysedState(), 2, null);
+    expect(line).toContain('data-action="open-download-results"');
+    expect(line).toMatch(/Stored in this browser until/);
+    expect(line).toContain('data-action="keep-site-longer"');
+    const empty = backupLineHtml(emptyState(), 0, null);
+    expect(empty).toContain('id="retention-days"');
+    expect(empty).not.toContain('open-download-results');
   });
 
   it('toolbar: grain-editing tools only once the photo has results', () => {
@@ -220,5 +226,38 @@ describe('panel renderers', () => {
 
     const expErr = renderExportModalHtml({ ...st, siteReport: null, siteReportError: 'Mixed calibration across photos' });
     expect(expErr).toContain('Site exports unavailable: Mixed calibration across photos');
+  });
+});
+
+describe('browser storage notices', () => {
+  const DAY = 86_400_000;
+  const mk = (siteId: string, name: string, t: number): SiteRecord => ({ siteId, name, createdAt: t, updatedAt: t, options: { poolingMode: 'physical-area' }, photoOrder: [] });
+  it('explains storage, reports removals, and warns about sites due within 3 days', () => {
+    const now = Date.now();
+    const st: AppState = {
+      ...createInitialState(),
+      retentionDays: 30,
+      activeSiteId: 'a',
+      sites: [mk('a', 'Open site', now - 28 * DAY), mk('b', 'Other site', now - 29 * DAY), mk('c', 'Fresh', now)],
+      retentionNotice: 'Removed from this browser after 30 days without use: Old (results never downloaded).',
+    };
+    const html = retentionBannerHtml(st, now, 0);
+    expect(html).toContain('kept in this browser for up to 30 days');
+    expect(html).toContain('Removed from this browser after 30 days');
+    expect(html).toMatch(/Open site: .*\(in 2 days\)/);
+    expect(html).toMatch(/Other site: .*\(within a day\)/);
+    expect(html).not.toContain('Fresh');
+    expect(html).toContain('data-action="keep-site-longer"'); // for the open site
+    expect(html).toContain('data-action="open-site" data-site-id="b"'); // other sites: open them first
+  });
+
+  it('download dialog: project file off by default, with a warning either way', () => {
+    const base = analysedState();
+    const off = renderDownloadResultsModalHtml(base);
+    expect(off).toMatch(/id="download-include-project"(?![^>]*checked)/);
+    expect(off).toContain('cannot be reopened in webGrainy');
+    const on = renderDownloadResultsModalHtml({ ...base, downloadIncludeProject: true });
+    expect(on).toMatch(/id="download-include-project"[^>]*checked/);
+    expect(on).toContain('GPS locations');
   });
 });

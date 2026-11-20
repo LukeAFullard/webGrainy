@@ -4,12 +4,16 @@
  * in-memory storage and no-op UI hooks. `main.ts` owns the DOM and calls these.
  */
 import type { CalibrationResult, Point2D, StorageQuotaInfo } from '../types/index.js';
+import { siteRetention } from '../modules/retention.js';
+import { forgetSite, formatAgo, markSiteUsed, readBackupRecords } from './backup.js';
+import { holdSiteLock, ifSiteNotOpen } from './siteLocks.js';
+import { readRetentionSince } from './prefs.js';
 import { AnalysisSession } from '../modules/analysisSession.js';
 import type { ImageGrainsEngine } from '../modules/engine.js';
 import * as projectStorage from '../modules/projectStorage.js';
-import type { PhotoRecord, SiteRecord } from '../modules/projectStorage.js';
+import { isStorageFullError, type PhotoRecord, type SiteRecord } from '../modules/projectStorage.js';
 import { buildSiteInputs, computeWorkspaceReports, effectiveRoi } from '../modules/siteWorkspace.js';
-import type { SitePhotoInput } from '../modules/siteAnalysis.js';
+import type { SiteAnalysisOptions, SitePhotoInput } from '../modules/siteAnalysis.js';
 import {
   COMPARE_COLORS,
   computeComparedSites,
@@ -29,7 +33,7 @@ import { toAnalysisConfig, type AppState, type AppStore } from './state.js';
 /** The storage functions the actions use (projectStorage by default). */
 export type WorkspaceStorage = Pick<
   typeof projectStorage,
-  'listSitePhotos' | 'listSites' | 'getPhotoResult' | 'runSiteBatch' | 'savePhoto' | 'savePhotoResult' | 'saveSite' | 'deletePhoto'
+  'listSitePhotos' | 'listSites' | 'getPhotoResult' | 'runSiteBatch' | 'savePhoto' | 'savePhotoResult' | 'saveSite' | 'deletePhoto' | 'deleteSite'
 >;
 
 /** The engine methods the actions use. */
@@ -93,6 +97,12 @@ export interface WorkspaceDeps {
   /** Engine passed to the batch runner (the real one in the app). */
   batchEngine: Parameters<WorkspaceStorage['runSiteBatch']>[0]['engine'];
   storage?: WorkspaceStorage;
+  /** Tells other open tabs that these sites / photos (records or results) changed. */
+  notifyRecords?: (siteIds: string[], photoIds: string[]) => void;
+  /** Runs `fn` only if no tab has the site open (default: Web Locks, see siteLocks.ts). */
+  ifSiteNotOpen?: (siteId: string, openHere: string | null, fn: () => Promise<void>) => Promise<boolean>;
+  /** Start of the retention clock in this browser (default: prefs.readRetentionSince). */
+  retentionSince?: () => number;
   loadStoredSiteInputs?: typeof loadStoredSiteInputs;
   checkStorageQuota?: () => Promise<StorageQuotaInfo>;
   images: ImageIo;
@@ -160,7 +170,135 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
     }
   }
 
+  /** Reads a photo's stored result into the session / status / error maps. */
+  async function loadPhotoResult(
+    p: PhotoRecord,
+    siteOptions: SiteAnalysisOptions,
+    sessions: Map<string, AnalysisSession>,
+    photoStatuses: Map<string, 'pending' | 'running' | 'done' | 'error'>,
+    photoErrors: Map<string, string>,
+  ): Promise<void> {
+    sessions.delete(p.photoId);
+    photoErrors.delete(p.photoId);
+    const res = await storage.getPhotoResult(p.photoId);
+    if (!res) {
+      photoStatuses.set(p.photoId, 'pending');
+      return;
+    }
+    photoStatuses.set(p.photoId, res.status === 'running' ? 'pending' : res.status);
+    if (res.errorMessage) photoErrors.set(p.photoId, res.errorMessage);
+    if (res.serializedSession) {
+      try {
+        const sess = AnalysisSession.fromSerialized(res.serializedSession);
+        if (p.calibration) sess.setCalibration(p.calibration);
+        if (p.roiConfig) sess.setRoiConfig(effectiveRoi(p, siteOptions));
+        sessions.set(p.photoId, sess);
+      } catch {
+        photoStatuses.set(p.photoId, 'pending');
+      }
+    }
+  }
+
+  /**
+   * Another tab changed these sites / photos: reload the site list, and the open site's
+   * changed photos (records and results) in place, keeping the open photo. Skipped while
+   * this tab analyses or enhances (its own writes would race); its next save still merges.
+   */
+  async function refreshFromStorage(notice: { siteIds: readonly string[]; photoIds: readonly string[] }): Promise<void> {
+    const sites = await storage.listSites();
+    const st = store.getState();
+    const siteId = st.activeSiteId;
+    const site = sites.find((x) => x.siteId === siteId);
+    if (!siteId || !site || st.batchRunning || enhancing) {
+      store.setState({ sites });
+      return;
+    }
+    const touched = notice.siteIds.includes(siteId) || notice.photoIds.some((id) => st.photos.some((p) => p.photoId === id));
+    if (!touched) {
+      store.setState({ sites });
+      return;
+    }
+    const siteOptions = { ...site.options };
+    const photos = await storage.listSitePhotos(siteId);
+    const changed = new Set(notice.photoIds);
+    const sessions = new Map(st.sessions);
+    const photoStatuses = new Map(st.photoStatuses);
+    const photoErrors = new Map(st.photoErrors);
+    const thumbUrls = new Map(st.thumbUrls);
+    const ids = new Set(photos.map((p) => p.photoId));
+    for (const [id, url] of st.thumbUrls) {
+      if (!ids.has(id)) {
+        revokeUrl(url);
+        thumbUrls.delete(id);
+        sessions.delete(id);
+        photoStatuses.delete(id);
+        photoErrors.delete(id);
+      }
+    }
+    for (const p of photos) {
+      const isNew = !st.thumbUrls.has(p.photoId);
+      if (isNew || changed.has(p.photoId)) {
+        if (!isNew && st.photos.find((x) => x.photoId === p.photoId)?.imageBlob !== p.imageBlob) {
+          revokeUrl(st.thumbUrls.get(p.photoId)!);
+          thumbUrls.set(p.photoId, createUrl(p.imageBlob));
+        } else if (isNew) {
+          thumbUrls.set(p.photoId, createUrl(p.imageBlob));
+        }
+        await loadPhotoResult(p, siteOptions, sessions, photoStatuses, photoErrors);
+      }
+    }
+    const activePhotoId = st.activePhotoId !== null && ids.has(st.activePhotoId) ? st.activePhotoId : (photos[0]?.photoId ?? null);
+    store.setState({ sites, photos, sessions, photoStatuses, photoErrors, thumbUrls, siteOptions, activePhotoId });
+    recomputeReports();
+    await deps.syncViewport(false);
+  }
+
+  /**
+   * Removes sites not used for the chosen number of days (photos and results), except sites
+   * open in any tab, and says what was removed. Runs at start-up (before a site is opened)
+   * and periodically. Returns the removed site ids.
+   */
+  async function purgeExpiredSites(now = Date.now()): Promise<string[]> {
+    const st = store.getState();
+    if (st.retentionDays <= 0 || st.batchRunning || enhancing) return [];
+    const sites = await storage.listSites();
+    const info = readBackupRecords();
+    const { due } = siteRetention(sites, info, st.retentionDays, now, (deps.retentionSince ?? readRetentionSince)());
+    return removeSites(
+      due.map((d) => d.site),
+      `Removed from this browser after ${st.retentionDays} days without use`,
+      now,
+    );
+  }
+
+  /**
+   * Removes these sites (photos and results) from this browser, except any open in a tab, and
+   * shows `${reason}: <site> (results downloaded …)`. Returns the removed site ids.
+   */
+  async function removeSites(sites: readonly SiteRecord[], reason: string, now = Date.now()): Promise<string[]> {
+    const info = readBackupRecords();
+    const removed: string[] = [];
+    const parts: string[] = [];
+    for (const site of sites) {
+      const ran = await (deps.ifSiteNotOpen ?? ifSiteNotOpen)(site.siteId, store.getState().activeSiteId, () => storage.deleteSite(site.siteId));
+      if (!ran) continue;
+      const downloadedAt = info[site.siteId]?.backedUpAt;
+      parts.push(`${site.name} (${downloadedAt !== undefined ? `results downloaded ${formatAgo(now - downloadedAt)}` : 'results never downloaded'})`);
+      removed.push(site.siteId);
+      forgetSite(site.siteId);
+    }
+    if (removed.length > 0) {
+      deps.notifyRecords?.(removed, []);
+      store.setState({ sites: await storage.listSites(), retentionNotice: `${reason}: ${parts.join('; ')}.` });
+    }
+    deps.onStorageChanged();
+    return removed;
+  }
+
   async function loadSiteData(siteId: string): Promise<void> {
+    // Opening a site restarts its storage clock and marks it open in this tab.
+    markSiteUsed(siteId);
+    holdSiteLock(siteId);
     const state = store.getState();
     // Revoke the previous thumbnails only after the new ones are in state: revoking them
     // up front left <img> elements pointing at dead blob: URLs if anything re-rendered the
@@ -180,23 +318,7 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
 
     for (const p of photos) {
       thumbUrls.set(p.photoId, createUrl(p.imageBlob));
-      const res = await storage.getPhotoResult(p.photoId);
-      if (res) {
-        photoStatuses.set(p.photoId, res.status === 'running' ? 'pending' : res.status);
-        if (res.errorMessage) photoErrors.set(p.photoId, res.errorMessage);
-        if (res.serializedSession) {
-          try {
-            const sess = AnalysisSession.fromSerialized(res.serializedSession);
-            if (p.calibration) sess.setCalibration(p.calibration);
-            if (p.roiConfig) sess.setRoiConfig(effectiveRoi(p, nextSiteOptions));
-            sessions.set(p.photoId, sess);
-          } catch {
-            photoStatuses.set(p.photoId, 'pending');
-          }
-        }
-      } else {
-        photoStatuses.set(p.photoId, 'pending');
-      }
+      await loadPhotoResult(p, nextSiteOptions, sessions, photoStatuses, photoErrors);
     }
 
     store.setState({
@@ -223,6 +345,8 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
   }
 
   async function createDefaultOrLoadSites(): Promise<void> {
+    // Remove expired sites before any site is opened (opening one restarts its clock).
+    await purgeExpiredSites().catch(() => undefined);
     let sites = await storage.listSites();
     if (sites.length === 0) {
       const defaultSite: SiteRecord = {
@@ -410,7 +534,10 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
       });
       job.finish(aborted, `All sites: ${done} photos analysed${failed > 0 ? `, ${failed} failed` : ''}.`);
     } catch (err) {
-      store.setState({ statusMessage: `Batch error: ${err instanceof Error ? err.message : String(err)}` });
+      store.setState({
+        statusMessage: `Batch error: ${err instanceof Error ? err.message : String(err)}`,
+        ...(err instanceof Error && err.name === 'StorageFullError' ? { storageFullNotice: err.message } : {}),
+      });
     } finally {
       batchAbortController = null;
       store.setState({ batchRunning: false, batchProgress: null });
@@ -494,13 +621,14 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
               sessCal.physicalLengthMm !== latestCal.physicalLengthMm)
           ) {
             session.setCalibration(latestCal);
-            void persistActiveSession(photo.photoId, session).catch(() => undefined);
+            void persistActiveSession(photo.photoId, session).catch((err: unknown) => reportSaveFailure(err, `the scale of ${photo.label}`));
           }
           const nextSessions = new Map(prev.sessions);
           nextSessions.set(photo.photoId, session);
           const nextStatuses = new Map(prev.photoStatuses);
           nextStatuses.set(photo.photoId, 'done');
           deps.markSiteChanged(site.siteId);
+          deps.notifyRecords?.([site.siteId], [photo.photoId]);
           const nextErrors = new Map(prev.photoErrors);
           nextErrors.delete(photo.photoId);
           store.setState({
@@ -549,6 +677,7 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
     } catch (err) {
       store.setState({
         statusMessage: `Batch error: ${err instanceof Error ? err.message : String(err)}`,
+        ...(err instanceof Error && err.name === 'StorageFullError' ? { storageFullNotice: err.message } : {}),
       });
     } finally {
       batchAbortController = null;
@@ -591,6 +720,18 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
     batchAbortController?.abort();
   }
 
+  /**
+   * A save to browser storage failed: say so plainly (the change is shown but not stored),
+   * and when storage is full, show the storage-full notice with what to do.
+   */
+  function reportSaveFailure(err: unknown, what: string): void {
+    const full = isStorageFullError(err);
+    const message = full
+      ? `Browser storage is full: ${what} could not be saved (it is shown, but will be lost when the page closes). Download results now, then free space.`
+      : `Could not save ${what}: ${err instanceof Error ? err.message : String(err)}`;
+    store.setState({ statusMessage: message, ...(full ? { storageFullNotice: message } : {}) });
+  }
+
   async function persistActiveSession(photoId: string, session: AnalysisSession): Promise<void> {
     const owner = store.getState().photos.find((p) => p.photoId === photoId);
     if (owner) deps.markSiteChanged(owner.siteId);
@@ -600,6 +741,7 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
       serializedSession: session.toSerialized(),
       updatedAt: Date.now(),
     });
+    deps.notifyRecords?.(owner ? [owner.siteId] : [], [photoId]);
   }
 
   async function applyCalibrationToActive(
@@ -963,6 +1105,10 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
     recomputeReports,
     refreshCapabilities,
     loadSiteData,
+    refreshFromStorage,
+    purgeExpiredSites,
+    removeSites,
+    reportSaveFailure,
     createDefaultOrLoadSites,
     handleFilesAdded,
     runBatch,
