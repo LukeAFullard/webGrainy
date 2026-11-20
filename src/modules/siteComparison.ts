@@ -172,8 +172,27 @@ export interface D50Comparison {
   ratio: number;
   ratioLo: number;
   ratioHi: number;
-  /** Two-sided p-value of the approximate log-ratio z-test. */
+  /** Two-sided p-value of the approximate log-ratio z-test (NaN when not computed). */
   p: number;
+  /**
+   * How far the interval and p-value can be trusted: 'photos' when both sites have at least
+   * MIN_PHOTOS_FOR_TEST photos; 'few-photos' when either has fewer (approximate); 'single-photo'
+   * when either has one photo. Its bootstrap only resamples grains within the photo, so it
+   * misses patch-to-patch variation of the bed; the interval and p-value are then not given.
+   */
+  basis: ComparisonBasis;
+}
+
+export type ComparisonBasis = 'photos' | 'few-photos' | 'single-photo';
+
+/** Photos per site from which the between-site test is treated as reliable. */
+export const MIN_PHOTOS_FOR_TEST = 5;
+
+/** Test basis of a pair of site reports (see `D50Comparison.basis`). */
+export function comparisonBasis(a: SiteAnalysisReport, b: SiteAnalysisReport): ComparisonBasis {
+  const single = (r: SiteAnalysisReport): boolean => r.bootstrapMode === 'single-photo-grain-fallback' || r.includedPhotoCount < 2;
+  if (single(a) || single(b)) return 'single-photo';
+  return Math.min(a.includedPhotoCount, b.includedPhotoCount) < MIN_PHOTOS_FOR_TEST ? 'few-photos' : 'photos';
 }
 
 type WithReport = ComparedSite & { report: SiteAnalysisReport };
@@ -187,8 +206,12 @@ function logSe(r: SiteAnalysisReport, key: ComparedPercentile): number {
 
 function comparePair(A: WithReport, B: WithReport, key: ComparedPercentile): D50Comparison {
   const lr = Math.log(A.report.psd[key] / B.report.psd[key]);
-  const s = Math.hypot(logSe(A.report, key), logSe(B.report, key));
+  const basis = comparisonBasis(A.report, B.report);
   const z95 = zFor(0.95);
+  // Single-photo sites: their grain-only bootstrap interval is far too narrow for a
+  // comparison between surveys (about 30% false "significant" changes on an unchanged,
+  // mildly patchy bed in simulation), so no interval or p-value is given.
+  const s = basis === 'single-photo' ? Number.NaN : Math.hypot(logSe(A.report, key), logSe(B.report, key));
   return {
     a: A.name,
     b: B.name,
@@ -197,6 +220,7 @@ function comparePair(A: WithReport, B: WithReport, key: ComparedPercentile): D50
     ratioLo: Math.exp(lr - z95 * s),
     ratioHi: Math.exp(lr + z95 * s),
     p: Number.isFinite(s) && s > 0 ? 2 * (1 - normalCdf(Math.abs(lr / s))) : Number.NaN,
+    basis,
   };
 }
 
@@ -277,6 +301,27 @@ export function surveyChanges(sites: readonly ComparedSite[]): SurveyChange[] {
   return out;
 }
 
+const num = (v: number): string => (Number.isFinite(v) ? String(v) : '');
+
+/** Warnings about how far the between-site tests can be trusted (few or single photos). */
+export function comparisonWarnings(sites: readonly ComparedSite[]): string[] {
+  const withReport = sites.filter((s) => s.report !== null) as WithReport[];
+  const single = withReport.filter((s) => s.report.bootstrapMode === 'single-photo-grain-fallback' || s.report.includedPhotoCount < 2);
+  const few = withReport.filter((s) => !single.includes(s) && s.report.includedPhotoCount < MIN_PHOTOS_FOR_TEST);
+  const out: string[] = [];
+  if (single.length > 0) {
+    out.push(
+      `${single.map((s) => s.name).join(', ')}: one photo only, so no interval or p-value is given for comparisons with ${single.length === 1 ? 'this site' : 'these sites'}. One photo cannot show how much the bed varies from patch to patch; take several photos per survey.`,
+    );
+  }
+  if (few.length > 0) {
+    out.push(
+      `${few.map((s) => `${s.name} (${s.report.includedPhotoCount} photos)`).join(', ')}: fewer than ${MIN_PHOTOS_FOR_TEST} photos, so intervals and p-values involving ${few.length === 1 ? 'this site' : 'these sites'} are rough and tend to overstate differences.`,
+    );
+  }
+  return out;
+}
+
 /** Comparison table and pairwise tests as `section,site,metric,value,unit` CSV. */
 export function comparisonCsv(sites: readonly ComparedSite[], metadata: Record<string, unknown>): string {
   const lines = ['section,site,metric,value,unit'];
@@ -295,6 +340,7 @@ export function comparisonCsv(sites: readonly ComparedSite[], metadata: Record<s
       ['photos', r.includedPhotoCount, 'count'],
       ['grains', r.validGrainCount, 'count'],
       ['pooling_mode', r.poolingMode, 'mode'],
+      ['bootstrap_mode', r.bootstrapMode, 'mode'],
       ['size_metric', r.sizeMetric, 'metric'],
       ['size_cutoff', r.dCutoffCommonMm, 'mm'],
       ['D16', r.psd.D16, u],
@@ -334,9 +380,10 @@ export function comparisonCsv(sites: readonly ComparedSite[], metadata: Record<s
       const pair = csvCell(`${c.a} vs ${c.b}`);
       const sec = `${key.toLowerCase()}_ratio`;
       lines.push(`${sec},${pair},ratio,${c.ratio},ratio`);
-      lines.push(`${sec},${pair},ratio_ci95_lo,${c.ratioLo},ratio`);
-      lines.push(`${sec},${pair},ratio_ci95_hi,${c.ratioHi},ratio`);
-      lines.push(`${sec},${pair},p_value_approx,${Number.isFinite(c.p) ? c.p : ''},p`);
+      lines.push(`${sec},${pair},ratio_ci95_lo,${num(c.ratioLo)},ratio`);
+      lines.push(`${sec},${pair},ratio_ci95_hi,${num(c.ratioHi)},ratio`);
+      lines.push(`${sec},${pair},p_value_approx,${num(c.p)},p`);
+      lines.push(`${sec},${pair},test_basis,${c.basis},label`);
     }
   }
   for (const ch of surveyChanges(sites)) {
@@ -344,11 +391,12 @@ export function comparisonCsv(sites: readonly ComparedSite[], metadata: Record<s
     for (const key of ['D16', 'D50', 'D84'] as const) {
       const c = ch.changes[key];
       lines.push(`survey_change,${label},${key}_ratio_later_over_earlier,${c.ratio},ratio`);
-      lines.push(`survey_change,${label},${key}_ratio_ci95_lo,${c.ratioLo},ratio`);
-      lines.push(`survey_change,${label},${key}_ratio_ci95_hi,${c.ratioHi},ratio`);
-      lines.push(`survey_change,${label},${key}_p_value_approx,${Number.isFinite(c.p) ? c.p : ''},p`);
+      lines.push(`survey_change,${label},${key}_ratio_ci95_lo,${num(c.ratioLo)},ratio`);
+      lines.push(`survey_change,${label},${key}_ratio_ci95_hi,${num(c.ratioHi)},ratio`);
+      lines.push(`survey_change,${label},${key}_p_value_approx,${num(c.p)},p`);
+      lines.push(`survey_change,${label},${key}_test_basis,${c.basis},label`);
     }
   }
-  settingsMismatches(sites).forEach((w, i) => lines.push(`warning,${i + 1},${csvCell(w)},text`));
+  [...settingsMismatches(sites), ...comparisonWarnings(sites)].forEach((w, i) => lines.push(`warning,${i + 1},${csvCell(w)},text`));
   return lines.join('\n');
 }

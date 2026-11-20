@@ -3,7 +3,7 @@
  * shape and fabric charts; D16/D50/D84 tests between sites; change over time per place; and
  * like-for-like checks (analysis settings, common size range).
  */
-import { comparePercentile, settingsMismatches, surveyChanges, type ComparedPercentile, type D50Comparison } from '../../modules/siteComparison.js';
+import { comparePercentile, comparisonWarnings, settingsMismatches, surveyChanges, type ComparedPercentile, type D50Comparison } from '../../modules/siteComparison.js';
 import { groupSitesByPlace } from '../../modules/sitePlaces.js';
 import { sizeHistogramFromWentworth } from '../../modules/histograms.js';
 import {
@@ -115,14 +115,16 @@ export function renderCompareHtml(state: AppState, lightTheme: boolean, charts: 
   const pairsByKey = keys.map((k) => ({ k, pairs: comparePercentile(plotted, k) }));
   const nPairs = pairsByKey[1]!.pairs.length;
   const fmtRatio = (c: D50Comparison): string =>
-    `${c.ratio.toFixed(2)}× <span class="stats-note">${c.ratioLo.toFixed(2)}–${c.ratioHi.toFixed(2)}, p ${!Number.isFinite(c.p) ? '—' : c.p < 0.001 ? '&lt; 0.001' : `= ${c.p.toFixed(3)}`}${c.p < 0.05 ? ' *' : ''}</span>`;
+    c.basis === 'single-photo'
+      ? `${c.ratio.toFixed(2)}× <span class="stats-note" title="A one-photo survey cannot show how much the bed varies between patches, so no interval or p-value is given">no test (1 photo)</span>`
+      : `${c.ratio.toFixed(2)}× <span class="stats-note">${Number.isFinite(c.ratioLo) ? `${c.ratioLo.toFixed(2)}–${c.ratioHi.toFixed(2)}, ` : ''}p ${!Number.isFinite(c.p) ? '—' : c.p < 0.001 ? '&lt; 0.001' : `= ${c.p.toFixed(3)}`}${c.p < 0.05 ? ' *' : ''}${c.basis === 'few-photos' ? ' (few photos)' : ''}</span>`;
   const pairHtml = nPairs
     ? `<details class="advanced-block" data-keep-open="compare-pairs" open>
         <summary>Differences between sites <span class="summary-note">D16, D50, D84 ratios · approximate</span></summary>
         <div class="table-scroll"><table class="stats-table"><thead><tr><th>Pair</th>${keys.map((k) => `<th>${k}</th>`).join('')}</tr></thead><tbody>${pairsByKey[1]!.pairs
           .map((c, i) => `<tr><th scope="row">${esc(c.a)} ÷ ${esc(c.b)}</th>${pairsByKey.map(({ pairs }) => `<td>${pairs[i] ? fmtRatio(pairs[i]!) : '—'}</td>`).join('')}</tr>`)
           .join('')}</tbody></table></div>
-        <p class="field-hint">Ratio with a 95% interval from each site's bootstrap interval on a log scale (z-test); * p &lt; 0.05. A screening check, not a formal two-sample test, and with many pairs some will be "significant" by chance. ${helpButton('compareSites')}</p>
+        <p class="field-hint">Ratio with a 95% interval from each site's bootstrap interval on a log scale (z-test); * p &lt; 0.05. A screening check, not a formal two-sample test; not given for one-photo sites, and rough below 5 photos per site. With many pairs some will be "significant" by chance. ${helpButton('compareSites')}</p>
       </details>`
     : '';
   const problems = (cmp?.sites ?? []).filter((s) => s.report === null || (mixedUnits && s.report.unit !== 'mm'));
@@ -137,6 +139,10 @@ export function renderCompareHtml(state: AppState, lightTheme: boolean, charts: 
         .join('')}</div>`
     : '';
   // Like-for-like checks: analysis settings and the common size range.
+  const testWarnings = comparisonWarnings(plotted);
+  const testWarningHtml = testWarnings.length
+    ? `<div class="warning-banner"><strong>How far the tests can be trusted.</strong><br/>${testWarnings.map(esc).join('<br/>')}</div>`
+    : '';
   const mismatches = settingsMismatches(plotted);
   const mismatchHtml = mismatches.length
     ? `<div class="warning-banner" role="alert"><strong>Not analysed the same way.</strong><br/>${mismatches.map(esc).join('<br/>')}</div>`
@@ -209,6 +215,7 @@ export function renderCompareHtml(state: AppState, lightTheme: boolean, charts: 
       ${cmp?.error ? `<div class="warning-banner">${esc(cmp.error)}</div>` : ''}
       ${problemHtml}
       ${mismatchHtml}
+      ${testWarningHtml}
       ${pixelsToggle}
       ${dateToggle}
       ${cutoffHtml}
