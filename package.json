@@ -10,7 +10,8 @@
     "test": "vitest run",
     "test:perf": "PERF_STRICT=1 vitest run",
     "test:e2e:browser": "node scripts/smoke-dist.mjs",
-    "test:e2e:sw": "node scripts/smoke-sw-update.mjs"
+    "test:e2e:sw": "node scripts/smoke-sw-update.mjs",
+    "tutorials": "node scripts/record-tutorials.mjs"
   },
   "dependencies": {
     "onnxruntime-web": "^1.31.1",

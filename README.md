@@ -83,6 +83,27 @@ npm run test:perf          # strict timing budgets (run on an idle machine)
 
 CI runs all of these except `test:perf` on every push and pull request. The app is a static site: [DEPLOYMENT.md](DEPLOYMENT.md) explains hosting, including the headers needed for multi-threaded CPU inference.
 
+### Tutorial videos
+
+Six short, silent tutorial videos (1280×720 MP4, about a minute each) are generated from the built app, so they can be re-recorded whenever the interface changes:
+
+```bash
+npm run build
+npm run tutorials          # all six, into tutorials/out/
+npm run tutorials -- 03    # only those whose file name contains "03"
+```
+
+| File | Shows |
+| --- | --- |
+| `01-first-analysis` | adding photos and running a first analysis |
+| `02-set-scale` | calibrating each photo from a ruler; Copy scale and Rectify |
+| `03-edit-outlines` | Inspect, Split, Merge, Delete, excluding the ruler, Flagged grains |
+| `04-site-results` | naming a site; Whole-site results, confidence interval, adequacy, settings |
+| `05-compare-surveys` | a second survey of the same place and the comparison over time |
+| `06-download-and-gis` | the results .zip, and GeoJSON in map coordinates from a GeoTIFF |
+
+Each tutorial is a Playwright script in `scripts/tutorials/` that drives headless Chromium. Frames come from the Chrome DevTools screencast; an overlay draws the cursor, clicks, captions, highlights and title cards, and ffmpeg (which must be installed) encodes the MP4. Model waits are sped up and say so on screen. The sample photos are two ImageGrains demo images (K1 site; BSD-3-Clause, © 2023 David Mair), downloaded from a pinned commit and checked by SHA-256. Tutorial 6 turns one into an example GeoTIFF at an invented location. Videos are not committed: attach them to a release or upload them elsewhere.
+
 ### Repository layout
 
 ```text
@@ -91,7 +112,7 @@ src/modules/     analysis engine and data (no UI): models, inference, post-proce
 src/ui/          the browser app: state, panels, event handlers, charts, canvas
 src/workers/     post-processing and CPU-inference workers
 tests/           Vitest unit, parity and end-to-end tests
-scripts/         browser smoke test of the built app
+scripts/         browser smoke tests of the built app; tutorial-video recorder
 validation/      benchmarks and their data: held-out accuracy, parity with upstream
                  Cellpose/ImageGrains, K1 field comparison, preprocessing and
                  quantization studies, GPU-vs-CPU checks, numerical oracle
