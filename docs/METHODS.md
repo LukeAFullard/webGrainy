@@ -649,6 +649,7 @@ site-comparison test was checked by simulation (Section 13).
 - **Lens distortion is not corrected.** It is small for most phone cameras, but wide-angle and
   action cameras can change sizes by 7–22% towards the photo edges. Undistort such photos
   first.
+- **Outline resolution.** Outlines are traced on the working image (section 4), so on a large photo analysed at *Auto* each outline step is several photo pixels: exported masks and GeoJSON/SVG outlines have stepped edges. Analyse at *Scale Mode: 1.0x Full* for finer outlines (photos over 16.7 megapixels are still read at 16.7 MP). Exported outline coordinates are photo pixels, not map coordinates.
 - **One scale per photo.** Photos must be taken straight down over a roughly flat bed, or be
   rectified. Tilted photos change the scale across the image.
 - **Model limits.** The models were trained on the ImageGrains photo collection. On very

@@ -5,7 +5,7 @@ import type { WorkingImageResult } from '../../src/types/index.js';
 
 export function squareGrainSession(
   sides: readonly number[],
-  opts: { w?: number; h?: number; mmPerPx?: number } = {},
+  opts: { w?: number; h?: number; mmPerPx?: number; /** working ÷ original size (e.g. 0.25 = photo 4× larger) */ scale?: number } = {},
 ): AnalysisSession {
   const w = opts.w ?? 600;
   const h = opts.h ?? 600;
@@ -30,9 +30,9 @@ export function squareGrainSession(
     data: new Uint8ClampedArray(0),
     width: w,
     height: h,
-    originalWidth: w,
-    originalHeight: h,
-    effectiveScaleFactor: 1,
+    originalWidth: Math.round(w / (opts.scale ?? 1)),
+    originalHeight: Math.round(h / (opts.scale ?? 1)),
+    effectiveScaleFactor: opts.scale ?? 1,
     scaleModeApplied: '1.0x',
   };
   const mm = opts.mmPerPx;
