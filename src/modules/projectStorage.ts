@@ -966,11 +966,13 @@ export interface BatchRunResult {
   failedPhotoIds: string[];
 }
 
+/**
+ * A cancellation, not a failure: only an AbortError counts. Engine errors whose message merely
+ * contains "abort" (e.g. onnxruntime-web's Emscripten "Aborted(...)" on out of memory) are
+ * real failures and must be recorded as such.
+ */
 function isAbortError(err: unknown): boolean {
-  return (
-    err instanceof Error &&
-    (err.name === 'AbortError' || err.message.toLowerCase().includes('abort'))
-  );
+  return typeof err === 'object' && err !== null && (err as { name?: unknown }).name === 'AbortError';
 }
 
 /**
@@ -1000,6 +1002,20 @@ export async function decodeWithinPixelLimit(
   const resizeHeight = Math.max(1, Math.floor(bmp.height * k));
   bmp.close();
   return createBitmap(blob, { resizeWidth, resizeHeight, resizeQuality: 'high' });
+}
+
+/**
+ * The engine error as recorded for the photo. onnxruntime-web reports running out of memory
+ * as an Emscripten abort ("Aborted(...)", or a bad_alloc / allocation failure); say so in words.
+ */
+export function describeEngineError(err: unknown): Error {
+  const e = err instanceof Error ? err : new Error(String(err));
+  if (/^(RuntimeError: )?Aborted\(|bad_alloc|out of memory|allocation failed/i.test(e.message)) {
+    return new Error(
+      `Out of memory during analysis (${e.message}). Try U-Net, a smaller image scale, or the INT8 Cellpose-SAM weights.`,
+    );
+  }
+  return e;
 }
 
 export async function runSiteBatch(
@@ -1141,7 +1157,7 @@ export async function runSiteBatch(
         );
         break;
       }
-      const errorObj = err instanceof Error ? err : new Error(String(err));
+      const errorObj = describeEngineError(err);
       failedPhotoIds.push(photo.photoId);
       await savePhotoResult(
         {
