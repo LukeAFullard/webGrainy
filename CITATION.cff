@@ -6,11 +6,13 @@ message: >-
   by the ImageGrains or Cellpose authors.
 title: "webGrainy (ImageGrains 2.0 Web): browser-native grain segmentation and grain-size statistics"
 type: software
-version: 0.1.0-dev
+version: 0.1.0
+date-released: "2026-12-19"
 license: BSD-3-Clause
 repository-code: "https://github.com/LukeAFullard/webGrainy"
 authors:
-  - name: "webGrainy / ImageGrains 2.0 Web Contributors"
+  - family-names: Fullard
+    given-names: Luke
 keywords:
   - grain size
   - sedimentology
@@ -32,7 +34,41 @@ references:
     year: 2026
     doi: "10.5194/esurf-14-527-2026"
   - type: data
-    title: "ImageGrains 2.0 pretrained model weights"
+    title: "ImageGrains 2.0 models"
+    authors:
+      - family-names: "Mair"
+        given-names: "David"
+      - family-names: "Witz"
+        given-names: "Guillaume"
+      - family-names: "do Prado"
+        given-names: "Ariel"
+      - family-names: "Garefalakis"
+        given-names: "Philippos"
+      - family-names: "Wild"
+        given-names: "Amanda Lily"
+      - family-names: "Ville"
+        given-names: "Fanny"
+      - family-names: "Schuster"
+        given-names: "Bennet"
+      - family-names: "Horn"
+        given-names: "Michael"
+      - family-names: "Österle"
+        given-names: "Jürgen"
+      - family-names: "Fabbri"
+        given-names: "Stefano Claudio"
+      - family-names: "Litty"
+        given-names: "Camille"
+      - family-names: "Achleitner"
+        given-names: "Stefan"
+      - family-names: "Leistner"
+        given-names: "Sebastian"
+      - family-names: "Hiller"
+        given-names: "Clemens"
+      - family-names: "Schlunegger"
+        given-names: "Fritz"
+    publisher:
+      name: Zenodo
+    year: 2025
     doi: "10.5281/zenodo.15728186"
   - type: article
     title: "Automated detecting, segmenting and measuring of grains in images of fluvial sediments"
