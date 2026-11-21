@@ -35,7 +35,7 @@ export const HELP_TOPICS = {
     group: 'Analysis',
     what: 'Which neural network finds the grains. CP-SAM is more accurate but a larger download (180–617 MB, see "CP-SAM weights") and needs a modern graphics card for good speed. U-Net is small (26 MB) and fast and works almost anywhere, but is less accurate. Auto picks one for you based on the photo and your hardware. On phones and tablets Auto always picks U-Net.',
     default: 'Auto',
-    when: 'Use CP-SAM for results you will report or publish (median D50 error about 3% in testing, vs about 9% for U-Net). Use U-Net for a quick look or on a phone. Use the same model for all photos you compare.',
+    when: 'Use CP-SAM for results you will report or publish (median D50 error about 3% in testing, vs about 6% for U-Net). Use U-Net for a quick look or on a phone. Use the same model for all photos you compare.',
   },
   cpsamWeights: {
     title: 'CP-SAM weights',

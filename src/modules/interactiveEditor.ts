@@ -4,6 +4,11 @@ import type {
   GrainMorphometrics,
   Point2D,
 } from '../types/index.js';
+import { ScaleCalibrator } from './scaleCalibrator.js';
+
+// Split out (re-exported so existing imports keep working).
+export { ScaleCalibrator } from './scaleCalibrator.js';
+export { MaskEditHistory, type MaskEditEntry } from './maskEditHistory.js';
 
 interface MomentAccumulator {
   m00: number;
@@ -36,15 +41,6 @@ export interface MaskEditResult {
   reason?: string;
 }
 
-export interface MaskEditEntry {
-  bbox: [number, number, number, number];
-  imageWidth: number;
-  before: Int32Array;
-  after: Int32Array;
-  grainsBefore?: GrainMorphometrics[];
-  grainsAfter?: GrainMorphometrics[];
-  label?: string;
-}
 
 function getMmPerPx(calibration?: CalibrationResult | number): number | undefined {
   if (calibration === undefined) {
@@ -1058,194 +1054,4 @@ export function addPolygonGrain(
     bbox: actualBbox,
     grains: updateGrainsList(options?.grains, affectedGrains, []),
   };
-}
-
-/**
- * Lightweight Undo/Redo command stack storing Int32Array bounding-box diffs.
- */
-export class MaskEditHistory {
-  private entries: MaskEditEntry[] = [];
-  private _cursor = -1;
-  private readonly maxEntries: number;
-
-  constructor(maxEntries = 100) {
-    this.maxEntries = Math.max(1, maxEntries);
-  }
-
-  get length(): number {
-    return this.entries.length;
-  }
-
-  get cursor(): number {
-    return this._cursor;
-  }
-
-  get canUndo(): boolean {
-    return this._cursor >= 0;
-  }
-
-  get canRedo(): boolean {
-    return this._cursor < this.entries.length - 1;
-  }
-
-  static extractBboxSlice(
-    masks: Int32Array,
-    imageWidth: number,
-    bbox: [number, number, number, number],
-  ): Int32Array {
-    const [minX, minY, maxX, maxY] = bbox;
-    const bw = maxX - minX + 1;
-    const bh = maxY - minY + 1;
-    const slice = new Int32Array(bw * bh);
-
-    for (let ly = 0; ly < bh; ly++) {
-      const srcStart = (minY + ly) * imageWidth + minX;
-      slice.set(masks.subarray(srcStart, srcStart + bw), ly * bw);
-    }
-
-    return slice;
-  }
-
-  static applyBboxSlice(
-    masks: Int32Array,
-    imageWidth: number,
-    bbox: [number, number, number, number],
-    slice: Int32Array,
-  ): void {
-    const [minX, minY, maxX, maxY] = bbox;
-    const bw = maxX - minX + 1;
-    const bh = maxY - minY + 1;
-
-    for (let ly = 0; ly < bh; ly++) {
-      const dstStart = (minY + ly) * imageWidth + minX;
-      const srcStart = ly * bw;
-      masks.set(slice.subarray(srcStart, srcStart + bw), dstStart);
-    }
-  }
-
-  push(entry: MaskEditEntry): void {
-    if (this._cursor < this.entries.length - 1) {
-      this.entries.length = this._cursor + 1;
-    }
-    this.entries.push(entry);
-    if (this.entries.length > this.maxEntries) {
-      this.entries.shift();
-    }
-    this._cursor = this.entries.length - 1;
-  }
-
-  undo(masks: Int32Array): MaskEditEntry | null {
-    if (!this.canUndo) {
-      return null;
-    }
-    const entry = this.entries[this._cursor];
-    if (entry === undefined) {
-      return null;
-    }
-    MaskEditHistory.applyBboxSlice(masks, entry.imageWidth, entry.bbox, entry.before);
-    this._cursor -= 1;
-    return entry;
-  }
-
-  redo(masks: Int32Array): MaskEditEntry | null {
-    if (!this.canRedo) {
-      return null;
-    }
-    const nextCursor = this._cursor + 1;
-    const entry = this.entries[nextCursor];
-    if (entry === undefined) {
-      return null;
-    }
-    MaskEditHistory.applyBboxSlice(masks, entry.imageWidth, entry.bbox, entry.after);
-    this._cursor = nextCursor;
-    return entry;
-  }
-
-  clear(): void {
-    this.entries = [];
-    this._cursor = -1;
-  }
-}
-
-/**
- * Two-point spatial scale calibrator converting pixel coordinates + known
- * physical length (`mm` or `cm`) into `mmPerPx` and calibrated morphometrics.
- */
-export class ScaleCalibrator {
-  static calibrate(
-    pointA: Point2D,
-    pointB: Point2D,
-    physicalLength: number,
-    unit: 'mm' | 'cm' = 'mm',
-  ): CalibrationResult {
-    const pixelDistance = Math.hypot(pointB.x - pointA.x, pointB.y - pointA.y);
-    if (!Number.isFinite(pixelDistance) || pixelDistance <= 0) {
-      throw new Error('Reference points must have a positive pixel distance.');
-    }
-    if (!Number.isFinite(physicalLength) || physicalLength <= 0) {
-      throw new Error('Physical length must be a positive finite number.');
-    }
-
-    const physicalLengthMm = unit === 'cm' ? physicalLength * 10 : physicalLength;
-    const mmPerPx = physicalLengthMm / pixelDistance;
-
-    return {
-      mmPerPx,
-      pointA: { x: pointA.x, y: pointA.y },
-      pointB: { x: pointB.x, y: pointB.y },
-      physicalLengthMm,
-      pixelDistance,
-    };
-  }
-
-  static scaleMorphometrics(
-    grain: GrainMorphometrics,
-    calibration: CalibrationResult | number,
-  ): GrainMorphometrics {
-    const mmPerPx = typeof calibration === 'number' ? calibration : calibration.mmPerPx;
-    if (!Number.isFinite(mmPerPx) || mmPerPx <= 0) {
-      throw new Error('Calibration mmPerPx must be a positive finite number.');
-    }
-
-    return {
-      ...grain,
-      bbox: [grain.bbox[0], grain.bbox[1], grain.bbox[2], grain.bbox[3]],
-      areaMm2: grain.areaPx * mmPerPx * mmPerPx,
-      aAxisMm: grain.aAxisPx * mmPerPx,
-      bAxisMm: grain.bAxisPx * mmPerPx,
-      dEqMm: grain.dEqPx * mmPerPx,
-      ...(grain.minFeretPx !== undefined ? { minFeretMm: grain.minFeretPx * mmPerPx } : {}),
-      ...(grain.maxFeretPx !== undefined ? { maxFeretMm: grain.maxFeretPx * mmPerPx } : {}),
-    };
-  }
-
-  static scaleAllMorphometrics(
-    grains: readonly GrainMorphometrics[],
-    calibration: CalibrationResult | number,
-  ): GrainMorphometrics[] {
-    return grains.map((g) => ScaleCalibrator.scaleMorphometrics(g, calibration));
-  }
-
-  calibrate(
-    pointA: Point2D,
-    pointB: Point2D,
-    physicalLength: number,
-    unit: 'mm' | 'cm' = 'mm',
-  ): CalibrationResult {
-    return ScaleCalibrator.calibrate(pointA, pointB, physicalLength, unit);
-  }
-
-  scaleMorphometrics(
-    grain: GrainMorphometrics,
-    calibration: CalibrationResult | number,
-  ): GrainMorphometrics {
-    return ScaleCalibrator.scaleMorphometrics(grain, calibration);
-  }
-
-  scaleAllMorphometrics(
-    grains: readonly GrainMorphometrics[],
-    calibration: CalibrationResult | number,
-  ): GrainMorphometrics[] {
-    return ScaleCalibrator.scaleAllMorphometrics(grains, calibration);
-  }
 }

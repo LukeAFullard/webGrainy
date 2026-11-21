@@ -19,14 +19,11 @@ import {
   effectiveRoi,
   photoCutoffs,
 } from '../modules/siteWorkspace.js';
-import { siteReportProvenance } from '../modules/siteProvenance.js';
 import { CanvasViewport } from './canvasViewport.js';
 import { parseJpegExifMetadata } from './exif.js';
-import { computeBlurScoreFromRgba } from '../modules/photoQuality.js';
-import { enhanceImageBuffer, type EnhanceKind, type EnhanceProgressEvent } from '../modules/imageEnhance.js';
 import { OrtWorkerHost } from '../modules/ortWorkerSession.js';
 import { manageSwUpdates, type SwUpdateController } from './swUpdate.js';
-import { decodeTiffBuffer, isSupportedImageFile, isTiffFile } from '../modules/tiffDecode.js';
+import { isSupportedImageFile, isTiffFile } from '../modules/tiffDecode.js';
 import { renderHelpModalHtml } from './help.js';
 import { wasmThreadsFor } from '../modules/onnxInference.js';
 import { GUIDE_HIDDEN_KEY, guideInputFrom, guideSteps, renderGuideHtml } from './onboarding.js';
@@ -51,11 +48,11 @@ import { handleDashboardKey } from './events/dashboard.js';
 import { handleLandingKey } from './events/sidebar.js';
 import { handleShortcutKey } from './events/shortcuts.js';
 import { renderShortcutsModalHtml } from './shortcuts.js';
-import { buildSiteReportHtml, type ReportPhoto } from './report.js';
-import { renderPsdChartSvg, renderSizeHistogramSvg } from './charts.js';
-import { sizeHistogramFromWentworth } from '../modules/histograms.js';
 import { countFlagged, grainFlags, navGrainsFor } from './grainNav.js';
-import { createWorkspaceActions, getActivePhoto, getActiveSite, rectifyWithCanvas, STALE_BUILD_MESSAGE } from './workspaceActions.js';
+import { createWorkspaceActions, getActivePhoto, getActiveSite, STALE_BUILD_MESSAGE } from './workspaceActions.js';
+import { buildPrintableReport } from './reportBuilder.js';
+import { APP_SHELL_HTML } from './shellHtml.js';
+import { computeBlurScoreFromBlob, decodeTiffFileToPng, enhanceWithCanvas, rectifyWithCanvas } from './imageCanvas.js';
 import { applyEvent, newActivity, renderActivityHtml, startPhoto, type ActivityState } from './progress.js';
 import { CPU_THREADS_KEY, readCpuThreadPref } from './cpuThreads.js';
 import { svgToPngBlob, withSvgMetadata } from './chartExport.js';
@@ -306,7 +303,14 @@ const actions = createWorkspaceActions({
       return { ...(exif ?? {}), ...(blurScore !== undefined ? { blurScore } : {}) };
     },
     rectify: (image, corners, w, h) => rectifyWithCanvas(image, corners, w, h, rectifyPerspective),
-    enhance: (image, kind, onProgress) => enhanceWithCanvas(image, kind, onProgress),
+    enhance: (image, kind, onProgress) => {
+      const threads = wasmThreadsFor(readCpuThreadPref());
+      return enhanceWithCanvas(image, kind, {
+        wasmPaths: './ort/',
+        ...(threads !== undefined ? { numThreads: threads } : {}),
+        ...(ortWorkerHost ? { wasmWorker: ortWorkerHost } : {}),
+      }, onProgress);
+    },
   },
   syncViewport: (fit) => syncViewport(fit),
   activity: {
@@ -752,37 +756,7 @@ function mountShell(): void {
   const app = document.getElementById('app');
   if (!app) return;
 
-  app.innerHTML = `
-    <div class="landing-shell" id="landing-shell" hidden></div>
-    <header class="topbar" id="topbar"></header>
-    <main class="workspace" id="workspace-main">
-      <aside class="sidebar-left" id="sidebar-left" aria-label="Site and Photo Workspace"></aside>
-      <section class="viewport-center" aria-label="Grain Inspection Viewport">
-        <div class="toolbar" id="toolbar"></div>
-        <div class="sub-toolbar" id="sub-toolbar"></div>
-        <div class="canvas-stage" id="canvas-stage" tabindex="0" role="region" aria-label="Grain segmentation canvas. Use arrow keys to pan, plus or minus to zoom, 0 to fit.">
-          <canvas class="canvas-layer" id="base-canvas"></canvas>
-          <canvas class="canvas-layer" id="mask-canvas"></canvas>
-          <svg class="svg-overlay" id="svg-overlay"></svg>
-          <canvas class="loupe-canvas" id="loupe-canvas"></canvas>
-          <div class="viewport-empty" id="viewport-empty">
-            <div class="empty-title">Measure grain sizes from photos of gravel</div>
-            <div>Add photos to start. Everything runs in your browser; nothing is uploaded.</div>
-            <button type="button" class="btn btn-primary empty-cta" data-action="add-photos">Add photos</button>
-            <div class="empty-hint">Or drop photos anywhere on the left panel. Zoom: pinch or mouse wheel · Move: two fingers, Space+drag or middle mouse.</div>
-          </div>
-          <div class="inspector-card" id="inspector-card" style="display:none;"></div>
-        </div>
-        <div class="viewport-footer" id="viewport-footer"></div>
-      </section>
-      <aside class="dashboard-right" id="dashboard-right" aria-label="Scientific Dashboard"></aside>
-    </main>
-    <div class="activity-bar" id="activity-bar" role="status" aria-live="polite" hidden></div>
-    <dialog id="app-dialog" class="app-dialog" closedby="any" aria-labelledby="dialog-title"></dialog>
-    <div id="sr-announcer" class="sr-only" aria-live="polite" aria-atomic="true"></div>
-    <input type="file" id="photo-file-input" accept="image/*,.tif,.tiff" multiple style="display:none;" />
-    <input type="file" id="archive-file-input" accept=".webgrainy,.json" style="display:none;" />
-  `;
+  app.innerHTML = APP_SHELL_HTML;
 
   landingEl = document.getElementById('landing-shell')!;
   topbarEl = document.getElementById('topbar')!;
@@ -1128,134 +1102,6 @@ function eventContext(): EventContext {
 }
 
 /** Decodes a TIFF/GeoTIFF file via UTIF into a browser-universal lossless PNG blob. */
-async function decodeTiffFileToPng(file: File) {
-  const buf = await file.arrayBuffer();
-  const decoded = decodeTiffBuffer(buf);
-  const canvas = document.createElement('canvas');
-  canvas.width = decoded.width;
-  canvas.height = decoded.height;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) throw new Error('Could not create 2D canvas context for TIFF decoding.');
-  const imgData = new ImageData(new Uint8ClampedArray(decoded.data), decoded.width, decoded.height);
-  ctx.putImageData(imgData, 0, 0);
-  const blob = await new Promise<Blob>((resolve, reject) => {
-    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('Failed to encode decoded TIFF as PNG.'))), 'image/png');
-  });
-  const blurScore = await computeBlurScoreFromBlob(blob);
-  const metadata =
-    decoded.metadata || blurScore !== undefined
-      ? { ...(decoded.metadata ?? {}), ...(blurScore !== undefined ? { blurScore } : {}) }
-      : undefined;
-  return {
-    blob,
-    width: decoded.width,
-    height: decoded.height,
-    ...(metadata ? { metadata } : {}),
-    ...(decoded.calibration ? { calibration: decoded.calibration } : {}),
-  };
-}
-
-/** Fast 256 px thumbnail Laplacian-variance sharpness check (0 MB, instant). */
-async function computeBlurScoreFromBlob(blob: Blob): Promise<number | undefined> {
-  try {
-    const bmp = await createImageBitmap(blob);
-    const maxSide = 256;
-    const k = Math.min(1, maxSide / Math.max(bmp.width, bmp.height));
-    const c = document.createElement('canvas');
-    c.width = Math.max(3, Math.round(bmp.width * k));
-    c.height = Math.max(3, Math.round(bmp.height * k));
-    const ctx = c.getContext('2d');
-    if (!ctx) {
-      bmp.close();
-      return undefined;
-    }
-    ctx.drawImage(bmp, 0, 0, c.width, c.height);
-    bmp.close();
-    const img = ctx.getImageData(0, 0, c.width, c.height);
-    return computeBlurScoreFromRgba(img.data, img.width, img.height);
-  } catch {
-    return undefined;
-  }
-}
-
-/** Decodes a photo blob, runs memory-isolated ONNX enhancement, and encodes back to PNG. */
-async function enhanceWithCanvas(
-  blob: Blob,
-  kind: EnhanceKind,
-  onProgress?: (ev: EnhanceProgressEvent) => void,
-) {
-  const bmp = await createImageBitmap(blob);
-  const srcCanvas = document.createElement('canvas');
-  srcCanvas.width = bmp.width;
-  srcCanvas.height = bmp.height;
-  const srcCtx = srcCanvas.getContext('2d');
-  if (!srcCtx) {
-    bmp.close();
-    throw new Error('Could not create 2D canvas context.');
-  }
-  srcCtx.drawImage(bmp, 0, 0);
-  bmp.close();
-  const srcImg = srcCtx.getImageData(0, 0, srcCanvas.width, srcCanvas.height);
-
-  const threads = wasmThreadsFor(readCpuThreadPref());
-  const enhanced = await enhanceImageBuffer(srcImg.data, srcImg.width, srcImg.height, kind, {
-    sessionOptions: {
-      wasmPaths: './ort/',
-      ...(threads !== undefined ? { numThreads: threads } : {}),
-      ...(ortWorkerHost ? { wasmWorker: ortWorkerHost } : {}),
-    },
-    ...(onProgress ? { onProgress } : {}),
-  });
-
-  const outCanvas = document.createElement('canvas');
-  outCanvas.width = enhanced.width;
-  outCanvas.height = enhanced.height;
-  const outCtx = outCanvas.getContext('2d');
-  if (!outCtx) throw new Error('Could not create output canvas context.');
-  const outImgData = new ImageData(
-    new Uint8ClampedArray(enhanced.data),
-    enhanced.width,
-    enhanced.height,
-  );
-  outCtx.putImageData(outImgData, 0, 0);
-
-  const outBlob = await new Promise<Blob>((resolve, reject) => {
-    outCanvas.toBlob((b) => (b ? resolve(b) : reject(new Error('Failed to encode enhanced image.'))), 'image/png');
-  });
-  const blurScore = await computeBlurScoreFromBlob(outBlob);
-
-  return {
-    blob: outBlob,
-    width: enhanced.width,
-    height: enhanced.height,
-    ...(blurScore !== undefined ? { blurScore } : {}),
-    enhancement: {
-      kind: enhanced.spec.kind,
-      modelId: enhanced.spec.modelId,
-      modelName: enhanced.spec.modelName,
-      modelSha256: enhanced.spec.sha256,
-      scaleFactor: enhanced.spec.scaleFactor,
-      appliedAt: new Date().toISOString(),
-    },
-  };
-}
-
-/** A small JPEG of a photo for the printable report. */
-async function photoThumbDataUrl(blob: Blob, maxSide: number): Promise<string | undefined> {
-  try {
-    const bmp = await createImageBitmap(blob);
-    const k = Math.min(1, maxSide / Math.max(bmp.width, bmp.height));
-    const c = document.createElement('canvas');
-    c.width = Math.max(1, Math.round(bmp.width * k));
-    c.height = Math.max(1, Math.round(bmp.height * k));
-    c.getContext('2d')?.drawImage(bmp, 0, 0, c.width, c.height);
-    bmp.close();
-    return c.toDataURL('image/jpeg', 0.82);
-  } catch {
-    return undefined;
-  }
-}
-
 /** Opens the printable site report. The tab is opened right away (pop-up blockers allow that) and filled in when ready. */
 function openReport(): void {
   const win = window.open('', '_blank');
@@ -1287,58 +1133,7 @@ async function buildReport(): Promise<string | null> {
     return null;
   }
   store.setState({ statusMessage: 'Preparing the printable report…' });
-  const photos: ReportPhoto[] = [];
-  for (const p of report.perPhoto) {
-    const rec = st.photos.find((x) => x.photoId === p.photoId);
-    const thumb = rec ? await photoThumbDataUrl(rec.imageBlob, 480) : undefined;
-    const sess = st.sessions.get(p.photoId);
-    photos.push({
-      label: p.label,
-      ...(thumb ? { imageDataUrl: thumb } : {}),
-      ...(sess ? { outlineSvg: sess.exportSvg() } : {}),
-      validGrainCount: p.validGrainCount,
-      D50: p.D50,
-      ...(p.mmPerPx !== undefined ? { mmPerPx: p.mmPerPx } : {}),
-      outlierReasons: p.outlierReasons,
-    });
-  }
-  // Provenance from each included photo's own analysis record (models, settings, edits), not
-  // from the current settings or the first session in memory.
-  const so = st.siteOptions;
-  const hist = report.unit === 'mm' ? sizeHistogramFromWentworth(report.wentworthHistogram10Phi, 1) : null;
-  const prov = siteReportProvenance(buildSiteInputs(st), report, so);
-  const { detectionLimit, resolutionRangeMmPerPx } = prov;
-  const singleModel = prov.models.length === 1 ? prov.models[0]! : null;
-
-  const html = buildSiteReportHtml({
-    site,
-    report,
-    generatedAt: new Date().toISOString(),
-    metadata: {
-      ...baseExportMetadata(),
-      modelId: prov.models.map((m) => m.modelId).join(' + '),
-      ...(singleModel?.modelSha256 ? { modelSha256: singleModel.modelSha256 } : {}),
-    },
-    settings: prov.settings,
-    ...(detectionLimit !== undefined ? { detectionLimit } : {}),
-    manualEditsCount: prov.manualEditsCount,
-    ...(prov.enhancedPhotosCount > 0 ? { enhancedPhotosCount: prov.enhancedPhotosCount } : {}),
-    ...(resolutionRangeMmPerPx ? { resolutionRangeMmPerPx } : {}),
-    psdSvg: renderPsdChartSvg({
-      psd: report.psd,
-      unit: report.unit,
-      xAxis: st.psdXAxis,
-      title: 'Cumulative grain-size distribution',
-      subtitle: `${report.includedPhotoCount} photos, n=${report.validGrainCount}`,
-      ciLower: report.bootstrapCi.lower,
-      ciUpper: report.bootstrapCi.upper,
-      perPhotoCurves: report.perPhoto,
-      ...(detectionLimit !== undefined ? { detectionLimit } : {}),
-      lightTheme: true,
-    }),
-    histogramSvg: hist && hist.bins.length > 0 ? renderSizeHistogramSvg(hist, true, 'Size distribution (area-weighted %, 1 φ classes)') : null,
-    photos,
-  });
+  const html = await buildPrintableReport(st, site, report);
   store.setState({ statusMessage: 'Printable report ready.' });
   return html;
 }
