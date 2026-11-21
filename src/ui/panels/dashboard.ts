@@ -119,13 +119,13 @@ export function renderDashboardHtml(state: AppState, view: DashboardView): strin
         : sizeHistogramFromWentworth([], step);
     const detectionNoteHtml = detectionLimitInfo
       ? `<div class="${detectionLimitInfo.nearD16 || detectionLimitInfo.nearD5 ? 'warning-banner' : 'field-hint'}" style="margin-top:6px;">
-          Effective pixel detection limit: <strong>~${detectionLimitInfo.value.toFixed(detectionLimitInfo.unit === 'mm' ? 1 : 0)} ${detectionLimitInfo.unit}</strong>${
+          Smallest grain kept (detection limit): <strong>~${detectionLimitInfo.value.toFixed(detectionLimitInfo.unit === 'mm' ? 1 : 0)} ${detectionLimitInfo.unit}</strong>${
             detectionLimitInfo.nearD16
               ? ' — fine tail (D16) is close to the resolution floor; consider a closer photo or a Field-count cutoff.'
               : detectionLimitInfo.nearD5
                 ? ' — D5 is close to the resolution floor.'
                 : ''
-          }
+          } <span class="stats-note">Grains up to a few times this size are partly missed, so the finest percentiles lean coarse.</span>
         </div>`
       : '';
     const activeEnh = !isSite ? activePhoto?.metadata?.enhancement : undefined;

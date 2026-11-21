@@ -125,7 +125,7 @@ export function renderCompareHtml(state: AppState, lightTheme: boolean, charts: 
         <div class="table-scroll"><table class="stats-table"><thead><tr><th>Pair</th>${keys.map((k) => `<th>${k}</th>`).join('')}</tr></thead><tbody>${pairsByKey[1]!.pairs
           .map((c, i) => `<tr><th scope="row">${esc(c.a)} ÷ ${esc(c.b)}</th>${pairsByKey.map(({ pairs }) => `<td>${pairs[i] ? fmtRatio(pairs[i]!) : '—'}</td>`).join('')}</tr>`)
           .join('')}</tbody></table></div>
-        <p class="field-hint">Ratio with a 95% interval from each site's uncertainty on a log scale (Welch t-test, allowing for the number of photos). With several pairs the p-value is also given adjusted for the number of pairs (Holm); * marks adjusted p &lt; 0.05, so the chance of any false "significant" pair stays below 5%. A screening check, not a formal two-sample test; not given for one-photo sites, and with fewer than 5 photos per site only large differences show. ${helpButton('compareSites')}</p>
+        <p class="field-hint">Ratio with a 95% interval from each site's uncertainty on a log scale (Welch t-test, allowing for the number of photos). With several pairs the p-value is also given adjusted for the number of pairs (Holm), separately for D16, D50 and D84; * marks adjusted p &lt; 0.05, so within one column the chance of any false "significant" pair stays below 5% (a star in any of the three columns happens more often by chance). A screening check, not a formal two-sample test; not given for one-photo sites, and with fewer than 5 photos per site only large differences show. ${helpButton('compareSites')}</p>
       </details>`
     : '';
   const problems = (cmp?.sites ?? []).filter((s) => s.report === null || (mixedUnits && s.report.unit !== 'mm'));

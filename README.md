@@ -60,7 +60,7 @@ Measured on the held-out test split of the ImageGrains 2.0 data (`IG2_data.zip`,
 | Cellpose-SAM | ImageGrains (PyTorch) | 14.3% [8.0, 21.8] | 4.4% [2.4, 8.3] | 8.7% / 2.0% | 0.642 |
 
 - **Within-site, not unseen sites.** All 13 sites also contributed training images, so these figures describe new photos of familiar sites, not new rivers.
-- **Tails are long.** For example, 5% of Cellpose-SAM images and 17.5% of U-Net images have D50 errors above 50%. Check the outlines.
+- **Tails are long.** 5% of Cellpose-SAM images and 10% of U-Net images have D50 errors above 50% (17.5% of U-Net images in the earlier benchmark below). Check the outlines.
 - **Quantized weights.** INT8 and FP4 Cellpose-SAM give the same benchmark accuracy as FP16 (outline agreement with FP16: PQ 0.994 and 0.966).
 - **Field comparison (one site).** At the K1 site, with the field count's 13 mm minimum applied to the photos, the app's D50 agrees with a 251-stone pebble count within 3–4% and D84 within 3–6% (both models). Without that cutoff, Cellpose-SAM's D50 is 30% finer, because the photos include the many grains below 13 mm the count skipped (U-Net's 2% match without a cutoff only reflects that it misses small grains). This is a consistency check, not an independent validation: both photos overlap the ImageGrains training data. To compare with a field count, set **Field-count cutoff (mm)** to its minimum size. Details: [`validation/k1/k1_app_results.md`](validation/k1/k1_app_results.md).
 - **Reproduce.** `node validation/heldout/run_app_heldout.mjs unet` (or `cpsam`) and `validation/heldout/score_app_heldout.py`; the data are fetched from Zenodo by `validation/parity/fetch_ig2_files.py`.
@@ -133,7 +133,7 @@ docs/            settings guide
 The engine can be used without the app:
 
 ```ts
-import { ImageGrainsEngine, ScaleCalibrator, analyzeSite, DEFAULT_SITE_OPTIONS } from './dist/index.js';
+import { ImageGrainsEngine, ScaleCalibrator, analyzeSite, photoCutoffs, DEFAULT_SITE_OPTIONS } from './dist/index.js';
 
 const engine = new ImageGrainsEngine({ sessionCreateOptions: { wasmPaths: './ort/' } });
 await engine.initialize();
@@ -143,13 +143,15 @@ const session = await engine.analyzeImage(imageBitmap, {
   calibration: ScaleCalibrator.calibrate({ x: 100, y: 200 }, { x: 600, y: 200 }, 250), // 250 mm
 });
 
-// The app's default cutoff: grains under 15 px are not counted (DEFAULT_SITE_OPTIONS).
-const stats = session.getStats('bAxis', { minBaxisPx: 15 });
+// The app's numbers for this photo: grains under 15 px are not counted and, when the photo is
+// calibrated, neither are grains under its detection limit in mm (the site's common cutoff).
+const photos = [{ photoId: 'p1', label: 'photo1.jpg', included: true, session }];
+const site = analyzeSite(photos, DEFAULT_SITE_OPTIONS); // several photos: one entry each
+const cutoffs = photoCutoffs(DEFAULT_SITE_OPTIONS, site, 'p1');
+const stats = session.getStats('bAxis', cutoffs);
 console.log('D50', stats.areaWeightedB.D50, stats.unit, 'n =', stats.includedGrains);
-const csv = session.exportCsv({ includeMetadata: true, cutoffs: { minBaxisPx: 15 } });
-
-// Several photos of one site, with the app's statistics settings and uncertainty:
-// analyzeSite([{ photoId, label, included: true, session }, ...], DEFAULT_SITE_OPTIONS)
+console.log('site D50', site.psd.D50, 'interval', site.bootstrapCi.lower.D50, site.bootstrapCi.upper.D50);
+const csv = session.exportCsv({ includeMetadata: true, cutoffs });
 ```
 
 ---
