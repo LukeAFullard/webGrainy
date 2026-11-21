@@ -1,5 +1,13 @@
 # K1 field-comparison gap: investigation (2026-11-15)
 
+> **Current numbers: [`k1_app_results.md`](k1_app_results.md)**, produced by
+> `node validation/k1/run_app_k1.mjs` with the app as shipped (Cellpose pipeline, Auto image
+> scale, the app's own site statistics). With the 13 mm field-count cutoff: D50 +3% (Cellpose-SAM)
+> and +4% (U-Net), D84 −6% / −3%. Without it, Cellpose-SAM's D50 is 30% finer (U-Net −2%, because
+> at Auto scale it misses most small grains). The investigation below used the earlier legacy
+> full-resolution pipeline and a separate Python analysis; its conclusion (the gap is truncation)
+> still holds, but its figures are not the app's current output.
+
 **Question:** at the K1 site, webGrainy's photo D50 (about 15.7 mm) is about 42% finer than
 the field caliper count (D50 27.0 mm, n = 251). Why?
 
