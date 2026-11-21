@@ -115,11 +115,15 @@ export async function parseJpegExifMetadata(
           }
         });
 
+        let captureDateFound = false;
         if (exifIfdOffset !== null) {
           parseIfd(exifIfdOffset, (tag, type, count, valOrOff, entry) => {
-            if (tag === 0x9003 && count > 4) {
+            // Capture date: DateTimeOriginal, else DateTimeDigitized. Both replace IFD0's DateTime
+            // (0x0132), which editing software rewrites to the date the file was last changed.
+            if ((tag === 0x9003 || tag === 0x9004) && count > 4) {
               const str = readAscii(view, tiffStart + valOrOff, count).trim();
-              if (str) meta.timestamp = str;
+              if (str && (tag === 0x9003 || !captureDateFound)) meta.timestamp = str;
+              if (str) captureDateFound = true;
             } else if (tag === 0xa405 && type === 3 && count >= 1) {
               const fl35 = view.getUint16(entry + 8, littleEndian);
               if (fl35 > 0) meta.focalLength35mm = fl35;

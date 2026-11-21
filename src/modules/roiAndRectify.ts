@@ -1,4 +1,4 @@
-import type { GrainMorphometrics, Point2D } from '../types/index.js';
+import type { CalibrationResult, GrainMorphometrics, Point2D } from '../types/index.js';
 import type { ImageBufferLike } from './imagePreprocess.js';
 
 export interface ExclusionBrushStroke {
@@ -731,5 +731,29 @@ export function rectifyPerspective(
     homography,
     inverseHomography,
     roiRectInOutput: [paddingPx, paddingPx, refW, refH],
+  };
+}
+
+/**
+ * The scale of a rectified photo: mm per output pixel from the reference rectangle's width in the
+ * output (`roiRectInOutput`), marked as coming from rectification. The output has square pixels,
+ * so the width alone defines it. Rectified photos are at most 2048 px on their longest side
+ * (`maxOutputDimPx` in the app), which can coarsen the detection limit of a large photo.
+ */
+export function rectificationCalibration(
+  rectified: Pick<RectifiedImageResult, 'roiRectInOutput'>,
+  physicalWidthMm: number,
+): CalibrationResult {
+  const [x, y, w] = rectified.roiRectInOutput;
+  if (!(w > 0) || !(physicalWidthMm > 0) || !Number.isFinite(physicalWidthMm)) {
+    throw new Error('Rectification needs a positive reference width.');
+  }
+  return {
+    mmPerPx: physicalWidthMm / w,
+    pointA: { x, y },
+    pointB: { x: x + w, y },
+    physicalLengthMm: physicalWidthMm,
+    pixelDistance: w,
+    source: 'rectification',
   };
 }

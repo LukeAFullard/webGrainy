@@ -1,4 +1,6 @@
 import { csvCell } from './provenance.js';
+import { weightedPsdPercentiles } from './percentiles.js';
+import { grainSizeIn } from './grainSize.js';
 import { buildContourGeoJson, buildContourSvg, encodeMaskPng } from './exportFormats.js';
 import { computeExtraGrainStats, extraStatsCsvRows } from './grainStatsExtra.js';
 import type {
@@ -17,21 +19,7 @@ export const MIN_GRAINS_RELIABLE = 30;
 /** Commonly recommended minimum sample size for a stable D50 (e.g. Wolman counts). */
 export const MIN_GRAINS_ADEQUATE = 100;
 
-/**
- * A grain's size for `metric` in `unit`, never mixing units. In px, a missing min-Feret
- * falls back to the b-axis (px). In mm, a missing mm value is derived from the grain's own
- * px value and scale (`bAxisMm / bAxisPx`); if no mm scale exists the result is NaN (the
- * grain is then skipped), never a px number labelled as mm.
- */
-export function grainSizeIn(grain: GrainMorphometrics, metric: SizeMetric, unit: 'mm' | 'px'): number {
-  const px = metric === 'dEq' ? grain.dEqPx : metric === 'minFeret' ? (grain.minFeretPx ?? grain.bAxisPx) : grain.bAxisPx;
-  if (unit === 'px') return px;
-  const mm = metric === 'dEq' ? grain.dEqMm : metric === 'minFeret' ? grain.minFeretMm : grain.bAxisMm;
-  if (typeof mm === 'number' && Number.isFinite(mm)) return mm;
-  const b = grain.bAxisMm;
-  if (typeof b === 'number' && Number.isFinite(b) && grain.bAxisPx > 0) return px * (b / grain.bAxisPx);
-  return Number.NaN;
-}
+export { grainSizeIn };
 
 /**
  * Filters out border-touching grains when `excludeBorder` is `true` (default).
@@ -47,121 +35,12 @@ export function filterBorderGrains(
 }
 
 /**
- * Weighted particle-size distribution percentiles from midpoint cumulative weights
- * `cdf = (cumsum(w) - 0.5 * w) / sum(w)`, interpolated linearly in log2(size) (φ space):
- * `2 ** np.interp(p / 100, cdf, log2(v))`. Sizes outside the CDF range clamp to the
- * smallest / largest grain.
- *
- * Linear interpolation in size (`np.interp(p / 100, cdf, v)`, as ImageGrains' `eval_core.py`)
- * agrees closely for typical samples (mean |difference| ~0.1-1% for D16/D50/D84) but can
- * differ by 10-20% where few grains span a wide size gap.
+ * Weighted particle-size distribution percentiles (midpoint CDF, log2 interpolation): see
+ * percentiles.ts. Linear interpolation in size (ImageGrains' `eval_core.py`) agrees closely
+ * for typical samples (mean |difference| ~0.1-1% for D16/D50/D84) but can differ by 10-20%
+ * where few grains span a wide size gap.
  */
-export function weightedPsdPercentiles(
-  values: ArrayLike<number>,
-  weights: ArrayLike<number>,
-  percentiles: readonly number[] = DEFAULT_PERCENTILES,
-): Record<string, number> {
-  const n = Math.min(values.length, weights.length);
-  const pairs: Array<{ v: number; w: number }> = [];
-
-  for (let i = 0; i < n; i++) {
-    const v = values[i];
-    const w = weights[i];
-    if (
-      v !== undefined &&
-      w !== undefined &&
-      Number.isFinite(v) &&
-      Number.isFinite(w) &&
-      v > 0 &&
-      w > 0
-    ) {
-      pairs.push({ v, w });
-    }
-  }
-
-  const out: Record<string, number> = {};
-  if (pairs.length === 0) {
-    for (const p of percentiles) {
-      out[`D${p}`] = Number.NaN;
-    }
-    return out;
-  }
-
-  pairs.sort((a, b) => a.v - b.v);
-
-  let totalWeight = 0;
-  for (let i = 0; i < pairs.length; i++) {
-    const pair = pairs[i];
-    if (pair !== undefined) {
-      totalWeight += pair.w;
-    }
-  }
-
-  const count = pairs.length;
-  const cdf = new Float64Array(count);
-  const sortedV = new Float64Array(count);
-  let cumSum = 0;
-
-  for (let i = 0; i < count; i++) {
-    const pair = pairs[i];
-    if (pair === undefined) continue;
-    cumSum += pair.w;
-    cdf[i] = (cumSum - 0.5 * pair.w) / totalWeight;
-    sortedV[i] = pair.v;
-  }
-
-  const firstCdf = cdf[0] ?? 0;
-  const lastCdf = cdf[count - 1] ?? 1;
-  const firstV = sortedV[0] ?? Number.NaN;
-  const lastV = sortedV[count - 1] ?? Number.NaN;
-
-  for (const p of percentiles) {
-    const key = `D${p}`;
-    const target = p / 100;
-
-    if (target <= firstCdf) {
-      out[key] = firstV;
-      continue;
-    }
-    if (target >= lastCdf) {
-      out[key] = lastV;
-      continue;
-    }
-
-    // Binary search for largest idx where cdf[idx] <= target
-    let lo = 0;
-    let hi = count - 1;
-    while (lo + 1 < hi) {
-      const mid = (lo + hi) >>> 1;
-      const midVal = cdf[mid] ?? 0;
-      if (midVal <= target) {
-        lo = mid;
-      } else {
-        hi = mid;
-      }
-    }
-
-    const c0 = cdf[lo] ?? 0;
-    const c1 = cdf[hi] ?? 1;
-    const v0 = sortedV[lo] ?? 0;
-    const v1 = sortedV[hi] ?? 0;
-
-    if (c1 === c0) {
-      out[key] = v1;
-    } else {
-      const t = (target - c0) / (c1 - c0);
-      if (v0 > 0 && v1 > 0) {
-        const log0 = Math.log2(v0);
-        const log1 = Math.log2(v1);
-        out[key] = 2 ** (log0 + t * (log1 - log0));
-      } else {
-        out[key] = v0 + t * (v1 - v0);
-      }
-    }
-  }
-
-  return out;
-}
+export { weightedPsdPercentiles };
 
 /**
  * Typed wrapper returning the standard `PsdPercentiles` (`D5`..`D95`).
@@ -286,13 +165,8 @@ export function computeWentworthProportions(
   let totalArea = 0;
 
   for (const g of grains) {
-    const d =
-      sizeMetric === 'dEq'
-        ? g.dEqMm
-        : sizeMetric === 'minFeret'
-          ? g.minFeretMm
-          : g.bAxisMm;
-    if (typeof d !== 'number' || !Number.isFinite(d)) {
+    const d = grainSizeIn(g, sizeMetric, 'mm');
+    if (!Number.isFinite(d)) {
       return null;
     }
     if (!Number.isFinite(g.areaPx) || g.areaPx <= 0) {
@@ -336,23 +210,11 @@ export function grainPassesSizeCutoffs(
   const minSizeMm = Math.max(0, options?.minSizeMm ?? 0);
   if (minBaxisPx <= 0 && minSizeMm <= 0) return true;
   const metric = options?.sizeMetric ?? 'bAxis';
-  const pxSize =
-    metric === 'minFeret'
-      ? (grain.minFeretPx ?? grain.bAxisPx)
-      : metric === 'dEq'
-        ? grain.dEqPx
-        : grain.bAxisPx;
-  if (minBaxisPx > 0 && pxSize < minBaxisPx) return false;
+  if (minBaxisPx > 0 && grainSizeIn(grain, metric, 'px') < minBaxisPx) return false;
   if (minSizeMm > 0) {
-    const mmSize =
-      metric === 'minFeret'
-        ? grain.minFeretMm
-        : metric === 'dEq'
-          ? grain.dEqMm
-          : grain.bAxisMm;
-    if (mmSize !== undefined && Number.isFinite(mmSize) && mmSize < minSizeMm) {
-      return false;
-    }
+    // NaN (no mm scale) never passes a comparison, so an uncalibrated grain is not cut in mm.
+    const mmSize = grainSizeIn(grain, metric, 'mm');
+    if (mmSize < minSizeMm) return false;
   }
   return true;
 }
@@ -389,9 +251,12 @@ export function computeSedimentStats(
       : borderFiltered;
   const excludedCutoffGrains = borderFiltered.length - included.length;
 
+  // With no counted grain, the unit follows the photo's grains (a calibrated photo whose grains
+  // are all below the cutoff still reports in mm, with no values).
+  const unitBasis = included.length > 0 ? included : grains;
   const isCalibrated =
-    included.length > 0 &&
-    included.every(
+    unitBasis.length > 0 &&
+    unitBasis.every(
       (g) =>
         typeof g.bAxisMm === 'number' &&
         Number.isFinite(g.bAxisMm) &&

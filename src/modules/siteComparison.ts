@@ -120,7 +120,7 @@ export function computeComparedSites(sites: readonly SiteForComparison[], option
   const run = (opts: SiteAnalysisOptions): ComparedSite[] =>
     sites.map((s, i) => {
       const color = s.color ?? COMPARE_COLORS[i % COMPARE_COLORS.length]!;
-      const { date, source: dateSource } = siteSurveyDate(s.surveyDate, s.inputs.map((p) => p.metadata?.timestamp));
+      const { date, source: dateSource } = siteSurveyDate(s.surveyDate, s.inputs.filter((p) => p.included).map((p) => p.metadata?.timestamp));
       const place = places[i]!;
       const base = { siteId: s.siteId, name: s.name, color, date, dateSource, place, analysisSettings: analysisSettingsOf(s.inputs) };
       if (!s.inputs.some((p) => p.included)) {

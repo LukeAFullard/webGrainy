@@ -4,6 +4,7 @@
  * in-memory storage and no-op UI hooks. `main.ts` owns the DOM and calls these.
  */
 import { sanitizeSiteOptions } from '../modules/siteOptions.js';
+import { rectificationCalibration } from '../modules/roiAndRectify.js';
 import type { CalibrationResult, Point2D, StorageQuotaInfo } from '../types/index.js';
 import { siteRetention } from '../modules/retention.js';
 import { forgetSite, formatAgo, markSiteUsed, readBackupRecords } from './backup.js';
@@ -24,6 +25,7 @@ import {
 import { ScaleCalibrator } from '../modules/interactiveEditor.js';
 import {
   scaleCalibrationAndRoi,
+  revertedCalibrationAndRoi,
   type EnhanceKind,
   type EnhanceProgressEvent,
 } from '../modules/imageEnhance.js';
@@ -1006,14 +1008,7 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
     if (!photo?.originalBackup) return;
 
     const orig = photo.originalBackup;
-    const invScale = photo.width > 0 ? orig.width / photo.width : 1;
-    const scaledBack = scaleCalibrationAndRoi(
-      orig.calibration ? undefined : photo.calibration,
-      orig.roiConfig ? undefined : photo.roiConfig,
-      invScale,
-    );
-    const restoredCal = orig.calibration ?? scaledBack.calibration;
-    const restoredRoi = orig.roiConfig ?? scaledBack.roiConfig;
+    const { calibration: restoredCal, roiConfig: restoredRoi } = revertedCalibrationAndRoi({ ...photo, originalBackup: orig });
 
     const { originalBackup: _drop, calibration: _c, roiConfig: _r, metadata: _m, ...base } = photo;
     const restoredPhoto: PhotoRecord = {
@@ -1193,14 +1188,6 @@ export async function rectifyWithCanvas(
     );
   });
 
-  const calibration = ScaleCalibrator.calibrate(
-    { x: rectified.roiRectInOutput[0], y: rectified.roiRectInOutput[1] },
-    {
-      x: rectified.roiRectInOutput[0] + rectified.roiRectInOutput[2],
-      y: rectified.roiRectInOutput[1],
-    },
-    physWidthMm,
-    'mm',
-  );
-  return { blob, width: rectified.width, height: rectified.height, calibration: { ...calibration, source: 'rectification' } };
+  const calibration = rectificationCalibration(rectified, physWidthMm);
+  return { blob, width: rectified.width, height: rectified.height, calibration };
 }

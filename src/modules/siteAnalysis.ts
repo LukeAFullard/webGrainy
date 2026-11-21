@@ -14,7 +14,11 @@ import type { AnalysisSession } from './pipelineController.js';
 import { assessSampleAdequacy, buildPerPhotoBreakdown } from './siteAdequacy.js';
 import { validateSiteCalibration, withExclusionTolerance } from './siteCalibration.js';
 import { withinSiteSettingDifferences } from './siteProvenance.js';
-import { getStatisticalBasisLabel, type PreparedGrain, type PreparedPhoto, computeVirtualWolmanHits, buildPooledArrays, getGrainSize, computeSiteWentworth, siteCutoffReason } from './sitePooling.js';
+import { setStatsWeights } from './siteStatsWeights.js';
+import { DEFAULT_SITE_OPTIONS } from './siteOptions.js';
+export { grainStatsWeight } from './siteStatsWeights.js';
+import { aspectRatioCounts } from './histograms.js';
+import { median, getStatisticalBasisLabel, type PreparedGrain, type PreparedPhoto, computeVirtualWolmanHits, buildPooledArrays, getGrainSize, computeSiteWentworth, siteCutoffReason } from './sitePooling.js';
 import { type SitePhotoInput, type SiteAnalysisOptions, type SiteAnalysisReport, SITE_BIBLIOGRAPHIC_CITATIONS } from './siteTypes.js';
 import { calibrateSiteInterval, computeBinomialCi, runBootstrap, computeJackknife, computeConvergence, MIN_PHOTOS_FOR_RELIABLE_CI } from './siteUncertainty.js';
 
@@ -86,7 +90,7 @@ export function analyzeSite(
   // Bounded: options can come from a saved or imported project (see sanitizeSiteOptions).
   const bootstrapReplicates = Math.min(
     MAX_BOOTSTRAP_REPLICATES,
-    Math.max(1, Math.round(Number.isFinite(options.bootstrapReplicates) ? options.bootstrapReplicates! : 1000)),
+    Math.max(1, Math.round(Number.isFinite(options.bootstrapReplicates) ? options.bootstrapReplicates! : DEFAULT_SITE_OPTIONS.bootstrapReplicates)),
   );
   const bootstrapSeed = Number.isFinite(options.bootstrapSeed) ? options.bootstrapSeed! >>> 0 : 42;
   const bootstrapTwoStage = options.bootstrapTwoStage === true;
@@ -269,8 +273,16 @@ export function analyzeSite(
     values,
     weights,
     grains: pooledGrains,
+    photoIndex,
     photoWeightsPct,
   } = buildPooledArrays(preparedPhotos, options.poolingMode);
+  const statsWeights = new Map<string, Map<number, number>>();
+  pooledGrains.forEach((g, i) => {
+    const photoId = preparedPhotos[photoIndex[i]!]!.input.photoId;
+    const m = statsWeights.get(photoId) ?? new Map<number, number>();
+    m.set(g.id, weights[i]!);
+    statsWeights.set(photoId, m);
+  });
   const psd = computePsdPercentiles(values, weights);
   const folkWard = unit === 'mm' ? computeFolkWardStats(psd) : null;
   const extra =
@@ -314,13 +326,9 @@ export function analyzeSite(
   // Shape: b/a aspect ratio of every pooled grain once (number basis).
   const ratios = pooledGrains
     .map((g) => (g.aAxisPx > 0 ? g.bAxisPx / g.aAxisPx : Number.NaN))
-    .filter((r) => Number.isFinite(r))
-    .sort((a, b) => a - b);
-  const aspectRatioCounts = new Array<number>(10).fill(0);
-  for (const r of ratios) aspectRatioCounts[Math.min(9, Math.max(0, Math.floor(r * 10)))]!++;
-  const mid = ratios.length / 2;
-  const medianAspectRatio =
-    ratios.length === 0 ? Number.NaN : ratios.length % 2 ? ratios[Math.floor(mid)]! : (ratios[mid - 1]! + ratios[mid]!) / 2;
+    .filter((r) => Number.isFinite(r));
+  const aspectRatios = aspectRatioCounts(ratios, 10);
+  const medianAspectRatio = median(ratios);
 
   const rawBoot = runBootstrap(
     preparedPhotos,
@@ -389,7 +397,7 @@ export function analyzeSite(
     photoWeightsPct,
   );
 
-  return {
+  const report: SiteAnalysisReport = {
     poolingMode: options.poolingMode,
     statisticalBasisLabel: getStatisticalBasisLabel(options.poolingMode),
     unit,
@@ -408,7 +416,7 @@ export function analyzeSite(
     wentworthHistogram05Phi,
     wentworthHistogram10Phi,
     fabricRose,
-    shape: { aspectRatioCounts, medianAspectRatio, n: ratios.length },
+    shape: { aspectRatioCounts: aspectRatios, medianAspectRatio, n: ratios.length },
     bootstrapMode: boot.mode,
     bootstrapSeed,
     bootstrapReplicates,
@@ -434,4 +442,6 @@ export function analyzeSite(
     warnings,
     citations: [...SITE_BIBLIOGRAPHIC_CITATIONS],
   };
+  setStatsWeights(report, statsWeights);
+  return report;
 }

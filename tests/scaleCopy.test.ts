@@ -4,7 +4,7 @@ import type { PhotoRecord } from '../src/modules/projectStorage.js';
 import type { CalibrationResult } from '../src/types/index.js';
 import { ACTIONS } from '../src/ui/events/router.js';
 import type { EventContext } from '../src/ui/events/context.js';
-import { planScaleCopy, scaleSourceOf, suggestScaleTargets } from '../src/ui/scaleCopy.js';
+import { planScaleCopy, scaleSourceOf, suggestScaleTargets } from '../src/modules/scaleCopy.js';
 import { AppStore, createInitialState } from '../src/ui/state.js';
 
 const cal = (mmPerPx: number, source?: CalibrationResult['source']): CalibrationResult => ({

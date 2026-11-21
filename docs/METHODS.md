@@ -84,6 +84,8 @@ results:
 - **Perspective rectification**: for photos not taken straight down. You click the four
   corners of a rectangle of known size on the bed (a quadrat); the photo is warped so the
   rectangle becomes a true rectangle (a 4-point *homography*), and the scale is set from it.
+  The rectified photo is at most 2,048 px on its longest side, so rectifying a large photo can
+  coarsen its detection limit (Section 8).
 - **2× upscale (PULSE model)** and **deblur (Richardson–Lucy)**: optional enhancement of
   small or soft photos. Use with care: they create or sharpen detail, and the result depends
   on the enhancement model.
@@ -271,6 +273,17 @@ states which one it uses.
 | **2D sphericity** | d_eq ÷ a-axis |
 | **Perimeter** | Crofton estimate from boundary crossings in 4 directions (less biased than counting edge pixels) |
 | **Orientation** | Angle of the a-axis, from the vertical of the photo (0° = up–down in the image) |
+
+**Known biases of the shape measures.** They are computed on pixel outlines, so:
+
+- *Small grains look less round and less solid.* A disc 16 px across gets a circularity of about
+  0.91 and a solidity of about 0.93 (both 1 for a perfect disc); at 80 px both are about 0.99.
+  Compare shapes only between grains of similar size in pixels.
+- *The perimeter depends a little on orientation.* The 4-direction Crofton estimate is about 5%
+  low for edges along the image axes and slightly high for diagonal edges, so circularity of an
+  elongated grain changes by up to about 10% with its orientation.
+- *Moment axes of angular grains.* For a rectangle, the moment-ellipse axes are about 15% longer
+  than its sides (Section 7); minimum Feret width measures the side directly.
 
 ---
 
@@ -592,7 +605,7 @@ variation of both surveys would produce by chance, allowing for how few photos e
   gave "significant" changes about 30% of the time. Take several photos per survey.
 - With fewer than 5 photos per site, intervals are wide and only large differences show.
 - In simulation of unchanged beds (2–20 photos per survey, moderate and strong patch-to-patch
-  variation), a single comparison gave p < 0.05 in about 2–7% of cases for D16, D50 and D84
+  variation), a single comparison gave p < 0.05 in 1–8% of cases for D16, D50 and D84 (mostly 2–5%)
   (the expected rate is 5%; `validation/comparison/`). The cost is power: a real 20% change in
   D50 was detected about 30% of the time with 5 photos per survey and about 55% with 10.
   **More photos per survey detect smaller changes.**
@@ -633,7 +646,9 @@ analyse until it is reloaded, so results are never computed by a mix of versions
 browser, and a site is removed after a set number of days without use (30 by default). Use
 **Download results…** to keep a .zip of every result file:
 
-- site summaries, pooled grains (with a column marking the grains used in the statistics),
+- site summaries, pooled grains (with a column marking the grains used in the statistics and
+  `stats_weight`, each grain's weight in them: pooling the counted grains with these weights
+  reproduces the site percentiles in every pooling mode),
   the grain-size curve and a printable report;
 - for each photo: its grains table, summary, label mask (an image whose pixel values are
   grain numbers) and outlines (GeoJSON);

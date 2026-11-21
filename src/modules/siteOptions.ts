@@ -12,6 +12,24 @@ import type { PoolingMode, SiteAnalysisOptions } from './siteTypes.js';
 const POOLING_MODES: readonly PoolingMode[] = ['physical-area', 'equal-photo', 'virtual-wolman-grid', 'number-weighted', 'facies-weighted'];
 const SIZE_METRICS: readonly SizeMetric[] = ['bAxis', 'dEq', 'minFeret'];
 
+/**
+ * Default site statistics settings: the app starts with these and `analyzeSite` falls back to
+ * them, so scripted use (src/index.ts) gives the same numbers as the app.
+ */
+export const DEFAULT_SITE_OPTIONS = {
+  poolingMode: 'physical-area',
+  sizeMetric: 'bAxis',
+  minBaxisPx: 15,
+  harmonizePhysicalCutoff: true,
+  wolmanPointsPerPhoto: 100,
+  bootstrapReplicates: 500,
+  bootstrapSeed: 42,
+  bootstrapTwoStage: false,
+  confidenceLevel: 0.95,
+  minSizeMm: 0,
+  maxExcludedFraction: 0.1,
+} as const satisfies SiteAnalysisOptions;
+
 /** Ranges accepted for numeric site options (the app's own inputs stay well inside them). */
 export const SITE_OPTION_LIMITS = {
   minBaxisPx: [0, 1000],

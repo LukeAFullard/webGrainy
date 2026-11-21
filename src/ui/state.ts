@@ -1,5 +1,6 @@
 import type { ComparedSite } from '../modules/siteComparison.js';
 import type { PhotoFilter } from './photoList.js';
+import { DEFAULT_SITE_OPTIONS } from '../modules/siteOptions.js';
 import type { HelpKey } from './help.js';
 import { DEFAULT_POSTPROCESS_OPTIONS } from '../modules/postprocessCore.js';
 import { DEFAULT_RETENTION_DAYS } from '../modules/retention.js';
@@ -238,19 +239,7 @@ export function createInitialState(): AppState {
     rectifyHeightMm: 500,
 
     analysisParams: defaultAnalysisParams(),
-    siteOptions: {
-      poolingMode: 'physical-area',
-      sizeMetric: 'bAxis',
-      minBaxisPx: 15,
-      harmonizePhysicalCutoff: true,
-      wolmanPointsPerPhoto: 100,
-      bootstrapReplicates: 500,
-      bootstrapSeed: 42,
-      bootstrapTwoStage: false,
-      confidenceLevel: 0.95,
-      minSizeMm: 0,
-      maxExcludedFraction: 0.1,
-    },
+    siteOptions: { ...DEFAULT_SITE_OPTIONS },
 
     batchRunning: false,
     enhancing: false,
