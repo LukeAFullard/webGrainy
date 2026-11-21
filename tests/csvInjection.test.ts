@@ -92,3 +92,17 @@ describe('CSV exports never contain formula cells from user text', () => {
     }
   });
 });
+
+describe('csvCell: spaces before a formula character (LibreOffice "Trim spaces" import)', () => {
+  it('prefixes a formula character after leading spaces or after a delimiter and spaces', async () => {
+    const { csvCell } = await import('../src/modules/provenance.js');
+    expect(csvCell(' =1+1')).toBe("' =1+1");
+    expect(csvCell('Site, =1+1')).toBe(`"Site, '=1+1"`);
+    expect(csvCell('a;  +1+1')).toBe(`"a;  '+1+1"`);
+    expect(csvCell('a, @SUM(1)')).toBe(`"a, '@SUM(1)"`);
+    // Plain numbers (also with spaces) and ordinary text stay as they are.
+    expect(csvCell(' -5')).toBe(' -5');
+    expect(csvCell('-1.5e3')).toBe('-1.5e3');
+    expect(csvCell('name -2+3')).toBe('name -2+3');
+  });
+});

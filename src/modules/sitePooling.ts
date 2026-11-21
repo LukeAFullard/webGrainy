@@ -193,8 +193,12 @@ export function computeVirtualWolmanHits(
   }
 
   for (const pt of samplePoints) {
-    const wx = Math.min(workW - 1, Math.max(0, Math.round(pt.x * sWork)));
-    const wy = Math.min(workH - 1, Math.max(0, Math.round(pt.y * sWork)));
+    // Grid points are continuous photo coordinates (pixel corners at integers, as the grid box and
+    // the ROI): the working pixel that contains the point is floor(x * s), not round(x * s).
+    // (Rounding shifted the grid by half a working pixel; no bias on average, but up to ~9% on
+    // a single site's Wolman D50 with ~100 points per photo.)
+    const wx = Math.min(workW - 1, Math.max(0, Math.floor(pt.x * sWork)));
+    const wy = Math.min(workH - 1, Math.max(0, Math.floor(pt.y * sWork)));
     const idx = wy * workW + wx;
     if (validBedMask.valid[idx] === 0) {
       continue;
