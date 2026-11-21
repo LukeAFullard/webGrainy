@@ -222,10 +222,13 @@ interface Utif16Frame {
   t339?: number[];
 }
 
+/** Share of colour samples clipped at each end of the 16-bit stretch (0.01%; at least one sample). */
+export const STRETCH_TAIL_FRACTION = 1e-4;
+
 /**
  * RGBA8 from a decoded 16-bit unsigned-integer TIFF frame (grey or RGB, interleaved; UTIF has
- * already converted samples to little-endian), linearly scaled so the image's darkest colour
- * sample maps to 0 and its brightest to 255 (one range for all colour channels, so colours keep
+ * already converted samples to little-endian), linearly scaled so the 0.01st percentile of the
+ * colour samples maps to 0 and the 99.99th to 255 (darker / brighter samples are clipped) (one range for all colour channels, so colours keep
  * their balance). Returns null for anything else, which UTIF's own conversion handles. The
  * analysis normalises brightness anyway (1st–99th percentile), so a linear stretch does not
  * change results; it only keeps the detail that dropping the low byte destroyed.
@@ -245,17 +248,30 @@ export function rgba8From16Bit(f: Utif16Frame): { rgba: Uint8Array; note: string
   const alphaAt = spp > colour && (extra[0] === 1 || extra[0] === 2) ? colour : -1;
   const d = f.data;
   const n = w * h;
-  let lo = 65535;
-  let hi = 0;
+  // Range between the 0.01st and 99.99th percentile of all colour samples, not min-max: one hot
+  // or saturated pixel at 65535 in 12-bit data would otherwise squeeze the image into a few grey
+  // levels. Samples outside the range are clipped.
+  const hist = new Uint32Array(65536);
   for (let i = 0; i < n; i++) {
     const base = i * spp * 2;
     for (let c = 0; c < colour; c++) {
       const o = base + c * 2;
-      const v = d[o]! | (d[o + 1]! << 8);
-      if (v < lo) lo = v;
-      if (v > hi) hi = v;
+      hist[d[o]! | (d[o + 1]! << 8)]!++;
     }
   }
+  const total = n * colour;
+  const tail = Math.max(1, Math.floor(total * STRETCH_TAIL_FRACTION));
+  let lo = 0;
+  for (let seen = 0; lo < 65535; lo++) {
+    seen += hist[lo]!;
+    if (seen > tail) break;
+  }
+  let hi = 65535;
+  for (let seen = 0; hi > 0; hi--) {
+    seen += hist[hi]!;
+    if (seen > tail) break;
+  }
+  if (hi < lo) hi = lo;
   const span = hi > lo ? hi - lo : 1;
   const k = 255 / span;
   const out = new Uint8Array(n * 4);
@@ -264,7 +280,7 @@ export function rgba8From16Bit(f: Utif16Frame): { rgba: Uint8Array; note: string
     const q = i * 4;
     for (let c = 0; c < 3; c++) {
       const o = base + (colour === 3 ? c : 0) * 2;
-      let v = Math.round(((d[o]! | (d[o + 1]! << 8)) - lo) * k);
+      let v = Math.round((Math.min(hi, Math.max(lo, d[o]! | (d[o + 1]! << 8))) - lo) * k);
       if (photometric === 0) v = 255 - v; // WhiteIsZero
       out[q + c] = v;
     }
@@ -275,7 +291,7 @@ export function rgba8From16Bit(f: Utif16Frame): { rgba: Uint8Array; note: string
       out[q + 3] = 255;
     }
   }
-  return { rgba: out, note: `16-bit TIFF converted to 8 bits by its own range (${lo}–${hi} mapped to 0–255).` };
+  return { rgba: out, note: `16-bit TIFF converted to 8 bits by its own range (${lo}–${hi}, the 0.01–99.99th percentile, mapped to 0–255).` };
 }
 
 export function decodeTiffBuffer(buf: ArrayBuffer): DecodedTiffImage {

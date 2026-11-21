@@ -5,6 +5,7 @@
  */
 import { comparePercentile, comparisonWarnings, settingsMismatches, surveyChanges, type ComparedPercentile, type D50Comparison } from '../../modules/siteComparison.js';
 import { groupSitesByPlace } from '../../modules/sitePlaces.js';
+import { adequacyCapNote } from '../../modules/siteAdequacy.js';
 import { sizeHistogramFromWentworth } from '../../modules/histograms.js';
 import {
   renderCompareAspectRatioSvg,
@@ -101,7 +102,7 @@ export function renderCompareHtml(state: AppState, lightTheme: boolean, charts: 
               return `<tr>${nameCell(s)}
                 <td>${fw ? `${v(fw.meanPhi, 2)} / ${v(fw.sortingPhi, 2)} / ${v(fw.skewnessPhi, 2)} / ${v(fw.kurtosisPhi, 2)}` : '—'}</td>
                 <td>${v(halfPct, 0)}%</td>
-                <td>${esc(r.adequacy.rating)} (${Math.round(r.adequacy.effectiveGrainCount)})</td>
+                <td>${esc(r.adequacy.rating)} (${Math.round(r.adequacy.effectiveGrainCount)})${r.adequacy.limitedByPhotoCount ? `<br><span class="field-hint">${esc(adequacyCapNote(true, r.includedPhotoCount))}</span>` : ''}</td>
                 <td>${r.dCutoffCommonMm !== null ? `${v(r.dCutoffCommonMm, 1)} mm` : '—'}</td>
                 <td>${v(r.shape.medianAspectRatio, 2)}</td>
                 <td>${f.grainCount > 0 ? `${v(f.meanAxialDeg, 0)}° / ${v(f.resultantLength, 2)} / ${f.rayleighP === null ? '—' : f.rayleighP < 0.001 ? '&lt;0.001' : v(f.rayleighP, 3)}` : '—'}</td></tr>`;

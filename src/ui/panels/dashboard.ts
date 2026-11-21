@@ -16,6 +16,7 @@ import { getActivePhoto } from '../workspaceActions.js';
 import { scopeButtonsHtml } from './compare.js';
 import { chartBoxFor, esc, type ChartRegistry } from './html.js';
 import { photoCutoffs } from '../../modules/siteWorkspace.js';
+import { adequacyCapNote } from '../../modules/siteAdequacy.js';
 import { DEFAULT_POSTPROCESS_OPTIONS } from '../../modules/postprocessCore.js';
 
 /** Shown after the site interval, so an approximate or missing interval is never read as precise. */
@@ -218,7 +219,7 @@ export function renderDashboardHtml(state: AppState, view: DashboardView): strin
       ${
         adeq
           ? `<div class="stat-grid" style="margin-top:8px;">
-              <div class="stat-card"><div class="stat-label">Adequacy</div><div class="stat-value">${esc(adeq.rating)}</div><div class="stat-sub">n_eff = ${Math.round(adeq.effectiveGrainCount)} (100/200/400)</div></div>
+              <div class="stat-card"><div class="stat-label">Adequacy</div><div class="stat-value">${esc(adeq.rating)}</div><div class="stat-sub">n_eff = ${Math.round(adeq.effectiveGrainCount)} (100/200/400)${adeq.limitedByPhotoCount ? `<br>${esc(adequacyCapNote(true, report?.includedPhotoCount ?? 0))}` : ''}</div></div>
               <div class="stat-card"><div class="stat-label">Max Clast Ratio</div><div class="stat-value">${(adeq.largestClastAreaRatio * 100).toFixed(1)}%</div><div class="stat-sub">${adeq.largestClastWarning === 'none' ? 'OK (<5%)' : esc(adeq.largestClastWarning.toUpperCase())}</div></div>
               <div class="stat-card"><div class="stat-label">Cutoff (mm)</div><div class="stat-value">${report?.dCutoffCommonMm !== null && report?.dCutoffCommonMm !== undefined ? report.dCutoffCommonMm.toFixed(2) : '—'}</div><div class="stat-sub">${report?.excludedTruncationCount ?? 0} trunc excl</div></div>
             </div>`

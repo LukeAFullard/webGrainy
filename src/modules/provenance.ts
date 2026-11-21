@@ -148,8 +148,9 @@ export function csvCell(val: string | number | boolean): string {
     }
     str = str.replace(/([,;\t\r\n])([ ]*)([=+\-@])/g, "$1$2'$3");
   }
-  // Quote on `;` and TAB too: spreadsheets in many locales split CSV files on them.
-  if (/[",\n\r;\t]/.test(str)) {
+  // Quote on `;` and TAB too: spreadsheets in many locales split CSV files on them. Quote `#`:
+  // the documented readers (pandas `comment="#"`, R `comment.char="#"`) cut an unquoted line there.
+  if (/[",\n\r;\t#]/.test(str)) {
     return `"${str.replace(/"/g, '""')}"`;
   }
   return str;

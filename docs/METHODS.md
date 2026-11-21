@@ -65,8 +65,10 @@ Two words used throughout:
 ## 2. Photos in
 
 **Formats.** JPEG, PNG, WebP and other formats the browser can open, and TIFF / GeoTIFF.
-16-bit TIFFs are converted to 8 bits by their own brightness range (recorded in the photo's
-notes), so data that uses only part of the 16-bit range (e.g. 12-bit cameras) keeps its detail.
+16-bit TIFFs are converted to 8 bits by their own brightness range, from the 0.01st to the
+99.99th percentile of the samples (recorded in the photo's notes; brighter or darker samples are
+clipped, so one hot pixel does not compress the range). Data that uses only part of the 16-bit
+range (e.g. 12-bit cameras) keeps its detail.
 Very large photos (over 16.7 megapixels) are read at a reduced size to stay within browser
 memory limits. Measurements are still reported in the pixels of the original photo.
 

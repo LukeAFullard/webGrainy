@@ -152,7 +152,7 @@ export function exportSiteSummaryCsv(
   );
 
   for (const key of PSD_KEYS) {
-    lines.push(`psd,${key},${report.psd[key]},${report.unit}`);
+    lines.push(`psd,${key},${numCell(report.psd[key])},${report.unit}`);
     lines.push(
       `psd_bootstrap_ci_lo,${key},${numCell(report.bootstrapCi.lower[key])},${report.unit}`,
     );
@@ -160,20 +160,20 @@ export function exportSiteSummaryCsv(
       `psd_bootstrap_ci_hi,${key},${numCell(report.bootstrapCi.upper[key])},${report.unit}`,
     );
     lines.push(
-      `psd_binomial_ci_lo,${key},${report.binomialCi.lower[key]},${report.unit}`,
+      `psd_binomial_ci_lo,${key},${numCell(report.binomialCi.lower[key])},${report.unit}`,
     );
     lines.push(
-      `psd_binomial_ci_hi,${key},${report.binomialCi.upper[key]},${report.unit}`,
+      `psd_binomial_ci_hi,${key},${numCell(report.binomialCi.upper[key])},${report.unit}`,
     );
   }
 
   if (report.folkWard !== null) {
     const fw = report.folkWard;
-    lines.push(`folk_ward,mean_phi,${fw.meanPhi},phi`);
-    lines.push(`folk_ward,sorting_phi,${fw.sortingPhi},phi`);
-    lines.push(`folk_ward,skewness_phi,${fw.skewnessPhi},phi`);
-    lines.push(`folk_ward,kurtosis_phi,${fw.kurtosisPhi},phi`);
-    lines.push(`folk_ward,mean_mm,${fw.meanMm},mm`);
+    lines.push(`folk_ward,mean_phi,${numCell(fw.meanPhi)},phi`);
+    lines.push(`folk_ward,sorting_phi,${numCell(fw.sortingPhi)},phi`);
+    lines.push(`folk_ward,skewness_phi,${numCell(fw.skewnessPhi)},phi`);
+    lines.push(`folk_ward,kurtosis_phi,${numCell(fw.kurtosisPhi)},phi`);
+    lines.push(`folk_ward,mean_mm,${numCell(fw.meanMm)},mm`);
     lines.push(`folk_ward,sorting_label,${csvCell(fw.sortingLabel)},label`);
     lines.push(`folk_ward,skewness_label,${csvCell(fw.skewnessLabel)},label`);
     lines.push(`folk_ward,kurtosis_label,${csvCell(fw.kurtosisLabel)},label`);
@@ -184,10 +184,10 @@ export function exportSiteSummaryCsv(
   }
   if (report.wentworth !== null) {
     const w = report.wentworth;
-    lines.push(`wentworth,sand_pct,${w.sandPct},%`);
-    lines.push(`wentworth,gravel_pct,${w.gravelPct},%`);
-    lines.push(`wentworth,cobble_pct,${w.cobblePct},%`);
-    lines.push(`wentworth,boulder_pct,${w.boulderPct},%`);
+    lines.push(`wentworth,sand_pct,${numCell(w.sandPct)},%`);
+    lines.push(`wentworth,gravel_pct,${numCell(w.gravelPct)},%`);
+    lines.push(`wentworth,cobble_pct,${numCell(w.cobblePct)},%`);
+    lines.push(`wentworth,boulder_pct,${numCell(w.boulderPct)},%`);
   }
 
   lines.push(`metadata,confidence_level,${report.binomialCi.confidenceLevel},fraction`);
@@ -206,30 +206,30 @@ export function exportSiteSummaryCsv(
   ] as const) {
     for (const b of bins) {
       const label = csvCell(`${b.label} [${b.mmMin}-${b.mmMax} mm]`);
-      lines.push(`${sec},${label},${b.weightPct},%`);
+      lines.push(`${sec},${label},${numCell(b.weightPct)},%`);
       lines.push(`${sec}_count,${label},${b.grainCount},count`);
     }
   }
   const fr = report.fabricRose;
   lines.push(`fabric,grain_count,${fr.grainCount},count`);
-  lines.push(`fabric,mean_axial_orientation_deg,${fr.meanAxialDeg},deg (0 = image vertical)`);
-  lines.push(`fabric,resultant_length_R,${fr.resultantLength},ratio`);
-  lines.push(`fabric,circular_variance,${fr.circularVariance},ratio`);
-  lines.push(`fabric,rayleigh_z,${fr.rayleighZ},stat`);
+  lines.push(`fabric,mean_axial_orientation_deg,${numCell(fr.meanAxialDeg)},deg (0 = image vertical)`);
+  lines.push(`fabric,resultant_length_R,${numCell(fr.resultantLength)},ratio`);
+  lines.push(`fabric,circular_variance,${numCell(fr.circularVariance)},ratio`);
+  lines.push(`fabric,rayleigh_z,${numCell(fr.rayleighZ)},stat`);
   lines.push(`fabric,rayleigh_p,${fr.rayleighP ?? ''},p`);
-  for (const b of fr.bins) lines.push(`fabric_bin,${b.startDeg}-${b.endDeg}deg,${b.proportionPct},%`);
+  for (const b of fr.bins) lines.push(`fabric_bin,${b.startDeg}-${b.endDeg}deg,${numCell(b.proportionPct)},%`);
   const adq = report.adequacy;
-  lines.push(`adequacy,effective_grain_count,${adq.effectiveGrainCount},count`);
+  lines.push(`adequacy,effective_grain_count,${numCell(adq.effectiveGrainCount)},count`);
   lines.push(`adequacy,rating_limited_by_photo_count,${adq.limitedByPhotoCount},flag`);
-  lines.push(`adequacy,largest_clast_area_ratio,${adq.largestClastAreaRatio},fraction`);
+  lines.push(`adequacy,largest_clast_area_ratio,${numCell(adq.largestClastAreaRatio)},fraction`);
   lines.push(`adequacy,largest_clast_warning,${adq.largestClastWarning},label`);
   for (const o of adq.outlierPhotos) {
     lines.push(`adequacy_outlier_photo,${csvCell(o.label)},${csvCell(o.reasons.join('; '))},text`);
   }
   if (report.jackknife !== null) {
-    lines.push(`jackknife,se_D16,${report.jackknife.seD16},${report.unit}`);
-    lines.push(`jackknife,se_D50,${report.jackknife.seD50},${report.unit}`);
-    lines.push(`jackknife,se_D84,${report.jackknife.seD84},${report.unit}`);
+    lines.push(`jackknife,se_D16,${numCell(report.jackknife.seD16)},${report.unit}`);
+    lines.push(`jackknife,se_D50,${numCell(report.jackknife.seD50)},${report.unit}`);
+    lines.push(`jackknife,se_D84,${numCell(report.jackknife.seD84)},${report.unit}`);
   }
   // One row per photo: <photo label>|<field>.
   const jk = new Map((report.jackknife?.perPhoto ?? []).map((j) => [j.photoId, j]));
