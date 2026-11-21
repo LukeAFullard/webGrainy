@@ -49,19 +49,21 @@ configure headers (e.g. GitHub Pages). On the first visit the page reloads once,
 automatically, after the service worker installs. This happens at most once per tab
 session and never during a batch. The top bar shows the thread count
 (e.g. "WASM SIMD · 4 CPU threads"). Sending the headers from your server as well (below)
-makes the very first load isolated too and avoids that reload. Verified in Chromium with
-the real Hugging Face model download (`validation/gpu/sw_isolation_check.cjs`).
+makes the very first load isolated too and avoids that reload. The browser smoke tests
+(`npm run test:e2e:browser`, `npm run test:e2e:sw`) load the built app through its service worker
+and run a real analysis; check `self.crossOriginIsolated` in the console after deploying.
 
 Without cross-origin isolation, the WASM backend (the fallback when no WebGPU adapter is
 available) runs **single-threaded**. When the page is isolated, the app uses one fewer than
 the logical cores by default (at least 1, at most 8), leaving a core free for the page and the
-device; users can change this (*Advanced → CPU threads*, applied on reload). Measured in headless Chromium on a 4-core machine (`validation/perf/`):
+device; users can change this (*Advanced → CPU threads*, applied on reload). Measured with
+the same ONNX Runtime WASM build in Node on a 4-core machine (`validation/perf/cpu_threads.mjs`,
+results in `validation/perf/cpu_threads_results.txt`):
 
-| Workload (CPU / WASM) | Not isolated (1 thread) | Isolated, ORT default (2 threads) | Isolated, all cores (4 threads) |
+| Workload (CPU / WASM) | 1 thread (not isolated) | 2 threads (ORT default) | 4 threads (all cores) |
 |---|---|---|---|
-| U-Net inference, 1024×768 photo | 18.4 s | 11.0 s | **6.7 s** |
-| Whole analysis incl. ~1.2 s post-processing | 19.7 s | 12.4 s | **7.9 s** |
-| Cellpose-SAM, one 256×256 tile (Node, same runtime) | 32.3 s | 16.8 s | **9.5 s** |
+| U-Net inference, 1024×768 image | 19.5 s | 11.8 s | **6.2 s** |
+| Cellpose-SAM, one 256×256 tile | 32.3 s | 16.8 s | **9.5 s** |
 
 A 1024×768 photo needs about 20 Cellpose-SAM tiles, so on CPU it takes roughly 11 minutes
 single-threaded and roughly 3 minutes isolated on 4 cores (these are FP16 timings; the INT8

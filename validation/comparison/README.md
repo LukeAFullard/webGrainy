@@ -35,6 +35,12 @@ p < 0.05 in 59% of studies), so the app also reports Holm-adjusted p-values.
 Before the fixes, the same comparisons reported p < 0.05 in about 30% of one-photo surveys
 (their bootstrap only resamples grains within the photo and cannot see patch-to-patch
 variation) and 17-40% with 2-4 photos (a z-test on a cluster bootstrap with few photos is
-too narrow). The price of a calibrated test is power: with 6 photos per survey, a real 20%
-change in D50 was detected in about 37% of simulated pairs (the old test's 50% included its
-false positives). Take more photos per survey to detect smaller changes.
+too narrow). The price of a calibrated test is power (`power.audit.ts`, results in `power_results.md`):
+where photos of the bed differ little (patch sd 0.15), a real 20% change in D50 was detected
+about 27% of the time with 5 photos per survey and about 48% with 10. Where photos differ more
+in median and in sorting (patch sd 0.30), it was detected in 7% with 5 photos and 12% with 10.
+(An earlier figure of about 37% with 6 photos came from an older bed model; the old test's 50%
+included its false positives.) Take more photos per survey to detect smaller changes.
+
+Run: `npx vitest run --config validation/comparison/vitest.power.config.ts` (about 15 minutes;
+`POWER_TRIALS` sets trials per row, default 400).

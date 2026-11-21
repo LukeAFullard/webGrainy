@@ -402,8 +402,9 @@ result then mixes different size ranges.
 **Set this to the smallest stone your field method records** whenever you compare with,
 or want results like, a **pebble count**. Typical values are 8–16 mm. Field pebble counts
 usually skip small material, while the photo includes it. That alone can make the photo
-D50 look **about 40% finer**: this happened at the K1 test site. With a matching 13 mm
-cutoff, the photo D50 agreed with the field D50 within about 3–4%.
+D50 look much finer: at the K1 test site, Cellpose-SAM's D50 was **about 30% finer** than the
+field count without a cutoff (U-Net's looked close only because it misses most small grains).
+With a matching 13 mm cutoff, both models' D50 agreed with the field D50 within about 3–4%.
 
 Leave it at **0** if you want to describe everything visible down to the detection limit.
 

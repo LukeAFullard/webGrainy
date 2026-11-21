@@ -90,7 +90,7 @@ export function buildSiteReportHtml(input: ReportInput): string {
   const modelHash = input.metadata['modelSha256'] ? String(input.metadata['modelSha256']).slice(0, 12) : undefined;
   const methodsSentence = [
     `Surface grain sizes for ${site.name} (${r.includedPhotoCount} photo${r.includedPhotoCount === 1 ? '' : 's'}, n = ${r.validGrainCount} grains) were measured in webGrainy using ${modelName}${modelHash ? ` (SHA-256 ${modelHash}…)` : ''}.`,
-    `Sizes report the 2D visible ${r.sizeMetric} (${r.statisticalBasisLabel})${resText ? ` at ${resText}` : ''}${detText ? `, with an effective pixel detection limit of ${detText}` : ''}.`,
+    `Sizes report the 2D visible ${r.sizeMetric} (${r.statisticalBasisLabel})${resText ? ` at ${resText}` : ''}${detText ? `; grains smaller than ${detText} (the detection limit) are not counted, and grains up to a few times that size are partly missed` : ''}.`,
     editText ? `${editText}.` : '',
     enhText ? `${enhText}.` : '',
   ]
@@ -194,7 +194,7 @@ ${input.photos
 ${[
   ...input.settings,
   ...(resText ? ([['Pixel resolution', resText]] as Array<[string, string]>) : []),
-  ...(detText ? ([['Effective detection limit', detText]] as Array<[string, string]>) : []),
+  ...(detText ? ([['Detection limit (smallest grain kept)', detText]] as Array<[string, string]>) : []),
   ...(editText ? ([['Outline review', editText]] as Array<[string, string]>) : []),
   ...(enhText ? ([['Pre-processing enhancement', enhText]] as Array<[string, string]>) : []),
   ...(['appVersion', 'appCommit', 'ortVersion', 'modelId', 'modelRevision', 'modelSha256'] as const)

@@ -42,7 +42,7 @@ export const HELP_TOPICS = {
     group: 'Analysis',
     what: 'Which copy of the Cellpose-SAM network to download and run. FP16 is the original (617 MB). INT8 (316 MB) and FP4 (183 MB) store the same network in compressed form. All three gave the same accuracy on the 40-photo benchmark (outline score 0.652–0.653, median D50 error 2.8–2.9%). Only used when the model is CP-SAM.',
     default: 'Auto: FP16 on a graphics card (WebGPU with float16), otherwise INT8 (always INT8 on phones and tablets)',
-    when: 'On a computer without a suitable graphics card, INT8 needs about half the memory of FP16 (about 2 GB vs 3.8 GB), loads much faster, and is as fast or faster (up to about 2× in the benchmark, depending on the computer). Choose FP4 for the smallest download on a slow or metered connection (it needs about as much memory as FP16 while running). On a graphics card, FP16 has been checked against the CPU on real hardware; INT8 and FP4 have not, so the app always runs them on the CPU (the GPU check page can test them on your graphics card). Keep the same choice for all photos you compare, and note it when reporting results (it is recorded in the export).',
+    when: 'On a computer without a suitable graphics card, INT8 needs about half the memory of FP16 (about 2 GB vs 3.8 GB), loads much faster, and is as fast or faster (up to about 2× in the benchmark, depending on the computer). Choose FP4 for the smallest download on a slow or metered connection (it needs about as much memory as FP16 while running). On a graphics card, FP16 has been checked against the CPU on one integrated Intel GPU so far (other makers not yet; the GPU check page can test yours); INT8 and FP4 have not, so the app always runs them on the CPU (the GPU check page can test them on your graphics card). Keep the same choice for all photos you compare, and note it when reporting results (it is recorded in the export).',
   },
   scaleMode: {
     title: 'Scale mode',
@@ -224,7 +224,7 @@ export const HELP_TOPICS = {
     group: 'Site statistics',
     what: 'Leaves out all grains smaller than this size (mm) from both This photo and Whole site statistics, so results cover the same size range as a field pebble count. Marked with an amber dot when "Mark edge/too-small grains" is on.',
     default: '0 (off)',
-    when: 'Set it to the smallest stone your field method records (typically 8–16 mm) whenever you compare with a pebble count. Without it the photo D50 can look much finer (about 40% at the K1 test site; with a matching 13 mm cutoff the photo and field D50 agreed within about 3–4%). Applies immediately without re-analysing.',
+    when: 'Set it to the smallest stone your field method records (typically 8–16 mm) whenever you compare with a pebble count. Without it the photo D50 can look much finer (about 30% with Cellpose-SAM at the K1 test site; U-Net looked close only because it misses most small grains; with a matching 13 mm cutoff both agreed with the field D50 within about 3–4%). Applies immediately without re-analysing.',
   },
   maxExcludedFraction: {
     title: 'Exclusion overlap',

@@ -302,10 +302,15 @@ of these rules; excluded grains stay in the grain tables, flagged.
 3. **Smallest grain counted (pixel cutoff).** Grains with a size under **15 px** (on the chosen
    size measure, in original photo pixels) are left out by default. Very small grains are
    outlined unreliably.
-4. **Detection limit.** The smallest grain a photo can show is the larger of the pixel cutoff
-   and the size of the model's minimum grain (30 working pixels of area, as an equal-area
-   diameter) converted to photo pixels. Photos shrunk more for analysis have a coarser limit.
-   The app shows this limit in mm.
+4. **Detection limit (smallest grain kept).** The smallest grain a photo can keep is the larger
+   of the pixel cutoff and the size of the post-processing's minimum grain (30 working pixels of
+   area, as an equal-area diameter, about 6 working pixels) converted to photo pixels. Photos
+   shrunk more for analysis have a coarser limit. The app shows this limit in mm. It is a floor,
+   not the size above which every grain is found: in the pre-processing benchmark
+   (`validation/preprocessing/`), U-Net found about 4% of the hand-outlined grains under 10
+   working pixels and about 46% of those of 10–20 working pixels (Cellpose-SAM, on 5 photos:
+   about 49% and 78%). Fine grains up to a few times this limit are therefore under-counted,
+   and D5–D16 are biased coarse, more so for photos analysed at a smaller working size.
 5. **Common size cutoff for a site (calibrated sites).** Photos taken from different heights
    or with different cameras can resolve different smallest sizes. To pool them fairly, the
    app finds each photo's detection limit in mm and applies the **largest** of them to every
@@ -596,8 +601,11 @@ interval for the ratio and a p-value:
    degrees of freedom from the numbers of photos (n−1 per site). The 95% interval uses the
    matching t value.
 3. With several pairs (or several consecutive surveys), each p-value is also given **adjusted
-   for the number of comparisons** (Holm 1979). The * mark uses the adjusted p-value, so the
-   chance of *any* false "significant" result among them stays below 5%.
+   for the number of comparisons** (Holm 1979), separately for D16, D50 and D84. The * mark
+   uses the adjusted p-value, so within one percentile the chance of *any* false "significant"
+   result stays below 5%. The three percentiles are adjusted separately, so reading a star in
+   *any* of D16, D50 and D84 as a change is more permissive: for two surveys of an unchanged
+   bed this happened in about 5–9% of simulated comparisons.
 
 **In plain terms:** the test asks whether the difference is larger than the photo-to-photo
 variation of both surveys would produce by chance, allowing for how few photos each has.
@@ -610,9 +618,13 @@ variation of both surveys would produce by chance, allowing for how few photos e
 - With fewer than 5 photos per site, intervals are wide and only large differences show.
 - In simulation of unchanged beds (2–20 photos per survey, moderate and strong patch-to-patch
   variation), a single comparison gave p < 0.05 in 1–8% of cases for D16, D50 and D84 (mostly 2–5%)
-  (the expected rate is 5%; `validation/comparison/`). The cost is power: a real 20% change in
-  D50 was detected about 30% of the time with 5 photos per survey and about 55% with 10.
-  **More photos per survey detect smaller changes.**
+  (the expected rate is 5%; `validation/comparison/`). The cost is power: where photos of the bed
+  differ little (patch sd 0.15), a real 20% change in D50 was detected
+  about 27% of the time with 5 photos per survey and about 48% with 10. Where photos differ more in median and in
+  sorting (patch sd 0.30), it was detected in 7% with 5 photos and 12% with 10
+  (`validation/comparison/power.audit.ts`, `power_results.md`). D16 changes are detected
+  somewhat more often and D84 changes less often. **More photos per survey detect smaller
+  changes; a single survey pair rarely shows a 20% change in a variable bed.**
 - Without the adjustment, many pairs produce false "significant" results: with 8 identical
   sites (28 pairs), at least one pair had unadjusted p < 0.05 in 59% of simulated studies.
   Read the adjusted p-value when looking at several comparisons. This is a screening test, not
