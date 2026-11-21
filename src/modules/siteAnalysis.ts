@@ -13,9 +13,10 @@ import { DEFAULT_POSTPROCESS_OPTIONS } from './postprocessCore.js';
 import type { AnalysisSession } from './pipelineController.js';
 import { assessSampleAdequacy, buildPerPhotoBreakdown } from './siteAdequacy.js';
 import { validateSiteCalibration, withExclusionTolerance } from './siteCalibration.js';
+import { withinSiteSettingDifferences } from './siteProvenance.js';
 import { getStatisticalBasisLabel, type PreparedGrain, type PreparedPhoto, computeVirtualWolmanHits, buildPooledArrays, getGrainSize, computeSiteWentworth, siteCutoffReason } from './sitePooling.js';
 import { type SitePhotoInput, type SiteAnalysisOptions, type SiteAnalysisReport, SITE_BIBLIOGRAPHIC_CITATIONS } from './siteTypes.js';
-import { computeBinomialCi, runBootstrap, computeJackknife, computeConvergence } from './siteUncertainty.js';
+import { calibrateSiteInterval, computeBinomialCi, runBootstrap, computeJackknife, computeConvergence, MIN_PHOTOS_FOR_RELIABLE_CI } from './siteUncertainty.js';
 
 // Public API: re-exports the parts from the site modules.
 export * from './siteTypes.js';
@@ -29,6 +30,22 @@ export {
   exportSiteSummaryCsv,
   exportSiteSummaryJson,
 } from './siteExportFormats.js';
+
+/** Upper bound on bootstrap replicates (the app offers 50-5000). */
+export const MAX_BOOTSTRAP_REPLICATES = 10_000;
+
+/** Labels of photos whose counted grains are identical (e.g. the same photo added twice). */
+function duplicatePhotoLabels(photos: readonly PreparedPhoto[]): string[][] {
+  const bySig = new Map<string, string[]>();
+  for (const p of photos) {
+    if (p.validGrains.length === 0) continue;
+    const sig = p.validGrains.map((g) => `${g.sizeVal}:${g.areaVal}`).sort().join('|');
+    const list = bySig.get(sig) ?? [];
+    list.push(p.input.label);
+    bySig.set(sig, list);
+  }
+  return [...bySig.values()].filter((l) => l.length > 1);
+}
 
 /**
  * Smallest grain size (original-photo px) a photo's analysis can resolve: the equal-area
@@ -66,16 +83,25 @@ export function analyzeSite(
   const harmonize =
     unit === 'mm' &&
     (options.harmonizeCutoff ?? options.harmonizePhysicalCutoff ?? true);
-  const bootstrapReplicates = Math.max(
-    1,
-    Math.round(options.bootstrapReplicates ?? 1000),
+  // Bounded: options can come from a saved or imported project (see sanitizeSiteOptions).
+  const bootstrapReplicates = Math.min(
+    MAX_BOOTSTRAP_REPLICATES,
+    Math.max(1, Math.round(Number.isFinite(options.bootstrapReplicates) ? options.bootstrapReplicates! : 1000)),
   );
-  const bootstrapSeed = options.bootstrapSeed ?? 42;
-  const bootstrapTwoStage = options.bootstrapTwoStage ?? false;
-  const confidenceLevel = options.confidenceLevel ?? 0.95;
+  const bootstrapSeed = Number.isFinite(options.bootstrapSeed) ? options.bootstrapSeed! >>> 0 : 42;
+  const bootstrapTwoStage = options.bootstrapTwoStage === true;
+  const confidenceLevel: 0.9 | 0.95 = options.confidenceLevel === 0.9 ? 0.9 : 0.95;
 
   const warnings: string[] = [...validation.warnings];
   const includedInputs = photos.filter((p) => p.included);
+  // Photos analysed differently (e.g. Auto chose U-Net for some photos and Cellpose-SAM for
+  // others) have different size biases; pooling them silently would mix those biases.
+  const differences = withinSiteSettingDifferences(includedInputs);
+  if (differences.length > 0) {
+    warnings.push(
+      `Photos in this site were analysed differently (${differences.map((d) => `${d.setting}: ${d.values}`).join('; ')}). Their size biases differ, so the pooled statistics mix them: re-analyse all photos with the same settings (e.g. choose the model instead of Auto).`,
+    );
+  }
 
   // Compute common physical cutoff if harmonizing in mm: the coarsest photo's smallest
   // resolvable size (detection floor at its working resolution, or minBaxisPx if larger).
@@ -296,7 +322,7 @@ export function analyzeSite(
   const medianAspectRatio =
     ratios.length === 0 ? Number.NaN : ratios.length % 2 ? ratios[Math.floor(mid)]! : (ratios[mid - 1]! + ratios[mid]!) / 2;
 
-  const boot = runBootstrap(
+  const rawBoot = runBootstrap(
     preparedPhotos,
     options.poolingMode,
     unit,
@@ -305,9 +331,28 @@ export function analyzeSite(
     bootstrapTwoStage,
     confidenceLevel,
   );
-  if (boot.mode === 'single-photo-grain-fallback') {
+  if (rawBoot.mode === 'single-photo-grain-fallback') {
     warnings.push(
       'Single-photo site: cluster bootstrap fell back to within-photo grain resampling; inter-photo spatial variance is not captured.',
+    );
+  }
+  // Leave-one-photo-out jackknife (also a second estimate of the site's standard error).
+  const { jackknife, d50WithoutMap } = computeJackknife(preparedPhotos, options.poolingMode, psd);
+  const calibrated = calibrateSiteInterval(rawBoot, { psd, folkWard }, preparedPhotos.length, confidenceLevel, jackknife?.logSe);
+  const boot = { ...rawBoot, psdCi: calibrated.psdCi, folkWardCi: calibrated.folkWardCi };
+  const duplicates = duplicatePhotoLabels(preparedPhotos);
+  if (duplicates.length > 0) {
+    warnings.push(
+      `Identical results in ${duplicates.map((d) => d.join(' and ')).join('; ')}: the same photo added twice? Its grains are counted twice and the uncertainty is understated. Remove the duplicate.`,
+    );
+  }
+  if (calibrated.status === 'degenerate') {
+    warnings.push(
+      'The photos give identical bootstrap results, so the uncertainty of some percentiles cannot be estimated (shown as not available). Check for duplicate photos and take more photos.',
+    );
+  } else if (calibrated.status === 'few-photos') {
+    warnings.push(
+      `Only ${preparedPhotos.length} photos: the ${Math.round(confidenceLevel * 100)}% interval is approximate and wide (t-interval with ${preparedPhotos.length - 1} degrees of freedom). Take at least ${MIN_PHOTOS_FOR_RELIABLE_CI} photos per site for a reliable interval.`,
     );
   }
 
@@ -318,8 +363,6 @@ export function analyzeSite(
     confidenceLevel,
   );
 
-  // Jackknife leave-one-photo-out sensitivity
-  const { jackknife, d50WithoutMap } = computeJackknife(preparedPhotos, options.poolingMode, psd);
 
   // Cumulative Convergence Curve (1 .. N)
   const convergence = computeConvergence(preparedPhotos, psd, boot, {
@@ -332,8 +375,13 @@ export function analyzeSite(
   });
 
   // Sample Adequacy & Outlier Flags
-  const { validGrainCount, effectiveGrainCount, rating, largestClastAreaRatio, largestClastWarning } =
+  const { validGrainCount, effectiveGrainCount, rating, limitedByPhotoCount, largestClastAreaRatio, largestClastWarning } =
     assessSampleAdequacy(preparedPhotos, options.poolingMode, warnings, weights);
+  if (validGrainCount > 0 && validGrainCount < 30) {
+    warnings.push(
+      `Only ${validGrainCount} grains counted: percentiles are highly uncertain and Folk & Ward classes are not meaningful (at least 100 recommended).`,
+    );
+  }
   const { outlierPhotos, perPhoto } = buildPerPhotoBreakdown(
     preparedPhotos,
     options.poolingMode,
@@ -365,12 +413,16 @@ export function analyzeSite(
     bootstrapSeed,
     bootstrapReplicates,
     bootstrapCi: boot.psdCi,
+    bootstrapPercentileCi: rawBoot.psdCi,
+    ciStatus: calibrated.status,
+    ciLogSe: calibrated.logSe,
     folkWardCi: boot.folkWardCi,
     binomialCi,
     jackknife,
     convergence,
     adequacy: {
       rating,
+      limitedByPhotoCount,
       effectiveGrainCount,
       largestClastAreaRatio,
       largestClastWarning,

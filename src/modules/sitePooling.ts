@@ -25,13 +25,13 @@ export const PERCENTILE_NUMS = [5, 10, 16, 25, 50, 75, 84, 90, 95] as const;
 export function getStatisticalBasisLabel(mode: PoolingMode): string {
   switch (mode) {
     case 'physical-area':
-      return 'Area-Weighted (Grid-by-Number / Sieve-Equivalent, Kellerhals & Bray 1971)';
+      return 'Area-Weighted (Grid-by-Number equivalent, Kellerhals & Bray 1971; 2D surface sizes, not sieve sizes)';
     case 'equal-photo':
       return 'Equal-Photo Area-Weighted (Normalized Grid-by-Number Equivalent)';
     case 'virtual-wolman-grid':
       return 'Virtual Wolman Grid-by-Number (Discrete Point Count, Kellerhals & Bray 1971)';
     case 'number-weighted':
-      return 'Number-Weighted (Area-by-Number Frequency — NOT Sieve-Equivalent)';
+      return 'Number-Weighted (each grain once — not comparable with pebble counts or sieving)';
     case 'facies-weighted':
       return 'Facies-Weighted Area-Normalized (Stratified Grid-by-Number Equivalent)';
   }
@@ -96,6 +96,9 @@ export function median(values: readonly number[]): number {
   return quantileSorted(sorted, 0.5);
 }
 
+/** Most virtual Wolman grid points per photo (the app offers up to a few hundred). */
+export const MAX_WOLMAN_POINTS = 10_000;
+
 export function computeVirtualWolmanHits(
   session: AnalysisSession,
   validBedMask: ValidBedMask,
@@ -132,7 +135,8 @@ export function computeVirtualWolmanHits(
     mmPerPx !== undefined &&
     mmPerPx > 0
   ) {
-    const stepPx = options.wolmanGridSpacingMm / mmPerPx;
+    // At most MAX_WOLMAN_POINTS per photo: a tiny spacing must not allocate millions of points.
+    const stepPx = Math.max(options.wolmanGridSpacingMm / mmPerPx, Math.sqrt((origW * origH) / MAX_WOLMAN_POINTS));
     if (Number.isFinite(stepPx) && stepPx > 0) {
       for (let y = 0.5 * stepPx; y < origH; y += stepPx) {
         for (let x = 0.5 * stepPx; x < origW; x += stepPx) {
@@ -172,7 +176,8 @@ export function computeVirtualWolmanHits(
       }
     }
 
-    const targetK = Math.max(1, Math.round(options.wolmanPointsPerPhoto ?? 100));
+    const k = Number.isFinite(options.wolmanPointsPerPhoto) ? options.wolmanPointsPerPhoto! : 100;
+    const targetK = Math.min(MAX_WOLMAN_POINTS, Math.max(1, Math.round(k)));
     const cols = Math.max(1, Math.ceil(Math.sqrt((targetK * boxW) / Math.max(1e-6, boxH))));
     const rows = Math.max(1, Math.ceil(targetK / cols));
     const stepX = boxW / cols;

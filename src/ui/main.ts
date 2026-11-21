@@ -17,10 +17,12 @@ import { grainPassesSizeCutoffs } from '../modules/sedimentStats.js';
 import {
   buildSiteInputs,
   effectiveRoi,
+  photoCutoffs,
 } from '../modules/siteWorkspace.js';
+import { siteReportProvenance } from '../modules/siteProvenance.js';
 import { CanvasViewport } from './canvasViewport.js';
 import { parseJpegExifMetadata } from './exif.js';
-import { computeBlurScoreFromRgba, computeEffectiveDetectionLimit } from '../modules/photoQuality.js';
+import { computeBlurScoreFromRgba } from '../modules/photoQuality.js';
 import { enhanceImageBuffer, type EnhanceKind, type EnhanceProgressEvent } from '../modules/imageEnhance.js';
 import { OrtWorkerHost } from '../modules/ortWorkerSession.js';
 import { manageSwUpdates, type SwUpdateController } from './swUpdate.js';
@@ -393,8 +395,7 @@ async function syncViewport(fitToView = false): Promise<void> {
     overlays: state.overlays,
     selectedIds: state.selectedGrainIds,
     inspectedId: state.inspectedGrainId,
-    minBaxisPx: state.siteOptions.minBaxisPx ?? 15,
-    minSizeMm: state.siteOptions.minSizeMm ?? 0,
+    ...photoCutoffs(state.siteOptions, state.siteReport, photo?.photoId),
     sizeMetric: state.siteOptions.sizeMetric ?? 'bAxis',
     calPoints: state.pendingCalibrationPoints,
     rectifyPoints: state.pendingRectifyPoints,
@@ -469,8 +470,7 @@ function renderViewportExtras(state: AppState): void {
       if (session.getExcludeBorder() && grain.touchesBorder) exclReasons.push('edge');
       if (
         !grainPassesSizeCutoffs(grain, {
-          minBaxisPx: state.siteOptions.minBaxisPx ?? 15,
-          minSizeMm: state.siteOptions.minSizeMm ?? 0,
+          ...photoCutoffs(state.siteOptions, state.siteReport, activePhoto.photoId),
           sizeMetric: state.siteOptions.sizeMetric ?? 'bAxis',
         })
       ) {
@@ -1302,50 +1302,27 @@ async function buildReport(): Promise<string | null> {
       outlierReasons: p.outlierReasons,
     });
   }
-  const firstSession = [...st.sessions.values()][0];
-  const prov = firstSession?.getProvenance();
-  const ap = st.analysisParams;
+  // Provenance from each included photo's own analysis record (models, settings, edits), not
+  // from the current settings or the first session in memory.
   const so = st.siteOptions;
   const hist = report.unit === 'mm' ? sizeHistogramFromWentworth(report.wentworthHistogram10Phi, 1) : null;
-
-  const limitValues: number[] = [];
-  const calibratedScales: number[] = [];
-  let manualEditsCount = 0;
-  let enhancedPhotosCount = 0;
-  for (const p of report.perPhoto) {
-    const rec = st.photos.find((x) => x.photoId === p.photoId);
-    if (rec?.metadata?.enhancement) enhancedPhotosCount++;
-    const sess = st.sessions.get(p.photoId);
-    if (sess?.canUndo) manualEditsCount++;
-    if (p.mmPerPx !== undefined && p.mmPerPx > 0) calibratedScales.push(p.mmPerPx);
-    const lim = computeEffectiveDetectionLimit({
-      minSizeWorkingPx: sess?.getProvenance()?.postProcess?.minSize ?? ap.minSize,
-      ...(sess ? { effectiveScaleFactor: sess.workingImage.effectiveScaleFactor } : {}),
-      ...(so.minBaxisPx !== undefined ? { minBaxisPx: so.minBaxisPx } : {}),
-      ...(report.unit === 'mm' && p.mmPerPx !== undefined ? { mmPerPx: p.mmPerPx } : {}),
-    });
-    if (lim) limitValues.push(lim.value);
-  }
-  const detectionLimit = limitValues.length > 0 ? Math.max(...limitValues) : undefined;
-  const resolutionRangeMmPerPx: [number, number] | undefined =
-    calibratedScales.length > 0 ? [Math.min(...calibratedScales), Math.max(...calibratedScales)] : undefined;
+  const prov = siteReportProvenance(buildSiteInputs(st), report, so);
+  const { detectionLimit, resolutionRangeMmPerPx } = prov;
+  const singleModel = prov.models.length === 1 ? prov.models[0]! : null;
 
   const html = buildSiteReportHtml({
     site,
     report,
     generatedAt: new Date().toISOString(),
-    metadata: { ...baseExportMetadata(), ...(prov ?? {}) },
-    settings: [
-      ['Model', ap.model === 'auto' ? 'Auto (per photo)' : ap.model === 'unet' ? 'U-Net' : `Cellpose-SAM (${ap.cpsamWeights})`],
-      ['Pooling', report.statisticalBasisLabel],
-      ['Size metric', so.sizeMetric ?? 'bAxis'],
-      ['Smallest grain counted', `${so.minBaxisPx ?? 15} px${so.minSizeMm ? ` and ${so.minSizeMm} mm` : ''}`],
-      ['Flow threshold / cell probability', `${ap.flowThreshold} / ${ap.cellprobThreshold}`],
-      ['Grains touching the photo edge', ap.excludeBorder ? 'left out' : 'counted'],
-    ],
+    metadata: {
+      ...baseExportMetadata(),
+      modelId: prov.models.map((m) => m.modelId).join(' + '),
+      ...(singleModel?.modelSha256 ? { modelSha256: singleModel.modelSha256 } : {}),
+    },
+    settings: prov.settings,
     ...(detectionLimit !== undefined ? { detectionLimit } : {}),
-    manualEditsCount,
-    ...(enhancedPhotosCount > 0 ? { enhancedPhotosCount } : {}),
+    manualEditsCount: prov.manualEditsCount,
+    ...(prov.enhancedPhotosCount > 0 ? { enhancedPhotosCount: prov.enhancedPhotosCount } : {}),
     ...(resolutionRangeMmPerPx ? { resolutionRangeMmPerPx } : {}),
     psdSvg: renderPsdChartSvg({
       psd: report.psd,

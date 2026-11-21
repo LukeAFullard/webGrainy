@@ -174,6 +174,8 @@ export interface JackknifeSensitivityReport {
   seD16: number;
   seD50: number;
   seD84: number;
+  /** Jackknife standard error of ln(Dx) for every percentile (used by the site interval). */
+  logSe: PsdPercentiles;
 }
 
 export interface ConvergencePoint {
@@ -197,7 +199,10 @@ export type SampleAdequacyRating =
   | 'High Precision';
 
 export interface SampleAdequacyReport {
+  /** Rating from the effective grain count, capped by the number of photos (see siteAdequacy). */
   rating: SampleAdequacyRating;
+  /** True when the photo count, not the grain count, limits the rating. */
+  limitedByPhotoCount: boolean;
   effectiveGrainCount: number;
   largestClastAreaRatio: number;
   largestClastWarning: 'none' | 'moderate' | 'critical';
@@ -261,7 +266,25 @@ export interface SiteAnalysisReport {
   bootstrapMode: 'cluster' | 'two-stage-cluster' | 'single-photo-grain-fallback';
   bootstrapSeed: number;
   bootstrapReplicates: number;
+  /**
+   * Reported site interval: the cluster-bootstrap interval made honest for few photos (t-interval
+   * on the log scale, `calibrateSiteInterval`). NaN where it cannot be estimated.
+   */
   bootstrapCi: PsdConfidenceInterval;
+  /** The raw percentile cluster-bootstrap interval (too narrow with few photos; kept for the site comparison test). */
+  bootstrapPercentileCi: PsdConfidenceInterval;
+  /**
+   * How far `bootstrapCi` can be trusted: 'ok'; 'few-photos' (fewer than 5 photos: approximate);
+   * 'single-photo' (grain resampling only: no patch-to-patch variation); 'degenerate' (photos
+   * give identical results, e.g. the same photo twice: no interval).
+   */
+  ciStatus: 'ok' | 'few-photos' | 'single-photo' | 'degenerate';
+  /**
+   * Standard error of ln(Dx) behind `bootstrapCi` (larger of the bootstrap SE x sqrt(n/(n-1)) and
+   * the leave-one-photo-out jackknife SE); NaN when not estimable or for a single photo. The site
+   * comparison test uses it with n - 1 degrees of freedom per site.
+   */
+  ciLogSe: PsdPercentiles;
   folkWardCi: FolkWardConfidenceInterval | null;
   binomialCi: BinomialCiResult;
   jackknife: JackknifeSensitivityReport | null;

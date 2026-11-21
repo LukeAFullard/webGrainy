@@ -114,17 +114,18 @@ export function renderCompareHtml(state: AppState, lightTheme: boolean, charts: 
   const keys: ComparedPercentile[] = ['D16', 'D50', 'D84'];
   const pairsByKey = keys.map((k) => ({ k, pairs: comparePercentile(plotted, k) }));
   const nPairs = pairsByKey[1]!.pairs.length;
+  const fmtP = (p: number): string => (!Number.isFinite(p) ? '—' : p < 0.001 ? '&lt; 0.001' : `= ${p.toFixed(3)}`);
   const fmtRatio = (c: D50Comparison): string =>
     c.basis === 'single-photo'
       ? `${c.ratio.toFixed(2)}× <span class="stats-note" title="A one-photo survey cannot show how much the bed varies between patches, so no interval or p-value is given">no test (1 photo)</span>`
-      : `${c.ratio.toFixed(2)}× <span class="stats-note">${Number.isFinite(c.ratioLo) ? `${c.ratioLo.toFixed(2)}–${c.ratioHi.toFixed(2)}, ` : ''}p ${!Number.isFinite(c.p) ? '—' : c.p < 0.001 ? '&lt; 0.001' : `= ${c.p.toFixed(3)}`}${c.p < 0.05 ? ' *' : ''}${c.basis === 'few-photos' ? ' (few photos)' : ''}</span>`;
+      : `${c.ratio.toFixed(2)}× <span class="stats-note">${Number.isFinite(c.ratioLo) ? `${c.ratioLo.toFixed(2)}–${c.ratioHi.toFixed(2)}, ` : ''}p ${fmtP(c.p)}${Number.isFinite(c.pAdjusted) && c.pAdjusted !== c.p ? ` (adjusted ${fmtP(c.pAdjusted)})` : ''}${c.pAdjusted < 0.05 ? ' *' : ''}${c.basis === 'few-photos' ? ' (few photos)' : ''}</span>`;
   const pairHtml = nPairs
     ? `<details class="advanced-block" data-keep-open="compare-pairs" open>
         <summary>Differences between sites <span class="summary-note">D16, D50, D84 ratios · approximate</span></summary>
         <div class="table-scroll"><table class="stats-table"><thead><tr><th>Pair</th>${keys.map((k) => `<th>${k}</th>`).join('')}</tr></thead><tbody>${pairsByKey[1]!.pairs
           .map((c, i) => `<tr><th scope="row">${esc(c.a)} ÷ ${esc(c.b)}</th>${pairsByKey.map(({ pairs }) => `<td>${pairs[i] ? fmtRatio(pairs[i]!) : '—'}</td>`).join('')}</tr>`)
           .join('')}</tbody></table></div>
-        <p class="field-hint">Ratio with a 95% interval from each site's bootstrap interval on a log scale (Welch t-test, allowing for the number of photos); * p &lt; 0.05. A screening check, not a formal two-sample test; not given for one-photo sites, and with fewer than 5 photos per site only large differences show. With many pairs some will be "significant" by chance. ${helpButton('compareSites')}</p>
+        <p class="field-hint">Ratio with a 95% interval from each site's uncertainty on a log scale (Welch t-test, allowing for the number of photos). With several pairs the p-value is also given adjusted for the number of pairs (Holm); * marks adjusted p &lt; 0.05, so the chance of any false "significant" pair stays below 5%. A screening check, not a formal two-sample test; not given for one-photo sites, and with fewer than 5 photos per site only large differences show. ${helpButton('compareSites')}</p>
       </details>`
     : '';
   const problems = (cmp?.sites ?? []).filter((s) => s.report === null || (mixedUnits && s.report.unit !== 'mm'));

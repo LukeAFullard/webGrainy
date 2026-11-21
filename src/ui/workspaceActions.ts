@@ -3,6 +3,7 @@
  * Everything they need comes in through `WorkspaceDeps`, so tests can pass a fake engine,
  * in-memory storage and no-op UI hooks. `main.ts` owns the DOM and calls these.
  */
+import { sanitizeSiteOptions } from '../modules/siteOptions.js';
 import type { CalibrationResult, Point2D, StorageQuotaInfo } from '../types/index.js';
 import { siteRetention } from '../modules/retention.js';
 import { forgetSite, formatAgo, markSiteUsed, readBackupRecords } from './backup.js';
@@ -218,7 +219,7 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
       store.setState({ sites });
       return;
     }
-    const siteOptions = { ...site.options };
+    const siteOptions = sanitizeSiteOptions(site.options);
     const photos = await storage.listSitePhotos(siteId);
     const changed = new Set(notice.photoIds);
     const sessions = new Map(st.sessions);
@@ -314,7 +315,7 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
     const thumbUrls = new Map<string, string>();
 
     const site = state.sites.find((s) => s.siteId === siteId);
-    const nextSiteOptions = site ? { ...site.options } : state.siteOptions;
+    const nextSiteOptions = site ? sanitizeSiteOptions(site.options) : state.siteOptions;
 
     for (const p of photos) {
       thumbUrls.set(p.photoId, createUrl(p.imageBlob));

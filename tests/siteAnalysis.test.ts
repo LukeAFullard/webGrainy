@@ -194,7 +194,7 @@ describe('siteAnalysis', () => {
       minBaxisPx: 0,
       bootstrapReplicates: 50,
     });
-    expect(numReport.statisticalBasisLabel).toContain('NOT Sieve-Equivalent');
+    expect(numReport.statisticalBasisLabel).toContain('not comparable with pebble counts');
     expect(numReport.binomialCi.isKishApproximation).toBe(false);
   });
 
@@ -444,7 +444,7 @@ describe('siteAnalysis', () => {
     expect(report.binomialCi.upper.D50).toBeGreaterThanOrEqual(report.psd.D50);
 
     const summaryCsv = await exportSiteSummaryCsv(report).text();
-    expect(summaryCsv).toContain('Area-Weighted (Grid-by-Number / Sieve-Equivalent, Kellerhals & Bray 1971)');
+    expect(summaryCsv).toContain('Area-Weighted (Grid-by-Number equivalent, Kellerhals & Bray 1971; 2D surface sizes, not sieve sizes)');
     expect(summaryCsv).toContain('psd_bootstrap_ci_lo,D50');
     // Everything the dashboard shows is in the CSV too.
     for (const section of ['fabric,mean_axial_orientation_deg', 'fabric,rayleigh_p', 'size_class_1phi,', 'size_class_05phi,', 'adequacy,effective_grain_count', 'jackknife,se_D50', 'per_photo_detail,', 'metadata,confidence_level']) {
@@ -715,7 +715,12 @@ describe('minFeret size metric', () => {
     expect(repFeret.folkWard!.meanMm).toBeCloseTo(10.0, 2);
     expect(repFeret.wentworth!.gravelPct).toBeCloseTo(100, 4);
     expect(repFeret.wentworthHistogram10Phi.reduce((s, b) => s + b.weightPct, 0)).toBeCloseTo(100, 4);
-    expect(repFeret.bootstrapCi.lower.D50).toBeCloseTo(10.0, 4);
+    // Every grain is 10 mm in both photos: the bootstrap cannot show any uncertainty, so the
+    // interval is reported as not estimable (never as a precise [10, 10]); the raw one is kept.
+    expect(repFeret.bootstrapPercentileCi.lower.D50).toBeCloseTo(10.0, 4);
+    expect(repFeret.ciStatus).toBe('degenerate');
+    expect(Number.isNaN(repFeret.bootstrapCi.lower.D50)).toBe(true);
+    expect(repFeret.warnings.some((w) => w.includes('cannot be estimated'))).toBe(true);
     expect(repFeret.binomialCi.lower.D50).toBeCloseTo(10.0, 4);
     expect(repFeret.perPhoto[0]?.D50).toBeCloseTo(10.0, 4);
 

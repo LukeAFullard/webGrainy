@@ -11,7 +11,8 @@
  * Before the fixes, one-photo surveys gave ~30% false "significant" changes at patch 0.15
  * (their bootstrap only resamples grains) and 2-4 photo surveys 17-40% (z-test on a cluster
  * bootstrap with few clusters). One-photo surveys now get no p-value; the others use a Welch
- * t-test with each site's error inflated by sqrt(n/(n-1)).
+ * t-test with each site's photo-corrected SE (larger of the bootstrap SE x sqrt(n/(n-1)) and
+ * the leave-one-photo-out jackknife SE). Prints a markdown table (D16 / D50 / D84).
  */
 import { it } from 'vitest';
 import { computeComparedSites, surveyChanges } from '../../src/modules/siteComparison';
@@ -40,7 +41,7 @@ function fakeSession(sizesMm: number[], mmPerPx = 0.5) {
 it('false-positive rate of survey-change D50 p-values on an unchanged bed', () => {
   const N = Number(process.env.FPR_TRIALS ?? 150);
   const rows: string[] = [];
-  for (const [photos, patch] of [[1, 0.15], [2, 0.15], [3, 0.15], [6, 0.15], [20, 0.15], [3, 0], [6, 0], [20, 0]] as const) {
+  for (const [photos, patch] of [[1, 0.15], [2, 0.15], [3, 0.15], [5, 0.15], [10, 0.15], [20, 0.15], [3, 0.3], [5, 0.3], [10, 0.3], [20, 0.3], [6, 0]] as const) {
     const rand = mulberry32(1000 + photos * 7 + Math.round(patch * 100));
     const gauss = () => Math.sqrt(-2 * Math.log(1 - rand())) * Math.cos(2 * Math.PI * rand());
     const photo = () => {
@@ -51,17 +52,18 @@ it('false-positive rate of survey-change D50 p-values on an unchanged bed', () =
       siteId: name, name, place: 'P', surveyDate: date,
       inputs: Array.from({ length: photos }, (_, i) => ({ photoId: `${name}${i}`, label: `${name}${i}`, included: true, session: fakeSession(photo()) })),
     });
-    let sig = 0;
+    const sig = { D16: 0, D50: 0, D84: 0 };
     let tested = 0;
     for (let t = 0; t < N; t++) {
       const sites = computeComparedSites([survey(`a${t}`, '2024-01-01'), survey(`b${t}`, '2025-01-01')] as never, {
-        poolingMode: 'physical-area', bootstrapReplicates: 300, minBaxisPx: 0, harmonizeCutoff: false,
+        poolingMode: 'physical-area', bootstrapReplicates: 500, minBaxisPx: 0, harmonizeCutoff: false,
       });
-      const c = surveyChanges(sites)[0]!.changes.D50;
-      if (Number.isFinite(c.p)) tested++;
-      if (c.p < 0.05) sig++;
+      const ch = surveyChanges(sites)[0]!.changes;
+      if (Number.isFinite(ch.D50.p)) tested++;
+      for (const k of ['D16', 'D50', 'D84'] as const) if (ch[k].p < 0.05) sig[k]++;
     }
-    rows.push(`photos ${String(photos).padStart(2)}, patch sd ${patch.toFixed(2)}: p given in ${tested}/${N}; p < 0.05 in ${(100 * sig / N).toFixed(1)}% (nominal 5%)`);
+    const pct = (v: number) => `${((100 * v) / N).toFixed(1)}%`;
+    rows.push(`| ${photos} | ${patch.toFixed(2)} | ${tested} / ${N} | ${pct(sig.D16)} | ${pct(sig.D50)} | ${pct(sig.D84)} |`);
   }
   console.log(rows.join('\n'));
 });

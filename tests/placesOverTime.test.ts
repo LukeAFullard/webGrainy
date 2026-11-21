@@ -69,8 +69,8 @@ describe('comparison over time and between sites', () => {
     const cmp = computeComparedSites(
       [
         // Five photos per survey: enough for an interval and p-value.
-        entry('a2', 'R3 2025', [0, 1, 2, 3, 4].map((k) => photo(`a2p${k}`, 23 + k % 3, { mmPerPx: 1 })), { place: 'R3', surveyDate: '2025-05-01' }),
-        entry('a1', 'R3 2024', [0, 1, 2, 3, 4].map((k) => photo(`a1p${k}`, 39 + k % 3, { mmPerPx: 1 })), { place: 'R3', surveyDate: '2024-05-01' }),
+        entry('a2', 'R3 2025', [0, 1, 2, 3, 4].map((k) => photo(`a2p${k}`, 21 + k, { mmPerPx: 1 })), { place: 'R3', surveyDate: '2025-05-01' }),
+        entry('a1', 'R3 2024', [0, 1, 2, 3, 4].map((k) => photo(`a1p${k}`, 37 + k, { mmPerPx: 1 })), { place: 'R3', surveyDate: '2024-05-01' }),
         entry('b1', 'Other', [photo('b1p', 30, { mmPerPx: 1 })], { place: 'Elsewhere', surveyDate: '2024-06-01' }),
         entry('c1', 'Undated R3', [photo('c1p', 30, { mmPerPx: 1 })], { place: 'R3' }),
       ],
@@ -118,13 +118,13 @@ describe('comparison over time and between sites', () => {
     expect(csv).toContain('survey_change,P: 2024-05-01 -> 2025-05-01,D50_p_value_approx,,p');
     expect(csv).toContain('survey_change,P: 2024-05-01 -> 2025-05-01,D50_test_basis,single-photo,label');
     expect(csv).not.toContain('NaN');
-    expect(csv).toMatch(/warning,\d+,"?One 2024, One 2025: one photo only/);
+    expect(csv).toMatch(/warning,,\d+,"?One 2024, One 2025: one photo only/);
     expect(csv).toMatch(/Three \(3 photos\), Three later \(3 photos\): fewer than 5 photos/);
     expect(csv).toContain('site,One 2024,bootstrap_mode,single-photo-grain-fallback,mode');
   });
 
   it('follows a place over time whatever its case or spacing', () => {
-    const five = (id: string, size: number) => [0, 1, 2, 3, 4].map((k) => photo(`${id}${k}`, size + (k % 3), { mmPerPx: 1 }));
+    const five = (id: string, size: number) => [0, 1, 2, 3, 4].map((k) => photo(`${id}${k}`, size + k - 1, { mmPerPx: 1 }));
     const cmp = computeComparedSites(
       [
         entry('r1', 'Survey 1', five('r1p', 40), { place: 'Reach A', surveyDate: '2024-05-01' }),
@@ -168,7 +168,7 @@ describe('comparison over time and between sites', () => {
     const w = settingsMismatches(cmp);
     expect(w).toHaveLength(1);
     expect(w[0]).toMatch(/Different model weights .*U-Net survey: ig2_unet_fp32; SAM survey: ig2_cpsam_fp16/);
-    expect(comparisonCsv(cmp, {})).toMatch(/warning,1,"?Different model weights/);
+    expect(comparisonCsv(cmp, {})).toMatch(/warning,,1,"?Different model weights/);
     const same = computeComparedSites([entry('a', 'A', [photo('a', 30, { mmPerPx: 1 })]), entry('b', 'B', [photo('b', 34, { mmPerPx: 1 })])], opts);
     expect(settingsMismatches(same)).toEqual([]);
   });

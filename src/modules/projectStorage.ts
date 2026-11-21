@@ -3,6 +3,7 @@ import type {
   CalibrationResult,
   SerializedAnalysisSession,
 } from '../types/index.js';
+import { clampRecordTime, sanitizeSiteOptions } from './siteOptions.js';
 import { placeName } from './sitePlaces.js';
 import { isIsoDate } from './surveyDate.js';
 import type { ImageBufferLike } from './imagePreprocess.js';
@@ -878,7 +879,15 @@ export async function importProjectArchive(
   }
 
   // ---- Phase 2: resolve id collisions (never overwrite existing data) -----------
-  let site: SiteRecord = { ...arch.site };
+  // Untrusted settings and dates: only values the app can set (an unbounded bootstrap count froze
+  // the page on every start-up), and no record times in the future (they pin the site first).
+  const importNow = Date.now();
+  let site: SiteRecord = {
+    ...arch.site,
+    options: sanitizeSiteOptions(arch.site.options),
+    createdAt: clampRecordTime(arch.site.createdAt, importNow),
+    updatedAt: clampRecordTime(arch.site.updatedAt, importNow),
+  };
   const existing = await getSite(site.siteId, options);
   // A photo id already in storage (e.g. the same archive imported into a renamed site) must
   // never be overwritten either, nor removed by a failed import's rollback.

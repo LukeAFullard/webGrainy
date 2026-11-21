@@ -6,6 +6,15 @@ import { computePsdPercentiles } from './sedimentStats.js';
 import { type PreparedPhoto, median, buildPooledArrays } from './sitePooling.js';
 import type { PoolingMode, SampleAdequacyRating, PerPhotoSiteBreakdown } from './siteTypes.js';
 
+const RATING_ORDER: readonly SampleAdequacyRating[] = ['Insufficient', 'Minimal', 'Adequate', 'High Precision'];
+
+/** Best rating a site of `nPhotos` photos can get: 1 photo Minimal, 2-4 Adequate, 5+ any. */
+export function maxRatingForPhotos(nPhotos: number): SampleAdequacyRating {
+  if (nPhotos <= 1) return 'Minimal';
+  if (nPhotos < 5) return 'Adequate';
+  return 'High Precision';
+}
+
 /** Sample adequacy rating and the largest-clast check (adds a warning when it is large). */
 export function assessSampleAdequacy(
   preparedPhotos: readonly PreparedPhoto[],
@@ -16,6 +25,7 @@ export function assessSampleAdequacy(
   validGrainCount: number;
   effectiveGrainCount: number;
   rating: SampleAdequacyRating;
+  limitedByPhotoCount: boolean;
   largestClastAreaRatio: number;
   largestClastWarning: 'none' | 'moderate' | 'critical';
 } {
@@ -41,7 +51,7 @@ export function assessSampleAdequacy(
       sumW > 0 ? Math.max(1, Math.round((sumW * sumW) / Math.max(1e-12, sumW2))) : 0;
   }
 
-  const rating: SampleAdequacyRating =
+  const byGrains: SampleAdequacyRating =
     effectiveGrainCount < 100
       ? 'Insufficient'
       : effectiveGrainCount < 200
@@ -49,6 +59,12 @@ export function assessSampleAdequacy(
         : effectiveGrainCount < 400
           ? 'Adequate'
           : 'High Precision';
+  // Many grains from few photos still say little about patch-to-patch variation of the bed
+  // (2 photos x 1000 grains rated "High Precision" while their 95% intervals covered the truth
+  // about half the time in simulation). Cap the rating by the number of photos.
+  const cap = maxRatingForPhotos(preparedPhotos.length);
+  const limitedByPhotoCount = RATING_ORDER.indexOf(byGrains) > RATING_ORDER.indexOf(cap);
+  const rating: SampleAdequacyRating = limitedByPhotoCount ? cap : byGrains;
 
   let maxArea = 0;
   let sumArea = 0;
@@ -76,7 +92,7 @@ export function assessSampleAdequacy(
     );
   }
 
-  return { validGrainCount, effectiveGrainCount, rating, largestClastAreaRatio, largestClastWarning };
+  return { validGrainCount, effectiveGrainCount, rating, limitedByPhotoCount, largestClastAreaRatio, largestClastWarning };
 }
 
 /** Per-photo breakdown (counts, packing, D16/D50/D84, weight) and outlier photo flags. */
