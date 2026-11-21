@@ -159,7 +159,7 @@ describe('S1: comparison test', () => {
 });
 
 describe('S4: 16-bit TIFF', () => {
-  function tiff16(W: number, H: number, spp: number, val: (x: number) => number): ArrayBuffer {
+  function tiff16(W: number, H: number, spp: number, val: (x: number, y: number) => number): ArrayBuffer {
     const nTags = 10, ifdOff = 8, bpsOff = ifdOff + 2 + nTags * 12 + 4, dataOff = bpsOff + 16, bytes = W * H * spp * 2;
     const buf = new ArrayBuffer(dataOff + bytes);
     const dv = new DataView(buf);
@@ -168,7 +168,7 @@ describe('S4: 16-bit TIFF', () => {
     tags.forEach(([t, ty, c, v], i) => { const o = ifdOff + 2 + i * 12; dv.setUint16(o, t, true); dv.setUint16(o + 2, ty, true); dv.setUint32(o + 4, c, true); if (ty === 3 && c === 1) dv.setUint16(o + 8, v, true); else dv.setUint32(o + 8, v, true); });
     for (let c = 0; c < 3; c++) dv.setUint16(bpsOff + 2 * c, 16, true);
     let p = dataOff;
-    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) for (let c = 0; c < spp; c++) { dv.setUint16(p, val(x), true); p += 2; }
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) for (let c = 0; c < spp; c++) { dv.setUint16(p, val(x, y), true); p += 2; }
     return buf;
   }
 
@@ -183,6 +183,15 @@ describe('S4: 16-bit TIFF', () => {
       expect(img.metadata?.notes).toContain('16-bit TIFF converted to 8 bits');
     });
   }
+
+  it('one hot pixel at 65535 does not squeeze 12-bit data into a few grey levels', () => {
+    const img = decodeTiffBuffer(tiff16(256, 40, 1, (x, y) => (x === 7 && y === 3 ? 65535 : Math.round((x / 255) * 4095))));
+    const levels = new Set<number>();
+    for (let i = 0; i < 256; i++) levels.add(img.data[(256 * 10 + i) * 4]!);
+    expect(levels.size).toBeGreaterThan(250);
+    expect(img.data[(256 * 3 + 7) * 4]).toBe(255); // clipped, not wrapped
+    expect(img.metadata?.notes).toContain('0–4095');
+  });
 
   it('leaves 8-bit and unsupported layouts to UTIF', () => {
     expect(rgba8From16Bit({ width: 1, height: 1, data: new Uint8Array(4), t258: [8] })).toBeNull();

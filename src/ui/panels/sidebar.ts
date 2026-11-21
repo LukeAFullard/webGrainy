@@ -48,6 +48,21 @@ const MODEL_LABELS: ReadonlyMap<string, string> = new Map([
   ['cpsam', 'cpsam'],
 ]);
 
+/**
+ * The photo's share of the site in facies-weighted pooling: its weight over the total of the
+ * included photos' weights (null when the photo is excluded). A facies' share is the sum over its
+ * photos, so a facies with more photos needs a smaller weight per photo.
+ */
+export function faciesSharePct(
+  photos: ReadonlyArray<{ photoId: string; included: boolean; faciesWeight?: number }>,
+  photo: { photoId: string; included: boolean; faciesWeight?: number },
+): number | null {
+  if (!photo.included) return null;
+  const w = (p: { faciesWeight?: number }): number => (Number.isFinite(p.faciesWeight) && p.faciesWeight! >= 0 ? p.faciesWeight! : 1);
+  const total = photos.filter((p) => p.included).reduce((acc, p) => acc + w(p), 0);
+  return total > 0 ? (100 * w(photo)) / total : 0;
+}
+
 export function renderSidebarHtml(state: AppState, view: SidebarView): string {
   const activeSite = getActiveSite(state);
   const p = state.analysisParams;
@@ -128,6 +143,7 @@ export function renderSidebarHtml(state: AppState, view: SidebarView): string {
                   const isActive = ph.photoId === state.activePhotoId;
                   const errMsg = status === 'error' ? state.photoErrors.get(ph.photoId) ?? 'Analysis failed (no details reported).' : '';
                   const qualityWarnings = getPhotoQualityWarnings(ph.metadata);
+                  const faciesShare = faciesSharePct(visiblePhotos(state), ph);
                   return `
                     <div class="photo-item ${isActive ? 'active' : ''} ${state.photoSelectMode && state.selectedPhotoIds.has(ph.photoId) ? 'selected' : ''}">
                       ${
@@ -158,6 +174,7 @@ export function renderSidebarHtml(state: AppState, view: SidebarView): string {
                         state.siteOptions.poolingMode === 'facies-weighted'
                           ? `<label class="photo-facies">Facies weight ${helpButton('faciesWeight')}
                               <input class="input" type="number" step="0.05" min="0" max="100" value="${ph.faciesWeight ?? 1}" data-photo-facies="${esc(ph.photoId)}" aria-label="Facies weight for ${esc(ph.label)}" />
+                              <span class="field-hint" data-facies-share>${faciesShare === null ? 'not in the site' : `${faciesShare.toFixed(1)}% of the site`}</span>
                             </label>`
                           : ''
                       }

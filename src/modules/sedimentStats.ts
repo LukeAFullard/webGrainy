@@ -231,6 +231,8 @@ export function computeSedimentStats(
     sizeMetric?: SizeMetric;
     minBaxisPx?: number;
     minSizeMm?: number;
+    /** The photo has a mm scale: with no grains at all the unit is still mm. */
+    calibrated?: boolean;
   },
 ): SedimentStatsReport {
   const excludeBorder = options?.excludeBorder ?? true;
@@ -252,10 +254,10 @@ export function computeSedimentStats(
   const excludedCutoffGrains = borderFiltered.length - included.length;
 
   // With no counted grain, the unit follows the photo's grains (a calibrated photo whose grains
-  // are all below the cutoff still reports in mm, with no values).
+  // are all below the cutoff still reports in mm, with no values), or its calibration if it has none.
   const unitBasis = included.length > 0 ? included : grains;
   const isCalibrated =
-    unitBasis.length > 0 &&
+    unitBasis.length === 0 ? options?.calibrated === true :
     unitBasis.every(
       (g) =>
         typeof g.bAxisMm === 'number' &&
@@ -417,6 +419,9 @@ export function exportSummaryJson(report: SedimentStatsReport): Blob {
   });
 }
 
+/** A number for a CSV cell: empty when not finite (no "NaN" / "Infinity" text). */
+const numCell = (v: number): string => (Number.isFinite(v) ? String(v) : '');
+
 /**
  * Summary rows (`section,metric,value,unit`, no header) for a single-photo report: counts,
  * D5–D95 for every distribution, Folk & Ward, Wentworth and the extra statistics.
@@ -445,17 +450,17 @@ export function summaryCsvRows(report: SedimentStatsReport): string[] {
   for (const [section, psd] of distributions) {
     for (const p of DEFAULT_PERCENTILES) {
       const key = `D${p}` as keyof PsdPercentiles;
-      lines.push(`${section},${key},${psd[key]},${report.unit}`);
+      lines.push(`${section},${key},${numCell(psd[key])},${report.unit}`);
     }
   }
 
   if (report.folkWard !== null) {
     const fw = report.folkWard;
-    lines.push(`folk_ward,mean_phi,${fw.meanPhi},phi`);
-    lines.push(`folk_ward,sorting_phi,${fw.sortingPhi},phi`);
-    lines.push(`folk_ward,skewness_phi,${fw.skewnessPhi},phi`);
-    lines.push(`folk_ward,kurtosis_phi,${fw.kurtosisPhi},phi`);
-    lines.push(`folk_ward,mean_mm,${fw.meanMm},mm`);
+    lines.push(`folk_ward,mean_phi,${numCell(fw.meanPhi)},phi`);
+    lines.push(`folk_ward,sorting_phi,${numCell(fw.sortingPhi)},phi`);
+    lines.push(`folk_ward,skewness_phi,${numCell(fw.skewnessPhi)},phi`);
+    lines.push(`folk_ward,kurtosis_phi,${numCell(fw.kurtosisPhi)},phi`);
+    lines.push(`folk_ward,mean_mm,${numCell(fw.meanMm)},mm`);
     lines.push(`folk_ward,sorting_label,${csvCell(fw.sortingLabel)},label`);
     lines.push(`folk_ward,skewness_label,${csvCell(fw.skewnessLabel)},label`);
     lines.push(`folk_ward,kurtosis_label,${csvCell(fw.kurtosisLabel)},label`);
@@ -463,10 +468,10 @@ export function summaryCsvRows(report: SedimentStatsReport): string[] {
 
   if (report.wentworth !== null) {
     const w = report.wentworth;
-    lines.push(`wentworth,sand_pct,${w.sandPct},%`);
-    lines.push(`wentworth,gravel_pct,${w.gravelPct},%`);
-    lines.push(`wentworth,cobble_pct,${w.cobblePct},%`);
-    lines.push(`wentworth,boulder_pct,${w.boulderPct},%`);
+    lines.push(`wentworth,sand_pct,${numCell(w.sandPct)},%`);
+    lines.push(`wentworth,gravel_pct,${numCell(w.gravelPct)},%`);
+    lines.push(`wentworth,cobble_pct,${numCell(w.cobblePct)},%`);
+    lines.push(`wentworth,boulder_pct,${numCell(w.boulderPct)},%`);
   }
 
   if (report.extra) lines.push(...extraStatsCsvRows(report.extra, report.unit));

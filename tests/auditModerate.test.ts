@@ -51,6 +51,41 @@ describe('export hygiene', () => {
   });
 });
 
+describe('export hygiene: no counted grain, # in names', () => {
+  it('a site with no counted grain writes empty cells, not NaN', async () => {
+    const r = analyzeSite(photos(), { poolingMode: 'physical-area', bootstrapReplicates: 50, minSizeMm: 1e4 });
+    const csv = await exportSiteSummaryCsv(r).text();
+    expect(csv.split('\n').filter((l) => /(^|,)-?(NaN|Infinity)(,|$)/.test(l))).toEqual([]);
+    expect(csv).toContain('psd,D50,,mm');
+    expect(csv).toContain('psd_binomial_ci_lo,D50,,mm');
+  });
+
+  it('a photo whose grains are all below the cutoff writes empty cells, not NaN', () => {
+    const csv = squareGrainSession([16, 18, 20], { mmPerPx: 0.5 }).exportSummaryCsv('bAxis', { minSizeMm: 1e4 });
+    expect(csv).not.toMatch(/(^|,)-?(NaN|Infinity)(,|$)/m);
+    expect(csv).toContain('area_weighted_b,D50,,mm');
+  });
+
+  it('a calibrated photo with no grains at all reports mm', () => {
+    const s = squareGrainSession([], { mmPerPx: 0.5 });
+    expect(s.getStats().unit).toBe('mm');
+    expect(s.exportSummaryCsv()).toContain('summary,unit,mm,unit');
+    expect(squareGrainSession([]).getStats().unit).toBe('px');
+  });
+
+  it('a # in a photo name is quoted, so comment-aware CSV readers keep the row', async () => {
+    const inputs = photos();
+    inputs[0] = { ...inputs[0]!, label: 'IMG #0.jpg' };
+    const r = analyzeSite(inputs, { poolingMode: 'physical-area', bootstrapReplicates: 20 });
+    const csv = await exportPooledGrainsCsv(inputs, r).text();
+    const rows = csv.split('\n').filter((l) => l.includes('IMG #0.jpg'));
+    expect(rows.length).toBeGreaterThan(0);
+    for (const l of rows) expect(l).toContain('"IMG #0.jpg"');
+    // a reader that drops everything after an unquoted # keeps these rows whole
+    for (const l of rows) expect(l.replace(/"[^"]*"/g, '').includes('#')).toBe(false);
+  });
+});
+
 describe('one size rule', () => {
   it('the mm cutoff uses a derived min-Feret size when the grain has no min-Feret mm value', () => {
     const g = { id: 1, areaPx: 100, centroidX: 0, centroidY: 0, aAxisPx: 20, bAxisPx: 10, dEqPx: 11, bAxisMm: 5, dEqMm: 5.5, minFeretPx: 8, orientationRad: 0, touchesBorder: false, bbox: [0, 0, 1, 1] } as GrainMorphometrics;

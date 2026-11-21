@@ -48,6 +48,13 @@ describe('printable site report', () => {
     photos: report.perPhoto.map((p) => ({ label: p.label, validGrainCount: p.validGrainCount, D50: p.D50, outlierReasons: p.outlierReasons, outlineSvg: '<svg viewBox="0 0 1 1"><path stroke-width="1"/></svg>' })),
   });
 
+  it('says when the photo count capped the adequacy rating (3 photos: at most Adequate)', () => {
+    const capped = { ...report, adequacy: { ...report.adequacy, rating: 'Adequate' as const, limitedByPhotoCount: true } };
+    const h = buildSiteReportHtml({ site, report: capped, generatedAt: 'x', metadata: {}, settings: [], psdSvg: '', histogramSvg: '', photos: [] });
+    expect(h).toContain('<strong>Adequate</strong> (capped: 3 photos (5 or more needed for a higher rating))');
+    expect(html.includes('capped:')).toBe(report.adequacy.limitedByPhotoCount);
+  });
+
   it('has the same numbers as the site summary CSV', async () => {
     expect(report.unit).toBe('mm');
     const csv = await exportSiteSummaryCsv(report, { exportedAt: 'x' }).text();

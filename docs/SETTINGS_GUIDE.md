@@ -356,7 +356,7 @@ especially when several photos are combined into one site result.
 | **Equal-Photo Weighted** | Each photo contributes equally, whatever its size or number of grains. | Photos cover very different areas, and you want each location to count the same. |
 | **Virtual Wolman Grid** | Simulates a pebble count: a virtual grid is laid over each photo and the grain under each point is counted. | You want results that mimic a field pebble count as closely as possible. |
 | **Number-Weighted** | Every grain counts once, whatever its size. | **Rarely.** This gives much finer results and is **not comparable** with pebble counts or sieving. Use it only if you specifically need a by-count distribution. |
-| **Facies-Weighted** | Photos are weighted by a "facies weight" (e.g. how much of the reach each surface type covers). | Stratified sampling of a reach with distinct surface patches. When this mode is selected, a **Facies weight** box appears under each photo in the photo list (default 1). |
+| **Facies-Weighted** | Photos are weighted by a "facies weight". Each photo's share of the site is its weight divided by the total weight of the included photos, so a surface type's share is the sum over its photos. | Stratified sampling of a reach with distinct surface patches. When this mode is selected, a **Facies weight** box appears under each photo in the photo list (default 1), with the photo's resulting share of the site. Divide each surface type's share among its photos: riffle 70% with 4 photos and pool 30% with 1 photo → 0.175 per riffle photo and 0.3 for the pool photo (0.7 for every riffle photo would make the pool only 10%). |
 
 ### Size Metric
 | Option | What it measures | Notes |
@@ -406,7 +406,7 @@ D50 look much finer: at the K1 test site, Cellpose-SAM's D50 was **about 30% fin
 field count without a cutoff (U-Net's looked close only because it misses most small grains).
 With a matching 13 mm cutoff, both models' D50 agreed with the field D50 within about 3–4%.
 
-Leave it at **0** if you want to describe everything visible down to the detection limit.
+Leave it at **0** if you want to describe everything visible down to the detection limit. Grains up to a few times the detection limit are partly missed, so for a reliable fine tail (D5–D16), or to compare surveys shot at different resolutions, set it to at least about **3× the detection limit** shown under the size distribution (Smallest grain kept).
 
 ### Exclusion overlap
 | | |

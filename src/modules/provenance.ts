@@ -23,6 +23,14 @@ export const UNOFFICIAL_NOTICE =
 export const CITATION_NOTICE =
   'If you use these results, cite ImageGrains (Mair et al.; doi:10.1002/esp.5755; weights doi:10.5281/zenodo.15728186) and Cellpose (Stringer et al. 2021, doi:10.1038/s41592-020-01018-x).';
 
+/**
+ * Validated accuracy and its limits, included in every export and in the printable report
+ * (pre-publication audit S7). Figures from validation/heldout/heldout_app_results.md; tests/docNumbers.test.ts
+ * keeps them in step.
+ */
+export const ACCURACY_NOTICE =
+  'Accuracy: on the held-out ImageGrains 2.0 test photos (new photos of the 13 training sites, mostly analysed at full resolution), the median D50 error was 2.9% with Cellpose-SAM and 5.7% with U-Net, but 5% and 10% of photos had D50 errors above 50%. Accuracy at new sites and on large photos analysed at reduced resolution is not established; check the outlines.';
+
 /** Definition of the reported "b-axis" size metric, included in every export. */
 export const SIZE_METRIC_DEFINITION =
   'b_axis = minor axis (4*sqrt(lambda2)) of the second-moment-equivalent ellipse of the exposed 2D grain outline (NOT a sieve or caliper b-axis; can differ from min-Feret by roughly +/-15% depending on grain shape). min_feret = minimum Feret (rotating-calipers) width of the pixel-edge convex hull (closest 2D analogue of a caliper b-axis). d_eq = diameter of the equal-area circle.';
@@ -86,6 +94,7 @@ export function baseExportMetadata(): Record<string, unknown> {
     sizeMetricDefinition: SIZE_METRIC_DEFINITION,
     notice: UNOFFICIAL_NOTICE,
     citation: CITATION_NOTICE,
+    accuracy: ACCURACY_NOTICE,
   };
 }
 
@@ -148,8 +157,9 @@ export function csvCell(val: string | number | boolean): string {
     }
     str = str.replace(/([,;\t\r\n])([ ]*)([=+\-@])/g, "$1$2'$3");
   }
-  // Quote on `;` and TAB too: spreadsheets in many locales split CSV files on them.
-  if (/[",\n\r;\t]/.test(str)) {
+  // Quote on `;` and TAB too: spreadsheets in many locales split CSV files on them. Quote `#`:
+  // the documented readers (pandas `comment="#"`, R `comment.char="#"`) cut an unquoted line there.
+  if (/[",\n\r;\t#]/.test(str)) {
     return `"${str.replace(/"/g, '""')}"`;
   }
   return str;

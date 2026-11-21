@@ -24,6 +24,10 @@ describe('quoted validation figures match the results files', () => {
     }
     const tail = (r: string[]): string => `${Math.round(Number(r[5]!.replace('%', '')))}%`;
     expect(readme).toContain(`${tail(cpsam)} of Cellpose-SAM images and ${tail(unet)} of U-Net images have D50 errors above 50%`);
+    // The accuracy line in every export and in the printable report.
+    const prov = read('src/modules/provenance.ts');
+    const median = (r: string[]): string => r[3]!.split(' ')[0]!;
+    expect(prov).toContain(`median D50 error was ${median(cpsam)} with Cellpose-SAM and ${median(unet)} with U-Net, but ${tail(cpsam)} and ${tail(unet)} of photos had D50 errors above 50%`);
   });
 
   it('K1: photo D50 without a field-count cutoff (settings guide and help)', () => {

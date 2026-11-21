@@ -220,6 +220,7 @@ export class AnalysisSession {
       sizeMetric,
       minBaxisPx,
       minSizeMm,
+      calibrated: this.calibration !== undefined,
     });
   }
 
@@ -1130,6 +1131,7 @@ export class AnalysisSession {
     this.grains = derived;
     this.stats = computeSedimentStats(this.getStatsGrains(), {
       excludeBorder: this.excludeBorder,
+      calibrated: this.calibration !== undefined,
     });
     if (notify) {
       for (const listener of this.listeners) {

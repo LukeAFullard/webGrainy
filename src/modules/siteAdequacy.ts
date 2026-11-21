@@ -15,6 +15,15 @@ export function maxRatingForPhotos(nPhotos: number): SampleAdequacyRating {
   return 'High Precision';
 }
 
+/**
+ * Note shown next to a rating that the photo count capped (1 photo: at most Minimal; 2-4: at most
+ * Adequate), so a high grain count is not read as enough data. Empty when not capped.
+ */
+export function adequacyCapNote(limitedByPhotoCount: boolean, nPhotos: number): string {
+  if (!limitedByPhotoCount) return '';
+  return `capped: ${nPhotos} photo${nPhotos === 1 ? '' : 's'} (5 or more needed for a higher rating)`;
+}
+
 /** Sample adequacy rating and the largest-clast check (adds a warning when it is large). */
 export function assessSampleAdequacy(
   preparedPhotos: readonly PreparedPhoto[],

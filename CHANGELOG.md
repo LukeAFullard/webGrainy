@@ -42,6 +42,21 @@ First public release.
   were downloaded after the last change; other old sites are listed for the user to keep or remove.
 - Figures quoted in the documentation and the app match the validation results files, and a test keeps
   them in step.
+- CSV exports: a `#` in a photo or site name is quoted (so `pandas.read_csv(..., comment='#')` and R keep
+  the row); values that cannot be computed are left empty instead of `NaN`; a calibrated photo with no
+  grains reports in mm.
+- 16-bit TIFFs are stretched between the 0.01st and 99.99th percentile, so one hot pixel no longer
+  squeezes the image into a few grey levels.
+- A project file may hold at most 10,000 photos.
+- An adequacy rating capped by the photo count says so ("capped: 3 photos") on the results card, the
+  comparison table and the printable report.
+- Facies weights: the help and docs now say the weight is per photo (a surface type's share is the sum
+  over its photos), and each photo shows its resulting share of the site.
+- The printable report and every export state the validated accuracy and its limits.
+- Docs: guidance to set the field-count cutoff to about 3× the detection limit for a reliable fine tail,
+  and that the accuracy benchmark used mostly small images at full resolution.
+- Held-out accuracy intervals resample whole sites (site-cluster bootstrap).
+- Interval coverage checked on more variable beds (`variable_bed_coverage.audit.ts`).
 - Licence notices for the bundled `utif2` and `pako` and for the optional PULSE upscaler weights added
   to `THIRD_PARTY_NOTICES.md`; the licence and notices are copied into the built app.
 

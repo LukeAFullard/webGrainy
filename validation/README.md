@@ -13,7 +13,7 @@ results needed to reproduce them. Model weights and datasets are downloaded by t
 | [`quantization/`](quantization/README.md) | FP16 vs INT8 / FP4 Cellpose-SAM weights: accuracy, size, speed and memory. |
 | [`gpu/`](gpu/) | WebGPU vs CPU (WASM) agreement of the network outputs. |
 | [`perf/`](perf/) | Timing of the analysis stages and CPU thread counts. |
-| [`interval_coverage/`](interval_coverage/) | Coverage of the site interval by simulation, in every pooling mode and with the two-stage bootstrap (real label masks). |
+| [`interval_coverage/`](interval_coverage/) | Coverage of the site interval by simulation, in every pooling mode and with the two-stage bootstrap (real label masks); `variable_bed_coverage.audit.ts` adds beds with variable sorting, outlier patches and strong patch contrasts. |
 | [`comparison/`](comparison/README.md) | False-positive rate of the survey/site comparison test on simulated unchanged beds, and its power for a real 20% change (`power.audit.ts`). |
 | [`oracle/`](oracle/) | Independent numpy / scipy / scikit-image re-computation of percentiles, Folk & Ward, grain moments, Feret diameters, tiling and homography, compared with the TypeScript implementation. |
 

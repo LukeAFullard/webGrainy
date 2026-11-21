@@ -270,6 +270,8 @@ export const exportSiteArchive = exportProjectArchive;
 export const MAX_ARCHIVE_BYTES = 1024 * 1024 * 1024;
 /** Maximum accepted image / mask dimension in an archive. */
 export const MAX_ARCHIVE_DIMENSION = 32768;
+/** Most photos (and results) one project file may hold; far above any real survey. */
+export const MAX_ARCHIVE_PHOTOS = 10_000;
 
 class ArchiveValidationError extends Error {
   constructor(message: string) {
@@ -473,6 +475,9 @@ export async function importProjectArchive(
   }
   if (!Array.isArray(arch.photos) || !Array.isArray(arch.results)) {
     throw new Error('Invalid archive: missing photos or results array.');
+  }
+  if (arch.photos.length > MAX_ARCHIVE_PHOTOS || arch.results.length > MAX_ARCHIVE_PHOTOS) {
+    throw new ArchiveValidationError(`a site holds at most ${MAX_ARCHIVE_PHOTOS} photos.`);
   }
   if (typeof arch.site.name !== 'string' || !Array.isArray(arch.site.photoOrder) || !isObj(arch.site.options)) {
     throw new ArchiveValidationError('site requires name, photoOrder[] and options{}.');

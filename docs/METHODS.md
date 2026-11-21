@@ -65,8 +65,10 @@ Two words used throughout:
 ## 2. Photos in
 
 **Formats.** JPEG, PNG, WebP and other formats the browser can open, and TIFF / GeoTIFF.
-16-bit TIFFs are converted to 8 bits by their own brightness range (recorded in the photo's
-notes), so data that uses only part of the 16-bit range (e.g. 12-bit cameras) keeps its detail.
+16-bit TIFFs are converted to 8 bits by their own brightness range, from the 0.01st to the
+99.99th percentile of the samples (recorded in the photo's notes; brighter or darker samples are
+clipped, so one hot pixel does not compress the range). Data that uses only part of the 16-bit
+range (e.g. 12-bit cameras) keeps its detail.
 Very large photos (over 16.7 megapixels) are read at a reduced size to stay within browser
 memory limits. Measurements are still reported in the pixels of the original photo.
 
@@ -311,6 +313,13 @@ of these rules; excluded grains stay in the grain tables, flagged.
    working pixels and about 46% of those of 10–20 working pixels (Cellpose-SAM, on 5 photos:
    about 49% and 78%). Fine grains up to a few times this limit are therefore under-counted,
    and D5–D16 are biased coarse, more so for photos analysed at a smaller working size.
+   Recall is high only from about 20 working pixels (20–40 px: Cellpose-SAM about 93%, U-Net
+   about 64%). To describe the fine tail, or to compare surveys shot at different resolutions,
+   set the **Field-count cutoff** (item 6) to at least about 3× the detection limit shown.
+   The held-out accuracy benchmark (README) used mostly small images (median long side 512 px;
+   38 of 40 analysed at full resolution). Typical 12–48 MP field photos are analysed at about
+   0.13–0.25× (Auto, longest side 1024 px), so their grains are 4–8× smaller in working pixels
+   than in the benchmark, and their fine tail is less reliable than the benchmark suggests.
 5. **Common size cutoff for a site (calibrated sites).** Photos taken from different heights
    or with different cameras can resolve different smallest sizes. To pool them fairly, the
    app finds each photo's detection limit in mm and applies the **largest** of them to every
@@ -456,7 +465,7 @@ one distribution. *How* photos are combined is the **pooling mode**:
 | **Physical area-weighted** (default) | its area in mm² | Standard. Equivalent to a grid count over the whole photographed area. Photos covering more bed count more. |
 | **Equal-photo** | its area as a share of its photo's total grain area | Each photo (location) counts equally, whatever area it covers. |
 | **Virtual Wolman grid** | number of grid points landing on it | Mimics a field pebble count: a regular grid of points per photo (default about 100, or a fixed spacing in mm). Points on gaps or excluded grains are counted separately. |
-| **Facies-weighted** | as equal-photo, × the photo's facies weight | Stratified sampling, e.g. 70% of the reach is riffle, 30% pool. |
+| **Facies-weighted** | as equal-photo, × the photo's facies weight ÷ the total weight | Stratified sampling. The weight is per photo, so a facies' share is the sum over its photos: for 70% riffle (4 photos) and 30% pool (1 photo), give 0.175 per riffle photo and 0.3 to the pool photo. |
 | **Number-weighted** | 1 | Each grain once. Not comparable with pebble counts. |
 
 The per-photo breakdown shows each photo's grains, D16/D50/D84, packing (% of bed area
@@ -521,7 +530,13 @@ The random draws use a fixed seed (42), so the same data always give the same in
 
 Coverage was also checked in every pooling mode (physical-area, equal-photo, number-weighted,
 facies-weighted, virtual Wolman on real label masks) and with the two-stage bootstrap: 91–98% for
-3–10 photos (two-stage: 96–100%, i.e. conservative); see `validation/interval_coverage/`.
+3–10 photos (two-stage: 96–100%, i.e. conservative); see `validation/interval_coverage/`. That bed
+varies only in its median from photo to photo. On beds that vary more (every photo the same
+footprint, so fine patches give more grains; sorting varying between photos; 10% of photos of a
+3× coarser patch; `variable_bed_coverage.audit.ts`), coverage for 5–20 photos was 87–99% in
+physical-area and number-weighted pooling, and fell to 85–89% for D84 in physical-area pooling
+where patches differ strongly (patch sd 0.5). **Coverage depends on how the bed varies;** treat
+the D84 interval as approximate on very patchy beds.
 
 ### Binomial (order-statistic) intervals
 
@@ -709,7 +724,7 @@ caveats:
   50%. **Always check the outlines.**
 - The table above used an earlier percentile calculation (linear, no 15 px cutoff). Re-run with
   the app as shipped (log2 interpolation, 15 px cutoff on prediction and hand outlines, default
-  settings), U-Net gives a D50 error of 16.1% mean [10.3, 23.0] and 5.7% median, D16 / D84 median
+  settings), U-Net gives a D50 error of 16.1% mean [8.0, 25.7] and 5.7% median, D16 / D84 median
   errors of 8.4% / 2.9%, 10% of photos above 50%, and PQ 0.535
   and Cellpose-SAM (INT8 weights) 9.0% mean [4.2, 15.3] and 2.9% median, D16 / D84 5.1% / 1.1%,
   5% of photos above 50%, PQ 0.651 (`validation/heldout/heldout_app_results.md`).

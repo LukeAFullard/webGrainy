@@ -5,7 +5,7 @@ import type { PhotoRecord, SiteRecord } from '../src/modules/projectStorage.js';
 import { computeWorkspaceReports } from '../src/modules/siteWorkspace.js';
 import { createInitialState, type AppState } from '../src/ui/state.js';
 import { renderTopbarHtml } from '../src/ui/panels/topbar.js';
-import { renderSidebarHtml, backupLineHtml, formatBytes, retentionBannerHtml, type SidebarView } from '../src/ui/panels/sidebar.js';
+import { renderSidebarHtml, faciesSharePct, backupLineHtml, formatBytes, retentionBannerHtml, type SidebarView } from '../src/ui/panels/sidebar.js';
 import { renderToolbarHtml } from '../src/ui/panels/toolbar.js';
 import { renderDownloadResultsModalHtml, renderExportModalHtml } from '../src/ui/modals.js';
 import { renderDashboardHtml } from '../src/ui/panels/dashboard.js';
@@ -270,5 +270,19 @@ describe('browser storage notices', () => {
     const on = renderDownloadResultsModalHtml({ ...base, downloadIncludeProject: true });
     expect(on).toMatch(/id="download-include-project"[^>]*checked/);
     expect(on).toContain('GPS locations');
+  });
+});
+
+describe('facies weights', () => {
+  it("each photo's share is its weight over the included photos' total (audit S4)", () => {
+    const riffle = [0, 1, 2, 3].map((i) => ({ photoId: `r${i}`, included: true, faciesWeight: 0.7 }));
+    const pool = { photoId: 'p', included: true, faciesWeight: 0.3 };
+    // Every riffle photo at 0.7, as the old help suggested: the pool is only ~10% of the site.
+    expect(faciesSharePct([...riffle, pool], pool)).toBeCloseTo(9.68, 1);
+    // Riffle share divided among its 4 photos: the pool is 30%.
+    const riffle2 = riffle.map((r) => ({ ...r, faciesWeight: 0.175 }));
+    expect(faciesSharePct([...riffle2, pool], pool)).toBeCloseTo(30, 6);
+    expect(faciesSharePct([...riffle2, { ...pool, included: false }], { ...pool, included: false })).toBeNull();
+    expect(faciesSharePct([{ photoId: 'a', included: true }, { photoId: 'b', included: true }], { photoId: 'a', included: true })).toBe(50);
   });
 });

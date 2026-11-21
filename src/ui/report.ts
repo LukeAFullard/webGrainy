@@ -6,6 +6,8 @@
  */
 import type { SiteRecord } from '../modules/projectStorage.js';
 import type { SiteAnalysisReport } from '../modules/siteAnalysis.js';
+import { adequacyCapNote } from '../modules/siteAdequacy.js';
+import { ACCURACY_NOTICE } from '../modules/provenance.js';
 import { esc } from './panels/html.js';
 
 export interface ReportPhoto {
@@ -93,6 +95,7 @@ export function buildSiteReportHtml(input: ReportInput): string {
     `Sizes report the 2D visible ${r.sizeMetric} (${r.statisticalBasisLabel})${resText ? ` at ${resText}` : ''}${detText ? `; grains smaller than ${detText} (the detection limit) are not counted, and grains up to a few times that size are partly missed` : ''}.`,
     editText ? `${editText}.` : '',
     enhText ? `${enhText}.` : '',
+    ACCURACY_NOTICE,
   ]
     .filter(Boolean)
     .join(' ');
@@ -166,7 +169,7 @@ ${w ? `<p class="small" style="margin-top:6px;">Wentworth classes: sand ${num(w.
 
 <section>
 <h2>Sample adequacy</h2>
-<p><strong>${esc(r.adequacy.rating)}</strong> — effective grain count ${r.adequacy.effectiveGrainCount}; largest grain ${fmt(r.adequacy.largestClastAreaRatio * 100, 1)}% of the grain area${r.adequacy.largestClastWarning !== 'none' ? ' <span class="warn">(large: one stone has a big effect)</span>' : ''}.
+<p><strong>${esc(r.adequacy.rating)}</strong>${r.adequacy.limitedByPhotoCount ? ` (${esc(adequacyCapNote(true, r.includedPhotoCount))})` : ''} — effective grain count ${r.adequacy.effectiveGrainCount}; largest grain ${fmt(r.adequacy.largestClastAreaRatio * 100, 1)}% of the grain area${r.adequacy.largestClastWarning !== 'none' ? ' <span class="warn">(large: one stone has a big effect)</span>' : ''}.
 ${r.jackknife ? ` Leaving out one photo at a time changes D50 by a standard error of ${fmt(r.jackknife.seD50)} ${u}.` : ''}</p>
 ${r.adequacy.outlierPhotos.length > 0 ? `<p class="warn">Photos to check: ${r.adequacy.outlierPhotos.map((o) => `${esc(o.label)} (${esc(o.reasons.join('; '))})`).join(' · ')}</p>` : ''}
 ${r.warnings.length > 0 ? `<ul class="warn small">${r.warnings.map((m) => `<li>${esc(m)}</li>`).join('')}</ul>` : ''}

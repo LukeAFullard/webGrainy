@@ -12,6 +12,7 @@ import {
   getPhotoResult,
   getSite,
   importProjectArchive,
+  MAX_ARCHIVE_PHOTOS,
   listSitePhotos,
   savePhoto,
   savePhotoResult,
@@ -205,5 +206,14 @@ describe('engine: fine-grain enlargement is bounded', () => {
     const engine = new ImageGrainsEngine({ sessionFactory: async () => session() });
     await expect(engine.analyzeImage(img, { model: 'unet', fineGrainUpscale: 64 })).rejects.toThrow(/fineGrainUpscale/);
     await expect(engine.analyzeImage(img, { model: 'unet', fineGrainUpscale: Number.NaN })).rejects.toThrow(/fineGrainUpscale/);
+  });
+});
+
+describe('import size limits', () => {
+  it('a file with more photos than any survey is refused before anything is written', async () => {
+    const { header, payload } = await baseArchive();
+    header['photos'] = Array.from({ length: MAX_ARCHIVE_PHOTOS + 1 }, (_, i) => ({ ...header['photos'][0], photoId: `P${i}` }));
+    const db = { indexedDB: createProjectMockIDB() };
+    await expect(importProjectArchive(pack(header, payload), db)).rejects.toThrow(/at most 10000 photos/);
   });
 });
