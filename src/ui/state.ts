@@ -88,6 +88,11 @@ export interface AppState {
   retentionDays: number;
   /** What the last automatic removal deleted (shown until dismissed). */
   retentionNotice: string | null;
+  /**
+   * Expired sites kept because their work was never downloaded (or changed since): the user
+   * chooses to download, keep (open) or remove them. Site ids.
+   */
+  retentionHeld: string[];
   /** Browser storage is full: what failed and what to do (shown until dismissed). */
   storageFullNotice: string | null;
   /** "Download results": also include the project file with the photos. */
@@ -186,6 +191,7 @@ export function createInitialState(): AppState {
     staleBuild: false,
     retentionDays: DEFAULT_RETENTION_DAYS,
     retentionNotice: null,
+    retentionHeld: [],
     storageFullNotice: null,
     downloadIncludeProject: false,
     downloadingResults: false,

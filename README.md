@@ -69,7 +69,7 @@ Measured on the held-out test split of the ImageGrains 2.0 data (`IG2_data.zip`,
 
 - **b-axis is not a sieve or caliper b-axis.** It is the minor axis of the ellipse fitted to the visible 2D outline. Partial burial, imbrication and the 2D view of 3D grains add bias. Minimum Feret width is the closest 2D equivalent of a caliper b-axis.
 - **Fine grains are truncated.** Grains smaller than the detection limit (shown in the app, in mm) are missed. Large photos are analysed at up to 1024 px unless you choose a larger image scale.
-- **The browser is not an archive.** Photos and results stay in the browser only for a set number of days after a site was last used (30 by default). Use **Download results…** to keep them; keep your original photos in your own folders.
+- **The browser is not an archive.** Photos and results stay in the browser only for a set number of days after a site was last used (30 by default). After that a site is removed automatically only if its results were downloaded after its last change; otherwise the app keeps it and asks you to download, keep or remove it. Use **Download results…** to keep your results; keep your original photos in your own folders.
 - **Lens distortion is not corrected.** It is small for most phones, but wide-angle and action cameras can bias sizes by 7–22%. Undistort such photos first. Oblique photos must be rectified.
 - **Hard conditions:** wet or shiny surfaces, strong shadows, vegetation, sand matrix, single grains covering a large part of the frame, and fewer than about 100 grains.
 

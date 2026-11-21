@@ -647,7 +647,9 @@ different Cellpose-SAM weights on different computers (recorded in the exports).
 analyse until it is reloaded, so results are never computed by a mix of versions.
 
 **Your data stays in your browser, temporarily.** Photos and results are stored only in this
-browser, and a site is removed after a set number of days without use (30 by default). Use
+browser, and a site is removed after a set number of days without use (30 by default), but only
+automatically if its results were downloaded after its last change; a site with work that was
+never downloaded is kept until you choose to download, keep or remove it. Use
 **Download results…** to keep a .zip of every result file:
 
 - site summaries, pooled grains (with a column marking the grains used in the statistics and

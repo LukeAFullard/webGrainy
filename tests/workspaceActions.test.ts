@@ -405,31 +405,78 @@ describe('workspace actions', () => {
 
 describe('sites are removed after the chosen days without use', () => {
   const DAY = 86_400_000;
-  it('removes expired sites at start-up (photos and results), keeps recent ones and those open in another tab', async () => {
-    const world = fakeWorld();
-    const now = Date.now();
-    const add = (id: string, ageDays: number) => {
-      world.sites.set(id, { ...site(id, [`${id}p`]), updatedAt: now - ageDays * DAY, createdAt: now - ageDays * DAY });
-      world.photos.set(`${id}p`, photo(`${id}p`, id));
-      world.results.set(`${id}p`, { photoId: `${id}p`, status: 'error', updatedAt: 0 });
-    };
-    add('old', 40);
-    add('busy', 45);
-    add('recent', 3);
-    const { store, actions } = setup(world, {
-      ifSiteNotOpen: async (id, here, fn) => {
-        if (id === 'busy' || id === here) return false; // open in another tab
-        await fn();
-        return true;
-      },
-      retentionSince: () => 0,
+  /** In-memory localStorage for the download ("backup") records, restored after each test. */
+  function withLocalStorage(): { restore: () => void } {
+    const data = new Map<string, string>();
+    const prev = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+    Object.defineProperty(globalThis, 'localStorage', {
+      configurable: true,
+      value: { getItem: (k: string) => data.get(k) ?? null, setItem: (k: string, v: string) => void data.set(k, v), removeItem: (k: string) => void data.delete(k) },
     });
-    store.setState({ retentionDays: 30 });
+    return { restore: () => (prev ? Object.defineProperty(globalThis, 'localStorage', prev) : delete (globalThis as { localStorage?: unknown }).localStorage) };
+  }
+
+  it('at start-up removes only expired sites with nothing to lose; keeps un-downloaded work for the user to decide', async () => {
+    const ls = withLocalStorage();
+    try {
+      const { markSiteBackedUp, markSiteChanged } = await import('../src/ui/backup.js');
+      const world = fakeWorld();
+      const now = Date.now();
+      const add = (id: string, ageDays: number, withPhoto = true) => {
+        world.sites.set(id, { ...site(id, withPhoto ? [`${id}p`] : []), updatedAt: now - ageDays * DAY, createdAt: now - ageDays * DAY });
+        if (withPhoto) {
+          world.photos.set(`${id}p`, photo(`${id}p`, id));
+          world.results.set(`${id}p`, { photoId: `${id}p`, status: 'error', updatedAt: 0 });
+        }
+      };
+      add('downloaded', 40); // results downloaded after the last change: removed
+      markSiteChanged('downloaded', now - 45 * DAY);
+      markSiteBackedUp('downloaded', now - 41 * DAY);
+      add('unsaved', 40); // never downloaded: kept
+      add('changed', 40); // changed after the last download: kept
+      markSiteBackedUp('changed', now - 50 * DAY);
+      markSiteChanged('changed', now - 40 * DAY);
+      add('empty', 40, false); // no photos: nothing to lose, removed
+      add('busy', 45); // open in another tab: never removed
+      markSiteBackedUp('busy', now - 44 * DAY);
+      add('recent', 3);
+      const { store, actions } = setup(world, {
+        ifSiteNotOpen: async (id, here, fn) => {
+          if (id === 'busy' || id === here) return false;
+          await fn();
+          return true;
+        },
+        retentionSince: () => 0,
+      });
+      store.setState({ retentionDays: 30 });
+      await actions.purgeExpiredSites();
+      expect([...world.sites.keys()].sort()).toEqual(['busy', 'changed', 'recent', 'unsaved']);
+      expect(world.photos.has('downloadedp')).toBe(false);
+      expect(world.photos.has('unsavedp')).toBe(true);
+      expect(store.getState().retentionHeld.sort()).toEqual(['changed', 'unsaved']);
+      expect(store.getState().retentionNotice).toMatch(/Removed from this browser after 30 days without use: .*Site downloaded \(results downloaded/);
+      expect(store.getState().retentionNotice).not.toMatch(/Site (unsaved|changed)/);
+
+      // Opening a kept site restarts its clock and takes it off the list; removing one is explicit.
+      await actions.loadSiteData('unsaved');
+      expect(store.getState().retentionHeld).toEqual(['changed']);
+      expect(await actions.removeHeldSite('changed')).toBe(true);
+      expect(world.sites.has('changed')).toBe(false);
+      expect(store.getState().retentionHeld).toEqual([]);
+    } finally {
+      ls.restore();
+    }
+  });
+
+  it('without download records (e.g. cleared localStorage) no site with photos is removed automatically', async () => {
+    const world = fakeWorld();
+    world.sites.set('old', { ...site('old', ['oldp']), updatedAt: 0, createdAt: 0 });
+    world.photos.set('oldp', photo('oldp', 'old'));
+    const { store, actions } = setup(world, { retentionSince: () => 0 });
+    store.setState({ retentionDays: 7 });
     await actions.createDefaultOrLoadSites();
-    expect([...world.sites.keys()].sort()).toEqual(['busy', 'recent']);
-    expect(world.photos.has('oldp')).toBe(false);
-    expect(world.results.has('oldp')).toBe(false);
-    expect(store.getState().retentionNotice).toMatch(/Removed from this browser after 30 days without use: Site old \(results never downloaded\)/);
+    expect(world.sites.has('old')).toBe(true);
+    expect(store.getState().retentionNotice).toBeNull();
   });
 
   it('sites that existed before this feature get the full period, not removal at once', async () => {

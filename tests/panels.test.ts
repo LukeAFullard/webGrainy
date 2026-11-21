@@ -251,6 +251,17 @@ describe('browser storage notices', () => {
     expect(html).toContain('data-action="open-site" data-site-id="b"'); // other sites: open them first
   });
 
+  it('retention banner: expired sites with un-downloaded work are listed to open or remove', () => {
+    const mk = (siteId: string, name: string): SiteRecord => ({ siteId, name, createdAt: 0, updatedAt: 0, options: { poolingMode: 'physical-area' }, photoOrder: [] });
+    const st: AppState = { ...createInitialState(), retentionDays: 30, sites: [mk('k', 'Kept <reach>'), mk('x', 'Other')], retentionHeld: ['k'] };
+    const html = retentionBannerHtml(st, Date.now(), Date.now());
+    expect(html).toContain('results were never downloaded');
+    expect(html).toContain('Kept &lt;reach&gt;');
+    expect(html).toContain('data-action="open-site" data-site-id="k"');
+    expect(html).toContain('data-action="remove-held-site" data-site-id="k"');
+    expect(html).not.toContain('data-site-id="x"');
+  });
+
   it('download dialog: project file off by default, with a warning either way', () => {
     const base = analysedState();
     const off = renderDownloadResultsModalHtml(base);

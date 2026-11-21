@@ -394,6 +394,19 @@ export function retentionBannerHtml(state: AppState, now = Date.now(), since = r
     parts.push(`<div class="warning-banner" role="status">${esc(state.retentionNotice)}
       <div class="row" style="margin-top:6px;"><button type="button" class="btn btn-xs" data-action="dismiss-retention-notice">OK</button></div></div>`);
   }
+  const held = state.retentionHeld.map((id) => state.sites.find((s) => s.siteId === id)).filter((s): s is NonNullable<typeof s> => s !== undefined);
+  if (held.length > 0) {
+    parts.push(`<div class="warning-banner" role="alert"><strong>Not used for ${days} days, but their results were never downloaded (or changed since):</strong> kept until you decide. Open a site to download its results or keep it (opening restarts its ${days}-day period).
+      ${held
+        .map((site) => `<div class="row" style="justify-content:space-between;gap:6px;margin-top:4px;">
+          <span>${esc(site.name)}</span>
+          <span class="row" style="gap:4px;">
+            <button type="button" class="btn btn-xs btn-primary" data-action="open-site" data-site-id="${esc(site.siteId)}">Open</button>
+            <button type="button" class="btn btn-xs" data-action="remove-held-site" data-site-id="${esc(site.siteId)}" title="Remove this site's photos and results from this browser">Remove…</button>
+          </span>
+        </div>`)
+        .join('')}</div>`);
+  }
   if (days > 0) {
     const { soon } = siteRetention(state.sites, readBackupRecords(), days, now, since);
     if (soon.length > 0) {

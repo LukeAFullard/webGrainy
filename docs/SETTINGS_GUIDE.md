@@ -603,8 +603,11 @@ downloaded as an HTML file instead: open it and print it from the browser.
 webGrainy is a working space, not an archive. Photos and results are stored in this browser
 while you work, and a site is **removed from this browser after a number of days without use**
 (30 by default; choose 7, 14, 30 or 90 days, or *until I delete them*, in the **Site** panel).
-Opening a site, changing it, or **Keep longer** restarts the count. Keep your original photos
-in your own folders and download your results:
+Opening a site, changing it, or **Keep longer** restarts the count. A site is removed
+automatically only if its results were downloaded after its last change. A site whose work was
+never downloaded (or changed since) is kept and listed in the Site panel, where you can open it
+(to download its results or keep it) or remove it. Keep your original photos in your own folders
+and download your results:
 
 - **Download results…** (Site panel) saves one `.zip` with every result file of the site:
   site summary (CSV and JSON), pooled grains, grain-size curve, printable report, and for each
