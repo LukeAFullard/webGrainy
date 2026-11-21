@@ -43,14 +43,14 @@ How every step works (models, outlines, measurements, statistics, uncertainty, c
 
 Measured on the held-out test split of the ImageGrains 2.0 data (`IG2_data.zip`, 40 images from 13 sites) against hand-digitised grain outlines. Errors are absolute percentage errors of each image's area-weighted b-axis percentile (in pixels); PQ is panoptic quality of the outlines.
 
-**The app as shipped** (default settings, the numbers the app reports: log2 interpolation, interior grains, grains under 15 px left out of both prediction and hand outlines; [`validation/heldout/heldout_app_results.md`](validation/heldout/heldout_app_results.md)):
+**The app as shipped** (default settings, the numbers the app reports: log2 interpolation, interior grains, grains under 15 px left out of both prediction and hand outlines; 95% intervals resample whole sites, since photos of one site are not independent; [`validation/heldout/heldout_app_results.md`](validation/heldout/heldout_app_results.md)):
 
 | Model | D50 error: mean [95% CI] | D50 error: median [95% CI] | D16 / D84 median error | D50 error > 50% | PQ vs hand outlines |
 | :--- | :--- | :--- | :--- | ---: | ---: |
-| U-Net | 16.1% [10.3, 23.0] | 5.7% [3.4, 16.6] | 8.4% / 2.9% | 10% of images | 0.535 |
-| Cellpose-SAM (INT8) | 9.0% [4.2, 15.3] | 2.9% [1.9, 5.3] | 5.1% / 1.1% | 5% of images | 0.651 |
+| U-Net | 16.1% [8.0, 25.7] | 5.7% [2.8, 20.9] | 8.4% / 2.9% | 10% of images | 0.535 |
+| Cellpose-SAM (INT8) | 9.0% [3.8, 14.9] | 2.9% [1.9, 5.3] | 5.1% / 1.1% | 5% of images | 0.651 |
 
-**Earlier benchmark with the upstream PyTorch ImageGrains for reference** (linear interpolation, no size cutoff, so not directly comparable with the table above):
+**Earlier benchmark with the upstream PyTorch ImageGrains for reference** (linear interpolation, no size cutoff, intervals resampling images rather than sites, so not directly comparable with the table above):
 
 | Model | Engine | D50 error: mean [95% CI] | D50 error: median [95% CI] | D16 / D84 median error | PQ vs hand outlines |
 | :--- | :--- | :--- | :--- | :--- | ---: |
@@ -68,7 +68,7 @@ Measured on the held-out test split of the ImageGrains 2.0 data (`IG2_data.zip`,
 ## Limitations
 
 - **b-axis is not a sieve or caliper b-axis.** It is the minor axis of the ellipse fitted to the visible 2D outline. Partial burial, imbrication and the 2D view of 3D grains add bias. Minimum Feret width is the closest 2D equivalent of a caliper b-axis.
-- **Fine grains are truncated.** Grains smaller than the detection limit (shown in the app, in mm) are missed. Large photos are analysed at up to 1024 px unless you choose a larger image scale.
+- **Fine grains are truncated.** Grains smaller than the detection limit (shown in the app, in mm) are missed, and grains up to a few times that size are partly missed, so D5–D16 are biased coarse. Large photos are analysed at up to 1024 px unless you choose a larger image scale, so a 12–48 MP photo is analysed at 0.13–0.25×. The accuracy benchmark above used mostly 512 px images at full resolution. To describe the fine tail, set **Field-count cutoff (mm)** to at least about 3× the detection limit.
 - **The browser is not an archive.** Photos and results stay in the browser only for a set number of days after a site was last used (30 by default). After that a site is removed automatically only if its results were downloaded after its last change; otherwise the app keeps it and asks you to download, keep or remove it. Use **Download results…** to keep your results; keep your original photos in your own folders.
 - **Lens distortion is not corrected.** It is small for most phones, but wide-angle and action cameras can bias sizes by 7–22%. Undistort such photos first. Oblique photos must be rectified.
 - **Hard conditions:** wet or shiny surfaces, strong shadows, vegetation, sand matrix, single grains covering a large part of the frame, and fewer than about 100 grains.

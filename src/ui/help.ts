@@ -271,9 +271,9 @@ export const HELP_TOPICS = {
   faciesWeight: {
     title: 'Facies weight',
     group: 'Photo',
-    what: 'How much this photo counts in "Facies-weighted" pooling, e.g. the share of the reach covered by its surface type.',
+    what: 'How much this photo counts in "Facies-weighted" pooling. Each photo\'s share of the site is its weight divided by the total of all included photos\' weights (shown under the box), so a surface type\'s share is the sum over its photos.',
     default: '1 (equal weight)',
-    when: 'Set when sampling a reach with distinct surface patches (e.g. 0.6 for a bar head photo representing 60% of the area). Only used in Facies-weighted pooling.',
+    when: 'Set when sampling a reach with distinct surface patches. Divide each surface type\'s share of the reach among its photos: riffle 70% of the reach with 4 photos and pool 30% with 1 photo means 0.175 for each riffle photo (0.7 / 4) and 0.3 for the pool photo. Giving every riffle photo 0.7 would make the pool only 10% of the site. Only used in Facies-weighted pooling.',
   },
   calibrate: {
     title: 'Calibrate',

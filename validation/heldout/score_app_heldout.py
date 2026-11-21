@@ -10,6 +10,7 @@ quality (PQ, IoU > 0.5) of the app's label mask (resized to the photo as in its 
 
 Usage: python3 -I validation/heldout/score_app_heldout.py [unet] [cpsam]
 Writes validation/heldout/heldout_app_results.md and heldout_app_results_per_image.csv.
+With --from-csv, only re-summarises the committed heldout_app_results_per_image.csv.
 """
 from __future__ import annotations
 
@@ -121,16 +122,50 @@ def bootstrap_ci(arr: np.ndarray, fn, n_boot: int = 2000, seed: int = 42) -> lis
     return [float(np.percentile(boots, 2.5)), float(np.percentile(boots, 97.5))]
 
 
-def summarize(gt: np.ndarray, pr: np.ndarray) -> dict:
+def cluster_bootstrap_ci(arr: np.ndarray, groups: np.ndarray, fn, n_boot: int = 2000, seed: int = 42) -> list[float]:
+    """95% percentile interval resampling whole sites (clusters) with replacement: images of one
+    site are not independent, so resampling images would understate the uncertainty."""
+    rng = np.random.default_rng(seed)
+    sites = np.unique(groups)
+    if len(sites) < 2:
+        return bootstrap_ci(arr, fn, n_boot, seed)
+    by_site = [arr[groups == g] for g in sites]
+    boots = np.empty(n_boot, dtype=np.float64)
+    for i in range(n_boot):
+        pick = rng.integers(0, len(sites), size=len(sites))
+        boots[i] = fn(np.concatenate([by_site[j] for j in pick]))
+    return [float(np.percentile(boots, 2.5)), float(np.percentile(boots, 97.5))]
+
+
+def summarize(gt: np.ndarray, pr: np.ndarray, sites: np.ndarray) -> dict:
     ok = np.isfinite(gt) & np.isfinite(pr) & (gt > 0)
-    gt, pr = gt[ok], pr[ok]
+    gt, pr, sites = gt[ok], pr[ok], sites[ok]
     ape = 100.0 * np.abs(pr - gt) / gt
-    return {"n": int(len(ape)), "mean": float(np.mean(ape)), "mean_ci": bootstrap_ci(ape, np.mean),
-            "median": float(np.median(ape)), "median_ci": bootstrap_ci(ape, np.median),
+    return {"n": int(len(ape)), "mean": float(np.mean(ape)), "mean_ci": cluster_bootstrap_ci(ape, sites, np.mean),
+            "median": float(np.median(ape)), "median_ci": cluster_bootstrap_ci(ape, sites, np.median),
             "gt50": float(100.0 * np.mean(ape > 50.0)), "bias_median": float(np.median(100.0 * (pr - gt) / gt))}
 
 
+def summary_from_csv() -> list[tuple]:
+    """Re-summarise the committed per-image results (no images or app runs needed)."""
+    per = list(csv.DictReader(open(ROOT / "validation/heldout/heldout_app_results_per_image.csv")))
+    old = (ROOT / "validation/heldout/heldout_app_results.md").read_text().splitlines()[0]
+    version = old.split("(webGrainy ", 1)[1].rstrip(")") if "(webGrainy " in old else "unknown"
+    table = []
+    for model in dict.fromkeys(r["model"] for r in per):
+        rs = [r for r in per if r["model"] == model]
+        num = lambda v: float(v) if v not in ("", "None", "nan") else float("nan")
+        sites = np.array([r["site"] for r in rs])
+        s = {k: summarize(np.array([num(r[f"gt_{k}"]) for r in rs]), np.array([num(r[f"app_{k}"]) for r in rs]), sites)
+             for k in ("D16", "D50", "D84")}
+        table.append((model, s, float(np.mean([float(r["pq"]) for r in rs])), version))
+    return table
+
+
 def main() -> None:
+    if "--from-csv" in sys.argv:
+        write_summary(summary_from_csv())
+        return
     models = sys.argv[1:] or ["unet", "cpsam"]
     rows = [r for r in csv.DictReader(open(ROOT / "validation/heldout/heldout_manifest.csv")) if r["official_split"] == "test"]
     per_image, table = [], []
@@ -154,12 +189,17 @@ def main() -> None:
                 gts[k].append(gt[k]); prs[k].append(app[k] if app[k] is not None else float("nan"))
             per_image.append({"uid": r["uid"], "site": r["site"], "model": model, "pred_grains": app["grains"],
                               **{f"gt_{k}": gt[k] for k in gts}, **{f"app_{k}": app[k] for k in gts}, "pq": pq})
-        s = {k: summarize(np.array(gts[k], float), np.array(prs[k], float)) for k in gts}
+        sites = np.array([r["site"] for r in rows])
+        s = {k: summarize(np.array(gts[k], float), np.array(prs[k], float), sites) for k in gts}
         table.append((model, s, float(np.mean(pqs)), app["appVersion"]))
     if not table:
         return
     with open(ROOT / "validation/heldout/heldout_app_results_per_image.csv", "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=list(per_image[0].keys())); w.writeheader(); w.writerows(per_image)
+    write_summary(table)
+
+
+def write_summary(table: list[tuple]) -> None:
     name = {"unet": "U-Net", "cpsam": "Cellpose-SAM (INT8, CPU)"}
     lines = [
         f"# Held-out accuracy of the shipped app (webGrainy {table[0][3]})",
@@ -168,7 +208,8 @@ def main() -> None:
         "analysis (Cellpose pipeline, Auto image scale, default post-processing, CPU/WASM) and the numbers the",
         "app reports: area-weighted b-axis percentiles in photo px, interior grains, grains under 15 px left out",
         "(the same rule applied to the hand outlines). Errors are absolute % differences per image, with",
-        "bootstrap 95% intervals over images. Produced by `run_app_heldout.mjs` + `score_app_heldout.py`.",
+        "95% intervals from a site-cluster bootstrap (whole sites resampled, since images of one site are",
+        "not independent). Produced by `run_app_heldout.mjs` + `score_app_heldout.py`.",
         "",
         "| Model | n | D50 error: mean [95% CI] | D50 error: median [95% CI] | D16 / D84 median error | D50 error > 50% | D50 median bias | PQ vs hand outlines |",
         "| --- | ---: | --- | --- | --- | ---: | ---: | ---: |",

@@ -7,6 +7,7 @@
 import type { SiteRecord } from '../modules/projectStorage.js';
 import type { SiteAnalysisReport } from '../modules/siteAnalysis.js';
 import { adequacyCapNote } from '../modules/siteAdequacy.js';
+import { ACCURACY_NOTICE } from '../modules/provenance.js';
 import { esc } from './panels/html.js';
 
 export interface ReportPhoto {
@@ -94,6 +95,7 @@ export function buildSiteReportHtml(input: ReportInput): string {
     `Sizes report the 2D visible ${r.sizeMetric} (${r.statisticalBasisLabel})${resText ? ` at ${resText}` : ''}${detText ? `; grains smaller than ${detText} (the detection limit) are not counted, and grains up to a few times that size are partly missed` : ''}.`,
     editText ? `${editText}.` : '',
     enhText ? `${enhText}.` : '',
+    ACCURACY_NOTICE,
   ]
     .filter(Boolean)
     .join(' ');

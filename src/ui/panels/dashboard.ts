@@ -126,7 +126,7 @@ export function renderDashboardHtml(state: AppState, view: DashboardView): strin
               : detectionLimitInfo.nearD5
                 ? ' — D5 is close to the resolution floor.'
                 : ''
-          } <span class="stats-note">Grains up to a few times this size are partly missed, so the finest percentiles lean coarse.</span>
+          } <span class="stats-note">Grains up to a few times this size are partly missed, so the finest percentiles lean coarse; for a reliable fine tail set the Field-count cutoff to about 3× this size.</span>
         </div>`
       : '';
     const activeEnh = !isSite ? activePhoto?.metadata?.enhancement : undefined;

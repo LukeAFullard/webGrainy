@@ -50,6 +50,13 @@ First public release.
 - A project file may hold at most 10,000 photos.
 - An adequacy rating capped by the photo count says so ("capped: 3 photos") on the results card, the
   comparison table and the printable report.
+- Facies weights: the help and docs now say the weight is per photo (a surface type's share is the sum
+  over its photos), and each photo shows its resulting share of the site.
+- The printable report and every export state the validated accuracy and its limits.
+- Docs: guidance to set the field-count cutoff to about 3× the detection limit for a reliable fine tail,
+  and that the accuracy benchmark used mostly small images at full resolution.
+- Held-out accuracy intervals resample whole sites (site-cluster bootstrap).
+- Interval coverage checked on more variable beds (`variable_bed_coverage.audit.ts`).
 - Licence notices for the bundled `utif2` and `pako` and for the optional PULSE upscaler weights added
   to `THIRD_PARTY_NOTICES.md`; the licence and notices are copied into the built app.
 
