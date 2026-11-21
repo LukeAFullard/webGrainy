@@ -57,6 +57,15 @@ First public release.
   and that the accuracy benchmark used mostly small images at full resolution.
 - Held-out accuracy intervals resample whole sites (site-cluster bootstrap).
 - Interval coverage checked on more variable beds (`variable_bed_coverage.audit.ts`).
+- Auto image scale: photos over 1,024 px are analysed with a 1,024 px working image (before, photos of
+  1,025–4,096 px were halved or quartered, so a 2,100 px photo got a 525 px working image but a
+  2,048 px photo 1,024 px). Photos of that size now resolve finer grains and take longer.
+- Folk & Ward and moment skewness / kurtosis of degenerate distributions are reported as undefined.
+- Counted grains with no weight get `stats_weight` 0; the interval columns of the site summary say how
+  they were computed.
+- TIFFs over 100 MP are refused with a clear message; the formula guard in CSV exports also covers pipe-
+  and space-separated imports; cached model files are re-checked once per session; builds are
+  reproducible (the same commit gives the same files).
 - Licence notices for the bundled `utif2` and `pako` and for the optional PULSE upscaler weights added
   to `THIRD_PARTY_NOTICES.md`; the licence and notices are copied into the built app.
 
