@@ -403,8 +403,8 @@ result then mixes different size ranges.
 or want results like, a **pebble count**. Typical values are 8–16 mm. Field pebble counts
 usually skip small material, while the photo includes it. That alone can make the photo
 D50 look much finer: at the K1 test site, Cellpose-SAM's D50 was **about 30% finer** than the
-field count without a cutoff (U-Net's looked close only because it misses most small grains).
-With a matching 13 mm cutoff, both models' D50 agreed with the field D50 within about 3–4%.
+field count without a cutoff (U-Net's about 20% finer). With a matching 13 mm cutoff, both
+models' D50 agreed with the field D50 within about 3%.
 
 Leave it at **0** if you want to describe everything visible down to the detection limit. Grains up to a few times the detection limit are partly missed, so for a reliable fine tail (D5–D16), or to compare surveys shot at different resolutions, set it to at least about **3× the detection limit** shown under the size distribution (Smallest grain kept).
 

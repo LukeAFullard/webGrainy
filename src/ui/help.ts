@@ -224,7 +224,7 @@ export const HELP_TOPICS = {
     group: 'Site statistics',
     what: 'Leaves out all grains smaller than this size (mm) from both This photo and Whole site statistics, so results cover the same size range as a field pebble count. Marked with an amber dot when "Mark edge/too-small grains" is on.',
     default: '0 (off)',
-    when: 'Set it to the smallest stone your field method records (typically 8–16 mm) whenever you compare with a pebble count. Without it the photo D50 can look much finer (about 30% with Cellpose-SAM at the K1 test site; U-Net looked close only because it misses most small grains; with a matching 13 mm cutoff both agreed with the field D50 within about 3–4%). Applies immediately without re-analysing.',
+    when: 'Set it to the smallest stone your field method records (typically 8–16 mm) whenever you compare with a pebble count. Without it the photo D50 can look much finer (about 30% with Cellpose-SAM at the K1 test site and about 20% with U-Net; with a matching 13 mm cutoff both agreed with the field D50 within about 3%). Applies immediately without re-analysing.',
   },
   maxExcludedFraction: {
     title: 'Exclusion overlap',

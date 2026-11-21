@@ -744,18 +744,19 @@ b-axes, smallest 13 mm, field D50 27.0 mm), the app as shipped (default settings
 
 | | Cellpose-SAM | U-Net |
 |---|---|---|
-| D50, all detected grains | 19.0 mm (−30%) | 26.4 mm (−2%) |
-| D50, field-count cutoff 13 mm | 27.7 mm (+3%) | 28.0 mm (+4%) |
-| D84, field-count cutoff 13 mm | 45.3 mm (−6%) | 47.0 mm (−3%) |
+| D50, all detected grains | 18.7 mm (−31%) | 21.1 mm (−22%) |
+| D50, field-count cutoff 13 mm | 27.8 mm (+3%) | 27.7 mm (+3%) |
+| D84, field-count cutoff 13 mm | 45.3 mm (−6%) | 45.9 mm (−5%) |
 
 With the field count's size range applied to the photos, both models agree with the field count
 within a few percent. Without it, the photo D50 depends on how many small grains the model finds:
-Cellpose-SAM counts about 3.5 times as many grains as U-Net here, so its D50 is much finer. U-Net's
-close match without a cutoff is therefore not a sign of accuracy: it misses most grains below
-about 10 mm. Caveats: one site and two photos, both of which overlap the ImageGrains training
+Cellpose-SAM counts about 1.5 times as many grains as U-Net here, so its D50 is finer still.
+(Before v0.1.0 these 1,300 px photos were analysed at half size; U-Net then missed most grains
+below about 10 mm, and its D50 without a cutoff happened to match the field count, by chance.)
+Caveats: one site and two photos, both of which overlap the ImageGrains training
 data, so this is a consistency check, not an independent validation; the 13 mm cutoff is the
 smallest clast in the field data, not a documented protocol (with 10 or 16 mm the D50 difference
-is −10% or +10% for Cellpose-SAM). Reproduce with `node validation/k1/run_app_k1.mjs`
+is −8% or +12% for Cellpose-SAM). Reproduce with `node validation/k1/run_app_k1.mjs`
 (`validation/k1/k1_app_results.md`). Always match the size range when comparing with field data
 (Section 8).
 

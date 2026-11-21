@@ -59,7 +59,10 @@ First public release.
 - Interval coverage checked on more variable beds (`variable_bed_coverage.audit.ts`).
 - Auto image scale: photos over 1,024 px are analysed with a 1,024 px working image (before, photos of
   1,025–4,096 px were halved or quartered, so a 2,100 px photo got a 525 px working image but a
-  2,048 px photo 1,024 px). Photos of that size now resolve finer grains and take longer.
+  2,048 px photo 1,024 px). Photos of that size now resolve finer grains and take longer. On the
+  K1 field photos (1,300 px) U-Net now finds more than twice as many grains, so its D50 without a
+  field-count cutoff is 22% finer than the pebble count (it matched before only because it missed
+  small grains); with the 13 mm cutoff both models agree within 3%.
 - Folk & Ward and moment skewness / kurtosis of degenerate distributions are reported as undefined.
 - Counted grains with no weight get `stats_weight` 0; the interval columns of the site summary say how
   they were computed.
