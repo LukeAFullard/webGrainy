@@ -514,6 +514,10 @@ bed. Options:
 
 The random draws use a fixed seed (42), so the same data always give the same interval.
 
+Coverage was also checked in every pooling mode (physical-area, equal-photo, number-weighted,
+facies-weighted, virtual Wolman on real label masks) and with the two-stage bootstrap: 91–98% for
+3–10 photos (two-stage: 96–100%, i.e. conservative); see `validation/interval_coverage/`.
+
 ### Binomial (order-statistic) intervals
 
 A second, faster interval for each percentile, as in Eaton et al. (2019, GSDtools). If n grains
@@ -696,13 +700,25 @@ with PyTorch ImageGrains' at a panoptic quality of 0.93 (both models).
 The 8-bit and 4-bit Cellpose-SAM versions give the same benchmark accuracy as the 16-bit one
 (outline agreement 0.994 and 0.966).
 
-**Field comparison (one site).** At the K1 site, the photo D50 was about 42% finer than a
-field pebble count, until the count's 13 mm minimum size was applied to the photos as well.
-They then agreed within about 4% (D84 within 6%, D16 11% finer). Caveats: one site and two
-photos, both of which overlap the ImageGrains training data, so this is a consistency check,
-not an independent validation; and the 13 mm cutoff is the smallest clast in the field data,
-not a documented protocol. With a 10 mm or 16 mm cutoff the D50 difference is −8% or +14%
-(`validation/k1/`). Always match the size range when comparing with field data (Section 8).
+**Field comparison (one site).** At the K1 site (two photos, 0.39 mm/px, field count of 251
+b-axes, smallest 13 mm, field D50 27.0 mm), the app as shipped (default settings) gives:
+
+| | Cellpose-SAM | U-Net |
+|---|---|---|
+| D50, all detected grains | 19.0 mm (−30%) | 26.4 mm (−2%) |
+| D50, field-count cutoff 13 mm | 27.7 mm (+3%) | 28.0 mm (+4%) |
+| D84, field-count cutoff 13 mm | 45.3 mm (−6%) | 47.0 mm (−3%) |
+
+With the field count's size range applied to the photos, both models agree with the field count
+within a few percent. Without it, the photo D50 depends on how many small grains the model finds:
+Cellpose-SAM counts about 3.5 times as many grains as U-Net here, so its D50 is much finer. U-Net's
+close match without a cutoff is therefore not a sign of accuracy: it misses most grains below
+about 10 mm. Caveats: one site and two photos, both of which overlap the ImageGrains training
+data, so this is a consistency check, not an independent validation; the 13 mm cutoff is the
+smallest clast in the field data, not a documented protocol (with 10 or 16 mm the D50 difference
+is −10% or +10% for Cellpose-SAM). Reproduce with `node validation/k1/run_app_k1.mjs`
+(`validation/k1/k1_app_results.md`). Always match the size range when comparing with field data
+(Section 8).
 
 **Independent checks of the calculations.** Percentiles, Folk & Ward, ellipse axes and
 orientation, Feret widths, tiling and rectification are checked automatically against
