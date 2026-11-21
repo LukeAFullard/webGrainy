@@ -677,6 +677,7 @@ function renderAll(state: AppState): void {
     prev.siteOptions.poolingMode !== state.siteOptions.poolingMode ||
     prev.retentionDays !== state.retentionDays ||
     prev.retentionNotice !== state.retentionNotice ||
+    prev.retentionHeld !== state.retentionHeld ||
     prev.storageFullNotice !== state.storageFullNotice
   ) {
     renderSidebar(state);

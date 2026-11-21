@@ -142,6 +142,14 @@ export const sidebarActions: Record<string, ActionHandler> = {
     });
   },
   'dismiss-retention-notice': (_el, ctx) => ctx.store.setState({ retentionNotice: null }),
+  'remove-held-site': (el, ctx) => {
+    const st = ctx.store.getState();
+    const siteId = el.dataset['siteId'];
+    const site = st.sites.find((s) => s.siteId === siteId);
+    if (!site || st.batchRunning) return;
+    if (!ctx.ui.confirm(`Remove "${site.name}" from this browser? Its photos, scales, regions and outline edits were never downloaded (or changed since the last download), and this cannot be undone.`)) return;
+    void ctx.actions.removeHeldSite(site.siteId);
+  },
   'dismiss-storage-full': (_el, ctx) => ctx.store.setState({ storageFullNotice: null }),
   'free-space': (_el, ctx) => {
     const st = ctx.store.getState();

@@ -6,7 +6,7 @@
 import { sanitizeSiteOptions } from '../modules/siteOptions.js';
 import type { CalibrationResult, Point2D, StorageQuotaInfo } from '../types/index.js';
 import { siteRetention } from '../modules/retention.js';
-import { forgetSite, formatAgo, markSiteUsed, readBackupRecords } from './backup.js';
+import { backupStatus, forgetSite, formatAgo, markSiteUsed, readBackupRecords } from './backup.js';
 import { holdSiteLock, ifSiteNotOpen } from './siteLocks.js';
 import { readRetentionSince } from './prefs.js';
 import { AnalysisSession } from '../modules/analysisSession.js';
@@ -259,6 +259,11 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
    * Removes sites not used for the chosen number of days (photos and results), except sites
    * open in any tab, and says what was removed. Runs at start-up (before a site is opened)
    * and periodically. Returns the removed site ids.
+   *
+   * Only sites with nothing to lose are removed automatically: no photos, or results downloaded
+   * after the last change. Expired sites with work that was never downloaded (or changed since
+   * the last download) are kept and listed in `retentionHeld`, so the user decides: download,
+   * keep longer (opening the site restarts its clock) or remove.
    */
   async function purgeExpiredSites(now = Date.now()): Promise<string[]> {
     const st = store.getState();
@@ -266,11 +271,24 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
     const sites = await storage.listSites();
     const info = readBackupRecords();
     const { due } = siteRetention(sites, info, st.retentionDays, now, (deps.retentionSince ?? readRetentionSince)());
-    return removeSites(
-      due.map((d) => d.site),
-      `Removed from this browser after ${st.retentionDays} days without use`,
-      now,
-    );
+    const safe: SiteRecord[] = [];
+    const held: string[] = [];
+    for (const { site } of due) {
+      const hasPhotos = site.photoOrder.length > 0 || (await storage.listSitePhotos(site.siteId)).length > 0;
+      if (backupStatus(info[site.siteId], hasPhotos, now).needsBackup) held.push(site.siteId);
+      else safe.push(site);
+    }
+    const prevHeld = store.getState().retentionHeld;
+    if (held.length !== prevHeld.length || held.some((id, i) => id !== prevHeld[i])) store.setState({ retentionHeld: held });
+    return removeSites(safe, `Removed from this browser after ${st.retentionDays} days without use`, now);
+  }
+
+  /** Removes one expired site the user chose to remove (see `retentionHeld`). */
+  async function removeHeldSite(siteId: string, now = Date.now()): Promise<boolean> {
+    const site = (await storage.listSites()).find((s) => s.siteId === siteId);
+    store.setState({ retentionHeld: store.getState().retentionHeld.filter((id) => id !== siteId) });
+    if (!site) return false;
+    return (await removeSites([site], 'Removed from this browser', now)).includes(siteId);
   }
 
   /**
@@ -301,6 +319,9 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
     // Opening a site restarts its storage clock and marks it open in this tab.
     markSiteUsed(siteId);
     holdSiteLock(siteId);
+    if (store.getState().retentionHeld.includes(siteId)) {
+      store.setState({ retentionHeld: store.getState().retentionHeld.filter((id) => id !== siteId) });
+    }
     const state = store.getState();
     // Revoke the previous thumbnails only after the new ones are in state: revoking them
     // up front left <img> elements pointing at dead blob: URLs if anything re-rendered the
@@ -1102,6 +1123,7 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
     loadSiteData,
     refreshFromStorage,
     purgeExpiredSites,
+    removeHeldSite,
     removeSites,
     reportSaveFailure,
     createDefaultOrLoadSites,
