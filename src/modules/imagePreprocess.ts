@@ -561,6 +561,9 @@ export function resizeRgbaBilinear(
  * factor (every result is converted back to original-photo pixels with it). Tested in
  * validation/preprocessing: helps U-Net on fine gravel (working median b-axis < 20 px).
  */
+/** Largest fine-grain enlargement accepted (the app offers 1.5); larger factors exhaust memory. */
+export const MAX_FINE_GRAIN_UPSCALE = 2;
+
 export function upscaleWorkingImage(wi: WorkingImageResult, factor: number): WorkingImageResult {
   if (!(factor > 1) || !Number.isFinite(factor)) return wi;
   const newWidth = Math.max(1, Math.round(wi.width * factor));

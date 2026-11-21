@@ -4,6 +4,16 @@
  */
 import type { SerializedAnalysisSession } from '../types/index.js';
 import { clampRecordTime, sanitizeSiteOptions } from './siteOptions.js';
+import {
+  sanitizeCalibration,
+  sanitizePhotoAnalysisConfig,
+  sanitizePhotoMetadata,
+  sanitizeProvenance,
+  sanitizeRecommendation,
+  sanitizeRoi,
+  workingScaleFromSizes,
+} from './archiveSanitize.js';
+import { modelKindOf } from './modelCache.js';
 import { placeName } from './sitePlaces.js';
 import { isIsoDate } from './surveyDate.js';
 import {
@@ -103,24 +113,35 @@ function deserializeSessionFromArchive(
   const imgBytes = bytes?.image ?? base64ToUint8(archived.workingImage.dataBase64 ?? '');
   const workingImageData = new Uint8ClampedArray(imgBytes);
 
-  const { dataBase64: _ignored, dataRef: _ignoredRef, ...restImg } = archived.workingImage;
+  // Only the known working-image fields, with the working scale taken from the image sizes
+  // (a stored scale that disagrees would rescale every measurement).
+  const wi = archived.workingImage;
+  const scale = workingScaleFromSizes(wi);
+  if (scale === null) {
+    throw new ArchiveValidationError('analysis image sizes are inconsistent (working and photo sizes do not match).');
+  }
+  const provenance = sanitizeProvenance(archived.provenance, scale);
+  const calibration = sanitizeCalibration(archived.calibration);
 
   return {
     version: archived.version,
     workingMasks,
     workingImage: {
-      ...restImg,
       data: workingImageData,
+      width: wi.width,
+      height: wi.height,
+      originalWidth: wi.originalWidth,
+      originalHeight: wi.originalHeight,
+      effectiveScaleFactor: scale,
+      scaleModeApplied: scale === 1 ? '1.0x' : scale === 0.5 ? '0.5x' : '0.25x',
     },
-    recommendation: archived.recommendation,
-    ...(archived.calibration !== undefined
-      ? { calibration: archived.calibration }
-      : {}),
+    recommendation: sanitizeRecommendation(archived.recommendation, provenance !== undefined ? modelKindOf(provenance.modelId) : 'unet'),
+    ...(calibration !== undefined ? { calibration } : {}),
     excludeBorder: archived.excludeBorder,
     borderMargin: archived.borderMargin,
-    ...(archived.provenance !== undefined ? { provenance: archived.provenance } : {}),
+    ...(provenance !== undefined ? { provenance } : {}),
     ...(typeof archived.manualEdits === 'number' && Number.isFinite(archived.manualEdits) && archived.manualEdits >= 0
-      ? { manualEdits: Math.floor(archived.manualEdits) }
+      ? { manualEdits: Math.min(1e9, Math.floor(archived.manualEdits)) }
       : {}),
   };
 }
@@ -464,6 +485,8 @@ export async function importProjectArchive(
   }
 
   // ---- Phase 1: validate + decode everything in memory --------------------------
+  // Record times from outside the app are kept within [0, now] (a future date pins a site first).
+  const importNow = Date.now();
   const decodedPhotos: PhotoRecord[] = [];
   const photoIds = new Set<string>();
   for (const [i, ap] of arch.photos.entries()) {
@@ -484,7 +507,7 @@ export async function importProjectArchive(
     }
     validateCalibration(ap.calibration, ctx);
     validateRoi(ap.roiConfig, ctx);
-    const { imageBase64: _b64, imageRef, imageMimeType, originalBackup: archivedBackup, ...restPhoto } = ap;
+    const { imageRef, imageMimeType, originalBackup: archivedBackup } = ap;
     const imageBlob =
       payload !== null
         ? refSlice(imageRef, ctx, archiveMime(imageMimeType))
@@ -500,18 +523,41 @@ export async function importProjectArchive(
       }
       validateCalibration(archivedBackup.calibration, bctx);
       validateRoi(archivedBackup.roiConfig, bctx);
-      const { imageBase64: backupB64, imageRef: backupRef, imageMimeType: backupMime, ...restBackup } = archivedBackup;
+      const { imageBase64: backupB64, imageRef: backupRef, imageMimeType: backupMime } = archivedBackup;
+      const backupCal = sanitizeCalibration(archivedBackup.calibration);
+      const backupRoi = sanitizeRoi(archivedBackup.roiConfig);
+      const backupMeta = sanitizePhotoMetadata(archivedBackup.metadata);
       originalBackup = {
-        ...restBackup,
+        width: archivedBackup.width,
+        height: archivedBackup.height,
+        ...(backupCal !== undefined ? { calibration: backupCal } : {}),
+        ...(backupRoi !== undefined ? { roiConfig: backupRoi } : {}),
+        ...(backupMeta !== undefined ? { metadata: backupMeta } : {}),
         imageBlob:
           payload !== null
             ? refSlice(backupRef, bctx, archiveMime(backupMime))
             : new Blob([base64ToUint8(backupB64!).slice().buffer], { type: archiveMime(backupMime) }),
       };
     }
+    // Only the fields the app writes, each checked: imported text must never reach the page as
+    // markup, and hidden settings must not change later analyses or statistics.
+    const calibration = sanitizeCalibration(ap.calibration);
+    const roiConfig = sanitizeRoi(ap.roiConfig);
+    const analysisConfig = sanitizePhotoAnalysisConfig(ap.analysisConfig);
+    const metadata = sanitizePhotoMetadata(ap.metadata);
     decodedPhotos.push({
-      ...restPhoto,
+      photoId: ap.photoId,
+      siteId: arch.site.siteId,
+      label: ap.label,
+      width: ap.width,
+      height: ap.height,
+      addedAt: clampRecordTime(ap.addedAt, importNow),
       included: ap.included !== false,
+      ...(ap.faciesWeight !== undefined ? { faciesWeight: Math.min(ap.faciesWeight, 1e6) } : {}),
+      ...(calibration !== undefined ? { calibration } : {}),
+      ...(roiConfig !== undefined ? { roiConfig } : {}),
+      ...(analysisConfig !== undefined ? { analysisConfig } : {}),
+      ...(metadata !== undefined ? { metadata } : {}),
       imageBlob,
       ...(originalBackup !== undefined ? { originalBackup } : {}),
     });
@@ -526,7 +572,7 @@ export async function importProjectArchive(
     if (!['pending', 'running', 'done', 'error'].includes(ar.status as string)) {
       throw new ArchiveValidationError(`${ctx}.status is invalid.`);
     }
-    const { serializedSession, ...restRes } = ar;
+    const { serializedSession } = ar;
     let bytes: { masks: Uint8Array; image: Uint8Array } | undefined;
     if (payload !== null && serializedSession !== undefined) {
       const ss = serializedSession as unknown as Record<string, unknown>;
@@ -538,8 +584,12 @@ export async function importProjectArchive(
         image: wi['dataRef'] !== undefined ? new Uint8Array(await refSlice(wi['dataRef'], `${ctx}.dataRef`).arrayBuffer()) : new Uint8Array(0),
       };
     }
+    const errorMessage = typeof ar.errorMessage === 'string' ? ar.errorMessage.slice(0, 2000) : undefined;
     decodedResults.push({
-      ...restRes,
+      photoId: ar.photoId,
+      status: ar.status,
+      updatedAt: clampRecordTime(ar.updatedAt, importNow),
+      ...(errorMessage !== undefined ? { errorMessage } : {}),
       ...(serializedSession !== undefined
         ? { serializedSession: validateArchivedSession(serializedSession, ctx, bytes) }
         : {}),
@@ -549,9 +599,12 @@ export async function importProjectArchive(
   // ---- Phase 2: resolve id collisions (never overwrite existing data) -----------
   // Untrusted settings and dates: only values the app can set (an unbounded bootstrap count froze
   // the page on every start-up), and no record times in the future (they pin the site first).
-  const importNow = Date.now();
   let site: SiteRecord = {
-    ...arch.site,
+    siteId: arch.site.siteId,
+    name: arch.site.name.slice(0, 1024),
+    photoOrder: arch.site.photoOrder.filter((id): id is string => isId(id)),
+    ...(typeof arch.site.place === 'string' ? { place: arch.site.place } : {}),
+    ...(typeof arch.site.surveyDate === 'string' ? { surveyDate: arch.site.surveyDate } : {}),
     options: sanitizeSiteOptions(arch.site.options),
     createdAt: clampRecordTime(arch.site.createdAt, importNow),
     updatedAt: clampRecordTime(arch.site.updatedAt, importNow),
