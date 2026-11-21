@@ -4,7 +4,6 @@
  * in-memory storage and no-op UI hooks. `main.ts` owns the DOM and calls these.
  */
 import { sanitizeSiteOptions } from '../modules/siteOptions.js';
-import { rectificationCalibration } from '../modules/roiAndRectify.js';
 import type { CalibrationResult, Point2D, StorageQuotaInfo } from '../types/index.js';
 import { siteRetention } from '../modules/retention.js';
 import { forgetSite, formatAgo, markSiteUsed, readBackupRecords } from './backup.js';
@@ -1142,52 +1141,3 @@ export const SITE_PHOTO_SOFT_LIMIT = 100;
 /** Shown when a newer version took over this page from another tab. */
 export const STALE_BUILD_MESSAGE =
   'A newer version of webGrainy was installed in another tab. Reload this page before analysing (your data is kept).';
-
-export async function rectifyWithCanvas(
-  image: Blob,
-  corners: [Point2D, Point2D, Point2D, Point2D],
-  physWidthMm: number,
-  physHeightMm: number,
-  rectifyPerspective: typeof import('../modules/roiAndRectify.js').rectifyPerspective,
-): Promise<{ blob: Blob; width: number; height: number; calibration: CalibrationResult } | null> {
-  const bmp = await createImageBitmap(image);
-  const off = document.createElement('canvas');
-  off.width = bmp.width;
-  off.height = bmp.height;
-  const ctx = off.getContext('2d');
-  if (!ctx) {
-    bmp.close();
-    return null;
-  }
-  ctx.drawImage(bmp, 0, 0);
-  const imgData = ctx.getImageData(0, 0, bmp.width, bmp.height);
-  bmp.close();
-
-  const rectified = rectifyPerspective(
-    { data: imgData.data, width: imgData.width, height: imgData.height },
-    {
-      srcCorners: corners,
-      physicalWidthMm: physWidthMm,
-      physicalHeightMm: physHeightMm,
-      paddingPx: 40,
-      maxOutputDimPx: 2048,
-    },
-  );
-
-  const outCanvas = document.createElement('canvas');
-  outCanvas.width = rectified.width;
-  outCanvas.height = rectified.height;
-  const outCtx = outCanvas.getContext('2d');
-  if (!outCtx) return null;
-  outCtx.putImageData(new ImageData(new Uint8ClampedArray(rectified.data), rectified.width, rectified.height), 0, 0);
-
-  const blob = await new Promise<Blob>((resolve, reject) => {
-    outCanvas.toBlob(
-      (b) => (b ? resolve(b) : reject(new Error('Failed to encode rectified PNG'))),
-      'image/png',
-    );
-  });
-
-  const calibration = rectificationCalibration(rectified, physWidthMm);
-  return { blob, width: rectified.width, height: rectified.height, calibration };
-}

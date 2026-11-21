@@ -7,6 +7,7 @@
  *   `minBaxisPx`) into the physical minimum resolvable grain diameter in mm or px.
  */
 import type { PsdPercentiles } from '../types/index.js';
+import { detectionLimitPx } from './grainSize.js';
 import type { SitePhotoMetadata } from './siteTypes.js';
 
 /** Conservative Laplacian-variance floor below which a gravel photo is likely out-of-focus or motion-blurred. */
@@ -136,11 +137,7 @@ export function computeEffectiveDetectionLimit(
   if (!Number.isFinite(minArea) || minArea <= 0 || !Number.isFinite(scale) || scale <= 0) {
     return null;
   }
-  const dEqOriginalPx = (2 * Math.sqrt(minArea / Math.PI)) / scale;
-  const minPx =
-    typeof input.minBaxisPx === 'number' && Number.isFinite(input.minBaxisPx) && input.minBaxisPx > 0
-      ? Math.max(dEqOriginalPx, input.minBaxisPx)
-      : dEqOriginalPx;
+  const minPx = detectionLimitPx(minArea, scale, input.minBaxisPx ?? 0);
 
   const hasScale = typeof input.mmPerPx === 'number' && Number.isFinite(input.mmPerPx) && input.mmPerPx > 0;
   const value = hasScale ? minPx * input.mmPerPx! : minPx;

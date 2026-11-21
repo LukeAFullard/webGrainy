@@ -15,6 +15,7 @@ import { assessSampleAdequacy, buildPerPhotoBreakdown } from './siteAdequacy.js'
 import { validateSiteCalibration, withExclusionTolerance } from './siteCalibration.js';
 import { withinSiteSettingDifferences } from './siteProvenance.js';
 import { setStatsWeights } from './siteStatsWeights.js';
+import { detectionLimitPx } from './grainSize.js';
 import { DEFAULT_SITE_OPTIONS } from './siteOptions.js';
 export { grainStatsWeight } from './siteStatsWeights.js';
 import { aspectRatioCounts } from './histograms.js';
@@ -59,12 +60,7 @@ function duplicatePhotoLabels(photos: readonly PreparedPhoto[]): string[][] {
  */
 export function photoDetectionLimitPx(session: AnalysisSession, minBaxisPx: number): number {
   const minSize = session.getProvenance()?.postProcess?.['minSize'] ?? DEFAULT_POSTPROCESS_OPTIONS.minSize;
-  const s = session.workingImage.effectiveScaleFactor;
-  const floorPx =
-    Number.isFinite(minSize) && minSize > 0 && Number.isFinite(s) && s > 0
-      ? (2 * Math.sqrt(minSize / Math.PI)) / s
-      : 0;
-  return Math.max(Math.max(0, minBaxisPx), floorPx);
+  return detectionLimitPx(minSize, session.workingImage.effectiveScaleFactor, minBaxisPx);
 }
 
 /**

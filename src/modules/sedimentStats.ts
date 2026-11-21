@@ -369,6 +369,7 @@ export function computeSedimentStats(
 
 /**
  * Exports per-grain morphometrics as a CSV Blob.
+ * @deprecated No provenance metadata. Use AnalysisSession.exportCsv (provenance, included_in_stats, shape columns).
  */
 export function exportGrainsCsv(grains: readonly GrainMorphometrics[]): Blob {
   const hasFeret = grains.some((g) => g.minFeretPx !== undefined);
@@ -408,6 +409,7 @@ export function exportGrainsCsv(grains: readonly GrainMorphometrics[]): Blob {
 
 /**
  * Exports the `SedimentStatsReport` as a JSON Blob.
+ * @deprecated No provenance metadata. Use AnalysisSession.exportSummaryJson (with provenance metadata).
  */
 export function exportSummaryJson(report: SedimentStatsReport): Blob {
   return new Blob([JSON.stringify(report, null, 2)], {
@@ -471,7 +473,8 @@ export function summaryCsvRows(report: SedimentStatsReport): string[] {
   return lines;
 }
 
-/** Exports the `SedimentStatsReport` as a structured summary CSV Blob. */
+/** Exports the `SedimentStatsReport` as a structured summary CSV Blob.  * @deprecated No provenance metadata. Use AnalysisSession.exportSummaryCsv (with provenance metadata).
+ */
 export function exportSummaryCsv(report: SedimentStatsReport): Blob {
   const lines = ['section,metric,value,unit', ...summaryCsvRows(report)];
   return new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });

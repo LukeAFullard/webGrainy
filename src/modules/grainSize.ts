@@ -19,3 +19,17 @@ export function grainSizeIn(grain: GrainMorphometrics, metric: SizeMetric, unit:
   if (typeof b === 'number' && Number.isFinite(b) && grain.bAxisPx > 0) return px * (b / grain.bAxisPx);
   return Number.NaN;
 }
+
+/**
+ * Smallest grain size (original-photo px) an analysis can resolve: the equal-area diameter of
+ * the segmentation area floor (`minSizeWorkingPx`, working-image px) converted to the photo with
+ * the working scale, or `minBaxisPx` if larger. The one formula behind the detection limit shown
+ * in the app and the common size cutoff of a site.
+ */
+export function detectionLimitPx(minSizeWorkingPx: number, effectiveScaleFactor: number, minBaxisPx = 0): number {
+  const floorPx =
+    Number.isFinite(minSizeWorkingPx) && minSizeWorkingPx > 0 && Number.isFinite(effectiveScaleFactor) && effectiveScaleFactor > 0
+      ? (2 * Math.sqrt(minSizeWorkingPx / Math.PI)) / effectiveScaleFactor
+      : 0;
+  return Math.max(Number.isFinite(minBaxisPx) && minBaxisPx > 0 ? minBaxisPx : 0, floorPx);
+}

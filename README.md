@@ -41,7 +41,16 @@ How every step works (models, outlines, measurements, statistics, uncertainty, c
 
 ## Accuracy
 
-Measured on the held-out test split of the ImageGrains 2.0 data (`IG2_data.zip`, 40 images from 13 sites) against hand-digitised grain outlines, using webGrainy's own engine and the upstream PyTorch ImageGrains for reference. Errors are absolute percentage errors of the per-image percentile (b-axis, in pixels); PQ is panoptic quality of the outlines.
+Measured on the held-out test split of the ImageGrains 2.0 data (`IG2_data.zip`, 40 images from 13 sites) against hand-digitised grain outlines. Errors are absolute percentage errors of each image's area-weighted b-axis percentile (in pixels); PQ is panoptic quality of the outlines.
+
+**The app as shipped** (default settings, the numbers the app reports: log2 interpolation, interior grains, grains under 15 px left out of both prediction and hand outlines; [`validation/heldout/heldout_app_results.md`](validation/heldout/heldout_app_results.md)):
+
+| Model | D50 error: mean [95% CI] | D50 error: median [95% CI] | D16 / D84 median error | D50 error > 50% | PQ vs hand outlines |
+| :--- | :--- | :--- | :--- | ---: | ---: |
+| U-Net | 16.1% [10.3, 23.0] | 5.7% [3.4, 16.6] | 8.4% / 2.9% | 10% of images | 0.535 |
+| Cellpose-SAM | re-run in progress | | | | |
+
+**Earlier benchmark with the upstream PyTorch ImageGrains for reference** (linear interpolation, no size cutoff, so not directly comparable with the table above):
 
 | Model | Engine | D50 error: mean [95% CI] | D50 error: median [95% CI] | D16 / D84 median error | PQ vs hand outlines |
 | :--- | :--- | :--- | :--- | :--- | ---: |
@@ -54,7 +63,7 @@ Measured on the held-out test split of the ImageGrains 2.0 data (`IG2_data.zip`,
 - **Tails are long.** For example, 5% of Cellpose-SAM images and 17.5% of U-Net images have D50 errors above 50%. Check the outlines.
 - **Quantized weights.** INT8 and FP4 Cellpose-SAM give the same benchmark accuracy as FP16 (outline agreement with FP16: PQ 0.994 and 0.966).
 - **Field comparison (one site).** At the K1 site, with the field count's 13 mm minimum applied to the photos, the app's D50 agrees with a 251-stone pebble count within 3–4% and D84 within 3–6% (both models). Without that cutoff, Cellpose-SAM's D50 is 30% finer, because the photos include the many grains below 13 mm the count skipped (U-Net's 2% match without a cutoff only reflects that it misses small grains). This is a consistency check, not an independent validation: both photos overlap the ImageGrains training data. To compare with a field count, set **Field-count cutoff (mm)** to its minimum size. Details: [`validation/k1/k1_app_results.md`](validation/k1/k1_app_results.md).
-- **Re-run before release.** The figures above will be re-run on the release build. They were computed with linear interpolation between grain sizes and no minimum size; the notebook now uses the app's own rule (interpolation in log2 size, grains under 15 px left out of both the prediction and the hand outlines), so the re-run measures exactly the numbers the app reports and the figures may shift slightly. The data, scripts and notebooks to reproduce them are in [`validation/`](validation/).
+- **Reproduce.** `node validation/heldout/run_app_heldout.mjs unet` (or `cpsam`) and `validation/heldout/score_app_heldout.py`; the data are fetched from Zenodo by `validation/parity/fetch_ig2_files.py`.
 
 ## Limitations
 
