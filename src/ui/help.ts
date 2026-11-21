@@ -203,7 +203,7 @@ export const HELP_TOPICS = {
     group: 'Site statistics',
     what: 'Which grain size is used. "b-axis" is the short axis of an ellipse fitted to the outline (standard for photo-sieving). "min-Feret" is the narrowest caliper width of the outline (closest to a hand-measured b-axis). "d_eq" is the diameter of a circle with the same area.',
     default: 'b-axis (ellipse minor)',
-    when: 'Keep b-axis for comparison with published photo-sieving. Use min-Feret when comparing with caliper measurements (typically 3–4% larger than b-axis). Always report which one you used.',
+    when: 'Keep b-axis for comparison with published photo-sieving. Use min-Feret when comparing with caliper measurements (its D50 was about 3% larger than the b-axis D50 on the held-out test photos; middle half of photos 0–5%). Always report which one you used.',
   },
   harmonizePhysicalCutoff: {
     title: 'Harmonize cutoff',

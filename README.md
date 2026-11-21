@@ -47,8 +47,8 @@ Measured on the held-out test split of the ImageGrains 2.0 data (`IG2_data.zip`,
 
 | Model | D50 error: mean [95% CI] | D50 error: median [95% CI] | D16 / D84 median error | D50 error > 50% | PQ vs hand outlines |
 | :--- | :--- | :--- | :--- | ---: | ---: |
-| U-Net | 16.1% [8.0, 25.7] | 5.7% [2.8, 20.9] | 8.4% / 2.9% | 10% of images | 0.535 |
-| Cellpose-SAM (INT8) | 9.0% [3.8, 14.9] | 2.9% [1.9, 5.3] | 5.1% / 1.1% | 5% of images | 0.651 |
+| U-Net | 15.6% [7.3, 25.1] | 5.7% [2.8, 19.3] | 8.4% / 2.4% | 10% of images | 0.540 |
+| Cellpose-SAM (INT8) | 8.9% [3.7, 14.9] | 2.9% [1.9, 5.3] | 5.1% / 1.1% | 5% of images | 0.654 |
 
 **Earlier benchmark with the upstream PyTorch ImageGrains for reference** (linear interpolation, no size cutoff, intervals resampling images rather than sites, so not directly comparable with the table above):
 

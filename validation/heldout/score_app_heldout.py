@@ -179,8 +179,10 @@ def main() -> None:
         gts = {k: [] for k in ("D16", "D50", "D84")}
         prs = {k: [] for k in ("D16", "D50", "D84")}
         pqs = []
+        versions = set()
         for r in rows:
             app = json.load(open(d / f"{r['uid']}.json"))
+            versions.add(app["appVersion"])
             hw = (app["height"], app["width"])
             pred = np.fromfile(d / f"{r['uid']}.i32", dtype=np.int32).reshape(hw)
             gt_mask = load_gt_mask(str(ROOT / ".cache/ig2" / r["mask_relpath"].replace("/", "__")), hw)
@@ -193,7 +195,8 @@ def main() -> None:
                               **{f"gt_{k}": gt[k] for k in gts}, **{f"app_{k}": app[k] for k in gts}, "pq": pq})
         sites = np.array([r["site"] for r in rows])
         s = {k: summarize(np.array(gts[k], float), np.array(prs[k], float), sites) for k in gts}
-        table.append((model, s, float(np.mean(pqs)), app["appVersion"]))
+        # Images re-run only when the analysis changed for them can come from different versions.
+        table.append((model, s, float(np.mean(pqs)), " / ".join(sorted(versions))))
     if not table:
         return
     # Keep the committed rows of models not scored in this run (scoring only `unet` must not drop
@@ -231,7 +234,11 @@ def write_summary(table: list[tuple]) -> None:
         lines.append(f"| {name[model]} | {d50['n']} | {d50['mean']:.1f}% [{d50['mean_ci'][0]:.1f}, {d50['mean_ci'][1]:.1f}] | "
                      f"{d50['median']:.1f}% [{d50['median_ci'][0]:.1f}, {d50['median_ci'][1]:.1f}] | "
                      f"{s['D16']['median']:.1f}% / {s['D84']['median']:.1f}% | {d50['gt50']:.1f}% | {d50['bias_median']:+.1f}% | {pq:.3f} |")
-    lines += ["", "n < 40 where an image has no grain of at least 15 px in the prediction or the hand outlines.", ""]
+    lines += ["", "n < 40 where an image has no grain of at least 15 px in the prediction or the hand outlines."]
+    if " / " in table[0][3]:
+        lines += ["Several versions: an image is re-run only when a version changes its analysis (e.g. 0.1.0's Auto",
+                  "image scale changed the 2 images over 1,024 px); the other images give identical results."]
+    lines += [""]
     (ROOT / "validation/heldout/heldout_app_results.md").write_text("\n".join(lines))
     print("\n".join(lines))
 

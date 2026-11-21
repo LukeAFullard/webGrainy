@@ -362,7 +362,7 @@ especially when several photos are combined into one site result.
 | Option | What it measures | Notes |
 |---|---|---|
 | **b-axis (ellipse minor)** *(default)* | The short axis of an ellipse fitted to the grain outline. | Standard for photo-sieving and comparable with other image tools. It is **not** exactly what a caliper measures: it can differ by about ±15% depending on shape. |
-| **min-Feret (caliper width)** | The narrowest width of the outline, like closing calipers on the stone from above. | Closest to a hand-measured b-axis. On the test set, D50 was typically 3–4% larger than the ellipse b-axis. |
+| **min-Feret (caliper width)** | The narrowest width of the outline, like closing calipers on the stone from above. | Closest to a hand-measured b-axis. On the held-out test photos, its D50 was about 3% larger than the ellipse b-axis D50 (middle half of photos 0–5%; `validation/heldout/feret_ratio_results.md`). |
 | **d_eq (equal-area circle)** | The diameter of a circle with the same area as the grain. | Useful for area-based comparisons. Typically about 23% larger than the b-axis. |
 
 **When to change it:** keep **b-axis** for consistency with published photo-sieving work.
