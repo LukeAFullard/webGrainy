@@ -48,7 +48,7 @@ const fmt = (v: number, digits = 2): string => (Number.isFinite(v) ? v.toFixed(d
 
 /** A number cell tied to its row in the site summary CSV. */
 function num(v: number, csv: string, digits = 2): string {
-  return `<span data-csv="${esc(csv)}" data-value="${String(v)}">${fmt(v, digits)}</span>`;
+  return `<span data-csv="${esc(csv)}" data-value="${Number.isFinite(v) ? String(v) : ''}">${fmt(v, digits)}</span>`;
 }
 
 function svgDataUrl(svg: string): string {

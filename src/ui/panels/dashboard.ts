@@ -176,7 +176,7 @@ export function renderDashboardHtml(state: AppState, view: DashboardView): strin
           ? `<div class="stat-grid" style="margin-top:8px;">
               <div class="stat-card"><div class="stat-label">Folk &amp; Ward Mean</div><div class="stat-value">${fw.meanMm.toFixed(1)} mm</div><div class="stat-sub">${fw.meanPhi.toFixed(2)} φ</div></div>
               <div class="stat-card"><div class="stat-label">Sorting (σ_I)</div><div class="stat-value">${fw.sortingPhi.toFixed(2)} φ</div><div class="stat-sub">${esc(fw.sortingLabel)}</div></div>
-              <div class="stat-card"><div class="stat-label">Skew / Kurt</div><div class="stat-value">${fw.skewnessPhi.toFixed(2)}</div><div class="stat-sub">${esc(fw.skewnessLabel)} · K=${fw.kurtosisPhi.toFixed(2)}</div></div>
+              <div class="stat-card"><div class="stat-label">Skew / Kurt</div><div class="stat-value">${Number.isFinite(fw.skewnessPhi) ? fw.skewnessPhi.toFixed(2) : '—'}</div><div class="stat-sub">${esc(fw.skewnessLabel)} · K=${Number.isFinite(fw.kurtosisPhi) ? fw.kurtosisPhi.toFixed(2) : '—'} (${esc(fw.kurtosisLabel)})</div></div>
             </div>`
           : ''
       }

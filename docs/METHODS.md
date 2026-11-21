@@ -120,9 +120,10 @@ be slow, so each photo is resized to a **working image** before analysis. With t
 | Longest side of the photo | Working image |
 |---|---|
 | up to 1,024 px | unchanged |
-| 1,025 – 2,048 px | half size |
-| 2,049 – 4,096 px | quarter size |
-| over 4,096 px | longest side 1,024 px |
+| over 1,024 px | longest side 1,024 px |
+
+(Before v0.1.0, photos of 1,025–4,096 px were shrunk to half or quarter size, so a 2,100 px
+photo got a 525 px working image but a 2,048 px photo 1,024 px.)
 
 Shrinking averages all the photo pixels that fall in each working pixel (like a
 lower-resolution camera). Outlines found in the working image are converted back to original

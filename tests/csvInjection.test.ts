@@ -103,6 +103,20 @@ describe('csvCell: spaces before a formula character (LibreOffice "Trim spaces" 
     // Plain numbers (also with spaces) and ordinary text stay as they are.
     expect(csvCell(' -5')).toBe(' -5');
     expect(csvCell('-1.5e3')).toBe('-1.5e3');
-    expect(csvCell('name -2+3')).toBe('name -2+3');
+  });
+
+  it('guards pipe- and space-separated imports too (audit N10), keeping ordinary text', async () => {
+    const { csvCell, escapeCommentText } = await import('../src/modules/provenance.js');
+    // A spreadsheet told to split on spaces would make "-2+3" its own cell, a formula.
+    expect(csvCell('name -2+3')).toBe("name '-2+3");
+    expect(csvCell('a =1+1')).toBe("a '=1+1");
+    expect(csvCell('a|=1+1')).toBe("a|'=1+1");
+    expect(csvCell('x +A1')).toBe("x '+A1");
+    // Ordinary text and numbers stay as they are.
+    expect(csvCell('IMG 1 - copy')).toBe('IMG 1 - copy');
+    expect(csvCell('R3: 2024-05-01 -> 2025-05-01')).toBe('R3: 2024-05-01 -> 2025-05-01');
+    expect(csvCell('depth -5 m')).toBe('depth -5 m');
+    // Comment lines: pipe escaped, formula words guarded.
+    expect(escapeCommentText('label: a|b =1+1')).toBe("label: a%7Cb '=1+1");
   });
 });

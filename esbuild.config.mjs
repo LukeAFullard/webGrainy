@@ -21,11 +21,27 @@ function gitCommit() {
     return 'unknown';
   }
 }
+// Reproducible builds: the build date is SOURCE_DATE_EPOCH if set, else the commit's date, so the
+// same commit always gives the same dist/ (and service-worker hash). A modified working tree uses
+// the current time, so its BUILD_ID still differs from the commit's.
+function buildDate(commit) {
+  if (process.env.SOURCE_DATE_EPOCH) return new Date(Number(process.env.SOURCE_DATE_EPOCH) * 1000).toISOString();
+  if (commit !== 'unknown' && !commit.endsWith('-modified')) {
+    try {
+      const t = execSync('git log -1 --format=%ct HEAD', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+      if (/^\d+$/.test(t)) return new Date(Number(t) * 1000).toISOString();
+    } catch {
+      /* not a git checkout */
+    }
+  }
+  return new Date().toISOString();
+}
+const commit = gitCommit();
 const define = {
   __APP_VERSION__: JSON.stringify(pkg.version),
   __ORT_VERSION__: JSON.stringify(ortPkg.version),
-  __BUILD_COMMIT__: JSON.stringify(gitCommit()),
-  __BUILD_DATE__: JSON.stringify(new Date().toISOString()),
+  __BUILD_COMMIT__: JSON.stringify(commit),
+  __BUILD_DATE__: JSON.stringify(buildDate(commit)),
 };
 console.log(`[build] webGrainy ${pkg.version} (commit ${define.__BUILD_COMMIT__})`);
 // The default `onnxruntime-web` entry (ort.all / JSEP) loads exactly these two runtime

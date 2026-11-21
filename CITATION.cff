@@ -24,9 +24,36 @@ references:
   - type: article
     title: "ImageGrains 2.0: Improved precision and generalization for grain segmentation"
     authors:
-      - family-names: Mair
-        given-names: David
-      - name: "et al."
+      - family-names: "Mair"
+        given-names: "David"
+      - family-names: "Witz"
+        given-names: "Guillaume"
+      - family-names: "do Prado"
+        given-names: "Ariel"
+      - family-names: "Garefalakis"
+        given-names: "Philippos"
+      - family-names: "Wild"
+        given-names: "Amanda Lily"
+      - family-names: "Ville"
+        given-names: "Fanny"
+      - family-names: "Schuster"
+        given-names: "Bennet"
+      - family-names: "Horn"
+        given-names: "Michael"
+      - family-names: "Österle"
+        given-names: "Jürgen"
+      - family-names: "Fabbri"
+        given-names: "Stefano Claudio"
+      - family-names: "Litty"
+        given-names: "Camille"
+      - family-names: "Achleitner"
+        given-names: "Stefan"
+      - family-names: "Leistner"
+        given-names: "Sebastian"
+      - family-names: "Hiller"
+        given-names: "Clemens"
+      - family-names: "Schlunegger"
+        given-names: "Fritz"
     journal: "Earth Surface Dynamics"
     volume: 14
     start: 527
@@ -73,9 +100,16 @@ references:
   - type: article
     title: "Automated detecting, segmenting and measuring of grains in images of fluvial sediments"
     authors:
-      - family-names: Mair
-        given-names: David
-      - name: "et al."
+      - family-names: "Mair"
+        given-names: "David"
+      - family-names: "Witz"
+        given-names: "Guillaume"
+      - family-names: "do Prado"
+        given-names: "Ariel H."
+      - family-names: "Garefalakis"
+        given-names: "Philippos"
+      - family-names: "Schlunegger"
+        given-names: "Fritz"
     journal: "Earth Surface Processes and Landforms"
     year: 2023
     doi: "10.1002/esp.5755"

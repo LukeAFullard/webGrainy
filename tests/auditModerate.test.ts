@@ -31,6 +31,8 @@ describe('pooled grains CSV stats_weight', () => {
       const w = rows.map((c) => (c[h.indexOf('stats_weight')] === '' ? 0 : Number(c[h.indexOf('stats_weight')])));
       const counted = rows.filter((c) => c[h.indexOf('included_in_stats')] === 'true').length;
       expect(w.filter((x) => x > 0).length).toBeLessThanOrEqual(counted);
+      // Every counted grain has a number (0 when it carries no weight, e.g. missed by the grid).
+      for (const c of rows) expect(c[h.indexOf('stats_weight')] === '', c.join(',')).toBe(c[h.indexOf('included_in_stats')] !== 'true');
       const psd = weightedPsdPercentiles(size, w);
       for (const k of ['D16', 'D50', 'D84'] as const) expect(psd[k]).toBeCloseTo(r.psd[k], 9);
     });
@@ -117,6 +119,12 @@ describe('revert after a 2x upscale', () => {
     const remeasured = cal(0.2); // on the 2x image
     const out = revertedCalibrationAndRoi({ width: 2000, calibration: remeasured, originalBackup: { width: 1000, calibration: cal(0.5) } });
     expect(out.calibration!.mmPerPx).toBeCloseTo(0.4, 12);
+  });
+
+  it('keeps a scale or ROI removed after the upscale removed (audit N13)', () => {
+    const out = revertedCalibrationAndRoi({ width: 2000, originalBackup: { width: 1000, calibration: cal(0.5), roiConfig: roi } });
+    expect(out.calibration).toBeUndefined();
+    expect(out.roiConfig).toBeUndefined();
   });
 
   it('scales back a scale set only after the upscale', () => {

@@ -43,6 +43,8 @@ export const MODEL_INTEGRITY: Record<ModelId, ModelIntegrity> = {
 };
 
 let integrityEnforced = true;
+/** Models whose cached bytes were hashed and matched in this session (see getModel). */
+const verifiedThisSession = new Set<ModelId>();
 
 /**
  * Enables/disables SHA-256 + size verification of model weights (default: enabled).
@@ -575,7 +577,15 @@ export async function getModel(
     const cached = await readCachedRecord(modelId);
     if (cached && recordDataSize(cached) > 0 && isCachedRecordValid(modelId, cached)) {
       const buf = await recordDataBuffer(cached);
-      if (buf !== null && buf.byteLength > 0) return buf;
+      if (buf !== null && buf.byteLength > 0) {
+        // The stored record only names its SHA-256; hash the bytes themselves once per session
+        // (storage corruption, or a record edited outside the app), and re-download on a mismatch.
+        if (!integrityEnforced || verifiedThisSession.has(modelId)) return buf;
+        if ((await sha256Hex(buf)) === MODEL_INTEGRITY[modelId].sha256) {
+          verifiedThisSession.add(modelId);
+          return buf;
+        }
+      }
     }
   }
 

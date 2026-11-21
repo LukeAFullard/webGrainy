@@ -149,11 +149,12 @@ describe('imagePreprocess', () => {
       expect(resHalf.effectiveScaleFactor).toBeCloseTo(0.5, 6);
       expect(resHalf.scaleModeApplied).toBe('0.5x');
 
+      // Longest side 1024 px (not the old quarter-size band, which gave 800 px).
       const data3200 = makeSolidRgba(3200, 2400, 90, 80, 70, 255);
       const resQuarter = prepareWorkingImage(data3200, 3200, 2400, 'auto');
-      expect(resQuarter.width).toBe(800);
-      expect(resQuarter.height).toBe(600);
-      expect(resQuarter.effectiveScaleFactor).toBeCloseTo(0.25, 6);
+      expect(resQuarter.width).toBe(1024);
+      expect(resQuarter.height).toBe(768);
+      expect(resQuarter.effectiveScaleFactor).toBeCloseTo(0.32, 6);
       expect(resQuarter.scaleModeApplied).toBe('0.25x');
 
       const data5000 = makeSolidRgba(5000, 4000, 90, 80, 70, 255);
@@ -472,15 +473,26 @@ describe('regression: one working-scale rule; when 2x upscaling helps', () => {
       const r = prepareWorkingImage(new Uint8ClampedArray(w * h * 4), w, h, 'auto');
       expect(r.width).toBe(Math.max(1, Math.round(w * workingScaleFor(w, h, 'auto'))));
     }
-    expect(workingScaleFor(1500, 1000, 'auto')).toBe(0.5); // the sidebar used 1024/1500 here
+    expect(workingScaleFor(1500, 1000, 'auto')).toBeCloseTo(1024 / 1500, 12);
+  });
+
+  it('the auto working size never falls as the photo grows (audit: 2,048 px gave 1,024, 2,100 px only 525)', async () => {
+    const { workingScaleFor } = await import('../src/modules/imagePreprocess.js');
+    let prev = 0;
+    for (let side = 200; side <= 12000; side += 7) {
+      const working = Math.round(side * workingScaleFor(side, side / 2, 'auto'));
+      expect(working).toBeGreaterThanOrEqual(prev);
+      expect(working).toBeLessThanOrEqual(1024);
+      prev = working;
+    }
   });
 
   it('2x upscaling only adds working pixels for small photos in auto mode, or at 1.0x', async () => {
     const { upscaleIncreasesWorkingResolution } = await import('../src/modules/imagePreprocess.js');
     expect(upscaleIncreasesWorkingResolution(500, 400, 'auto')).toBe(true);
-    // Working width before -> after: 800 -> 800, 1500 -> 750 -> 750, 4000: 1000 -> 1024, 5000: 1024 -> 1024.
-    for (const w of [800, 1500, 4000, 5000]) expect(upscaleIncreasesWorkingResolution(w, (w * 3) / 4, 'auto')).toBe(false);
-    expect(upscaleIncreasesWorkingResolution(3000, 2250, 'auto')).toBe(true); // 750 -> 1024
+    // Working width before -> after: 800 -> 1024 (+28%); 900 -> 1024 (+14%); 1500, 3000, 5000: 1024 -> 1024.
+    expect(upscaleIncreasesWorkingResolution(800, 600, 'auto')).toBe(true);
+    for (const w of [900, 1500, 3000, 5000]) expect(upscaleIncreasesWorkingResolution(w, (w * 3) / 4, 'auto')).toBe(false);
     expect(upscaleIncreasesWorkingResolution(3000, 2000, '1.0x')).toBe(true);
   });
 });

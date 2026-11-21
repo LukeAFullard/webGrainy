@@ -10,7 +10,8 @@ quality (PQ, IoU > 0.5) of the app's label mask (resized to the photo as in its 
 
 Usage: python3 -I validation/heldout/score_app_heldout.py [unet] [cpsam]
 Writes validation/heldout/heldout_app_results.md and heldout_app_results_per_image.csv.
-With --from-csv, only re-summarises the committed heldout_app_results_per_image.csv.
+Scoring one model keeps the other model's committed rows. With --from-csv, only re-summarises
+the committed heldout_app_results_per_image.csv.
 """
 from __future__ import annotations
 
@@ -146,11 +147,12 @@ def summarize(gt: np.ndarray, pr: np.ndarray, sites: np.ndarray) -> dict:
             "gt50": float(100.0 * np.mean(ape > 50.0)), "bias_median": float(np.median(100.0 * (pr - gt) / gt))}
 
 
-def summary_from_csv() -> list[tuple]:
+def summary_from_csv(version: str | None = None) -> list[tuple]:
     """Re-summarise the committed per-image results (no images or app runs needed)."""
     per = list(csv.DictReader(open(ROOT / "validation/heldout/heldout_app_results_per_image.csv")))
-    old = (ROOT / "validation/heldout/heldout_app_results.md").read_text().splitlines()[0]
-    version = old.split("(webGrainy ", 1)[1].rstrip(")") if "(webGrainy " in old else "unknown"
+    if version is None:
+        old = (ROOT / "validation/heldout/heldout_app_results.md").read_text().splitlines()[0]
+        version = old.split("(webGrainy ", 1)[1].rstrip(")") if "(webGrainy " in old else "unknown"
     table = []
     for model in dict.fromkeys(r["model"] for r in per):
         rs = [r for r in per if r["model"] == model]
@@ -194,8 +196,18 @@ def main() -> None:
         table.append((model, s, float(np.mean(pqs)), app["appVersion"]))
     if not table:
         return
-    with open(ROOT / "validation/heldout/heldout_app_results_per_image.csv", "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=list(per_image[0].keys())); w.writeheader(); w.writerows(per_image)
+    # Keep the committed rows of models not scored in this run (scoring only `unet` must not drop
+    # the Cellpose-SAM results), in the usual model order.
+    csv_path = ROOT / "validation/heldout/heldout_app_results_per_image.csv"
+    scored = {m for m, *_ in table}
+    kept = [r for r in csv.DictReader(open(csv_path)) if r["model"] not in scored] if csv_path.exists() else []
+    order = {"unet": 0, "cpsam": 1}
+    merged = sorted(per_image + kept, key=lambda r: order.get(r["model"], 9))
+    with open(csv_path, "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=list(per_image[0].keys())); w.writeheader(); w.writerows(merged)
+    version = table[0][3]
+    if kept:
+        table = summary_from_csv(version)
     write_summary(table)
 
 

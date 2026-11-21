@@ -784,12 +784,12 @@ export function scaleCalibrationAndRoi(
   };
 }
 
-/** Cumulative pixel scale factor relative to the unenhanced original (1 if not upscaled). */
 /**
  * Calibration and ROI to restore when an enhancement is reverted. A value set before the
  * enhancement comes back as it was, unless it was changed afterwards on the enhanced image (e.g.
  * the scale re-measured, an ROI redrawn): then the newer value is kept, scaled back to the
- * original pixels, instead of being silently replaced by the old one.
+ * original pixels, instead of being silently replaced by the old one. A value deliberately
+ * removed after the enhancement stays removed.
  */
 export function revertedCalibrationAndRoi(photo: {
   width: number;
@@ -805,11 +805,15 @@ export function revertedCalibrationAndRoi(photo: {
   const calChanged = photo.calibration !== undefined && !same(photo.calibration, carried.calibration);
   const roiChanged = photo.roiConfig !== undefined && !same(photo.roiConfig, carried.roiConfig);
   const back = scaleCalibrationAndRoi(photo.calibration, photo.roiConfig, 1 / up);
-  const calibration = calChanged || orig.calibration === undefined ? back.calibration : orig.calibration;
-  const roiConfig = roiChanged || orig.roiConfig === undefined ? back.roiConfig : orig.roiConfig;
+  // Carried over by the enhancement but gone now: the user removed it on the enhanced image.
+  const calRemoved = photo.calibration === undefined && carried.calibration !== undefined;
+  const roiRemoved = photo.roiConfig === undefined && carried.roiConfig !== undefined;
+  const calibration = calRemoved ? undefined : calChanged || orig.calibration === undefined ? back.calibration : orig.calibration;
+  const roiConfig = roiRemoved ? undefined : roiChanged || orig.roiConfig === undefined ? back.roiConfig : orig.roiConfig;
   return { ...(calibration ? { calibration } : {}), ...(roiConfig ? { roiConfig } : {}) };
 }
 
+/** Cumulative pixel scale factor relative to the unenhanced original (1 if not upscaled). */
 export function photoUpscaleFactor(photo: {
   width: number;
   originalBackup?: { width: number };

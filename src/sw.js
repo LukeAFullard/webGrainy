@@ -122,7 +122,8 @@ self.addEventListener('fetch', (event) => {
   // never written into the versioned caches.
   event.respondWith(
     caches
-      .match(req, { ignoreSearch: true })
+      .match(req, { ignoreSearch: true, cacheName: SHELL_CACHE })
+      .then((cached) => cached || caches.match(req, { ignoreSearch: true, cacheName: ORT_CACHE }))
       .then((cached) => cached || fetch(req))
       .then(withIsolationHeaders),
   );

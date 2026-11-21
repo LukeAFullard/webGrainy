@@ -74,6 +74,7 @@ function classifySorting(sortingPhi: number): string {
 }
 
 function classifySkewness(skewnessPhi: number): string {
+  if (!Number.isFinite(skewnessPhi)) return 'Undefined';
   if (skewnessPhi >= 0.3) return 'Very Fine Skewed';
   if (skewnessPhi >= 0.1) return 'Fine Skewed';
   if (skewnessPhi > -0.1) return 'Near Symmetrical';
@@ -82,6 +83,7 @@ function classifySkewness(skewnessPhi: number): string {
 }
 
 function classifyKurtosis(kurtosisPhi: number): string {
+  if (!Number.isFinite(kurtosisPhi)) return 'Undefined';
   if (kurtosisPhi < 0.67) return 'Very Platykurtic';
   if (kurtosisPhi < 0.9) return 'Platykurtic';
   if (kurtosisPhi < 1.11) return 'Mesokurtic';
@@ -125,12 +127,17 @@ export function computeFolkWardStats(
 
   const denom1 = 2 * (phi84 - phi16);
   const denom2 = 2 * (phi95 - phi5);
-  const term1 = denom1 !== 0 ? (phi16 + phi84 - 2 * phi50) / denom1 : 0;
-  const term2 = denom2 !== 0 ? (phi5 + phi95 - 2 * phi50) / denom2 : 0;
-  const skewnessPhi = term1 + term2;
+  // Degenerate distributions (one grain, all grains equal, or one clast carrying the middle of the
+  // weight so phi25 = phi75) have no defined skewness / kurtosis: NaN, labelled "Undefined",
+  // never a made-up "Near Symmetrical" or "Mesokurtic". (|x| < 1e-9 phi is rounding noise.)
+  const zero = (x: number): boolean => Math.abs(x) < 1e-9;
+  const skewnessPhi =
+    zero(denom1) || zero(denom2)
+      ? Number.NaN
+      : (phi16 + phi84 - 2 * phi50) / denom1 + (phi5 + phi95 - 2 * phi50) / denom2;
 
   const kurtDenom = 2.44 * (phi75 - phi25);
-  const kurtosisPhi = kurtDenom !== 0 ? (phi95 - phi5) / kurtDenom : 1;
+  const kurtosisPhi = zero(kurtDenom) ? Number.NaN : (phi95 - phi5) / kurtDenom;
 
   const meanMm = 2 ** -meanPhi;
 

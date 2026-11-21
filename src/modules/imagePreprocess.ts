@@ -326,20 +326,22 @@ export function applyCLAHE(
   return { data: out, width, height };
 }
 
+/** Longest side of the working image in 'auto' scale mode (larger photos are shrunk to it). */
+export const AUTO_MAX_WORKING_SIDE = 1024;
+
 /**
  * Working-image scale for a photo and scale mode: the single rule used by the analysis and
- * by every place that converts between photo and working pixels. 'auto': 1.0x up to
- * 1024 px, 0.5x up to 2048 px, 0.25x up to 4096 px, else longest side 1024 px.
+ * by every place that converts between photo and working pixels. 'auto': unchanged up to
+ * 1024 px, else longest side 1024 px, so the working size never falls as the photo grows
+ * (the earlier power-of-two bands gave a 2,100 px photo a 525 px working image but a
+ * 2,048 px photo 1,024 px).
  */
 export function workingScaleFor(width: number, height: number, scaleMode: ScaleMode = 'auto'): number {
   if (scaleMode === '1.0x') return 1;
   if (scaleMode === '0.5x') return 0.5;
   if (scaleMode === '0.25x') return 0.25;
   const maxDim = Math.max(width, height);
-  if (maxDim <= 1024) return 1;
-  if (maxDim <= 2048) return 0.5;
-  if (maxDim <= 4096) return 0.25;
-  return 1024 / maxDim;
+  return maxDim <= AUTO_MAX_WORKING_SIDE ? 1 : AUTO_MAX_WORKING_SIDE / maxDim;
 }
 
 /**
@@ -367,8 +369,10 @@ export function prepareWorkingImage(
   validateImageDimensions(rgba, width, height);
 
   const targetScale = workingScaleFor(width, height, scaleMode);
+  // The nearest fixed mode, for display (an 'auto' scale is usually not exactly 0.5 or 0.25;
+  // effectiveScaleFactor holds the exact value used in every conversion).
   const scaleModeApplied: Exclude<ScaleMode, 'auto'> =
-    targetScale === 1 ? '1.0x' : targetScale === 0.5 ? '0.5x' : '0.25x';
+    targetScale === 1 ? '1.0x' : targetScale >= Math.SQRT1_2 * 0.5 ? '0.5x' : '0.25x';
 
   if (targetScale === 1.0) {
     return {
