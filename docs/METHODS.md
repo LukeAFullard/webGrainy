@@ -693,7 +693,8 @@ caveats:
   the app as shipped (log2 interpolation, 15 px cutoff on prediction and hand outlines, default
   settings), U-Net gives a D50 error of 16.1% mean [10.3, 23.0] and 5.7% median, D16 / D84 median
   errors of 8.4% / 2.9%, 10% of photos above 50%, and PQ 0.535
-  (`validation/heldout/heldout_app_results.md`); the Cellpose-SAM re-run is in progress.
+  and Cellpose-SAM (INT8 weights) 9.0% mean [4.2, 15.3] and 2.9% median, D16 / D84 5.1% / 1.1%,
+  5% of photos above 50%, PQ 0.651 (`validation/heldout/heldout_app_results.md`).
 
 **Same networks as the original software.** With the same photo, the networks' outputs, run
 through Cellpose's own post-processing, match the original PyTorch ImageGrains exactly (U-Net)
