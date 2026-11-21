@@ -25,13 +25,13 @@ export const PERCENTILE_NUMS = [5, 10, 16, 25, 50, 75, 84, 90, 95] as const;
 export function getStatisticalBasisLabel(mode: PoolingMode): string {
   switch (mode) {
     case 'physical-area':
-      return 'Area-Weighted (Grid-by-Number / Sieve-Equivalent, Kellerhals & Bray 1971)';
+      return 'Area-Weighted (Grid-by-Number equivalent, Kellerhals & Bray 1971; 2D surface sizes, not sieve sizes)';
     case 'equal-photo':
       return 'Equal-Photo Area-Weighted (Normalized Grid-by-Number Equivalent)';
     case 'virtual-wolman-grid':
       return 'Virtual Wolman Grid-by-Number (Discrete Point Count, Kellerhals & Bray 1971)';
     case 'number-weighted':
-      return 'Number-Weighted (Area-by-Number Frequency — NOT Sieve-Equivalent)';
+      return 'Number-Weighted (each grain once — not comparable with pebble counts or sieving)';
     case 'facies-weighted':
       return 'Facies-Weighted Area-Normalized (Stratified Grid-by-Number Equivalent)';
   }

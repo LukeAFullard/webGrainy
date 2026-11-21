@@ -15,6 +15,8 @@ import type { AppState, DashboardTab } from '../state.js';
 import { getActivePhoto } from '../workspaceActions.js';
 import { scopeButtonsHtml } from './compare.js';
 import { chartBoxFor, esc, type ChartRegistry } from './html.js';
+import { photoCutoffs } from '../../modules/siteWorkspace.js';
+import { DEFAULT_POSTPROCESS_OPTIONS } from '../../modules/postprocessCore.js';
 
 /** Shown after the site interval, so an approximate or missing interval is never read as precise. */
 const CI_STATUS_NOTE: Record<'ok' | 'few-photos' | 'single-photo' | 'degenerate', string> = {
@@ -60,20 +62,12 @@ export function renderDashboardHtml(state: AppState, view: DashboardView): strin
   const detectionLimitInfo = (() => {
     if (!psd) return null;
     if (isSite && report) {
+      // The engine's per-photo detection limits (the ones behind the common cutoff).
       let maxVal = 0;
       for (const p of report.perPhoto) {
-        const sess = state.sessions.get(p.photoId);
-        const prov = sess?.getProvenance();
-        const dl = computeEffectiveDetectionLimit(
-          {
-            minSizeWorkingPx: prov?.postProcess?.minSize ?? state.analysisParams.minSize,
-            effectiveScaleFactor: sess?.workingImage.effectiveScaleFactor ?? 1,
-            minBaxisPx: state.siteOptions.minBaxisPx,
-            mmPerPx: unit === 'mm' ? p.mmPerPx : undefined,
-          },
-          psd,
-        );
-        if (dl && dl.unit === unit && dl.value > maxVal) maxVal = dl.value;
+        if (p.detectionLimitPx === undefined) continue;
+        const v = unit === 'mm' ? (p.mmPerPx !== undefined ? p.detectionLimitPx * p.mmPerPx : 0) : p.detectionLimitPx;
+        if (v > maxVal) maxVal = v;
       }
       if (maxVal <= 0) return null;
       return {
@@ -87,7 +81,7 @@ export function renderDashboardHtml(state: AppState, view: DashboardView): strin
       const prov = activeSession.getProvenance();
       return computeEffectiveDetectionLimit(
         {
-          minSizeWorkingPx: prov?.postProcess?.minSize ?? state.analysisParams.minSize,
+          minSizeWorkingPx: prov?.postProcess?.minSize ?? DEFAULT_POSTPROCESS_OPTIONS.minSize,
           effectiveScaleFactor: activeSession.workingImage.effectiveScaleFactor,
           minBaxisPx: state.siteOptions.minBaxisPx,
           mmPerPx: unit === 'mm' ? activePhoto?.calibration?.mmPerPx : undefined,
@@ -121,10 +115,7 @@ export function renderDashboardHtml(state: AppState, view: DashboardView): strin
     const sizeHist = isSite
       ? sizeHistogramFromWentworth((step === 0.5 ? report?.wentworthHistogram05Phi : report?.wentworthHistogram10Phi) ?? [], step)
       : activeSession
-        ? activeSession.getSizeHistogram(step, activeMetric, {
-            minBaxisPx: state.siteOptions.minBaxisPx ?? 15,
-            minSizeMm: state.siteOptions.minSizeMm ?? 0,
-          })
+        ? activeSession.getSizeHistogram(step, activeMetric, photoCutoffs(state.siteOptions, report, activePhoto?.photoId))
         : sizeHistogramFromWentworth([], step);
     const detectionNoteHtml = detectionLimitInfo
       ? `<div class="${detectionLimitInfo.nearD16 || detectionLimitInfo.nearD5 ? 'warning-banner' : 'field-hint'}" style="margin-top:6px;">
@@ -237,10 +228,7 @@ export function renderDashboardHtml(state: AppState, view: DashboardView): strin
       ${chartBox('jackknife', 'Leave-one-photo-out influence on D50', (light) => renderJackknifeChartSvg(report?.jackknife ?? null, light), lightTheme)}
     `;
   } else if (state.dashboardTab === 'shape') {
-    const cutoffs = {
-      minBaxisPx: state.siteOptions.minBaxisPx ?? 15,
-      minSizeMm: state.siteOptions.minSizeMm ?? 0,
-    };
+    const cutoffs = photoCutoffs(state.siteOptions, report, activePhoto?.photoId);
     // Same grains as the statistics (inside the ROI, border rule and cutoffs applied), so n matches.
     const ratios = activeSession
       ? activeSession.getExtendedStatsGrains(activeMetric, cutoffs).map((g) => g.aspectRatio)
@@ -258,10 +246,7 @@ export function renderDashboardHtml(state: AppState, view: DashboardView): strin
       <p class="field-hint">Grain shape for this photo. The size distribution is on the PSD tab.</p>
     `;
   } else {
-    const cutoffs = {
-      minBaxisPx: state.siteOptions.minBaxisPx ?? 15,
-      minSizeMm: state.siteOptions.minSizeMm ?? 0,
-    };
+    const cutoffs = photoCutoffs(state.siteOptions, report, activePhoto?.photoId);
     const rose =
       isSite && report
         ? report.fabricRose

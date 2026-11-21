@@ -736,26 +736,32 @@ export function calibrateSiteInterval(
   estimate: { psd: PsdPercentiles; folkWard: { meanPhi: number; sortingPhi: number; skewnessPhi: number; kurtosisPhi: number; meanMm: number } | null },
   nPhotos: number,
   confidenceLevel: 0.9 | 0.95,
-): { psdCi: PsdConfidenceInterval; folkWardCi: FolkWardConfidenceInterval | null; status: SiteCiStatus } {
+  /** Leave-one-photo-out jackknife SE of ln(Dx); the larger of it and the bootstrap SE is used. */
+  jackknifeLogSe?: PsdPercentiles,
+): { psdCi: PsdConfidenceInterval; folkWardCi: FolkWardConfidenceInterval | null; status: SiteCiStatus; logSe: PsdPercentiles } {
   if (nPhotos < 2) {
-    return { psdCi: raw.psdCi, folkWardCi: raw.folkWardCi, status: 'single-photo' };
+    return { psdCi: raw.psdCi, folkWardCi: raw.folkWardCi, status: 'single-photo', logSe: emptyPsd() };
   }
   const z = confidenceLevel === 0.9 ? 1.6448536269514722 : 1.959963984540054;
   const inflate = Math.sqrt(nPhotos / (nPhotos - 1));
   const t = tTwoSidedQuantile(confidenceLevel, nPhotos - 1);
   const lower = emptyPsd();
   const upper = emptyPsd();
+  const logSe = emptyPsd();
   let degenerate = false;
   for (const key of PSD_KEYS) {
     const lo = raw.psdCi.lower[key];
     const hi = raw.psdCi.upper[key];
     const est = estimate.psd[key];
     if (!(lo > 0) || !(hi > 0) || !(est > 0) || !Number.isFinite(t)) continue;
-    const se = ((Math.log(hi) - Math.log(lo)) / (2 * z)) * inflate;
+    const seBoot = ((Math.log(hi) - Math.log(lo)) / (2 * z)) * inflate;
+    const seJack = jackknifeLogSe?.[key];
+    const se = Number.isFinite(seJack) ? Math.max(seBoot, seJack!) : seBoot;
     if (!(se > 1e-12)) {
       degenerate = true;
       continue; // stays NaN: not estimable
     }
+    logSe[key] = se;
     lower[key] = Math.exp(Math.log(est) - t * se);
     upper[key] = Math.exp(Math.log(est) + t * se);
   }
@@ -780,7 +786,7 @@ export function calibrateSiteInterval(
     };
   }
   const status: SiteCiStatus = degenerate ? 'degenerate' : nPhotos < MIN_PHOTOS_FOR_RELIABLE_CI ? 'few-photos' : 'ok';
-  return { psdCi: { confidenceLevel, lower, upper }, folkWardCi, status };
+  return { psdCi: { confidenceLevel, lower, upper }, folkWardCi, status, logSe };
 }
 
 /** Leave-one-photo-out jackknife of D16/D50/D84, and each photo's D50 without it. */
@@ -798,10 +804,14 @@ export function computeJackknife(
     const base = singleCopyWeights(preparedPhotos, pool, poolingMode);
     const scratch = { total: new Float64Array(pool.n) };
     const perPhotoJack: JackknifePhotoSensitivity[] = [];
+    const logWithout: Record<keyof PsdPercentiles, number[]> = {
+      D5: [], D10: [], D16: [], D25: [], D50: [], D75: [], D84: [], D90: [], D95: [],
+    };
     for (let j = 0; j < preparedPhotos.length; j++) {
       const target = preparedPhotos[j];
       if (target === undefined) continue;
       const subPsd = subsetPercentiles(preparedPhotos, pool, base, (pi) => pi !== j, scratch);
+      for (const key of PSD_KEYS) logWithout[key].push(Math.log(subPsd[key]));
 
       d50WithoutMap.set(target.input.photoId, subPsd.D50);
 
@@ -850,7 +860,14 @@ export function computeJackknife(
       factor * perPhotoJack.reduce((s, r) => s + (r.D84Without - mean84) ** 2, 0),
     );
 
-    jackknife = { perPhoto: perPhotoJack, seD16, seD50, seD84 };
+    const logSe = emptyPsd();
+    for (const key of PSD_KEYS) {
+      const v = logWithout[key];
+      if (v.length !== n || !v.every((x) => Number.isFinite(x))) continue;
+      const m = v.reduce((a, b) => a + b, 0) / n;
+      logSe[key] = Math.sqrt(factor * v.reduce((a, b) => a + (b - m) ** 2, 0));
+    }
+    jackknife = { perPhoto: perPhotoJack, seD16, seD50, seD84, logSe };
   }
 
   return { jackknife, d50WithoutMap };
@@ -925,7 +942,8 @@ export function computeConvergence(
       );
       // Same calibrated interval as the final point (t-interval on the log scale for k photos).
       const fwSub = unit === 'mm' ? computeFolkWardStats(subPsd) : null;
-      const cal = calibrateSiteInterval(subBoot, { psd: subPsd, folkWard: fwSub }, k, confidenceLevel);
+      const jk = k >= 2 ? computeJackknife(preparedPhotos.slice(0, k), poolingMode, subPsd).jackknife : null;
+      const cal = calibrateSiteInterval(subBoot, { psd: subPsd, folkWard: fwSub }, k, confidenceLevel, jk?.logSe);
       ciLo = cal.psdCi.lower.D50;
       ciHi = cal.psdCi.upper.D50;
     }

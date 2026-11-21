@@ -47,6 +47,31 @@ export function buildSiteInputs(workspace: {
   return inputs;
 }
 
+/**
+ * Size cutoffs for one photo's statistics, grain table and charts. Inside a site, a photo that
+ * counts in the site report uses the site's common mm cutoff (the coarsest photo's detection
+ * limit, or the field-count cutoff if larger), so the photo's own D-values, its
+ * `included_in_stats` column and the site's per-photo breakdown always describe the same grains.
+ * Without a site report (or for a photo left out of it) the photo-level cutoffs apply.
+ */
+export function photoCutoffs(
+  siteOptions: Pick<SiteAnalysisOptions, 'minBaxisPx' | 'minSizeMm'> | undefined,
+  siteReport: Pick<SiteAnalysisReport, 'dCutoffCommonMm' | 'perPhoto'> | null | undefined,
+  photoId: string | null | undefined,
+): { minBaxisPx: number; minSizeMm: number } {
+  const minBaxisPx = siteOptions?.minBaxisPx ?? 15;
+  let minSizeMm = siteOptions?.minSizeMm ?? 0;
+  if (
+    siteReport &&
+    siteReport.dCutoffCommonMm !== null &&
+    photoId &&
+    siteReport.perPhoto.some((p) => p.photoId === photoId)
+  ) {
+    minSizeMm = Math.max(minSizeMm, siteReport.dCutoffCommonMm);
+  }
+  return { minBaxisPx, minSizeMm };
+}
+
 export interface WorkspaceReports {
   singlePhotoStats: SedimentStatsReport | null;
   siteReport: SiteAnalysisReport | null;
@@ -63,12 +88,6 @@ export function computeWorkspaceReports(workspace: {
 }): WorkspaceReports {
   const activeSession = workspace.activePhotoId !== null ? workspace.sessions.get(workspace.activePhotoId) ?? null : null;
   const metric: SizeMetric = workspace.siteOptions.sizeMetric ?? 'bAxis';
-  const singlePhotoStats = activeSession
-    ? activeSession.getStats(metric, {
-        minBaxisPx: workspace.siteOptions.minBaxisPx ?? 15,
-        minSizeMm: workspace.siteOptions.minSizeMm ?? 0,
-      })
-    : null;
   const siteInputs = buildSiteInputs(workspace);
   let siteReport: SiteAnalysisReport | null = null;
   let siteReportError: string | null = null;
@@ -79,5 +98,8 @@ export function computeWorkspaceReports(workspace: {
       siteReportError = err instanceof Error ? err.message : String(err);
     }
   }
+  const singlePhotoStats = activeSession
+    ? activeSession.getStats(metric, photoCutoffs(workspace.siteOptions, siteReport, workspace.activePhotoId))
+    : null;
   return { singlePhotoStats, siteReport, siteReportError };
 }

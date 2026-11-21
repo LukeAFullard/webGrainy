@@ -65,6 +65,8 @@ Two words used throughout:
 ## 2. Photos in
 
 **Formats.** JPEG, PNG, WebP and other formats the browser can open, and TIFF / GeoTIFF.
+16-bit TIFFs are converted to 8 bits by their own brightness range (recorded in the photo's
+notes), so data that uses only part of the 16-bit range (e.g. 12-bit cameras) keeps its detail.
 Very large photos (over 16.7 megapixels) are read at a reduced size to stay within browser
 memory limits. Measurements are still reported in the pixels of the original photo.
 
@@ -175,11 +177,17 @@ results, the app reproduces upstream Cellpose's image handling exactly:
 - *Cellpose-SAM*: colour, padded, processed in 256 × 256 px tiles with 25% overlap and blended
   the same way.
 
-Checked against the original PyTorch software, the models give identical (U-Net) or
-near-identical (Cellpose-SAM, 16-bit rounding) outputs (Section 15).
+Checked against the original PyTorch software, the *networks* give identical (U-Net) or
+near-identical (Cellpose-SAM, 16-bit rounding) outputs. webGrainy's own post-processing then
+turns these into outlines; its final outlines agree with PyTorch ImageGrains' at a panoptic
+quality of about 0.93 (Section 15), so grain outlines and sizes are close to, but not the same
+as, the original software's.
 
 **Graphics card or CPU.** The models run on the graphics card (WebGPU) where available, else
-on the CPU (WebAssembly). Results are the same within rounding. If the graphics card produces
+on the CPU (WebAssembly). U-Net gives the same results on both (float32); Cellpose-SAM on the
+graphics card runs in 16-bit and its outlines differ slightly (outline agreement 0.996 on a test
+photo; only one graphics card, an Intel Xe, has been checked so far: see `validation/gpu/`).
+The device used is recorded in every export. If the graphics card produces
 invalid numbers, the app switches that model to the CPU automatically.
 
 **Model integrity.** Model files are downloaded once from a fixed version on Hugging Face and
@@ -289,6 +297,8 @@ of these rules; excluded grains stay in the grain tables, flagged.
    or with different cameras can resolve different smallest sizes. To pool them fairly, the
    app finds each photo's detection limit in mm and applies the **largest** of them to every
    photo. All photos then describe the same size range. This *harmonisation* is on by default.
+   Inside a site, each photo's own statistics, grain table (`included_in_stats`) and summary
+   file use the same cutoff, so they match the site's per-photo breakdown.
 6. **Field-count cutoff (optional, mm).** To compare with a pebble count that ignored grains
    below, say, 8 mm, set the same minimum here. Without it, photo distributions include finer
    grains than the field count and look finer.
@@ -395,7 +405,7 @@ With fewer than about 30 grains these classes are not meaningful (the app warns)
 
 ### Size classes
 
-- **Wentworth classes** (area-weighted %): sand < 2 mm, gravel 2–64 mm, cobble 64–256 mm,
+- **Wentworth classes** (% by the same weighting as the percentiles; area-weighted by default): sand < 2 mm, gravel 2–64 mm, cobble 64–256 mm,
   boulder ≥ 256 mm. "Sand" here means only the counted grains under 2 mm, normally few
   because of the size cutoff. It is **not** the sand content of the bed.
 - **Size histogram** in 1 φ or ½ φ classes (area-weighted %, with grain counts). Before
@@ -426,13 +436,19 @@ one distribution. *How* photos are combined is the **pooling mode**:
 | Pooling mode | Each grain's weight | When to use |
 |---|---|---|
 | **Physical area-weighted** (default) | its area in mm² | Standard. Equivalent to a grid count over the whole photographed area. Photos covering more bed count more. |
-| **Equal-photo** | its area as a share of its photo's total grain area | Each photo (location) counts equally, whatever area it covers. Also allows pooling photos of different scales in pixel units. |
+| **Equal-photo** | its area as a share of its photo's total grain area | Each photo (location) counts equally, whatever area it covers. |
 | **Virtual Wolman grid** | number of grid points landing on it | Mimics a field pebble count: a regular grid of points per photo (default about 100, or a fixed spacing in mm). Points on gaps or excluded grains are counted separately. |
 | **Facies-weighted** | as equal-photo, × the photo's facies weight | Stratified sampling, e.g. 70% of the reach is riffle, 30% pool. |
 | **Number-weighted** | 1 | Each grain once. Not comparable with pebble counts. |
 
 The per-photo breakdown shows each photo's grains, D16/D50/D84, packing (% of bed area
 covered by counted grains), detection limit and share of the pooled weight.
+
+**Photos analysed differently.** If the photos of one site were analysed with different model
+weights or settings (for example *Auto* chose U-Net for some photos and Cellpose-SAM for others,
+or only some were enhanced), the app warns: the models have different size biases, and pooling
+mixes them. Choose the model yourself for photos you will pool, and re-analyse. The printable
+report lists the model of every photo.
 
 ---
 
@@ -457,13 +473,16 @@ you have:
    2 photos, 65–75% with 3 and 75–80% with 5. The app therefore reports a *t-interval on the
    log scale* around the site value:
 
-   > SE = (ln upper − ln lower) / (2 × 1.96) × √(n/(n−1)),  interval = D × exp(± t × SE)
+   > SE_boot = (ln upper − ln lower) / (2 × 1.96) × √(n/(n−1))
+   > SE = larger of SE_boot and the leave-one-photo-out jackknife SE of ln D
+   > interval = D × exp(± t × SE)
 
    where n is the number of photos and t the Student-t value with n − 1 degrees of freedom
    (12.7 for 2 photos, 4.3 for 3, 2.8 for 5). In the same simulation this interval contained
-   the truth 88–97% of the time for 2–30 photos. Folk & Ward φ measures use the same rule on
-   their own scale. The plain bootstrap range is kept in the JSON export
-   (`bootstrapPercentileCi`) and is what the site comparison test starts from.
+   the truth about 90–97% of the time for 3–20 photos (the bootstrap SE alone gave 88–96%).
+   Folk & Ward φ measures use the bootstrap rule on their own scale. The plain bootstrap range
+   is kept in the JSON export (`bootstrapPercentileCi`), and the SE in `ciLogSe`; the site
+   comparison test (Section 13) uses that same SE.
 
 This is a **cluster bootstrap**: photos, not grains, are re-drawn. Grains within a photo are not
 independent (neighbouring grains are alike), so treating each grain as independent would make
@@ -553,13 +572,15 @@ classes not meaningful"; fewer than 100, "D84/D95 especially uncertain".
 (*later ÷ earlier*), the app reports the ratio of D16, D50 and D84 (above 1 = coarser), a 95%
 interval for the ratio and a p-value:
 
-1. Each site's bootstrap interval is turned into a standard error on the log scale:
-   SE = (ln upper − ln lower) / (2 × 1.96).
-2. Because a bootstrap over few photos underestimates spread, the SE is enlarged by
-   √(n/(n−1)) for a site of n photos.
-3. The log of the ratio is compared with its combined SE using a **Welch t-test**, with
+1. Each site's standard error on the log scale is the one behind its reported interval
+   (Section 12): the larger of the bootstrap SE × √(n/(n−1)) and the leave-one-photo-out
+   jackknife SE, for a site of n photos.
+2. The log of the ratio is compared with its combined SE using a **Welch t-test**, with
    degrees of freedom from the numbers of photos (n−1 per site). The 95% interval uses the
    matching t value.
+3. With several pairs (or several consecutive surveys), each p-value is also given **adjusted
+   for the number of comparisons** (Holm 1979). The * mark uses the adjusted p-value, so the
+   chance of *any* false "significant" result among them stays below 5%.
 
 **In plain terms:** the test asks whether the difference is larger than the photo-to-photo
 variation of both surveys would produce by chance, allowing for how few photos each has.
@@ -570,13 +591,15 @@ variation of both surveys would produce by chance, allowing for how few photos e
   varies between patches. In simulation, comparing one-photo surveys of an *unchanged* bed
   gave "significant" changes about 30% of the time. Take several photos per survey.
 - With fewer than 5 photos per site, intervals are wide and only large differences show.
-- In simulation of unchanged beds, this test gave p < 0.05 in 3–6% of comparisons with 2–20
-  photos per survey (the expected rate is 5%). The cost: with 6 photos per survey, a real 20%
-  change in D50 was detected about 37% of the time. **More photos per survey detect smaller
-  changes.**
-- With many pairs, some will be "significant" by chance (at p < 0.05, about 1 in 20 pairs of
-  identical sites). This is a screening test, not a formal two-sample analysis; for that see
-  GSDtools (Eaton et al. 2019).
+- In simulation of unchanged beds (2–20 photos per survey, moderate and strong patch-to-patch
+  variation), a single comparison gave p < 0.05 in about 2–7% of cases for D16, D50 and D84
+  (the expected rate is 5%; `validation/comparison/`). The cost is power: a real 20% change in
+  D50 was detected about 30% of the time with 5 photos per survey and about 55% with 10.
+  **More photos per survey detect smaller changes.**
+- Without the adjustment, many pairs produce false "significant" results: with 8 identical
+  sites (28 pairs), at least one pair had unadjusted p < 0.05 in 59% of simulated studies.
+  Read the adjusted p-value when looking at several comparisons. This is a screening test, not
+  a formal two-sample analysis; for that see GSDtools (Eaton et al. 2019).
 
 **Survey dates and places.** A survey's date is the date you set, or else the earliest photo
 date (from the camera's EXIF data). Repeat surveys of one place share a place name (case and
@@ -601,8 +624,9 @@ written as `%2C`, `%3B` and `%09` (and `%` as `%25`), so spreadsheets keep each 
 cell.
 
 **Same input, same output.** Given the same photo, scale, settings and model, the app gives the
-same outlines and numbers (bootstrap draws use a fixed seed). Graphics card and CPU agree
-within rounding. A page that was updated to a new app version in another tab refuses to
+same outlines and numbers (bootstrap draws use a fixed seed). U-Net gives the same results on
+the graphics card and the CPU; Cellpose-SAM differs slightly (Section 5), and *Auto* may pick
+different Cellpose-SAM weights on different computers (recorded in the exports). A page that was updated to a new app version in another tab refuses to
 analyse until it is reloaded, so results are never computed by a mix of versions.
 
 **Your data stays in your browser, temporarily.** Photos and results are stored only in this
@@ -649,15 +673,21 @@ caveats:
 - The figures were measured with an earlier version of the percentile calculation (linear,
   no 15 px cutoff); they will be re-run on the release version.
 
-**Same as the original software.** With the same photo, the models' outputs match the original
-PyTorch ImageGrains exactly (U-Net) or almost exactly (Cellpose-SAM: outline agreement 0.995).
+**Same networks as the original software.** With the same photo, the networks' outputs, run
+through Cellpose's own post-processing, match the original PyTorch ImageGrains exactly (U-Net)
+or almost exactly (Cellpose-SAM: outline agreement 0.995; 7 test photos, `validation/parity/`).
+webGrainy's own post-processing differs: on the 40 held-out photos its final outlines agree
+with PyTorch ImageGrains' at a panoptic quality of 0.93 (both models).
 The 8-bit and 4-bit Cellpose-SAM versions give the same benchmark accuracy as the 16-bit one
 (outline agreement 0.994 and 0.966).
 
 **Field comparison (one site).** At the K1 site, the photo D50 was about 42% finer than a
 field pebble count, until the count's 13 mm minimum size was applied to the photos as well.
-They then agreed within about 4%. Always match the size range when comparing with field data
-(Section 8).
+They then agreed within about 4% (D84 within 6%, D16 11% finer). Caveats: one site and two
+photos, both of which overlap the ImageGrains training data, so this is a consistency check,
+not an independent validation; and the 13 mm cutoff is the smallest clast in the field data,
+not a documented protocol. With a 10 mm or 16 mm cutoff the D50 difference is −8% or +14%
+(`validation/k1/`). Always match the size range when comparing with field data (Section 8).
 
 **Independent checks of the calculations.** Percentiles, Folk & Ward, ellipse axes and
 orientation, Feret widths, tiling and rectification are checked automatically against

@@ -210,6 +210,74 @@ function extractGeoTiffCalibration(
  * Decodes a TIFF/GeoTIFF `ArrayBuffer` into 8-bit RGBA pixels, picking the
  * highest-resolution page when multiple pages or overview pyramids exist.
  */
+interface Utif16Frame {
+  width: number;
+  height: number;
+  data: Uint8Array;
+  t258?: number[];
+  t262?: number[];
+  t277?: number[];
+  t284?: number[];
+  t338?: number[];
+  t339?: number[];
+}
+
+/**
+ * RGBA8 from a decoded 16-bit unsigned-integer TIFF frame (grey or RGB, interleaved; UTIF has
+ * already converted samples to little-endian), linearly scaled so the image's darkest colour
+ * sample maps to 0 and its brightest to 255 (one range for all colour channels, so colours keep
+ * their balance). Returns null for anything else, which UTIF's own conversion handles. The
+ * analysis normalises brightness anyway (1st–99th percentile), so a linear stretch does not
+ * change results; it only keeps the detail that dropping the low byte destroyed.
+ */
+export function rgba8From16Bit(f: Utif16Frame): { rgba: Uint8Array; note: string } | null {
+  const bps = f.t258?.[0];
+  const photometric = f.t262?.[0] ?? 1;
+  const spp = f.t277?.[0] ?? f.t258?.length ?? 1;
+  const planar = f.t284?.[0] ?? 1;
+  const fmt = f.t339?.[0] ?? 1;
+  if (bps !== 16 || fmt !== 1 || planar !== 1 || !(photometric === 0 || photometric === 1 || photometric === 2)) return null;
+  const w = f.width;
+  const h = f.height;
+  const colour = photometric === 2 ? 3 : 1;
+  if (spp < colour || f.data.length < w * h * spp * 2) return null;
+  const extra = f.t338 ?? [];
+  const alphaAt = spp > colour && (extra[0] === 1 || extra[0] === 2) ? colour : -1;
+  const d = f.data;
+  const n = w * h;
+  let lo = 65535;
+  let hi = 0;
+  for (let i = 0; i < n; i++) {
+    const base = i * spp * 2;
+    for (let c = 0; c < colour; c++) {
+      const o = base + c * 2;
+      const v = d[o]! | (d[o + 1]! << 8);
+      if (v < lo) lo = v;
+      if (v > hi) hi = v;
+    }
+  }
+  const span = hi > lo ? hi - lo : 1;
+  const k = 255 / span;
+  const out = new Uint8Array(n * 4);
+  for (let i = 0; i < n; i++) {
+    const base = i * spp * 2;
+    const q = i * 4;
+    for (let c = 0; c < 3; c++) {
+      const o = base + (colour === 3 ? c : 0) * 2;
+      let v = Math.round(((d[o]! | (d[o + 1]! << 8)) - lo) * k);
+      if (photometric === 0) v = 255 - v; // WhiteIsZero
+      out[q + c] = v;
+    }
+    if (alphaAt >= 0) {
+      const o = base + alphaAt * 2;
+      out[q + 3] = (d[o]! | (d[o + 1]! << 8)) >> 8;
+    } else {
+      out[q + 3] = 255;
+    }
+  }
+  return { rgba: out, note: `16-bit TIFF converted to 8 bits by its own range (${lo}–${hi} mapped to 0–255).` };
+}
+
 export function decodeTiffBuffer(buf: ArrayBuffer): DecodedTiffImage {
   if (!isTiffBytes(buf)) {
     throw new Error('File does not have a valid TIFF header.');
@@ -231,7 +299,10 @@ export function decodeTiffBuffer(buf: ArrayBuffer): DecodedTiffImage {
   }
 
   UTIF.decodeImage(buf, best);
-  const rgbaRaw = UTIF.toRGBA8(best);
+  // 16-bit images: UTIF keeps only the high byte, so 12-bit data stored in 16 bits (common for
+  // scientific and drone cameras) collapsed to 16 grey levels. Scale by the image's own range.
+  const sixteen = rgba8From16Bit(best as unknown as Utif16Frame);
+  const rgbaRaw = sixteen?.rgba ?? UTIF.toRGBA8(best);
   const width = best.width;
   const height = best.height;
   if (!width || !height || rgbaRaw.byteLength < width * height * 4) {
@@ -244,8 +315,9 @@ export function decodeTiffBuffer(buf: ArrayBuffer): DecodedTiffImage {
   const timestamp = parseTiffDate(cleanStringTag(rawIfd['t306']));
   const georef = extractGeoReference(rawIfd, width, height);
   const metadata: SitePhotoMetadata | undefined =
-    cameraMake || cameraModel || timestamp || georef
+    cameraMake || cameraModel || timestamp || georef || sixteen
       ? {
+          ...(sixteen ? { notes: sixteen.note } : {}),
           ...(timestamp ? { timestamp } : {}),
           ...(cameraMake ? { cameraMake } : {}),
           ...(cameraModel ? { cameraModel } : {}),

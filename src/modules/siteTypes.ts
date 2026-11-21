@@ -174,6 +174,8 @@ export interface JackknifeSensitivityReport {
   seD16: number;
   seD50: number;
   seD84: number;
+  /** Jackknife standard error of ln(Dx) for every percentile (used by the site interval). */
+  logSe: PsdPercentiles;
 }
 
 export interface ConvergencePoint {
@@ -277,6 +279,12 @@ export interface SiteAnalysisReport {
    * give identical results, e.g. the same photo twice: no interval).
    */
   ciStatus: 'ok' | 'few-photos' | 'single-photo' | 'degenerate';
+  /**
+   * Standard error of ln(Dx) behind `bootstrapCi` (larger of the bootstrap SE x sqrt(n/(n-1)) and
+   * the leave-one-photo-out jackknife SE); NaN when not estimable or for a single photo. The site
+   * comparison test uses it with n - 1 degrees of freedom per site.
+   */
+  ciLogSe: PsdPercentiles;
   folkWardCi: FolkWardConfidenceInterval | null;
   binomialCi: BinomialCiResult;
   jackknife: JackknifeSensitivityReport | null;

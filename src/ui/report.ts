@@ -80,7 +80,7 @@ export function buildSiteReportHtml(input: ReportInput): string {
     input.manualEditsCount !== undefined
       ? input.manualEditsCount > 0
         ? `Manual outline edits applied (${input.manualEditsCount} photo${input.manualEditsCount === 1 ? '' : 's'})`
-        : 'Automated outlines (no manual edits recorded in session)'
+        : 'Automated outlines (no manual edits)'
       : undefined;
   const enhText =
     input.enhancedPhotosCount !== undefined && input.enhancedPhotosCount > 0

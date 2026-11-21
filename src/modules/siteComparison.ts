@@ -2,12 +2,13 @@
  * Comparing two or more sites: load each site's saved photos and analyses, compute their
  * site reports with the same settings, and summarise the differences.
  *
- * The pairwise D16/D50/D84 test is approximate: each site's photo-level bootstrap
- * interval is converted to a standard error on the log scale (assuming a roughly log-normal
- * sampling distribution), inflated by sqrt(n/(n-1)) for its n photos, and the log-ratio of the
- * two sites is compared with a Welch t-test (n-1 degrees of freedom per site). One-photo sites
- * get no test. It is a screening tool in the spirit of Eaton et al. (2019, GSDtools), not a
- * replacement for a full two-sample bootstrap.
+ * The pairwise D16/D50/D84 test is approximate: each site's standard error of ln(Dx) is the one
+ * behind its reported interval (larger of the photo-level bootstrap SE x sqrt(n/(n-1)) and the
+ * leave-one-photo-out jackknife SE), and the log-ratio of two sites is compared with a Welch
+ * t-test (n-1 degrees of freedom per site). One-photo sites get no test. With several pairs (or
+ * surveys), Holm-adjusted p-values control the chance of any false "significant" result. It is
+ * a screening tool in the spirit of Eaton et al. (2019, GSDtools), not a replacement for a full
+ * two-sample bootstrap.
  */
 import { placeName } from './sitePlaces.js';
 import { siteSurveyDate } from './surveyDate.js';
@@ -17,7 +18,7 @@ import { csvCell } from './provenance.js';
 import { tTwoSidedP, tTwoSidedQuantile } from './studentT.js';
 import { analyzeSite, type SiteAnalysisOptions, type SiteAnalysisReport, type SitePhotoInput } from './siteAnalysis.js';
 import { buildSiteInputs } from './siteWorkspace.js';
-import { photoProcessingHistory } from './siteTypes.js';
+import { analysisSettingsOf } from './siteProvenance.js';
 
 /** Okabe–Ito colour-blind-safe palette (blue, orange, green, vermillion, purple, sky, yellow, black). */
 export const COMPARE_COLORS = ['#0072B2', '#E69F00', '#009E73', '#D55E00', '#CC79A7', '#56B4E9', '#C9A600', '#444444'] as const;
@@ -76,31 +77,6 @@ export interface ComparedSite {
    * value, or the distinct values joined by " | " when the photos differ.
    */
   analysisSettings: Record<string, string>;
-}
-
-/** What differs between photos' analyses, in words, for the like-for-like check. */
-function analysisSettingsOf(inputs: readonly SitePhotoInput[]): Record<string, string> {
-  const values = new Map<string, Set<string>>();
-  const add = (k: string, v: unknown): void => {
-    const set = values.get(k) ?? new Set<string>();
-    set.add(v === undefined || v === null ? 'none' : typeof v === 'string' ? v : JSON.stringify(v));
-    values.set(k, set);
-  };
-  for (const p of inputs) {
-    if (!p.included) continue;
-    const prov = p.session.getProvenance();
-    add('model weights', prov?.modelId ?? 'unknown');
-    add('inference pipeline', prov?.inferencePipeline ?? 'unknown');
-    add('image scale', prov?.scaleMode ?? 'unknown');
-    add('CLAHE', prov?.applyClahe ? `on (clip ${prov.claheClipLimit ?? 2})` : 'off');
-    add('fine-grain enlargement', prov?.fineGrainUpscale ?? 'off');
-    add('post-processing', prov?.postProcess ?? 'unknown');
-    const steps = photoProcessingHistory(p.metadata).map((x) => (x.step === 'enhancement' ? x.modelId : 'rectification'));
-    add('image enhancement / rectification', steps.length > 0 ? steps.join(' + ') : 'none');
-  }
-  const out: Record<string, string> = {};
-  for (const [k, set] of values) out[k] = [...set].sort().join(' | ');
-  return out;
 }
 
 /**
@@ -186,8 +162,14 @@ export interface D50Comparison {
   ratio: number;
   ratioLo: number;
   ratioHi: number;
-  /** Two-sided p-value of the approximate log-ratio z-test (NaN when not computed). */
+  /** Two-sided p-value of the approximate log-ratio t-test (NaN when not computed). */
   p: number;
+  /**
+   * Holm-adjusted p-value over all comparisons of this percentile in the same table (all site
+   * pairs, or all consecutive surveys). Use it when reading many comparisons at once: at
+   * p < 0.05 the chance of any false "significant" result is then at most 5%.
+   */
+  pAdjusted: number;
   /**
    * How far the interval and p-value can be trusted: 'photos' when both sites have at least
    * MIN_PHOTOS_FOR_TEST photos; 'few-photos' when either has fewer (approximate); 'single-photo'
@@ -214,24 +196,26 @@ export function comparisonBasis(a: SiteAnalysisReport, b: SiteAnalysisReport): C
 type WithReport = ComparedSite & { report: SiteAnalysisReport };
 
 /**
- * Log-scale standard error of a percentile from its raw percentile bootstrap CI (the test below
- * applies its own small-sample correction, so it must not start from the already-corrected
- * reported interval).
+ * Standard error of ln(Dx) of a site, already corrected for its number of photos: the one behind
+ * the site's reported interval (`ciLogSe`: larger of the bootstrap SE x sqrt(n/(n-1)) and the
+ * jackknife SE). Reports without it fall back to the bootstrap interval x sqrt(n/(n-1)).
  */
-function logSe(r: SiteAnalysisReport, key: ComparedPercentile): number {
+function siteLogSe(r: SiteAnalysisReport, key: ComparedPercentile): number {
+  const se = r.ciLogSe?.[key];
+  if (se !== undefined) return se > 0 ? se : Number.NaN;
   const ci = r.bootstrapPercentileCi ?? r.bootstrapCi;
   const lo = ci.lower[key];
   const hi = ci.upper[key];
-  return lo > 0 && hi > lo ? (Math.log(hi) - Math.log(lo)) / (2 * zFor(ci.confidenceLevel)) : Number.NaN;
+  const n = r.includedPhotoCount;
+  return lo > 0 && hi > lo && n > 1 ? ((Math.log(hi) - Math.log(lo)) / (2 * zFor(ci.confidenceLevel))) * Math.sqrt(n / (n - 1)) : Number.NaN;
 }
 
 /**
- * Small-sample test of the log-ratio of a percentile between two sites (Welch t-test).
- * Each site's log-scale standard error comes from its photo-level (cluster) bootstrap
- * interval, inflated by sqrt(n/(n-1)) for its n photos (the bootstrap's variance is biased
- * low by (n-1)/n); degrees of freedom by Welch-Satterthwaite with n-1 per site. With few
- * photos the plain z-test reported 17-40% false "significant" changes on an unchanged bed;
- * this test stays at about 3-8% (validation/comparison/).
+ * Small-sample test of the log-ratio of a percentile between two sites (Welch t-test), with
+ * each site's photo-corrected log-scale standard error (`siteLogSe`) and Welch-Satterthwaite
+ * degrees of freedom from n-1 per site. On simulated unchanged beds (3-20 photos, moderate and
+ * strong patch-to-patch variation) it gave p < 0.05 in about 2-7% of comparisons
+ * (validation/comparison/). `pAdjusted` is filled by the callers (Holm).
  */
 function comparePair(A: WithReport, B: WithReport, key: ComparedPercentile): D50Comparison {
   const lr = Math.log(A.report.psd[key] / B.report.psd[key]);
@@ -239,12 +223,12 @@ function comparePair(A: WithReport, B: WithReport, key: ComparedPercentile): D50
   // Single-photo sites: their grain-only bootstrap interval cannot see patch-to-patch
   // variation (about 30% false "significant" changes in simulation): no interval or p-value.
   if (basis === 'single-photo') {
-    return { a: A.name, b: B.name, key, ratio: Math.exp(lr), ratioLo: Number.NaN, ratioHi: Number.NaN, p: Number.NaN, basis, df: Number.NaN };
+    return { a: A.name, b: B.name, key, ratio: Math.exp(lr), ratioLo: Number.NaN, ratioHi: Number.NaN, p: Number.NaN, pAdjusted: Number.NaN, basis, df: Number.NaN };
   }
   const nA = A.report.includedPhotoCount;
   const nB = B.report.includedPhotoCount;
-  const seA = logSe(A.report, key) * Math.sqrt(nA / (nA - 1));
-  const seB = logSe(B.report, key) * Math.sqrt(nB / (nB - 1));
+  const seA = siteLogSe(A.report, key);
+  const seB = siteLogSe(B.report, key);
   const s = Math.hypot(seA, seB);
   const df = (seA * seA + seB * seB) ** 2 / (seA ** 4 / (nA - 1) + seB ** 4 / (nB - 1));
   const ok = Number.isFinite(s) && s > 0 && Number.isFinite(df) && df > 0;
@@ -257,9 +241,32 @@ function comparePair(A: WithReport, B: WithReport, key: ComparedPercentile): D50
     ratioLo: ok ? Math.exp(lr - q * s) : Number.NaN,
     ratioHi: ok ? Math.exp(lr + q * s) : Number.NaN,
     p: ok ? tTwoSidedP(lr / s, df) : Number.NaN,
+    pAdjusted: Number.NaN,
     basis,
     df: ok ? df : Number.NaN,
   };
+}
+
+/**
+ * Holm (1979) step-down adjusted p-values (NaN entries are skipped and stay NaN). Controls the
+ * family-wise error rate: with 8 identical sites (28 pairs) unadjusted p < 0.05 flagged at least
+ * one pair in 59% of simulated studies.
+ */
+export function holmAdjust(p: readonly number[]): number[] {
+  const idx = p.map((v, i) => [v, i] as const).filter(([v]) => Number.isFinite(v)).sort((a, b) => a[0] - b[0]);
+  const out = p.map(() => Number.NaN);
+  const m = idx.length;
+  let running = 0;
+  idx.forEach(([v, i], k) => {
+    running = Math.max(running, Math.min(1, (m - k) * v));
+    out[i] = running;
+  });
+  return out;
+}
+
+function withHolm(list: D50Comparison[]): D50Comparison[] {
+  const adj = holmAdjust(list.map((c) => c.p));
+  return list.map((c, i) => ({ ...c, pAdjusted: adj[i]! }));
 }
 
 /** Sites that can be compared with each other: a report, and the same unit and size metric as the first. */
@@ -283,7 +290,7 @@ export function comparePercentile(sites: readonly ComparedSite[], key: ComparedP
       out.push(comparePair(A, B, key));
     }
   }
-  return out;
+  return withHolm(out);
 }
 
 /** Pairwise D50 comparisons (see comparePercentile). */
@@ -335,6 +342,12 @@ export function surveyChanges(sites: readonly ComparedSite[]): SurveyChange[] {
         },
       });
     }
+  }
+  for (const key of ['D16', 'D50', 'D84'] as const) {
+    const adjusted = withHolm(out.map((c) => c.changes[key]));
+    out.forEach((c, i) => {
+      c.changes[key] = adjusted[i]!;
+    });
   }
   return out;
 }
@@ -422,6 +435,7 @@ export function comparisonCsv(sites: readonly ComparedSite[], metadata: Record<s
       lines.push(`${sec},${pair},ratio_ci95_lo,${num(c.ratioLo)},ratio`);
       lines.push(`${sec},${pair},ratio_ci95_hi,${num(c.ratioHi)},ratio`);
       lines.push(`${sec},${pair},p_value_approx,${num(c.p)},p`);
+      lines.push(`${sec},${pair},p_value_holm,${num(c.pAdjusted)},p`);
       lines.push(`${sec},${pair},t_test_df,${num(c.df)},df`);
       lines.push(`${sec},${pair},test_basis,${c.basis},label`);
     }
@@ -434,10 +448,11 @@ export function comparisonCsv(sites: readonly ComparedSite[], metadata: Record<s
       lines.push(`survey_change,${label},${key}_ratio_ci95_lo,${num(c.ratioLo)},ratio`);
       lines.push(`survey_change,${label},${key}_ratio_ci95_hi,${num(c.ratioHi)},ratio`);
       lines.push(`survey_change,${label},${key}_p_value_approx,${num(c.p)},p`);
+      lines.push(`survey_change,${label},${key}_p_value_holm,${num(c.pAdjusted)},p`);
       lines.push(`survey_change,${label},${key}_t_test_df,${num(c.df)},df`);
       lines.push(`survey_change,${label},${key}_test_basis,${c.basis},label`);
     }
   }
-  [...settingsMismatches(sites), ...comparisonWarnings(sites)].forEach((w, i) => lines.push(`warning,${i + 1},${csvCell(w)},text`));
+  [...settingsMismatches(sites), ...comparisonWarnings(sites)].forEach((w, i) => lines.push(`warning,,${i + 1},${csvCell(w)},text`));
   return lines.join('\n');
 }

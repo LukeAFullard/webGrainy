@@ -16,6 +16,7 @@ import {
   type SiteAnalysisReport,
   type SitePhotoInput,
 } from './siteAnalysis.js';
+import { photoCutoffs } from './siteWorkspace.js';
 
 export const EXPORT_KINDS = [
   'site-summary-csv',
@@ -69,6 +70,9 @@ export async function buildExport(kind: ExportKind, ctx: ExportContext): Promise
   const siteFile = safeName(site?.name, 'site');
   const photoFile = safeName(photo?.label, 'photo');
   // Photo-level provenance the analysis session does not hold (image steps before analysis).
+  // Photo files use the same cutoffs as the site report (common mm cutoff included), so a photo's
+  // own summary and grain table agree with the site's per-photo breakdown.
+  const cutoffs = ctx.siteOptions ? photoCutoffs(ctx.siteOptions, siteReport, photo?.photoId ?? null) : undefined;
   const photoMeta: Record<string, unknown> | undefined = photo
     ? {
         photoId: photo.photoId,
@@ -76,6 +80,15 @@ export async function buildExport(kind: ExportKind, ctx: ExportContext): Promise
         imageWidth: photo.width,
         imageHeight: photo.height,
         imageProcessing: photoProcessingHistory(photo.metadata),
+        ...(cutoffs
+          ? {
+              sizeCutoffsApplied: {
+                minPx: cutoffs.minBaxisPx,
+                minMm: cutoffs.minSizeMm,
+                ...(siteReport?.dCutoffCommonMm != null ? { siteCommonCutoffMm: siteReport.dCutoffCommonMm } : {}),
+              },
+            }
+          : {}),
       }
     : undefined;
   // Site name first, then the usual provenance metadata.
@@ -121,9 +134,7 @@ export async function buildExport(kind: ExportKind, ctx: ExportContext): Promise
                   includeMetadata: true,
                   sizeMetric,
                   ...(photoMeta ? { photoMetadata: photoMeta } : {}),
-                  ...(ctx.siteOptions
-                    ? { cutoffs: { minBaxisPx: ctx.siteOptions.minBaxisPx ?? 15, minSizeMm: ctx.siteOptions.minSizeMm ?? 0 } }
-                    : {}),
+                  ...(cutoffs ? { cutoffs } : {}),
                 }),
               ],
               { type: 'text/csv' },
@@ -132,17 +143,11 @@ export async function buildExport(kind: ExportKind, ctx: ExportContext): Promise
           }
         : null;
     case 'photo-summary-csv': {
-      const cutoffs = ctx.siteOptions
-        ? { minBaxisPx: ctx.siteOptions.minBaxisPx ?? 15, minSizeMm: ctx.siteOptions.minSizeMm ?? 0 }
-        : undefined;
       return session
         ? { blob: new Blob([session.exportSummaryCsv(sizeMetric, cutoffs, photoMeta)], { type: 'text/csv' }), filename: `${photoFile}_summary.csv` }
         : null;
     }
     case 'photo-summary-json': {
-      const cutoffs = ctx.siteOptions
-        ? { minBaxisPx: ctx.siteOptions.minBaxisPx ?? 15, minSizeMm: ctx.siteOptions.minSizeMm ?? 0 }
-        : undefined;
       return session
         ? {
             blob: new Blob([session.exportSummaryJson(sizeMetric, cutoffs, photoMeta)], { type: 'application/json' }),

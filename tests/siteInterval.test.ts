@@ -5,7 +5,8 @@
  * Simulated bed: each photo's median varies between photos (patch sd 0.3 in ln units), grains
  * are lognormal within a photo (sd 0.6). The truth is the area-weighted D50 of the same process
  * over 2000 photos. Before the fix, the percentile cluster bootstrap covered it in about 45%
- * (2 photos), 64% (3), 77% (5) and 79% (10) of sites; the t-interval on the log scale 88-97%.
+ * (2 photos), 64% (3), 77% (5) and 79% (10) of sites; the t-interval on the log scale (SE = larger
+ * of bootstrap SE x sqrt(n/(n-1)) and jackknife SE) about 90-97%.
  */
 import { describe, expect, it } from 'vitest';
 import { analyzeSite, exportSiteSummaryCsv, type SitePhotoInput } from '../src/modules/siteAnalysis.js';
