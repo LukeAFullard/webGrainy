@@ -487,7 +487,7 @@ export function placeHtml(state: AppState): string {
 export function surveyDateHtml(state: AppState): string {
   const site = getActiveSite(state);
   if (!site) return '';
-  const fromPhotos = earliestPhotoDate(state.photos.map((p) => p.metadata?.timestamp));
+  const fromPhotos = earliestPhotoDate(state.photos.filter((p) => p.included).map((p) => p.metadata?.timestamp));
   return `<label class="field-label survey-date" style="margin-top:6px;">
     <span class="label-row">Survey date ${helpButton('surveyDate')}</span>
     <input class="input" type="date" data-site-date="" value="${esc(site.surveyDate ?? '')}" aria-label="Survey date of this site" />

@@ -14,7 +14,7 @@
  * 26, 1237–1248; Trask (1932); Lotspeich & Everest (1981) Fredle index, USDA Res. Note PNW-369;
  * Bunte & Abt (2001) RMRS-GTR-74.
  */
-import { weightedPsdPercentiles } from './sedimentStats.js';
+import { weightedPsdPercentiles } from './percentiles.js';
 
 export interface ExtraGrainStats {
   /** Number of grains used. */

@@ -1,6 +1,6 @@
 /** Toolbar and photo events: tools, shape buttons, undo/redo, merge, scale copy, Display menu. */
 import { upscaleIncreasesWorkingResolution } from '../../modules/imagePreprocess.js';
-import { planScaleCopy, suggestScaleTargets } from '../scaleCopy.js';
+import { planScaleCopy, suggestScaleTargets } from '../../modules/scaleCopy.js';
 import type { PhotoRecord } from '../../modules/projectStorage.js';
 import type { EditorToolMode } from '../state.js';
 import { navGrainsFor, navigateGrains, type GrainNavMode } from '../grainNav.js';

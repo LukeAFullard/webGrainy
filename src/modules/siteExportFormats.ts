@@ -9,6 +9,7 @@ import { baseExportMetadata, csvCell, metadataCommentLines, metadataSummaryRows 
 import { filterGrainsByRoiAndExclusion } from './roiAndRectify.js';
 import { filterBorderGrains } from './sedimentStats.js';
 import { PSD_KEYS, siteCutoffReason } from './sitePooling.js';
+import { grainStatsWeight } from './siteStatsWeights.js';
 import { photoProcessingHistory, type SitePhotoInput, type SiteAnalysisOptions, type SiteAnalysisReport } from './siteTypes.js';
 
 /** A number for a CSV cell: empty when not available (NaN/Infinity), never the text "NaN". */
@@ -84,7 +85,7 @@ export function buildSiteExportMetadata(
             minBaxisPx: options.minBaxisPx ?? 15,
             minSizeMm: options.minSizeMm ?? 0,
             harmonizePhysicalCutoff: options.harmonizePhysicalCutoff ?? options.harmonizeCutoff ?? true,
-            bootstrapReplicates: options.bootstrapReplicates ?? 1000,
+            bootstrapReplicates: options.bootstrapReplicates ?? report?.bootstrapReplicates ?? 500,
             bootstrapSeed: options.bootstrapSeed ?? 42,
             bootstrapTwoStage: options.bootstrapTwoStage ?? false,
             wolmanPointsPerPhoto: options.wolmanPointsPerPhoto ?? 100,
@@ -261,7 +262,7 @@ export function exportSiteSummaryCsv(
 
   for (const p of report.perPhoto) {
     lines.push(
-      `per_photo,${csvCell(p.photoId)}_D50,${p.D50},${report.unit}`,
+      `per_photo,${csvCell(p.photoId)}_D50,${numCell(p.D50)},${report.unit}`,
     );
     lines.push(
       `per_photo,${csvCell(p.photoId)}_valid_grains,${p.validGrainCount},count`,
@@ -322,6 +323,7 @@ export function exportPooledGrainsCsv(
     'max_feret_mm',
     'included_in_stats',
     'exclusion_reason',
+    'stats_weight',
   ].join(',');
 
   const lines: string[] =
@@ -332,6 +334,13 @@ export function exportPooledGrainsCsv(
   // Same size-cutoff rule as the site statistics (rows already pass the border and ROI rules).
   // Without a report the cutoffs are unknown and both columns are left empty.
   const byId = new Map<number, GrainMorphometrics>();
+  // Weight of each counted grain in the site statistics (area in mm² or px, share of photo area,
+  // grid hits or 1, by pooling mode): pooling `stats_weight` reproduces the site percentiles.
+  const weightCell = (photoId: string, grainId: number): string | number => {
+    if (report === undefined) return '';
+    const w = grainStatsWeight(report, photoId, grainId);
+    return w !== undefined && Number.isFinite(w) ? w : '';
+  };
   const inclusion = (g: { id: number }): [string | boolean, string] => {
     if (report === undefined) return ['', ''];
     const grain = byId.get(g.id);
@@ -406,6 +415,7 @@ export function exportPooledGrainsCsv(
           g.minFeretMm ?? '',
           g.maxFeretMm ?? '',
           ...inclusion(g),
+          weightCell(entry.photoId, g.id),
         ].join(','),
       );
     }

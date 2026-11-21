@@ -124,7 +124,7 @@ docs/            settings guide
 The engine can be used without the app:
 
 ```ts
-import { ImageGrainsEngine, ScaleCalibrator } from './dist/index.js';
+import { ImageGrainsEngine, ScaleCalibrator, analyzeSite, DEFAULT_SITE_OPTIONS } from './dist/index.js';
 
 const engine = new ImageGrainsEngine({ sessionCreateOptions: { wasmPaths: './ort/' } });
 await engine.initialize();
@@ -134,9 +134,13 @@ const session = await engine.analyzeImage(imageBitmap, {
   calibration: ScaleCalibrator.calibrate({ x: 100, y: 200 }, { x: 600, y: 200 }, 250), // 250 mm
 });
 
-const stats = session.getStats();
+// The app's default cutoff: grains under 15 px are not counted (DEFAULT_SITE_OPTIONS).
+const stats = session.getStats('bAxis', { minBaxisPx: 15 });
 console.log('D50', stats.areaWeightedB.D50, stats.unit, 'n =', stats.includedGrains);
-const csv = session.exportCsv({ includeMetadata: true });
+const csv = session.exportCsv({ includeMetadata: true, cutoffs: { minBaxisPx: 15 } });
+
+// Several photos of one site, with the app's statistics settings and uncertainty:
+// analyzeSite([{ photoId, label, included: true, session }, ...], DEFAULT_SITE_OPTIONS)
 ```
 
 ---

@@ -2,6 +2,7 @@
  * Histogram data for the dashboard charts (binning only; drawing is in ui/charts.ts).
  */
 import type { GrainMorphometrics, SizeMetric } from '../types/index.js';
+import { grainSizeIn } from './grainSize.js';
 import { computeWentworthHistogram, type WentworthBin } from './morphometricsExt.js';
 
 export interface SizeHistogramBin {
@@ -33,8 +34,8 @@ export function sizeHistogramFromWentworth(bins: readonly WentworthBin[], step: 
 }
 
 function metricValue(g: GrainMorphometrics, metric: SizeMetric, unit: 'mm' | 'px'): number | undefined {
-  if (unit === 'mm') return metric === 'dEq' ? g.dEqMm : metric === 'minFeret' ? g.minFeretMm : g.bAxisMm;
-  return metric === 'dEq' ? g.dEqPx : metric === 'minFeret' ? (g.minFeretPx ?? g.bAxisPx) : g.bAxisPx;
+  const v = grainSizeIn(g, metric, unit);
+  return Number.isFinite(v) ? v : undefined;
 }
 
 /**

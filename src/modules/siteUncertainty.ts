@@ -4,10 +4,11 @@
  */
 import type { PsdPercentiles } from '../types/index.js';
 import { computeFolkWardStats, computePsdPercentiles } from './sedimentStats.js';
+import { sizeAtCumulative, weightedMidpointCdf } from './percentiles.js';
 import { lnGamma, tTwoSidedQuantile } from './studentT.js';
 
 export { lnGamma };
-import { PSD_KEYS, PERCENTILE_NUMS, type PreparedGrain, type PreparedPhoto, emptyPsd, quantileSorted, buildPooledArrays } from './sitePooling.js';
+import { PSD_KEYS, PERCENTILE_NUMS, type PreparedGrain, type PreparedPhoto, emptyPsd, quantileSorted, buildPooledArrays, grainPoolWeight } from './sitePooling.js';
 import type { PoolingMode, PsdConfidenceInterval, FolkWardConfidenceInterval, BinomialCiResult, JackknifePhotoSensitivity, JackknifeSensitivityReport, ConvergencePoint } from './siteTypes.js';
 
 /**
@@ -76,42 +77,6 @@ export function binomialConfidenceRanks(
   return { le, ue };
 }
 
-export function evalWeightedLog2PsdAtProb(
-  sortedPairs: ReadonlyArray<{ v: number; w: number }>,
-  cdf: Float64Array,
-  prob: number,
-): number {
-  const count = sortedPairs.length;
-  if (count === 0) return Number.NaN;
-  const firstCdf = cdf[0] ?? 0;
-  const lastCdf = cdf[count - 1] ?? 1;
-  const firstV = sortedPairs[0]?.v ?? Number.NaN;
-  const lastV = sortedPairs[count - 1]?.v ?? Number.NaN;
-
-  if (prob <= firstCdf) return firstV;
-  if (prob >= lastCdf) return lastV;
-
-  let lo = 0;
-  let hi = count - 1;
-  while (lo + 1 < hi) {
-    const mid = (lo + hi) >>> 1;
-    if ((cdf[mid] ?? 0) <= prob) {
-      lo = mid;
-    } else {
-      hi = mid;
-    }
-  }
-
-  const c0 = cdf[lo] ?? 0;
-  const c1 = cdf[hi] ?? 1;
-  const v0 = sortedPairs[lo]?.v ?? 1;
-  const v1 = sortedPairs[hi]?.v ?? 1;
-  if (c1 === c0) return v1;
-  const t = (prob - c0) / (c1 - c0);
-  const log2Val = Math.log2(v0) + t * (Math.log2(v1) - Math.log2(v0));
-  return 2 ** log2Val;
-}
-
 export function computeBinomialCi(
   values: readonly number[],
   weights: readonly number[],
@@ -119,28 +84,19 @@ export function computeBinomialCi(
   confidenceLevel: 0.9 | 0.95,
 ): BinomialCiResult {
   const alpha = confidenceLevel === 0.9 ? 0.1 : 0.05;
-  const pairs: Array<{ v: number; w: number }> = [];
+  const curve = weightedMidpointCdf(values, weights);
   let sumW = 0;
   let sumW2 = 0;
-
-  for (let i = 0; i < values.length; i++) {
-    const v = values[i];
-    const w = weights[i];
-    if (
-      v !== undefined &&
-      w !== undefined &&
-      Number.isFinite(v) &&
-      Number.isFinite(w) &&
-      v > 0 &&
-      w > 0
-    ) {
-      pairs.push({ v, w });
+  for (let i = 0; i < Math.min(values.length, weights.length); i++) {
+    const v = values[i]!;
+    const w = weights[i]!;
+    if (Number.isFinite(v) && Number.isFinite(w) && v > 0 && w > 0) {
       sumW += w;
       sumW2 += w * w;
     }
   }
 
-  if (pairs.length === 0 || sumW <= 0) {
+  if (curve.sizes.length === 0 || sumW <= 0) {
     return {
       confidenceLevel,
       sampleSizeUsed: 0,
@@ -148,16 +104,6 @@ export function computeBinomialCi(
       lower: emptyPsd(),
       upper: emptyPsd(),
     };
-  }
-
-  pairs.sort((a, b) => a.v - b.v);
-  const cdf = new Float64Array(pairs.length);
-  let cumSum = 0;
-  for (let i = 0; i < pairs.length; i++) {
-    const pair = pairs[i];
-    if (pair === undefined) continue;
-    cumSum += pair.w;
-    cdf[i] = (cumSum - 0.5 * pair.w) / sumW;
   }
 
   const isKish =
@@ -175,8 +121,8 @@ export function computeBinomialCi(
     const key = PSD_KEYS[i];
     if (pNum === undefined || key === undefined) continue;
     const { le, ue } = binomialConfidenceRanks(nUsed, pNum / 100, alpha);
-    lower[key] = evalWeightedLog2PsdAtProb(pairs, cdf, le / nUsed);
-    upper[key] = evalWeightedLog2PsdAtProb(pairs, cdf, ue / nUsed);
+    lower[key] = sizeAtCumulative(curve, le / nUsed);
+    upper[key] = sizeAtCumulative(curve, ue / nUsed);
   }
 
   return {
@@ -313,15 +259,8 @@ function singleCopyWeights(photos: readonly PreparedPhoto[], pool: SortedPool, m
     p.validGrains.forEach((g, gi) => {
       const at = pos[gi]!;
       if (at < 0) return;
-      let x = 0;
-      switch (mode) {
-        case 'physical-area': x = g.areaVal; break;
-        case 'equal-photo': x = areaSum > 0 ? g.areaVal / areaSum : 0; break;
-        case 'virtual-wolman-grid': x = g.gridHits; break;
-        case 'number-weighted': x = 1; break;
-        // A common factor (1 / total facies weight) does not change percentiles.
-        case 'facies-weighted': x = areaSum > 0 ? (anyFacies ? p.faciesWeight : 1) * (g.areaVal / areaSum) : 0; break;
-      }
+      // A common factor (1 / total facies weight) does not change percentiles.
+      const x = grainPoolWeight(mode, g, areaSum, mode === 'facies-weighted' ? (anyFacies ? p.faciesWeight : 1) : 1);
       w[at] = x > 0 ? x : 0;
     });
   });
@@ -413,24 +352,7 @@ export function runBootstrap(
       const at = pos[gi]!;
       if (at < 0) continue;
       const g = grains[gi]!;
-      let w = 0;
-      switch (poolingMode) {
-        case 'physical-area':
-          w = g.areaVal;
-          break;
-        case 'equal-photo':
-          w = areaSum > 0 ? g.areaVal / areaSum : 0;
-          break;
-        case 'virtual-wolman-grid':
-          w = g.gridHits;
-          break;
-        case 'number-weighted':
-          w = 1;
-          break;
-        case 'facies-weighted':
-          w = areaSum > 0 ? faciesNorm * (g.areaVal / areaSum) : 0;
-          break;
-      }
+      const w = grainPoolWeight(poolingMode, g, areaSum, faciesNorm);
       if (!(w > 0)) continue;
       if (total[at] === 0) first[at] = w;
       last[at] = w;

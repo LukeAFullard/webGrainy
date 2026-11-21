@@ -15,6 +15,7 @@
  * the leave-one-photo-out jackknife SE). Prints a markdown table (D16 / D50 / D84).
  */
 import { it } from 'vitest';
+import { writeFileSync } from 'node:fs';
 import { computeComparedSites, surveyChanges } from '../../src/modules/siteComparison';
 import { mulberry32 } from '../../src/modules/siteUncertainty';
 
@@ -65,5 +66,8 @@ it('false-positive rate of survey-change D50 p-values on an unchanged bed', () =
     const pct = (v: number) => `${((100 * v) / N).toFixed(1)}%`;
     rows.push(`| ${photos} | ${patch.toFixed(2)} | ${tested} / ${N} | ${pct(sig.D16)} | ${pct(sig.D50)} | ${pct(sig.D84)} |`);
   }
-  console.log(rows.join('\n'));
+  const table = ['| Photos per survey | Patch sd | p given | D16 p < 0.05 | D50 p < 0.05 | D84 p < 0.05 |', '| ---: | ---: | ---: | ---: | ---: | ---: |', ...rows].join('\n');
+  // Vitest hides console output of passing tests: keep the table in a file as well.
+  writeFileSync('validation/comparison/false_positive_rate_results.md', `${N} trials per row, 500 bootstrap replicates, seeds as in the script.\n\n${table}\n`);
+  console.log(table);
 });

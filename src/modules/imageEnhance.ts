@@ -785,6 +785,31 @@ export function scaleCalibrationAndRoi(
 }
 
 /** Cumulative pixel scale factor relative to the unenhanced original (1 if not upscaled). */
+/**
+ * Calibration and ROI to restore when an enhancement is reverted. A value set before the
+ * enhancement comes back as it was, unless it was changed afterwards on the enhanced image (e.g.
+ * the scale re-measured, an ROI redrawn): then the newer value is kept, scaled back to the
+ * original pixels, instead of being silently replaced by the old one.
+ */
+export function revertedCalibrationAndRoi(photo: {
+  width: number;
+  calibration?: CalibrationResult;
+  roiConfig?: RoiExclusionConfig;
+  originalBackup: { width: number; calibration?: CalibrationResult; roiConfig?: RoiExclusionConfig };
+}): { calibration?: CalibrationResult; roiConfig?: RoiExclusionConfig } {
+  const orig = photo.originalBackup;
+  const up = orig.width > 0 && photo.width > 0 ? photo.width / orig.width : 1;
+  // What the backup's values became when the enhancement was applied.
+  const carried = scaleCalibrationAndRoi(orig.calibration, orig.roiConfig, up);
+  const same = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b);
+  const calChanged = photo.calibration !== undefined && !same(photo.calibration, carried.calibration);
+  const roiChanged = photo.roiConfig !== undefined && !same(photo.roiConfig, carried.roiConfig);
+  const back = scaleCalibrationAndRoi(photo.calibration, photo.roiConfig, 1 / up);
+  const calibration = calChanged || orig.calibration === undefined ? back.calibration : orig.calibration;
+  const roiConfig = roiChanged || orig.roiConfig === undefined ? back.roiConfig : orig.roiConfig;
+  return { ...(calibration ? { calibration } : {}), ...(roiConfig ? { roiConfig } : {}) };
+}
+
 export function photoUpscaleFactor(photo: {
   width: number;
   originalBackup?: { width: number };

@@ -42,7 +42,9 @@ export {
   WebGpuDeviceLostError,
   isWebGpuDeviceLostError,
   resolveWasmPaths,
+  /** @deprecated Legacy whole-image pipeline; does not reproduce upstream ImageGrains. Use runUnetCellposeInference. */
   runUnetInference,
+  /** @deprecated Legacy tiling; does not reproduce upstream ImageGrains. Use runCpsamCellposeInference. */
   runCpsamTiledInference,
   runUnetCellposeInference,
   runCpsamCellposeInference,
@@ -113,6 +115,7 @@ export {
   invert3x3,
   applyHomographyPoint,
   rectifyPerspective,
+  rectificationCalibration,
   type ExclusionBrushStroke,
   type RoiExclusionConfig,
   type ValidBedMask,
@@ -221,3 +224,42 @@ export {
   type CellposeVersion,
   type CellposeTilingOptions,
 } from './modules/cellposeTiling.js';
+
+// Site statistics helpers used by the app, so scripted use gives the same numbers.
+export { weightedMidpointCdf, sizeAtCumulative, type WeightedCdf } from './modules/percentiles.js';
+export { grainSizeIn } from './modules/grainSize.js';
+export { photoDetectionLimitPx, grainStatsWeight, MAX_BOOTSTRAP_REPLICATES } from './modules/siteAnalysis.js';
+export { siteCutoffReason, grainPoolWeight, MAX_WOLMAN_POINTS, type SiteCutoffReason } from './modules/sitePooling.js';
+export { calibrateSiteInterval, MIN_PHOTOS_FOR_RELIABLE_CI, type SiteCiStatus } from './modules/siteUncertainty.js';
+export { maxRatingForPhotos } from './modules/siteAdequacy.js';
+export { DEFAULT_SITE_OPTIONS, SITE_OPTION_LIMITS, sanitizeSiteOptions, clampRecordTime } from './modules/siteOptions.js';
+export { analysisSettingsOf, withinSiteSettingDifferences, siteReportProvenance, type SiteReportProvenance } from './modules/siteProvenance.js';
+export { buildSiteInputs, computeWorkspaceReports, photoCutoffs, type WorkspaceReports } from './modules/siteWorkspace.js';
+
+// Comparing sites and surveys over time.
+export {
+  computeComparedSites,
+  comparePercentile,
+  compareD50,
+  surveyChanges,
+  comparisonCsv,
+  comparisonWarnings,
+  settingsMismatches,
+  holmAdjust,
+  loadStoredSiteInputs,
+  MIN_PHOTOS_FOR_TEST,
+  type SiteForComparison,
+  type ComparedSite,
+  type D50Comparison,
+  type SurveyChange,
+  type ComparedPercentile,
+  type ComparisonBasis,
+} from './modules/siteComparison.js';
+
+// Exports, results bundle, GIS and file decoding.
+export { buildExport, isExportKind, EXPORT_KINDS, type ExportKind, type ExportContext, type ExportFile } from './modules/exports.js';
+export { buildResultsBundle, resultsBundleEntries, type ResultsBundleInput } from './modules/resultsBundle.js';
+export { photoGeoreference, geoJsonToMap, worldFile } from './modules/georef.js';
+export { decodeTiffBuffer, isTiffFile, isSupportedImageFile } from './modules/tiffDecode.js';
+export { planScaleCopy, suggestScaleTargets, scaleSourceOf, type ScaleCopyPlan, type ScaleSource } from './modules/scaleCopy.js';
+export { revertedCalibrationAndRoi, scaleCalibrationAndRoi, photoUpscaleFactor } from './modules/imageEnhance.js';

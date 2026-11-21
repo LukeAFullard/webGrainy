@@ -1,4 +1,5 @@
 import type { GrainMorphometrics, Point2D, SizeMetric } from '../types/index.js';
+import { grainSizeIn } from './grainSize.js';
 
 export interface CachedGrainGeometry {
   perimeterWorking: number;
@@ -631,12 +632,7 @@ export function computeWentworthHistogram(
   for (let i = 0; i < grains.length; i++) {
     const grain = grains[i];
     if (grain === undefined) continue;
-    const dMm =
-      sizeMetric === 'dEq'
-        ? grain.dEqMm
-        : sizeMetric === 'minFeret'
-          ? grain.minFeretMm
-          : grain.bAxisMm;
+    const dMm = grainSizeIn(grain, sizeMetric, 'mm');
     if (typeof dMm !== 'number' || !Number.isFinite(dMm) || dMm <= 0) {
       continue;
     }

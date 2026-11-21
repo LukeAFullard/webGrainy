@@ -213,6 +213,26 @@ export function computeVirtualWolmanHits(
   return { hitCounts, gridGrainHits, gridMatrixHits, gridSubCutoffHits };
 }
 
+/**
+ * A grain's weight in the pooled site distribution: the one rule shared by the site PSD, the
+ * bootstrap, the jackknife and the pooled-grains export. `photoAreaSum` is the summed `areaVal`
+ * of the grain's photo (as drawn); `faciesNorm` the photo's share of the facies weights.
+ */
+export function grainPoolWeight(mode: PoolingMode, g: Pick<PreparedGrain, 'areaVal' | 'gridHits'>, photoAreaSum: number, faciesNorm: number): number {
+  switch (mode) {
+    case 'physical-area':
+      return g.areaVal;
+    case 'equal-photo':
+      return photoAreaSum > 0 ? g.areaVal / photoAreaSum : 0;
+    case 'virtual-wolman-grid':
+      return g.gridHits;
+    case 'number-weighted':
+      return 1;
+    case 'facies-weighted':
+      return photoAreaSum > 0 ? faciesNorm * (g.areaVal / photoAreaSum) : 0;
+  }
+}
+
 export function buildPooledArrays(
   photos: readonly PreparedPhoto[],
   poolingMode: PoolingMode,
@@ -221,8 +241,11 @@ export function buildPooledArrays(
   values: number[];
   weights: number[];
   grains: GrainMorphometrics[];
+  /** Index (into `photos`) of the photo each pooled grain comes from. */
+  photoIndex: number[];
   photoWeightsPct: number[];
 } {
+  const photoIndex: number[] = [];
   const values: number[] = [];
   const weights: number[] = [];
   const grainsOut: GrainMorphometrics[] = [];
@@ -257,28 +280,12 @@ export function buildPooledArrays(
 
     let photoWeightSum = 0;
     for (const g of grains) {
-      let w = 0;
-      switch (poolingMode) {
-        case 'physical-area':
-          w = g.areaVal;
-          break;
-        case 'equal-photo':
-          w = photoAreaSum > 0 ? g.areaVal / photoAreaSum : 0;
-          break;
-        case 'virtual-wolman-grid':
-          w = g.gridHits;
-          break;
-        case 'number-weighted':
-          w = 1;
-          break;
-        case 'facies-weighted':
-          w = photoAreaSum > 0 ? faciesNorm * (g.areaVal / photoAreaSum) : 0;
-          break;
-      }
+      const w = grainPoolWeight(poolingMode, g, photoAreaSum, faciesNorm);
       if (w > 0 && Number.isFinite(g.sizeVal) && g.sizeVal > 0) {
         values.push(g.sizeVal);
         weights.push(w);
         grainsOut.push(g.grain);
+        photoIndex.push(pIdx);
         photoWeightSum += w;
       }
     }
@@ -291,7 +298,7 @@ export function buildPooledArrays(
     grandTotal > 0 ? (t / grandTotal) * 100 : 0,
   );
 
-  return { values, weights, grains: grainsOut, photoWeightsPct };
+  return { values, weights, grains: grainsOut, photoIndex, photoWeightsPct };
 }
 
 export function getGrainSize(
@@ -302,13 +309,13 @@ export function getGrainSize(
   return grainSizeIn(grain, sizeMetric, unit);
 }
 
+/** A grain's size in mm for the metric (derived from its own scale when needed), or undefined without a mm scale. */
 export function getGrainMmSize(
   grain: GrainMorphometrics,
   sizeMetric: SizeMetric,
 ): number | undefined {
-  if (sizeMetric === 'dEq') return grain.dEqMm;
-  if (sizeMetric === 'minFeret') return grain.minFeretMm;
-  return grain.bAxisMm;
+  const mm = grainSizeIn(grain, sizeMetric, 'mm');
+  return Number.isFinite(mm) ? mm : undefined;
 }
 
 /** Why a grain that passed the border and ROI rules is left out of the site statistics. */

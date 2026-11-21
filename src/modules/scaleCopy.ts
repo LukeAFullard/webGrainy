@@ -6,8 +6,8 @@
  * resolution and height above the bed. Photos that already have their own scale (measured,
  * perspective-rectified, or from a GeoTIFF) are never changed without an explicit confirmation.
  */
-import { photoUpscaleFactor, scaleCalibrationAndRoi } from '../modules/imageEnhance.js';
-import type { PhotoRecord } from '../modules/projectStorage.js';
+import { photoUpscaleFactor, scaleCalibrationAndRoi } from './imageEnhance.js';
+import type { PhotoRecord } from './projectStorage.js';
 import type { CalibrationResult } from '../types/index.js';
 
 export type ScaleSource = NonNullable<CalibrationResult['source']>;
