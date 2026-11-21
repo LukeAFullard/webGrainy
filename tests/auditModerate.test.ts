@@ -98,3 +98,29 @@ describe('rectification calibration', () => {
     expect(() => rectificationCalibration({ roiRectInOutput: [0, 0, 0, 1] }, 500)).toThrow();
   });
 });
+
+describe('virtual Wolman grid sampling', () => {
+  it('samples the working pixel that contains each grid point (floor, not round)', async () => {
+    const { AnalysisSession } = await import('../src/modules/analysisSession.js');
+    const { computeAllGrainMorphometrics } = await import('../src/modules/interactiveEditor.js');
+    const { computeVirtualWolmanHits } = await import('../src/modules/sitePooling.js');
+    const W = 20;
+    const masks = new Int32Array(W * W);
+    for (let y = 0; y < W; y++) for (let x = 0; x < W; x++) masks[y * W + x] = x + 1; // column x = grain x+1
+    const session = new AnalysisSession({
+      workingImage: { data: new Uint8ClampedArray(0), width: W, height: W, originalWidth: W, originalHeight: W, effectiveScaleFactor: 1, scaleModeApplied: '1.0x' },
+      recommendation: { model: 'unet', metrics: {} } as never,
+      masks,
+      workingGrains: computeAllGrainMorphometrics(masks, W, W, 0),
+      excludeBorder: false,
+      borderMargin: 0,
+    });
+    const valid = { valid: new Uint8Array(W * W).fill(1), validPixelCount: W * W } as never;
+    const ids = new Set(Array.from({ length: W }, (_, i) => i + 1));
+    // 0.7 mm spacing at 0.5 mm/px = 1.4 px: points at x = 0.7, 2.1, 3.5, ... lie in pixels 0, 2, 3, ...
+    const r = computeVirtualWolmanHits(session, valid, ids, new Set(), { poolingMode: 'virtual-wolman-grid', wolmanGridSpacingMm: 0.7 }, 0.5, 'mm');
+    const expected = new Set<number>();
+    for (let k = 0; (k + 0.5) * 1.4 < W; k++) expected.add(Math.floor((k + 0.5) * 1.4) + 1);
+    expect(new Set(r.hitCounts.keys())).toEqual(expected);
+  });
+});

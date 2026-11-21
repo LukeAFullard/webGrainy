@@ -132,19 +132,21 @@ export function metadataCommentLines(meta: Record<string, unknown>): string[] {
 
 /**
  * Neutralises spreadsheet formula injection (OWASP "CSV injection") and quotes a CSV cell.
- * Cells beginning with `=`, `+`, `-`, `@`, TAB or CR are prefixed with `'` unless they are
- * plain numbers. Inside text, a formula character right after a delimiter (`,` `;` TAB or a
- * line break) is prefixed too: a spreadsheet that splits on another delimiter than the comma
+ * Cells beginning with `=`, `+`, `-`, `@`, TAB or CR (after any spaces) are prefixed with `'`
+ * unless they are plain numbers. Inside text, a formula character after a delimiter (`,` `;`
+ * TAB or a line break) and any spaces is prefixed too: a spreadsheet that splits on another delimiter than the comma
  * (e.g. `;` in many European locales) ignores quotes in the middle of its cells, so that
  * character could otherwise start a cell.
  */
 export function csvCell(val: string | number | boolean): string {
   let str = String(val);
   if (typeof val === 'string') {
-    if (/^[=+\-@\t\r]/.test(str) && !/^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(str)) {
+    // Leading spaces count: a spreadsheet that trims spaces on import (LibreOffice "Trim spaces")
+    // would otherwise turn " =1+1" into a formula.
+    if (/^\s*[=+\-@\t\r]/.test(str) && !/^\s*[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?\s*$/.test(str)) {
       str = `'${str}`;
     }
-    str = str.replace(/([,;\t\r\n])([=+\-@])/g, "$1'$2");
+    str = str.replace(/([,;\t\r\n])([ ]*)([=+\-@])/g, "$1$2'$3");
   }
   // Quote on `;` and TAB too: spreadsheets in many locales split CSV files on them.
   if (/[",\n\r;\t]/.test(str)) {
