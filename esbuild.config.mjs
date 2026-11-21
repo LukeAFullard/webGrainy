@@ -185,6 +185,12 @@ for (const staticAsset of ['index.html', 'gpucheck.html', 'sw.js', 'manifest.web
     console.log(`[build] Copied src/${staticAsset} to dist/${staticAsset}.`);
   }
 }
+// The licence and third-party notices travel with the deployed bundle (MIT / Zlib / BSD
+// notices must accompany redistributed copies of the bundled code).
+for (const [from, to] of [['LICENSE', 'LICENSE.txt'], ['THIRD_PARTY_NOTICES.md', 'THIRD_PARTY_NOTICES.md']]) {
+  fs.copyFileSync(path.join(rootDir, from), path.join(distDir, to));
+  console.log(`[build] Copied ${from} to dist/${to}.`);
+}
 
 // 7. Stamp the service worker with a content hash + generated precache lists so every
 //    release gets a fresh cache and code can never be served stale (no hand-bumping).

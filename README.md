@@ -6,7 +6,7 @@ webGrainy measures gravel and other coarse sediment from photos, entirely in the
 
 Photos and results never leave your device. The only network requests are the one-time downloads of the pinned, checksum-verified model files from Hugging Face; after that the app works offline.
 
-> **Status: in development.** webGrainy has not been released yet. The first release will be **v0.1.0**. Results, file formats and settings may still change.
+> **Status: first release, v0.1.0 (19 December 2026).** See [CHANGELOG.md](CHANGELOG.md). Results, file formats and settings may still change in later versions.
 
 > **Disclaimer.** webGrainy is an independent, unofficial port. It is not affiliated with or endorsed by the ImageGrains or Cellpose authors. Its post-processing differs from the official Python implementation, so outlines and sizes are close to, but not identical with, ImageGrains output. Please cite the original work (see [Citations](#citations)).
 

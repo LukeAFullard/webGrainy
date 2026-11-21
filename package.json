@@ -1,6 +1,6 @@
 {
   "name": "imagegrains-web",
-  "version": "0.1.0-dev",
+  "version": "0.1.0",
   "description": "100% client-side, privacy-first, offline-first gravel and sediment grain-sizing engine (ImageGrains 2.0 Web)",
   "private": true,
   "type": "module",
