@@ -10,7 +10,8 @@ quality (PQ, IoU > 0.5) of the app's label mask (resized to the photo as in its 
 
 Usage: python3 -I validation/heldout/score_app_heldout.py [unet] [cpsam]
 Writes validation/heldout/heldout_app_results.md and heldout_app_results_per_image.csv.
-With --from-csv, only re-summarises the committed heldout_app_results_per_image.csv.
+Scoring one model keeps the other model's committed rows. With --from-csv, only re-summarises
+the committed heldout_app_results_per_image.csv.
 """
 from __future__ import annotations
 
@@ -146,11 +147,12 @@ def summarize(gt: np.ndarray, pr: np.ndarray, sites: np.ndarray) -> dict:
             "gt50": float(100.0 * np.mean(ape > 50.0)), "bias_median": float(np.median(100.0 * (pr - gt) / gt))}
 
 
-def summary_from_csv() -> list[tuple]:
+def summary_from_csv(version: str | None = None) -> list[tuple]:
     """Re-summarise the committed per-image results (no images or app runs needed)."""
     per = list(csv.DictReader(open(ROOT / "validation/heldout/heldout_app_results_per_image.csv")))
-    old = (ROOT / "validation/heldout/heldout_app_results.md").read_text().splitlines()[0]
-    version = old.split("(webGrainy ", 1)[1].rstrip(")") if "(webGrainy " in old else "unknown"
+    if version is None:
+        old = (ROOT / "validation/heldout/heldout_app_results.md").read_text().splitlines()[0]
+        version = old.split("(webGrainy ", 1)[1].rstrip(")") if "(webGrainy " in old else "unknown"
     table = []
     for model in dict.fromkeys(r["model"] for r in per):
         rs = [r for r in per if r["model"] == model]
@@ -177,8 +179,10 @@ def main() -> None:
         gts = {k: [] for k in ("D16", "D50", "D84")}
         prs = {k: [] for k in ("D16", "D50", "D84")}
         pqs = []
+        versions = set()
         for r in rows:
             app = json.load(open(d / f"{r['uid']}.json"))
+            versions.add(app["appVersion"])
             hw = (app["height"], app["width"])
             pred = np.fromfile(d / f"{r['uid']}.i32", dtype=np.int32).reshape(hw)
             gt_mask = load_gt_mask(str(ROOT / ".cache/ig2" / r["mask_relpath"].replace("/", "__")), hw)
@@ -191,11 +195,22 @@ def main() -> None:
                               **{f"gt_{k}": gt[k] for k in gts}, **{f"app_{k}": app[k] for k in gts}, "pq": pq})
         sites = np.array([r["site"] for r in rows])
         s = {k: summarize(np.array(gts[k], float), np.array(prs[k], float), sites) for k in gts}
-        table.append((model, s, float(np.mean(pqs)), app["appVersion"]))
+        # Images re-run only when the analysis changed for them can come from different versions.
+        table.append((model, s, float(np.mean(pqs)), " / ".join(sorted(versions))))
     if not table:
         return
-    with open(ROOT / "validation/heldout/heldout_app_results_per_image.csv", "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=list(per_image[0].keys())); w.writeheader(); w.writerows(per_image)
+    # Keep the committed rows of models not scored in this run (scoring only `unet` must not drop
+    # the Cellpose-SAM results), in the usual model order.
+    csv_path = ROOT / "validation/heldout/heldout_app_results_per_image.csv"
+    scored = {m for m, *_ in table}
+    kept = [r for r in csv.DictReader(open(csv_path)) if r["model"] not in scored] if csv_path.exists() else []
+    order = {"unet": 0, "cpsam": 1}
+    merged = sorted(per_image + kept, key=lambda r: order.get(r["model"], 9))
+    with open(csv_path, "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=list(per_image[0].keys())); w.writeheader(); w.writerows(merged)
+    version = table[0][3]
+    if kept:
+        table = summary_from_csv(version)
     write_summary(table)
 
 
@@ -219,7 +234,11 @@ def write_summary(table: list[tuple]) -> None:
         lines.append(f"| {name[model]} | {d50['n']} | {d50['mean']:.1f}% [{d50['mean_ci'][0]:.1f}, {d50['mean_ci'][1]:.1f}] | "
                      f"{d50['median']:.1f}% [{d50['median_ci'][0]:.1f}, {d50['median_ci'][1]:.1f}] | "
                      f"{s['D16']['median']:.1f}% / {s['D84']['median']:.1f}% | {d50['gt50']:.1f}% | {d50['bias_median']:+.1f}% | {pq:.3f} |")
-    lines += ["", "n < 40 where an image has no grain of at least 15 px in the prediction or the hand outlines.", ""]
+    lines += ["", "n < 40 where an image has no grain of at least 15 px in the prediction or the hand outlines."]
+    if " / " in table[0][3]:
+        lines += ["Several versions: an image is re-run only when a version changes its analysis (e.g. 0.1.0's Auto",
+                  "image scale changed the 2 images over 1,024 px); the other images give identical results."]
+    lines += [""]
     (ROOT / "validation/heldout/heldout_app_results.md").write_text("\n".join(lines))
     print("\n".join(lines))
 

@@ -286,3 +286,12 @@ describe('facies weights', () => {
     expect(faciesSharePct([{ photoId: 'a', included: true }, { photoId: 'b', included: true }], { photoId: 'a', included: true })).toBe(50);
   });
 });
+
+describe('accessibility', () => {
+  it('the workspace has one level-one heading; the landing page keeps its own (audit N11)', () => {
+    const work = renderTopbarHtml({ ...createInitialState(), showLanding: false }, { gpuReset: false, cpuThreads: 4 } as never);
+    expect(work.match(/<h1\b/g)?.length).toBe(1);
+    const landing = renderTopbarHtml({ ...createInitialState(), showLanding: true }, { gpuReset: false, cpuThreads: 4 } as never);
+    expect(landing).not.toContain('<h1');
+  });
+});

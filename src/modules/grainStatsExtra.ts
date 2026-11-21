@@ -123,8 +123,9 @@ export function computeExtraGrainStats(
     geometricSd: Math.exp(Math.sqrt(lnVar)),
     momentMeanPhi: isMm ? phiMean : null,
     momentSortingPhi: isMm ? sdPhi : null,
-    momentSkewness: isMm && sdPhi > 0 ? p3 / sdPhi ** 3 : null,
-    momentKurtosis: isMm && sdPhi > 0 ? p4 / sdPhi ** 4 : null,
+    // sdPhi below 1e-9 is rounding noise of identical sizes: skewness / kurtosis undefined, not ±1.
+    momentSkewness: isMm && sdPhi > 1e-9 ? p3 / sdPhi ** 3 : null,
+    momentKurtosis: isMm && sdPhi > 1e-9 ? p4 / sdPhi ** 4 : null,
     traskSorting,
     uniformityCu: D60 / percentiles.D10,
     curvatureCc: (D30 * D30) / (percentiles.D10 * D60),

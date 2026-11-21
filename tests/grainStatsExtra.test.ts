@@ -25,6 +25,13 @@ describe('extra grain statistics', () => {
     expect(x.D65).toBeLessThanOrEqual(8);
   });
 
+  it('identical sizes give undefined moment skewness and kurtosis, not ±1 from rounding', () => {
+    const d = [3.3, 3.3, 3.3, 3.3, 3.3];
+    const x = computeExtraGrainStats(d, [1, 2, 3, 4, 5], { D10: 3.3, D25: 3.3, D50: 3.3, D75: 3.3, D90: 3.3 }, 'mm');
+    expect(x.momentSkewness).toBeNull();
+    expect(x.momentKurtosis).toBeNull();
+  });
+
   it('Sauter mean equals the area-weighted mean diameter when area ∝ d²', () => {
     const d = Array.from({ length: 200 }, (_, i) => 1 + (i % 37) * 0.7);
     const area = d.map((v) => (Math.PI / 4) * v * v);

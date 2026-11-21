@@ -117,7 +117,7 @@ export function flattenMetadata(meta: Record<string, unknown>): Array<[string, s
 }
 
 /** Note written above the comment lines, so readers know how to decode them. */
-export const COMMENT_ESCAPE_NOTE = '# escaping: in these # lines %25 = percent  %2C = comma  %3B = semicolon  %09 = tab';
+export const COMMENT_ESCAPE_NOTE = '# escaping: in these # lines %25 = percent  %2C = comma  %3B = semicolon  %7C = pipe  %09 = tab';
 
 /**
  * Text of one `#` comment line with every spreadsheet cell delimiter (comma, semicolon, TAB)
@@ -126,12 +126,29 @@ export const COMMENT_ESCAPE_NOTE = '# escaping: in these # lines %25 = percent  
  * holding a formula. Reversible with `decodeURIComponent`-style replacement of the 4 escapes.
  */
 export function escapeCommentText(text: string): string {
-  return text
-    .replace(/[\r\n]+/g, ' ')
-    .replace(/%/g, '%25')
-    .replace(/,/g, '%2C')
-    .replace(/;/g, '%3B')
-    .replace(/\t/g, '%09');
+  return guardInnerFormulaStarts(
+    text
+      .replace(/[\r\n]+/g, ' ')
+      .replace(/%/g, '%25')
+      .replace(/,/g, '%2C')
+      .replace(/;/g, '%3B')
+      .replace(/\|/g, '%7C')
+      .replace(/\t/g, '%09'),
+  );
+}
+
+/**
+ * A spreadsheet told to split on spaces would start a cell at every word: prefix `'` to a word
+ * that would start a formula (`=` or `@`, or `+` / `-` followed by something other than a digit,
+ * a dot or a space, as in `-2+3+cmd|...`). Ordinary text such as "IMG 1 - copy" or "-5" is kept.
+ */
+function guardInnerFormulaStarts(text: string): string {
+  return text.replace(/(?<=\S)( +)(\S+)/g, (m, spaces: string, word: string) => {
+    const formula =
+      /^[=@]/.test(word) ||
+      (/^[+-][\w(]/.test(word) && !/^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(word));
+    return formula ? `${spaces}'${word}` : m;
+  });
 }
 
 /** `# key: value` comment lines for prefixing tabular CSV exports (delimiters escaped). */
@@ -142,20 +159,22 @@ export function metadataCommentLines(meta: Record<string, unknown>): string[] {
 /**
  * Neutralises spreadsheet formula injection (OWASP "CSV injection") and quotes a CSV cell.
  * Cells beginning with `=`, `+`, `-`, `@`, TAB or CR (after any spaces) are prefixed with `'`
- * unless they are plain numbers. Inside text, a formula character after a delimiter (`,` `;`
- * TAB or a line break) and any spaces is prefixed too: a spreadsheet that splits on another delimiter than the comma
+ * unless they are plain numbers. Inside text, a formula character after a delimiter (`,` `;` `|`
+ * TAB or a line break) and any spaces is prefixed too, and so is a word that would start a formula
+ * if the file were split on spaces: a spreadsheet that splits on another delimiter than the comma
  * (e.g. `;` in many European locales) ignores quotes in the middle of its cells, so that
  * character could otherwise start a cell.
  */
 export function csvCell(val: string | number | boolean): string {
   let str = String(val);
   if (typeof val === 'string') {
+    str = guardInnerFormulaStarts(str);
     // Leading spaces count: a spreadsheet that trims spaces on import (LibreOffice "Trim spaces")
     // would otherwise turn " =1+1" into a formula.
     if (/^\s*[=+\-@\t\r]/.test(str) && !/^\s*[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?\s*$/.test(str)) {
       str = `'${str}`;
     }
-    str = str.replace(/([,;\t\r\n])([ ]*)([=+\-@])/g, "$1$2'$3");
+    str = str.replace(/([,;|\t\r\n])([ ]*)([=+\-@])/g, "$1$2'$3");
   }
   // Quote on `;` and TAB too: spreadsheets in many locales split CSV files on them. Quote `#`:
   // the documented readers (pandas `comment="#"`, R `comment.char="#"`) cut an unquoted line there.

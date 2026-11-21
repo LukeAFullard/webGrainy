@@ -120,9 +120,10 @@ be slow, so each photo is resized to a **working image** before analysis. With t
 | Longest side of the photo | Working image |
 |---|---|
 | up to 1,024 px | unchanged |
-| 1,025 – 2,048 px | half size |
-| 2,049 – 4,096 px | quarter size |
-| over 4,096 px | longest side 1,024 px |
+| over 1,024 px | longest side 1,024 px |
+
+(Before v0.1.0, photos of 1,025–4,096 px were shrunk to half or quarter size, so a 2,100 px
+photo got a 525 px working image but a 2,048 px photo 1,024 px.)
 
 Shrinking averages all the photo pixels that fall in each working pixel (like a
 lower-resolution camera). Outlines found in the working image are converted back to original
@@ -724,10 +725,11 @@ caveats:
   50%. **Always check the outlines.**
 - The table above used an earlier percentile calculation (linear, no 15 px cutoff). Re-run with
   the app as shipped (log2 interpolation, 15 px cutoff on prediction and hand outlines, default
-  settings), U-Net gives a D50 error of 16.1% mean [8.0, 25.7] and 5.7% median, D16 / D84 median
-  errors of 8.4% / 2.9%, 10% of photos above 50%, and PQ 0.535
-  and Cellpose-SAM (INT8 weights) 9.0% mean [4.2, 15.3] and 2.9% median, D16 / D84 5.1% / 1.1%,
-  5% of photos above 50%, PQ 0.651 (`validation/heldout/heldout_app_results.md`).
+  settings), U-Net gives a D50 error of 15.6% mean [7.3, 25.1] and 5.7% median, D16 / D84 median
+  errors of 8.4% / 2.4%, 10% of photos above 50%, and PQ 0.540
+  and Cellpose-SAM (INT8 weights) 8.9% mean [3.7, 14.9] and 2.9% median, D16 / D84 5.1% / 1.1%,
+  5% of photos above 50%, PQ 0.654 (`validation/heldout/heldout_app_results.md`; 95% intervals
+  resample whole sites).
 
 **Same networks as the original software.** With the same photo, the networks' outputs, run
 through Cellpose's own post-processing, match the original PyTorch ImageGrains exactly (U-Net)
@@ -742,18 +744,19 @@ b-axes, smallest 13 mm, field D50 27.0 mm), the app as shipped (default settings
 
 | | Cellpose-SAM | U-Net |
 |---|---|---|
-| D50, all detected grains | 19.0 mm (−30%) | 26.4 mm (−2%) |
-| D50, field-count cutoff 13 mm | 27.7 mm (+3%) | 28.0 mm (+4%) |
-| D84, field-count cutoff 13 mm | 45.3 mm (−6%) | 47.0 mm (−3%) |
+| D50, all detected grains | 18.7 mm (−31%) | 21.1 mm (−22%) |
+| D50, field-count cutoff 13 mm | 27.8 mm (+3%) | 27.7 mm (+3%) |
+| D84, field-count cutoff 13 mm | 45.3 mm (−6%) | 45.9 mm (−5%) |
 
 With the field count's size range applied to the photos, both models agree with the field count
 within a few percent. Without it, the photo D50 depends on how many small grains the model finds:
-Cellpose-SAM counts about 3.5 times as many grains as U-Net here, so its D50 is much finer. U-Net's
-close match without a cutoff is therefore not a sign of accuracy: it misses most grains below
-about 10 mm. Caveats: one site and two photos, both of which overlap the ImageGrains training
+Cellpose-SAM counts about 1.5 times as many grains as U-Net here, so its D50 is finer still.
+(Before v0.1.0 these 1,300 px photos were analysed at half size; U-Net then missed most grains
+below about 10 mm, and its D50 without a cutoff happened to match the field count, by chance.)
+Caveats: one site and two photos, both of which overlap the ImageGrains training
 data, so this is a consistency check, not an independent validation; the 13 mm cutoff is the
 smallest clast in the field data, not a documented protocol (with 10 or 16 mm the D50 difference
-is −10% or +10% for Cellpose-SAM). Reproduce with `node validation/k1/run_app_k1.mjs`
+is −8% or +12% for Cellpose-SAM). Reproduce with `node validation/k1/run_app_k1.mjs`
 (`validation/k1/k1_app_results.md`). Always match the size range when comparing with field data
 (Section 8).
 

@@ -362,7 +362,7 @@ especially when several photos are combined into one site result.
 | Option | What it measures | Notes |
 |---|---|---|
 | **b-axis (ellipse minor)** *(default)* | The short axis of an ellipse fitted to the grain outline. | Standard for photo-sieving and comparable with other image tools. It is **not** exactly what a caliper measures: it can differ by about ±15% depending on shape. |
-| **min-Feret (caliper width)** | The narrowest width of the outline, like closing calipers on the stone from above. | Closest to a hand-measured b-axis. On the test set, D50 was typically 3–4% larger than the ellipse b-axis. |
+| **min-Feret (caliper width)** | The narrowest width of the outline, like closing calipers on the stone from above. | Closest to a hand-measured b-axis. On the held-out test photos, its D50 was about 3% larger than the ellipse b-axis D50 (middle half of photos 0–5%; `validation/heldout/feret_ratio_results.md`). |
 | **d_eq (equal-area circle)** | The diameter of a circle with the same area as the grain. | Useful for area-based comparisons. Typically about 23% larger than the b-axis. |
 
 **When to change it:** keep **b-axis** for consistency with published photo-sieving work.
@@ -403,8 +403,8 @@ result then mixes different size ranges.
 or want results like, a **pebble count**. Typical values are 8–16 mm. Field pebble counts
 usually skip small material, while the photo includes it. That alone can make the photo
 D50 look much finer: at the K1 test site, Cellpose-SAM's D50 was **about 30% finer** than the
-field count without a cutoff (U-Net's looked close only because it misses most small grains).
-With a matching 13 mm cutoff, both models' D50 agreed with the field D50 within about 3–4%.
+field count without a cutoff (U-Net's about 20% finer). With a matching 13 mm cutoff, both
+models' D50 agreed with the field D50 within about 3%.
 
 Leave it at **0** if you want to describe everything visible down to the detection limit. Grains up to a few times the detection limit are partly missed, so for a reliable fine tail (D5–D16), or to compare surveys shot at different resolutions, set it to at least about **3× the detection limit** shown under the size distribution (Smallest grain kept).
 
@@ -564,7 +564,7 @@ SHA-256, all settings, site name) so results can be reproduced.
 
 | File | Contains |
 |---|---|
-| **Site Summary CSV** | D5–D95 with bootstrap and binomial confidence intervals; mean diameters (Sauter D[3,2], De Brouckère D[4,3], arithmetic), geometric mean and SD, D30/D60/D65, moment statistics in φ, Cu, Cc, Trask sorting, span, Fredle index; Folk & Ward mean, sorting, skewness, kurtosis with confidence intervals; Wentworth class percentages and size-class histograms (1 φ and 0.5 φ bins, % and counts); fabric (mean orientation, alignment R, circular variance, Rayleigh test, rose bins); sample adequacy (rating, effective grain count, largest clast, outlier photos); jackknife sensitivity; a per-photo breakdown by photo name (scale, grain counts, truncation, sampled area, packing/matrix %, D16/D50/D84, weight, influence, cumulative D50); warnings; citations. |
+| **Site Summary CSV** | D5–D95 with confidence intervals: `psd_bootstrap_ci_*` is the site interval described in METHODS (a t-interval on the log scale using the larger of the bootstrap and jackknife SE), `psd_binomial_ci_*` the binomial interval (counting uncertainty only; the `ci_method` and `binomial_ci_method` rows say so); mean diameters (Sauter D[3,2], De Brouckère D[4,3], arithmetic), geometric mean and SD, D30/D60/D65, moment statistics in φ, Cu, Cc, Trask sorting, span, Fredle index; Folk & Ward mean, sorting, skewness, kurtosis with confidence intervals; Wentworth class percentages and size-class histograms (1 φ and 0.5 φ bins, % and counts); fabric (mean orientation, alignment R, circular variance, Rayleigh test, rose bins); sample adequacy (rating, effective grain count, largest clast, outlier photos); jackknife sensitivity; a per-photo breakdown by photo name (scale, grain counts, truncation, sampled area, packing/matrix %, D16/D50/D84, weight, influence, cumulative D50); warnings; citations. |
 | **Site Summary JSON** | Everything above, plus the convergence series and per-photo jackknife detail, in one structured file. |
 | **Pooled Grains CSV** | One row per grain inside the ROI (border grains left out) from all included photos: size (px and mm), axes, Feret widths, orientation, perimeter, circularity, aspect ratio, elongation, convexity/solidity, 2D sphericity. `included_in_stats` says whether the grain counts in the site statistics, and `exclusion_reason` why not (`below_px_cutoff` or `below_mm_cutoff`); the rows marked `true` reproduce the site D-values. |
 | **Printable SVG PSD Figure** | The grain-size curve with confidence band, for reports. |

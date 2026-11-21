@@ -446,8 +446,8 @@ export function runBootstrap(
       if (fw !== null) {
         fwMeanPhi.push(fw.meanPhi);
         fwSortingPhi.push(fw.sortingPhi);
-        fwSkewnessPhi.push(fw.skewnessPhi);
-        fwKurtosisPhi.push(fw.kurtosisPhi);
+        if (Number.isFinite(fw.skewnessPhi)) fwSkewnessPhi.push(fw.skewnessPhi);
+        if (Number.isFinite(fw.kurtosisPhi)) fwKurtosisPhi.push(fw.kurtosisPhi);
         fwMeanMm.push(fw.meanMm);
       }
     }

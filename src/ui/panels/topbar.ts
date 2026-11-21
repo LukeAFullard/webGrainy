@@ -43,7 +43,7 @@ export function renderTopbarHtml(state: AppState, view: TopbarView): string {
   return `
     <div class="topbar-left">
       <div class="brand">
-        <span>webGrainy</span>
+        ${state.showLanding ? '<span>webGrainy</span>' : '<h1 class="brand-title">webGrainy<span class="sr-only"> workspace</span></h1>'}
         <span class="brand-sub">Grain sizes from photos · runs on your device</span>
       </div>
     </div>

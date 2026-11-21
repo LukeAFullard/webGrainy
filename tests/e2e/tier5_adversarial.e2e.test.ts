@@ -1114,8 +1114,13 @@ describe('Tier 5: Adversarial Hardening — ImageGrains 2.0 Web', () => {
       };
       const fw = computeFolkWardStats(sameSpread);
       expect(fw).not.toBeNull();
-      expect(Number.isFinite(fw!.skewnessPhi)).toBe(true);
-      expect(Number.isFinite(fw!.kurtosisPhi)).toBe(true);
+      // D16 = D84 and D25 = D75: skewness and kurtosis are undefined (NaN, labelled "Undefined"),
+      // not a made-up finite value.
+      expect(fw!.skewnessPhi).toBeNaN();
+      expect(fw!.kurtosisPhi).toBeNaN();
+      expect(fw!.skewnessLabel).toBe('Undefined');
+      expect(fw!.kurtosisLabel).toBe('Undefined');
+      expect(Number.isFinite(fw!.sortingPhi)).toBe(true);
 
       expect(computeFolkWardStats({ ...sameSpread, D50: 0 })).toBeNull();
       expect(computeFolkWardStats({ ...sameSpread, D50: Number.NaN })).toBeNull();

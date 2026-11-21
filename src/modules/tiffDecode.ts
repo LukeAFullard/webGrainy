@@ -294,6 +294,9 @@ export function rgba8From16Bit(f: Utif16Frame): { rgba: Uint8Array; note: string
   return { rgba: out, note: `16-bit TIFF converted to 8 bits by its own range (${lo}–${hi}, the 0.01–99.99th percentile, mapped to 0–255).` };
 }
 
+/** Largest TIFF frame (pixels) the import decodes; larger files must be tiled or downsampled first. */
+export const MAX_TIFF_PIXELS = 100_000_000;
+
 export function decodeTiffBuffer(buf: ArrayBuffer): DecodedTiffImage {
   if (!isTiffBytes(buf)) {
     throw new Error('File does not have a valid TIFF header.');
@@ -303,15 +306,34 @@ export function decodeTiffBuffer(buf: ArrayBuffer): DecodedTiffImage {
     throw new Error('TIFF file contains no image frames.');
   }
 
-  // Pick the highest-resolution frame (skipping thumbnails/overviews in pyramid GeoTIFFs).
+  // Pick the highest-resolution frame (skipping thumbnails/overviews in pyramid GeoTIFFs). UTIF
+  // sets width/height only when it decodes the pixels, so read the size tags (256, 257) too.
+  const tagNum = (ifd: Record<string, unknown>, tag: string): number => {
+    const v = ifd[tag];
+    const n = Array.isArray(v) ? Number(v[0]) : Number(v);
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  };
+  const framePixels = (f: (typeof ifds)[number]): number => {
+    const raw = f as unknown as Record<string, unknown>;
+    return (f.width || tagNum(raw, 't256')) * (f.height || tagNum(raw, 't257'));
+  };
   let best = ifds[0]!;
-  let bestPixels = (best.width ?? 0) * (best.height ?? 0);
+  let bestPixels = framePixels(best);
   for (const cand of ifds) {
-    const px = (cand.width ?? 0) * (cand.height ?? 0);
+    const px = framePixels(cand);
     if (px > bestPixels) {
       best = cand;
       bestPixels = px;
     }
+  }
+
+  // Decoding allocates several bytes per pixel at full size (and the import then draws the
+  // frame on a canvas): refuse very large frames with an actionable message instead of running
+  // out of memory or hitting the browser's canvas limit.
+  if (bestPixels > MAX_TIFF_PIXELS) {
+    throw new Error(
+      `This TIFF is ${tagNum(best as unknown as Record<string, unknown>, 't256')} x ${tagNum(best as unknown as Record<string, unknown>, 't257')} px (${Math.round(bestPixels / 1e6)} MP); webGrainy imports TIFFs up to ${MAX_TIFF_PIXELS / 1e6} MP. Export a smaller copy or a tile of the area you want to measure (e.g. with QGIS or gdal_translate), keeping the georeferencing.`,
+    );
   }
 
   UTIF.decodeImage(buf, best);

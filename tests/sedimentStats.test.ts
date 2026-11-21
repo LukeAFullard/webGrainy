@@ -160,10 +160,19 @@ describe('sedimentStats', () => {
       expect(fw).not.toBeNull();
       expect(Number.isFinite(fw.meanPhi)).toBe(true);
       expect(Number.isFinite(fw.sortingPhi)).toBe(true);
-      expect(Number.isFinite(fw.skewnessPhi)).toBe(true);
-      expect(Number.isFinite(fw.kurtosisPhi)).toBe(true);
+      // Skewness and kurtosis are undefined for a single size, not 0 / 1 ("Mesokurtic").
+      expect(fw.skewnessPhi).toBeNaN();
+      expect(fw.kurtosisPhi).toBeNaN();
+      expect(fw.skewnessLabel).toBe('Undefined');
+      expect(fw.kurtosisLabel).toBe('Undefined');
       expect(fw.sortingPhi).toBe(0);
       expect(fw.sortingLabel).toBe('Very Well Sorted');
+    });
+
+    it('kurtosis is undefined when one clast carries the middle of the weight (phi25 = phi75)', () => {
+      const fw = computeFolkWardStats({ D5: 2, D10: 3, D16: 40, D25: 40, D50: 40, D75: 40, D84: 40, D90: 41, D95: 45 })!;
+      expect(fw.kurtosisPhi).toBeNaN();
+      expect(fw.kurtosisLabel).toBe('Undefined');
     });
   });
 

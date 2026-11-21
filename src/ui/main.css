@@ -140,6 +140,12 @@ body {
   white-space: nowrap;
 }
 
+/* The workspace's level-one heading (the landing page has its own): looks like the brand text. */
+.brand-title {
+  margin: 0;
+  font: inherit;
+}
+
 .brand-sub {
   font-weight: 400;
   font-size: 0.7rem;

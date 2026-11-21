@@ -30,6 +30,20 @@ describe('quoted validation figures match the results files', () => {
     expect(prov).toContain(`median D50 error was ${median(cpsam)} with Cellpose-SAM and ${median(unet)} with U-Net, but ${tail(cpsam)} and ${tail(unet)} of photos had D50 errors above 50%`);
   });
 
+  it('min-Feret vs b-axis D50 (help and settings guide)', () => {
+    const rows = rowsOf(read('validation/heldout/feret_ratio_results.md')).filter((r) => r[0] === 'U-Net' || r[0]!.startsWith('Cellpose-SAM'));
+    const median = rows.map((r) => Number(r[2]!.replace('%', '')));
+    const rounded = Math.round(median.reduce((a, b) => a + b, 0) / median.length);
+    const lo = Math.round(Math.min(...rows.map((r) => Number(r[3]!.split(' to ')[0]!.replace('%', '')))));
+    const hi = Math.round(Math.max(...rows.map((r) => Number(r[3]!.split(' to ')[1]!.replace('%', '')))));
+    const quote = `about ${rounded}% larger than the`;
+    const iqr = `middle half of photos ${lo}–${hi}%`;
+    for (const f of ['src/ui/help.ts', 'docs/SETTINGS_GUIDE.md']) {
+      expect(read(f)).toContain(quote);
+      expect(read(f)).toContain(iqr);
+    }
+  });
+
   it('K1: photo D50 without a field-count cutoff (settings guide and help)', () => {
     const rows = rowsOf(read('validation/k1/k1_app_results.md'));
     const cpsamNone = rows.find((r) => r[0]!.startsWith('Cellpose-SAM') && r[1]!.startsWith('none'))!;

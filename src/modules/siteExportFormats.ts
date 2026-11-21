@@ -144,7 +144,8 @@ export function exportSiteSummaryCsv(
   lines.push(
     `metadata,bootstrap_mode,${csvCell(report.bootstrapMode)},mode`,
   );
-  lines.push(`metadata,ci_method,${csvCell(report.ciStatus === 'single-photo' ? 'grain bootstrap percentile (single photo)' : 'cluster bootstrap, t-interval on log scale: SE x sqrt(n/(n-1)), t with n-1 df')},label`);
+  lines.push(`metadata,ci_method,${csvCell(report.ciStatus === 'single-photo' ? 'psd_bootstrap_ci_*: grain bootstrap percentile interval (single photo)' : 'psd_bootstrap_ci_*: t-interval on log scale, SE = larger of (cluster bootstrap SE x sqrt(n/(n-1))) and leave-one-photo-out jackknife SE, t with n-1 df (n = photos)')},label`);
+  lines.push(`metadata,binomial_ci_method,${csvCell('psd_binomial_ci_*: order-statistic (binomial) interval on the effective number of grains; counting uncertainty only, ignores photo-to-photo variation')},label`);
   lines.push(`metadata,ci_status,${report.ciStatus},label`);
   lines.push(`metadata,bootstrap_seed,${report.bootstrapSeed},seed`);
   lines.push(
@@ -336,10 +337,13 @@ export function exportPooledGrainsCsv(
   const byId = new Map<number, GrainMorphometrics>();
   // Weight of each counted grain in the site statistics (area in mm² or px, share of photo area,
   // grid hits or 1, by pooling mode): pooling `stats_weight` reproduces the site percentiles.
-  const weightCell = (photoId: string, grainId: number): string | number => {
+  // A counted grain with no weight (missed by the Wolman grid, or in a photo with facies weight 0)
+  // gets 0, so the column sums without fill-ins; a grain that is not counted stays empty.
+  const weightCell = (photoId: string, grainId: number, counted: boolean | string): string | number => {
     if (report === undefined) return '';
     const w = grainStatsWeight(report, photoId, grainId);
-    return w !== undefined && Number.isFinite(w) ? w : '';
+    if (w !== undefined && Number.isFinite(w)) return w;
+    return counted === true ? 0 : '';
   };
   const inclusion = (g: { id: number }): [string | boolean, string] => {
     if (report === undefined) return ['', ''];
@@ -415,7 +419,7 @@ export function exportPooledGrainsCsv(
           g.minFeretMm ?? '',
           g.maxFeretMm ?? '',
           ...inclusion(g),
-          weightCell(entry.photoId, g.id),
+          weightCell(entry.photoId, g.id, inclusion(g)[0]),
         ].join(','),
       );
     }

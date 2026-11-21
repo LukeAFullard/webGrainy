@@ -193,6 +193,17 @@ describe('S4: 16-bit TIFF', () => {
     expect(img.metadata?.notes).toContain('0–4095');
   });
 
+  it('refuses a TIFF frame over MAX_TIFF_PIXELS with an actionable message, before decoding pixels', () => {
+    // Header-only TIFF claiming 20000 x 6000 px (120 MP): the IFD is read, no pixel data exists.
+    const W = 20000, H = 6000, nTags = 9, ifdOff = 8;
+    const buf = new ArrayBuffer(ifdOff + 2 + nTags * 12 + 4 + 16);
+    const dv = new DataView(buf);
+    dv.setUint16(0, 0x4949, true); dv.setUint16(2, 42, true); dv.setUint32(4, ifdOff, true); dv.setUint16(ifdOff, nTags, true);
+    const tags: Array<[number, number, number]> = [[256, 4, W], [257, 4, H], [258, 3, 8], [259, 3, 1], [262, 3, 1], [273, 4, 0], [277, 3, 1], [278, 4, H], [279, 4, W * H]];
+    tags.forEach(([t, ty, v], i) => { const o = ifdOff + 2 + i * 12; dv.setUint16(o, t, true); dv.setUint16(o + 2, ty, true); dv.setUint32(o + 4, 1, true); if (ty === 3) dv.setUint16(o + 8, v, true); else dv.setUint32(o + 8, v, true); });
+    expect(() => decodeTiffBuffer(buf)).toThrow(/20000 x 6000 px \(120 MP\); webGrainy imports TIFFs up to 100 MP/);
+  });
+
   it('leaves 8-bit and unsupported layouts to UTIF', () => {
     expect(rgba8From16Bit({ width: 1, height: 1, data: new Uint8Array(4), t258: [8] })).toBeNull();
     expect(rgba8From16Bit({ width: 1, height: 1, data: new Uint8Array(6), t258: [16, 16, 16], t262: [2], t277: [3], t284: [2] })).toBeNull();

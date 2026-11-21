@@ -662,6 +662,24 @@ describe('modelCache', () => {
       await expect(downloadModel('ig2_unet_fp32')).rejects.toThrow(/expected 999 bytes/);
     });
 
+    it('hashes the cached bytes once per session and re-downloads a corrupted record', async () => {
+      const payload = new Uint8Array([4, 5, 6, 7]);
+      MODEL_INTEGRITY.ig2_unet_fp32 = { sha256: await sha256Hex(payload), sizeBytes: 4 };
+      setModelIntegrityEnforcement(true);
+      globalThis.fetch = vi.fn().mockResolvedValue(createChunkedResponse([payload], { contentLength: 4 })) as unknown as typeof fetch;
+      await downloadModel('ig2_unet_fp32');
+      // Corrupt the stored bytes but keep the recorded hash and size (storage damage).
+      const store = mockDb.databases.get(DB_NAME)!.stores.get('models')!;
+      const rec = store.records.get('ig2_unet_fp32') as { data: unknown };
+      store.records.set('ig2_unet_fp32', { ...rec, data: new Blob([new Uint8Array([0, 0, 0, 0])]) });
+      const fetchMock = vi.fn().mockResolvedValue(createChunkedResponse([payload], { contentLength: 4 }));
+      globalThis.fetch = fetchMock as unknown as typeof fetch;
+      expect(new Uint8Array(await getModel('ig2_unet_fp32'))).toEqual(payload);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      await getModel('ig2_unet_fp32'); // the re-downloaded record is good
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
     it('treats a legacy unverified cache record as stale and re-downloads', async () => {
       const payload = new Uint8Array([7, 7, 7]);
       setModelIntegrityEnforcement(false);
