@@ -33,6 +33,7 @@ import {
   normalizeRgbJoint99,
   prepareWorkingImage,
   upscaleWorkingImage,
+  MAX_FINE_GRAIN_UPSCALE,
   isMobileDevice,
   recommendModel,
   type ImageBufferLike,
@@ -319,7 +320,11 @@ export class ImageGrainsEngine {
       });
     }
 
-    const fineGrainUpscale = config?.fineGrainUpscale !== undefined && config.fineGrainUpscale > 1 ? config.fineGrainUpscale : undefined;
+    const requestedUpscale = config?.fineGrainUpscale;
+    if (requestedUpscale !== undefined && !(Number.isFinite(requestedUpscale) && requestedUpscale <= MAX_FINE_GRAIN_UPSCALE)) {
+      throw new RangeError(`fineGrainUpscale = ${requestedUpscale} is invalid (allowed up to ${MAX_FINE_GRAIN_UPSCALE}).`);
+    }
+    const fineGrainUpscale = requestedUpscale !== undefined && requestedUpscale > 1 ? requestedUpscale : undefined;
     const prepared = prepareWorkingImage(preImg.data, preImg.width, preImg.height, config?.scaleMode ?? 'auto');
     // Optional enlargement for fine gravel (validation/preprocessing); results are converted back
     // to original-photo pixels through effectiveScaleFactor, so sizes are unaffected.

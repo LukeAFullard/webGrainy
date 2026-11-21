@@ -776,18 +776,29 @@ export function computeGrainMorphometrics(
  * silently computing with them.
  */
 export function validatePostProcessOptions(o: Required<PostProcessOptions>): void {
-  const check = (name: string, v: number, lo: number, hi: number, integer = false): void => {
-    if (!Number.isFinite(v) || v < lo || v > hi || (integer && !Number.isInteger(v))) {
+  for (const [name, [lo, hi, integer]] of Object.entries(POSTPROCESS_LIMITS) as Array<[keyof PostProcessOptions, readonly [number, number, boolean]]>) {
+    const v = o[name];
+    if (!isValidPostProcessValue(name, v)) {
       throw new RangeError(`Post-processing option ${name} = ${v} is invalid (allowed ${lo} to ${hi}${integer ? ', whole number' : ''}).`);
     }
-  };
-  check('niter', o.niter, 0, 10_000, true);
-  check('cellprobThreshold', o.cellprobThreshold, -20, 20);
-  check('flowThreshold', o.flowThreshold, 0, 10);
-  check('minSize', o.minSize, 0, 1e7, true);
-  check('minSeedDensity', o.minSeedDensity, 0, 1e6);
-  check('excludeBorderMargin', o.excludeBorderMargin, 0, 1000, true);
-  check('maxGrainAreaFraction', o.maxGrainAreaFraction, 0, 1);
+  }
+}
+
+/** Accepted range of each post-processing option: [min, max, whole number only]. */
+export const POSTPROCESS_LIMITS: Readonly<Record<keyof PostProcessOptions, readonly [number, number, boolean]>> = {
+  niter: [0, 10_000, true],
+  cellprobThreshold: [-20, 20, false],
+  flowThreshold: [0, 10, false],
+  minSize: [0, 1e7, true],
+  minSeedDensity: [0, 1e6, false],
+  excludeBorderMargin: [0, 1000, true],
+  maxGrainAreaFraction: [0, 1, false],
+};
+
+/** Whether `v` is an accepted value of post-processing option `name` (see POSTPROCESS_LIMITS). */
+export function isValidPostProcessValue(name: keyof PostProcessOptions, v: unknown): v is number {
+  const [lo, hi, integer] = POSTPROCESS_LIMITS[name];
+  return typeof v === 'number' && Number.isFinite(v) && v >= lo && v <= hi && (!integer || Number.isInteger(v));
 }
 
 /**

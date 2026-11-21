@@ -46,7 +46,12 @@ export type PhotoProcessingStep =
  * Falls back to the current `enhancement` record for photos saved before the history existed.
  */
 export function photoProcessingHistory(meta: SitePhotoMetadata | undefined): PhotoProcessingStep[] {
-  if (meta?.processingHistory !== undefined) return meta.processingHistory.map((s) => ({ ...s }));
+  // Records stored before imported projects were validated may hold anything here.
+  if (meta?.processingHistory !== undefined) {
+    return Array.isArray(meta.processingHistory)
+      ? meta.processingHistory.filter((s) => s !== null && typeof s === 'object').map((s) => ({ ...s }))
+      : [];
+  }
   return meta?.enhancement !== undefined ? [{ step: 'enhancement', ...meta.enhancement }] : [];
 }
 

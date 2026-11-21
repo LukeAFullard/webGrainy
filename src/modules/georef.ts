@@ -4,7 +4,7 @@
  * GeoTIFF tags at import and kept with the photo; it applies only while the photo is still the
  * raster it came from (same size, not rectified).
  */
-import type { PhotoGeoreference, SitePhotoMetadata } from './siteTypes.js';
+import { photoProcessingHistory, type PhotoGeoreference, type SitePhotoMetadata } from './siteTypes.js';
 
 const num = (v: unknown): number => (typeof v === 'number' ? v : Number(v));
 
@@ -80,7 +80,7 @@ export function photoGeoreference(photo: {
   ) {
     return { georef: null, reason: null };
   }
-  if ((photo.metadata?.processingHistory ?? []).some((s) => s.step === 'rectification')) {
+  if (photoProcessingHistory(photo.metadata).some((s) => s.step === 'rectification')) {
     return { georef: null, reason: 'The photo was rectified, so its original map position no longer applies.' };
   }
   if (photo.width !== g.width || photo.height !== g.height) {

@@ -42,6 +42,12 @@ export interface SidebarView {
   storageInfo: StorageInfo | null;
 }
 
+/** Text shown for a photo's recommended model (only these two values are ever displayed). */
+const MODEL_LABELS: ReadonlyMap<string, string> = new Map([
+  ['unet', 'unet'],
+  ['cpsam', 'cpsam'],
+]);
+
 export function renderSidebarHtml(state: AppState, view: SidebarView): string {
   const activeSite = getActiveSite(state);
   const p = state.analysisParams;
@@ -116,7 +122,8 @@ export function renderSidebarHtml(state: AppState, view: SidebarView): string {
                 .map((ph) => {
                   const status = state.photoStatuses.get(ph.photoId) ?? 'pending';
                   const sess = state.sessions.get(ph.photoId);
-                  const recModel = sess?.recommendation.model;
+                  // A fixed label, never the stored text (results can come from an imported project file).
+                  const recModel = MODEL_LABELS.get(sess?.recommendation.model ?? '');
                   const thumb = state.thumbUrls.get(ph.photoId) ?? '';
                   const isActive = ph.photoId === state.activePhotoId;
                   const errMsg = status === 'error' ? state.photoErrors.get(ph.photoId) ?? 'Analysis failed (no details reported).' : '';
@@ -134,7 +141,7 @@ export function renderSidebarHtml(state: AppState, view: SidebarView): string {
                           <span class="photo-name" title="${esc(ph.label)}">${esc(ph.label)}</span>
                           <span class="photo-sub">
                             ${ph.width}×${ph.height}${ph.calibration ? ` · ${ph.calibration.mmPerPx.toFixed(3)}mm/px` : ' · uncal'}
-                            ${recModel ? ` · ${recModel}` : ''}
+                            ${recModel ? ` · ${esc(recModel)}` : ''}
                             ${ph.metadata?.enhancement ? ` · <span title="${esc(ph.metadata.enhancement.modelName)}">${ph.metadata.enhancement.kind === 'upscale-2x' ? '2×' : 'deblur'}</span>` : ''}
                             ${qualityWarnings.length > 0 ? ` · <span style="color:var(--warning);font-weight:500;" title="${esc(qualityWarnings.map((w) => w.message).join(' '))}">⚠ ${esc(qualityWarnings.map((w) => w.shortLabel).join(', '))}</span>` : ''}
                           </span>

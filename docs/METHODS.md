@@ -658,8 +658,12 @@ browser, and a site is removed after a set number of days without use (30 by def
   grain numbers) and outlines (GeoJSON);
 - optionally, the project file that reopens the site.
 
-When a project file is opened, its statistics settings are checked: only values the app itself
-can set are kept (others fall back to the defaults), and dates in the future are reset.
+When a project file is opened, every record in it is checked, because the file may come from
+someone else: only the fields and values the app itself writes are kept (statistics settings
+fall back to the defaults, unknown fields are dropped), texts are kept as plain text, the
+working scale of each analysis is taken from its image sizes, a photo keeps only its fine-grain
+enlargement setting (at most ×2), and dates in the future are reset. A file whose analysis sizes
+do not match is refused.
 
 **GIS.** For a GeoTIFF photo (e.g. a drone orthomosaic tile), the app keeps the file's pixel-to-map
 transform and coordinate system. It then also exports the outlines as GeoJSON in map coordinates

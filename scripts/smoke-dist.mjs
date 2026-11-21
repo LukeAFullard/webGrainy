@@ -8,6 +8,8 @@
 //      downloads the pinned revision and verifies SHA-256), serves them in place of the
 //      Hugging Face URL, analyses a generated test image with the WASM backend, and
 //      requires the photo to finish "done" with > 0 grains.
+//   5. Imports a hostile project file (markup in every stored text field) into a fresh page
+//      and fails if the page navigates away or any injected element appears.
 //   4. Records main-thread long tasks during the analysis and fails if any is longer than
 //      SMOKE_MAX_LONGTASK_MS (default 5000): CPU inference must run in the worker.
 //
@@ -18,6 +20,7 @@
 // Usage: npm run build && npm run test:e2e:browser
 import { createServer } from 'node:http';
 import { createHash } from 'node:crypto';
+import { deflateSync } from 'node:zlib';
 import { createReadStream, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { extname, join, normalize, resolve } from 'node:path';
 import { chromium } from 'playwright';
@@ -122,6 +125,94 @@ async function getModelFile() {
   return path;
 }
 
+/** A tiny valid RGB PNG (for project files built here). */
+function tinyPng(w, h) {
+  const crcTable = Array.from({ length: 256 }, (_, n) => {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    return c >>> 0;
+  });
+  const crc = (buf) => {
+    let c = 0xffffffff;
+    for (const b of buf) c = crcTable[(c ^ b) & 0xff] ^ (c >>> 8);
+    return (c ^ 0xffffffff) >>> 0;
+  };
+  const chunk = (type, data) => {
+    const td = Buffer.concat([Buffer.from(type), data]);
+    const out = Buffer.alloc(12 + data.length);
+    out.writeUInt32BE(data.length, 0);
+    td.copy(out, 4);
+    out.writeUInt32BE(crc(td), 8 + data.length);
+    return out;
+  };
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(w, 0);
+  ihdr.writeUInt32BE(h, 4);
+  ihdr[8] = 8;
+  ihdr[9] = 2;
+  const raw = Buffer.alloc((w * 3 + 1) * h, 120);
+  for (let y = 0; y < h; y++) raw[y * (w * 3 + 1)] = 0;
+  return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]);
+}
+
+/**
+ * A v1 (JSON) project file whose stored texts all carry markup: a meta refresh that would
+ * navigate away and an element that must never appear in the page.
+ */
+function hostileProjectJson() {
+  const X = '<meta http-equiv="refresh" content="0;url=https://example.com/smoke-phish"><b class="smoke-xss">x</b>';
+  const w = 64;
+  const masks = new Int32Array(w * w);
+  for (let y = 10; y < 40; y++) for (let x = 10; x < 40; x++) masks[y * w + x] = 1;
+  return JSON.stringify({
+    format: 'webgrainy-project',
+    version: 1,
+    exportedAt: X,
+    site: { siteId: 'smoke-hostile', name: `Site ${X}`, place: `Place ${X}`, photoOrder: ['h1'], options: { poolingMode: 'physical-area' }, createdAt: 1, updatedAt: Date.now() },
+    photos: [{
+      photoId: 'h1', siteId: 'smoke-hostile', label: `photo ${X}.png`, width: w, height: w, addedAt: 1, included: true,
+      imageBase64: tinyPng(w, w).toString('base64'), imageMimeType: 'image/png',
+      calibration: { mmPerPx: 0.5, pointA: { x: 0, y: 0 }, pointB: { x: 10, y: 0 }, physicalLengthMm: 5, pixelDistance: 10, source: 'copied', copiedFrom: X },
+      metadata: { cameraMake: X, cameraModel: X, notes: X, timestamp: X, processingHistory: [{ step: 'enhancement', kind: 'upscale-2x', modelId: X, modelName: X, modelSha256: X, scaleFactor: 2, appliedAt: X }] },
+    }],
+    results: [{
+      photoId: 'h1', status: 'done', updatedAt: 1,
+      serializedSession: {
+        version: 1,
+        workingMasksBase64: Buffer.from(masks.buffer).toString('base64'),
+        workingImage: { width: w, height: w, originalWidth: w, originalHeight: w, effectiveScaleFactor: 1, scaleModeApplied: '1.0x', dataBase64: '' },
+        recommendation: { model: X, confidence: 1, rationale: X, metrics: {} },
+        excludeBorder: true,
+        borderMargin: 2,
+        provenance: { appVersion: X, ortVersion: X, analyzedAt: X, modelId: 'ig2_unet_fp32', modelFile: X, modelRevision: X, modelSha256: X, executionProvider: X, inferencePipeline: X, scaleMode: X },
+      },
+    }],
+  });
+}
+
+/** Step 5: a hostile project file must not navigate the page or inject markup. */
+async function checkHostileProject(browser) {
+  const context = await browser.newContext();
+  const p = await context.newPage();
+  const navigations = [];
+  p.on('framenavigated', (f) => {
+    if (f === p.mainFrame()) navigations.push(f.url());
+  });
+  await context.route('https://example.com/**', (route) => route.fulfill({ status: 200, contentType: 'text/html', body: 'navigated away' }));
+  await p.goto(base, { waitUntil: 'networkidle' });
+  await p.waitForSelector('#archive-file-input', { state: 'attached', timeout: 30000 });
+  await p.setInputFiles('#archive-file-input', { name: 'hostile.webgrainy.json', mimeType: 'application/json', buffer: Buffer.from(hostileProjectJson()) });
+  await p.waitForFunction(() => /Imported project archive|Failed to import/.test(document.body.innerText), null, { timeout: 30000 });
+  await p.waitForTimeout(2500);
+  const left = navigations.filter((u) => !u.startsWith(base));
+  if (left.length > 0) fail(`hostile project file navigated the page to ${left.join(', ')}`);
+  const injected = await p.evaluate(() => document.querySelectorAll('.smoke-xss, body meta[http-equiv]').length);
+  if (injected > 0) fail(`hostile project file injected ${injected} element(s) into the page`);
+  if (!(await p.evaluate(() => document.body.innerText.includes('Imported project archive')))) fail('hostile project file was not imported (expected it to import with its texts shown as plain text)');
+  await context.close();
+  console.log('ok: hostile project file imported without navigation or injected markup');
+}
+
 const browser = await chromium.launch({ args: ['--disable-features=WebGPU'] });
 const page = await browser.newPage();
 await page.addInitScript(() => {
@@ -158,6 +249,7 @@ try {
   await page.waitForSelector('#photo-file-input', { state: 'attached', timeout: 30000 });
   if (problems.length) fail(`page load: ${problems.join(' | ')}`);
   console.log('ok: app loaded without console errors');
+  await checkHostileProject(browser);
 
   if (skipInference) {
     console.log('SMOKE PASS (inference skipped)');
