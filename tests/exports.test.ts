@@ -38,7 +38,7 @@ describe('exports module', () => {
     const photo = { ...ctx.photo!, width: s.workingImage.originalWidth, height: s.workingImage.originalHeight };
     const georef = { transform: [1000, 0.01, 0, 5000, 0, -0.01] as [number, number, number, number, number, number], epsg: 2193, kind: 'projected' as const, width: photo.width, height: photo.height };
     const geoCtx: ExportContext = { ...ctx, photo: { ...photo, metadata: { ...(photo.metadata ?? {}), georef } } };
-    const geoKinds = new Set(['photo-geojson-map', 'photo-mask-worldfile', 'photo-mask-geotiff', 'photo-mask-auxxml']);
+    const geoKinds = new Set(['photo-geojson-map', 'photo-geojson-lonlat', 'photo-mask-worldfile', 'photo-mask-geotiff', 'photo-mask-auxxml']);
     for (const kind of EXPORT_KINDS) {
       if (kind === 'site-archive') continue;
       const f = await buildExport(kind, geoKinds.has(kind) ? geoCtx : ctx);

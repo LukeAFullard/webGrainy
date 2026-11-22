@@ -700,10 +700,18 @@ transform and its GeoKeys (the coordinate system, also a user-defined one). It t
 
 - the **label mask as a GeoTIFF** (`mask_map.tif`) with the source file's transform and GeoKeys,
   background as nodata: it opens in the right place in any GIS;
-- the **outlines as GeoJSON in map coordinates** (`outlines_map.geojson`), with each grain's
-  centroid in map coordinates and the CRS as a `crs` member. QGIS and other GDAL-based tools read
-  it; GeoJSON readers that follow RFC 7946 strictly (web maps, some ArcGIS tools) assume
-  longitude/latitude and cannot place projected coordinates;
+- the **outlines as GeoJSON in longitude / latitude** (`outlines_lonlat.geojson`, RFC 7946), for
+  web maps and any GeoJSON reader. The app converts the GeoTIFF's map coordinates itself (offline):
+  Transverse Mercator (Krüger series to n⁶) and Lambert Conformal Conic, with parameters for
+  2,698 EPSG coordinate systems on the GRS 1980 / WGS 84 ellipsoids (UTM zones, national grids
+  such as NZTM, US State Plane) taken from the EPSG dataset with PROJ, plus Web Mercator and
+  geographic CRSs. Only CRSs whose datum PROJ places within 1 m of WGS84 are included, and no
+  datum shift is applied. Checked against PROJ 9.8.1 for every CRS: largest difference 0.04 mm
+  (`validation/geotiff/`). For other CRSs this file is not offered;
+- the **outlines as GeoJSON in map coordinates** (`outlines_map.geojson`), exact, with each
+  grain's centroid in map coordinates and the CRS as a `crs` member. QGIS and other GDAL-based
+  tools read it; readers that follow RFC 7946 (web maps, some ArcGIS tools) assume
+  longitude/latitude and cannot place it;
 - a **world file** for the 16-bit PNG mask (`mask16.pgw`) with a `mask16.png.aux.xml` sidecar
   naming the CRS (a world file alone holds no CRS).
 

@@ -95,7 +95,8 @@ describe('map-coordinate exports', () => {
     expect(names).toContain('photos/ortho/mask_map.tif');
     expect(names).toContain('photos/ortho/mask16.png.aux.xml');
     const readme = entries.find((e) => e.name === 'README.txt')!.data as string;
-    expect(readme).toContain('mask_map.tif (the label mask as a GeoTIFF, CRS included');
+    expect(readme).toContain('mask_map.tif is the label mask as a GeoTIFF, CRS included');
+    expect(names).toContain('photos/ortho/outlines_lonlat.geojson');
     expect(readme).toContain('not map coordinates');
   });
 });

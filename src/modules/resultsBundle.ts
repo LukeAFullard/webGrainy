@@ -90,6 +90,7 @@ export async function resultsBundleEntries(input: ResultsBundleInput): Promise<Z
     let geo = false;
     for (const [kind, name] of [
       ['photo-geojson-map', 'outlines_map.geojson'],
+      ['photo-geojson-lonlat', 'outlines_lonlat.geojson'],
       ['photo-mask-geotiff', 'mask_map.tif'],
       ['photo-mask-worldfile', 'mask16.pgw'],
       ['photo-mask-auxxml', 'mask16.png.aux.xml'],
@@ -129,7 +130,7 @@ export async function resultsBundleEntries(input: ResultsBundleInput): Promise<Z
     "e.g. pandas.read_csv(path, comment='#'). In the '#' lines, % , ; and TAB are written as %25 %2C %3B %09.",
     '',
     georeferenced > 0
-      ? 'GeoTIFF photos: for a GIS use outlines_map.geojson (grain outlines in the map coordinates and CRS of the source GeoTIFF; QGIS and other GDAL-based tools read the CRS, tools that expect GeoJSON in longitude/latitude cannot place it) and mask_map.tif (the label mask as a GeoTIFF, CRS included, background = nodata). mask16.png is placed by mask16.pgw (world file) with its CRS in mask16.png.aux.xml. outlines.geojson, grains.csv and the other mask files are in photo pixels (x right, y down), not map coordinates.'
+      ? 'GeoTIFF photos: outlines_lonlat.geojson has the grain outlines in WGS84 longitude/latitude for web maps and any GeoJSON reader (when the CRS can be converted; no datum shift, within about a metre). outlines_map.geojson has them in the map coordinates and CRS of the source GeoTIFF (exact; QGIS and other GDAL-based tools read the CRS, tools that expect longitude/latitude cannot place it). mask_map.tif is the label mask as a GeoTIFF, CRS included, background = nodata. mask16.png is placed by mask16.pgw (world file) with its CRS in mask16.png.aux.xml. outlines.geojson, grains.csv and the other mask files are in photo pixels (x right, y down), not map coordinates.'
       : 'Mask and outline coordinates are photo pixels (x right, y down), not map coordinates.',
     ...(coarse.length > 0
       ? [
