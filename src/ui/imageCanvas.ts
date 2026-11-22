@@ -183,3 +183,18 @@ export async function rectifyWithCanvas(
   const calibration = rectificationCalibration(rectified, physWidthMm);
   return { blob, width: rectified.width, height: rectified.height, calibration };
 }
+
+/** RGBA pixels of a stored photo at its own size (for reprojected photo exports). */
+export async function decodePhotoRgba(blob: Blob): Promise<{ data: Uint8ClampedArray; width: number; height: number } | null> {
+  try {
+    const bmp = await createImageBitmap(blob);
+    const c = new OffscreenCanvas(bmp.width, bmp.height);
+    const ctx = c.getContext('2d');
+    if (!ctx) return null;
+    ctx.drawImage(bmp, 0, 0);
+    const { data } = ctx.getImageData(0, 0, bmp.width, bmp.height);
+    return { data, width: bmp.width, height: bmp.height };
+  } catch {
+    return null;
+  }
+}

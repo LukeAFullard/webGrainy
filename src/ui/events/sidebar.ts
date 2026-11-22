@@ -277,6 +277,10 @@ export function handleSidebarChange(target: ControlLike, ctx: EventContext): boo
     ctx.store.setState({ downloadIncludeProject: target.checked === true });
     return true;
   }
+  if ((target.id === 'export-counted-only' || target.id === 'download-counted-only') && isInput(target)) {
+    ctx.store.setState({ exportCountedOnly: target.checked === true });
+    return true;
+  }
   if (isInput(target) && target.dataset['photoFacies']) {
     const w = Number(target.value);
     if (Number.isFinite(w) && w >= 0) updatePhoto(ctx, target.dataset['photoFacies'], { faciesWeight: w });

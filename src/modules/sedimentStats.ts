@@ -226,6 +226,28 @@ export function grainPassesSizeCutoffs(
   return true;
 }
 
+/** Display names of the size metrics in cutoff explanations. */
+const METRIC_LABEL: Record<SizeMetric, string> = { bAxis: 'b-axis', dEq: 'equivalent diameter', minFeret: 'min-Feret width' };
+
+/**
+ * Why a grain fails the size cutoffs, with its size and the cutoff (e.g. "b-axis 8.9 px < 15 px
+ * pixel cutoff"), or null when it passes. The same rule as grainPassesSizeCutoffs.
+ */
+export function sizeCutoffExplanation(
+  grain: GrainMorphometrics,
+  options?: { minBaxisPx?: number; minSizeMm?: number; sizeMetric?: SizeMetric },
+): string | null {
+  const minBaxisPx = Math.max(0, options?.minBaxisPx ?? 0);
+  const minSizeMm = Math.max(0, options?.minSizeMm ?? 0);
+  const metric = options?.sizeMetric ?? 'bAxis';
+  const label = METRIC_LABEL[metric] ?? metric;
+  const px = grainSizeIn(grain, metric, 'px');
+  if (minBaxisPx > 0 && px < minBaxisPx) return `${label} ${px.toFixed(1)} px < ${+minBaxisPx.toFixed(2)} px pixel cutoff`;
+  const mm = grainSizeIn(grain, metric, 'mm');
+  if (minSizeMm > 0 && mm < minSizeMm) return `${label} ${mm.toFixed(1)} mm < ${+minSizeMm.toFixed(2)} mm size cutoff`;
+  return null;
+}
+
 /**
  * Computes the complete sediment statistics report (area-weighted & number-weighted
  * PSDs on `bAxis` and `dEq`, plus Folk & Ward and Wentworth when calibrated in `mm`).

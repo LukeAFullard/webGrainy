@@ -715,7 +715,21 @@ transform and its GeoKeys (the coordinate system, also a user-defined one). It t
   read every GeoJSON as longitude/latitude and cannot place it. The file name names the CRS for
   that reason;
 - a **world file** for the 16-bit PNG mask (`mask16.pgw`) with a `mask16.png.aux.xml` sidecar
-  naming the CRS (a world file alone holds no CRS).
+  naming the CRS (a world file alone holds no CRS);
+- the **photo and the mask reprojected to Web Mercator** (`photo_webmercator.tif`,
+  `mask_webmercator.tif`, EPSG:3857, north-up). A projected GeoTIFF's pixel rows run along grid
+  east, which differs from true east by the grid convergence (−1.49° for NZTM at 175.3°E). A web
+  viewer that draws such a raster north-up inside its corner coordinates, without that rotation,
+  misaligns it with correctly converted outlines (by up to ~23 cm across a 9 m photo). On the
+  Web Mercator grid no rotation is needed, so photo, mask and longitude / latitude outlines line
+  up in any viewer. Each output pixel is taken back to the photo exactly (forward Transverse
+  Mercator / Lambert projections, checked against PROJ like the inverse) and sampled nearest
+  neighbour (mask) or bilinear (photo). On the NZTM test tile the mask is identical to GDAL's
+  `gdalwarp` and the photo within 0.25 grey levels on average.
+
+Outline and mask exports hold every detected grain by default; an option in the Export and
+Download dialogs limits them to the grains counted in the statistics (border rule, ROI and size
+cutoffs: the grains with `included_in_stats = true` in the grain table).
 
 All of these were checked with GDAL 3.12 on an NZTM 2000 orthomosaic tile: CRS and extent equal the
 source GeoTIFF's, and the mask GeoTIFF holds the same grain ids as the PNG mask. The map position

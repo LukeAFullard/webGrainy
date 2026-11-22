@@ -572,3 +572,15 @@ describe('sedimentStats', () => {
     });
   });
 });
+
+describe('cutoff explanation (grain card)', () => {
+  it('names the rule and the numbers', async () => {
+    const { sizeCutoffExplanation } = await import('../src/modules/sedimentStats.js');
+    // The reported grain: b-axis 177.93 mm at 20 mm/px = 8.9 px, area 35,200 mm².
+    const g = { id: 540, areaPx: 88, centroidX: 0, centroidY: 0, aAxisPx: 12.79, bAxisPx: 8.8965, dEqPx: 10.585, bAxisMm: 177.93, aAxisMm: 255.86, dEqMm: 211.7, areaMm2: 35200, orientationRad: 0, touchesBorder: false, bbox: [0, 0, 1, 1] } as never;
+    expect(sizeCutoffExplanation(g, { minBaxisPx: 15 })).toBe('b-axis 8.9 px < 15 px pixel cutoff');
+    expect(sizeCutoffExplanation(g, { minBaxisPx: 5, minSizeMm: 200 })).toBe('b-axis 177.9 mm < 200 mm size cutoff');
+    expect(sizeCutoffExplanation(g, { minBaxisPx: 5, minSizeMm: 100 })).toBeNull();
+    expect(sizeCutoffExplanation(g, { minBaxisPx: 5, sizeMetric: 'dEq', minSizeMm: 250 })).toBe('equivalent diameter 211.7 mm < 250 mm size cutoff');
+  });
+});

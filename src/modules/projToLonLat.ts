@@ -108,6 +108,68 @@ export function lccInverse(
   return [p.lon0 + theta / n / D, phi / D];
 }
 
+/** Forward Transverse Mercator (EPSG method 9807): longitude / latitude to easting / northing. */
+export function tmForward(
+  lon: number,
+  lat: number,
+  p: { a: number; f: number; lat0: number; lon0: number; k0: number; fe: number; fn: number },
+): [number, number] {
+  const { a, f, k0 } = p;
+  const n = f / (2 - f);
+  const n2 = n * n, n3 = n2 * n, n4 = n3 * n, n5 = n4 * n, n6 = n5 * n;
+  const A = (a / (1 + n)) * (1 + n2 / 4 + n4 / 64 + n6 / 256);
+  const alpha = [
+    n / 2 - (2 * n2) / 3 + (5 * n3) / 16 + (41 * n4) / 180 - (127 * n5) / 288 + (7891 * n6) / 37800,
+    (13 * n2) / 48 - (3 * n3) / 5 + (557 * n4) / 1440 + (281 * n5) / 630 - (1983433 * n6) / 1935360,
+    (61 * n3) / 240 - (103 * n4) / 140 + (15061 * n5) / 26880 + (167603 * n6) / 181440,
+    (49561 * n4) / 161280 - (179 * n5) / 168 + (6601661 * n6) / 7257600,
+    (34729 * n5) / 80640 - (3418889 * n6) / 1995840,
+    (212378941 * n6) / 319334400,
+  ];
+  const e = Math.sqrt(f * (2 - f));
+  const tauPrime = (tau: number): number => {
+    const s = Math.sinh(e * Math.atanh((e * tau) / Math.sqrt(1 + tau * tau)));
+    return tau * Math.sqrt(1 + s * s) - s * Math.sqrt(1 + tau * tau);
+  };
+  const series = (xi: number, eta: number): [number, number] => {
+    let x = xi;
+    let y = eta;
+    for (let j = 1; j <= 6; j++) {
+      x += alpha[j - 1]! * Math.sin(2 * j * xi) * Math.cosh(2 * j * eta);
+      y += alpha[j - 1]! * Math.cos(2 * j * xi) * Math.sinh(2 * j * eta);
+    }
+    return [x, y];
+  };
+  let dl = (lon - p.lon0) * D;
+  dl = Math.atan2(Math.sin(dl), Math.cos(dl));
+  const tp = tauPrime(Math.tan(lat * D));
+  const xiP = Math.atan2(tp, Math.cos(dl));
+  const etaP = Math.asinh(Math.sin(dl) / Math.sqrt(tp * tp + Math.cos(dl) ** 2));
+  const [xi, eta] = series(xiP, etaP);
+  const [xi0] = series(Math.atan(tauPrime(Math.tan(p.lat0 * D))), 0);
+  return [p.fe + k0 * A * eta, p.fn + k0 * A * (xi - xi0)];
+}
+
+/** Forward Lambert Conformal Conic (EPSG 9801 / 9802). */
+export function lccForward(
+  lon: number,
+  lat: number,
+  p: { a: number; f: number; lat1: number; lat2: number; latOrigin: number; lon0: number; k0: number; fe: number; fn: number },
+): [number, number] {
+  const e = Math.sqrt(p.f * (2 - p.f));
+  const m = (phi: number): number => Math.cos(phi) / Math.sqrt(1 - (e * Math.sin(phi)) ** 2);
+  const t = (phi: number): number => Math.tan(Math.PI / 4 - phi / 2) / ((1 - e * Math.sin(phi)) / (1 + e * Math.sin(phi))) ** (e / 2);
+  const p1 = p.lat1 * D, p2 = p.lat2 * D, pO = p.latOrigin * D;
+  const n = Math.abs(p1 - p2) < 1e-12 ? Math.sin(p1) : (Math.log(m(p1)) - Math.log(m(p2))) / (Math.log(t(p1)) - Math.log(t(p2)));
+  const F = m(p1) / (n * t(p1) ** n);
+  const rho0 = p.a * F * p.k0 * t(pO) ** n;
+  const rho = p.a * F * p.k0 * t(lat * D) ** n;
+  let dl = (lon - p.lon0) * D;
+  dl = Math.atan2(Math.sin(dl), Math.cos(dl));
+  const theta = n * dl;
+  return [p.fe + rho * Math.sin(theta), p.fn + rho0 - rho * Math.cos(theta)];
+}
+
 /** Web Mercator (spherical, EPSG:3857 and aliases) to longitude / latitude. */
 function webMercatorInverse(x: number, y: number): LonLat {
   const R = 6378137;
@@ -117,10 +179,43 @@ function webMercatorInverse(x: number, y: number): LonLat {
 const NEAR_WGS84_GEOGRAPHIC: ReadonlySet<number> = new Set(CRS_GEOGRAPHIC_NEAR_WGS84);
 const WEB_MERCATOR: ReadonlySet<number> = new Set([3857, 3785, 900913, 102100, 102113]);
 
+/** Longitude / latitude to Web Mercator (EPSG:3857) metres. */
+export function webMercatorForward(lon: number, lat: number): [number, number] {
+  const R = 6378137;
+  return [R * lon * D, R * Math.log(Math.tan(Math.PI / 4 + (lat * D) / 2))];
+}
+
 /** Longitude in [-180, 180). */
 const wrap = ([lon, lat]: LonLat): LonLat => [((((lon + 180) % 360) + 360) % 360) - 180, lat];
 
 let index: Map<number, readonly number[]> | null = null;
+
+/**
+ * The inverse of lonLatProjector: WGS84 longitude / latitude to this CRS's map coordinates, or
+ * null for the same CRSs lonLatProjector does not cover.
+ */
+export function projectedFromLonLat(epsg: number | null, kind: 'projected' | 'geographic' | 'unknown'): ((lon: number, lat: number) => [number, number]) | null {
+  if (epsg === null) return null;
+  if (NEAR_WGS84_GEOGRAPHIC.has(epsg)) return (lon, lat) => [lon, lat];
+  if (kind === 'geographic') return null;
+  if (WEB_MERCATOR.has(epsg)) return webMercatorForward;
+  index ??= new Map(CRS_TABLE.map((r) => [r[0]!, r]));
+  const r = index.get(epsg);
+  if (!r) return null;
+  const [, method, ell, unit, ...prm] = r as [number, number, number, number, ...number[]];
+  const { a, f } = ellipsoid(ell);
+  const toUnits = ([x, y]: [number, number]): [number, number] => [x / unit, y / unit];
+  if (method === 0) {
+    const [lat0, lon0, k0, fe, fn] = prm as [number, number, number, number, number];
+    return (lon, lat) => toUnits(tmForward(lon, lat, { a, f, lat0, lon0, k0, fe, fn }));
+  }
+  if (method === 1) {
+    const [lat0, lon0, k0, fe, fn] = prm as [number, number, number, number, number];
+    return (lon, lat) => toUnits(lccForward(lon, lat, { a, f, lat1: lat0, lat2: lat0, latOrigin: lat0, lon0, k0, fe, fn }));
+  }
+  const [latF, lonF, lat1, lat2, fe, fn] = prm as [number, number, number, number, number, number];
+  return (lon, lat) => toUnits(lccForward(lon, lat, { a, f, lat1, lat2, latOrigin: latF, lon0: lonF, k0: 1, fe, fn }));
+}
 
 /**
  * A function from this CRS's map coordinates (x = easting, y = northing) to WGS84 longitude /

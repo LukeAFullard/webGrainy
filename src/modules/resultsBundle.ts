@@ -25,6 +25,8 @@ export interface ResultsBundleInput {
   reportHtml?: string | null;
   /** Add the .webgrainy project file (with photos) so the site can be reopened later. */
   includeProject: boolean;
+  /** Outlines and masks hold only the grains counted in the statistics (see ExportContext). */
+  countedGrainsOnly?: boolean;
   now?: Date;
 }
 
@@ -55,6 +57,7 @@ export async function resultsBundleEntries(input: ResultsBundleInput): Promise<Z
     psdXAxis: input.psdXAxis,
     sizeMetric: input.sizeMetric,
     siteOptions: input.siteOptions,
+    ...(input.countedGrainsOnly ? { countedGrainsOnly: true } : {}),
     ...(input.renderPsdSvg ? { renderPsdSvg: input.renderPsdSvg } : {}),
   };
   const entries: ZipEntry[] = [];
@@ -94,6 +97,7 @@ export async function resultsBundleEntries(input: ResultsBundleInput): Promise<Z
       ['photo-geojson-map', g ? mapGeoJsonName(g) : 'outlines_map.geojson'],
       ['photo-geojson-lonlat', 'outlines_lonlat.geojson'],
       ['photo-mask-geotiff', 'mask_map.tif'],
+      ['photo-mask-webmercator', 'mask_webmercator.tif'],
       ['photo-mask-worldfile', 'mask16.pgw'],
       ['photo-mask-auxxml', 'mask16.png.aux.xml'],
     ] as const) {
@@ -128,11 +132,14 @@ export async function resultsBundleEntries(input: ResultsBundleInput): Promise<Z
     `webGrainy ${APP_VERSION} (commit ${BUILD_COMMIT})`,
     '',
     'Sizes are in mm when the photo was calibrated, otherwise in original-photo pixels (each file states its unit).',
+    input.countedGrainsOnly
+      ? 'Outlines and masks hold only the grains counted in the statistics (border rule, ROI and size cutoffs applied); grains.csv lists every detected grain, with included_in_stats.'
+      : 'Outlines and masks hold every detected grain; grains.csv marks the ones counted in the statistics (included_in_stats).',
     'Every CSV starts with metadata: app and model versions, model SHA-256 and all settings. Read it with',
     "e.g. pandas.read_csv(path, comment='#'). In the '#' lines, % , ; and TAB are written as %25 %2C %3B %09.",
     '',
     georeferenced > 0
-      ? 'GeoTIFF photos: outlines_lonlat.geojson has the grain outlines in WGS84 longitude/latitude for web maps and any GeoJSON reader (when the CRS can be converted; no datum shift, within about a metre). outlines_EPSG<code>.geojson has them in the map coordinates and CRS of the source GeoTIFF (exact; for QGIS and other GDAL-based tools only: web maps and ArcGIS Online read every .geojson as longitude/latitude and cannot place it). mask_map.tif is the label mask as a GeoTIFF, CRS included, background = nodata. mask16.png is placed by mask16.pgw (world file) with its CRS in mask16.png.aux.xml. outlines.geojson, grains.csv and the other mask files are in photo pixels (x right, y down), not map coordinates.'
+      ? 'GeoTIFF photos: outlines_lonlat.geojson has the grain outlines in WGS84 longitude/latitude for web maps and any GeoJSON reader (when the CRS can be converted; no datum shift, within about a metre). outlines_EPSG<code>.geojson has them in the map coordinates and CRS of the source GeoTIFF (exact; for QGIS and other GDAL-based tools only: web maps and ArcGIS Online read every .geojson as longitude/latitude and cannot place it). mask_map.tif is the label mask as a GeoTIFF, CRS included, background = nodata; mask_webmercator.tif is the same mask reprojected to the north-up Web Mercator grid (EPSG:3857), for web maps that draw rasters without rotating them. mask16.png is placed by mask16.pgw (world file) with its CRS in mask16.png.aux.xml. outlines.geojson, grains.csv and the other mask files are in photo pixels (x right, y down), not map coordinates.'
       : 'Mask and outline coordinates are photo pixels (x right, y down), not map coordinates.',
     ...(coarse.length > 0
       ? [
