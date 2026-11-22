@@ -9,6 +9,7 @@
  */
 import type { AnalysisConfig, AnalysisProvenance, CalibrationResult, ModelId, ModelRecommendation, PostProcessOptions } from '../types/index.js';
 import { MAX_FINE_GRAIN_UPSCALE } from './imagePreprocess.js';
+import { cleanGeoKeys } from './georef.js';
 import { MODEL_FILES } from './modelCache.js';
 import { POSTPROCESS_LIMITS, isValidPostProcessValue } from './postprocessCore.js';
 import type { RoiExclusionConfig } from './roiAndRectify.js';
@@ -217,6 +218,10 @@ function sanitizeGeoref(raw: unknown): PhotoGeoreference | undefined {
     kind: oneOf(raw['kind'], ['projected', 'geographic', 'unknown'] as const) ?? 'unknown',
     width: raw['width'] as number,
     height: raw['height'] as number,
+    ...(() => {
+      const k = isObj(raw['geoKeys']) ? cleanGeoKeys(raw['geoKeys']['directory'], raw['geoKeys']['doubles'], raw['geoKeys']['ascii']) : undefined;
+      return k ? { geoKeys: k } : {};
+    })(),
   };
 }
 

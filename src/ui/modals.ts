@@ -268,10 +268,12 @@ function mapExportHtml(photo: PhotoRecord): string {
   const { georef, reason } = photoGeoreference(photo);
   if (georef) {
     return `<div class="row" style="flex-wrap:wrap;margin-top:6px;">
-        <button type="button" class="btn btn-sm btn-primary" data-export="photo-geojson-map" title="Grain outlines in the map coordinates of the source GeoTIFF">GeoJSON (map coordinates)</button>
+        <button type="button" class="btn btn-sm btn-primary" data-export="photo-geojson-map" title="Grain outlines in the map coordinates and CRS of the source GeoTIFF">GeoJSON (map coordinates)</button>
+        <button type="button" class="btn btn-sm btn-primary" data-export="photo-mask-geotiff" title="Label mask as a GeoTIFF with the source GeoTIFF's position and CRS (background = nodata)">Label mask GeoTIFF (map)</button>
         <button type="button" class="btn btn-sm" data-export="photo-mask-worldfile" title="World file that places the 16-bit PNG mask on the map (keep it next to the mask, same name)">World file for 16-bit mask (.pgw)</button>
+        ${georef.epsg !== null ? '<button type="button" class="btn btn-sm" data-export="photo-mask-auxxml" title="CRS sidecar for the 16-bit PNG mask (QGIS / GDAL); keep it next to the mask">CRS file for 16-bit mask (.aux.xml)</button>' : ''}
       </div>
-      <p class="field-hint" style="margin-top:4px;">This photo is a GeoTIFF${georef.epsg !== null ? ` (EPSG:${georef.epsg})` : ' with a custom coordinate system (assign it in your GIS)'}: these exports drop straight onto the map in QGIS or ArcGIS. The other exports use photo pixels.</p>`;
+      <p class="field-hint" style="margin-top:4px;">This photo is a GeoTIFF${georef.epsg !== null ? ` (EPSG:${georef.epsg})` : ' with a custom coordinate system'}. The <strong>label mask GeoTIFF</strong> carries the CRS and opens in the right place in any GIS. The <strong>GeoJSON</strong> is in the GeoTIFF's map coordinates: QGIS and other GDAL-based tools read its CRS; tools that expect GeoJSON in longitude/latitude (web maps, some ArcGIS tools) cannot place it. A world file holds no CRS: use it with the .aux.xml file, or set the CRS in your GIS. All other exports are in photo pixels, not map coordinates.</p>`;
   }
   return `<p class="field-hint" style="margin-top:6px;">Mask, GeoJSON and SVG coordinates are photo pixels (x right, y down), not map coordinates.${reason ? ` ${esc(reason)}` : ' Map-coordinate exports are offered for GeoTIFF photos.'}</p>`;
 }

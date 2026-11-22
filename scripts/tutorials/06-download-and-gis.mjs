@@ -51,7 +51,7 @@ export async function run(d) {
   await d.caption('For GIS, open <b>Export</b>.', { hold: 0 });
   await d.click(page.locator('#topbar button', { hasText: 'Export' }), { after: 1200 });
   await d.ring(page.locator('[data-export="photo-geojson-map"]').locator('xpath=../..'));
-  await d.caption('For a GeoTIFF, <b>GeoJSON (map coordinates)</b> gives every grain outline in the photo\'s own coordinate system, ready for QGIS or ArcGIS.');
+  await d.caption('For a GeoTIFF, <b>GeoJSON (map coordinates)</b> gives every grain outline in the photo\'s own coordinate system (QGIS reads it), and the <b>label mask GeoTIFF</b> opens in the right place in any GIS.');
   const warn = page.getByText('Outlines are coarser than the photo.').locator('xpath=..');
   if (await warn.count()) {
     await d.ring(warn);

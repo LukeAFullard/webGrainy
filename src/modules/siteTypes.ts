@@ -69,6 +69,11 @@ export interface PhotoGeoreference {
   /** Raster size the transform belongs to (the photo must still have this size). */
   width: number;
   height: number;
+  /**
+   * The source GeoTIFF's GeoKeys (GeoKeyDirectory 34735, GeoDoubleParams 34736, GeoAsciiParams
+   * 34737), written back into the map exports so any CRS (also user-defined) is kept.
+   */
+  geoKeys?: { directory: number[]; doubles?: number[]; ascii?: string };
 }
 
 export interface SitePhotoMetadata {
