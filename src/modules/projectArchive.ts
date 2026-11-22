@@ -16,6 +16,7 @@ import {
 import { modelKindOf } from './modelCache.js';
 import { placeName } from './sitePlaces.js';
 import { isIsoDate } from './surveyDate.js';
+import { scaleModeLabel } from './imagePreprocess.js';
 import {
   getPhoto,
   getPhotoResult,
@@ -133,7 +134,7 @@ function deserializeSessionFromArchive(
       originalWidth: wi.originalWidth,
       originalHeight: wi.originalHeight,
       effectiveScaleFactor: scale,
-      scaleModeApplied: scale === 1 ? '1.0x' : scale === 0.5 ? '0.5x' : '0.25x',
+      scaleModeApplied: scaleModeLabel(scale),
     },
     recommendation: sanitizeRecommendation(archived.recommendation, provenance !== undefined ? modelKindOf(provenance.modelId) : 'unet'),
     ...(calibration !== undefined ? { calibration } : {}),

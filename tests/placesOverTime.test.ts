@@ -292,3 +292,17 @@ describe('site panel (UI)', () => {
     expect(place).toContain('Compare 2 surveys over time');
   });
 });
+
+describe('comparison CSV with a site that counts no grain (re-audit)', () => {
+  it('writes empty cells, never NaN, for ratios that cannot be computed', () => {
+    const entry = (siteId: string, name: string, inputs: SitePhotoInput[]): SiteForComparison => ({ siteId, name, inputs });
+    // minSizeMm above every grain in site b: its D-values are NaN.
+    const cmp = computeComparedSites(
+      [entry('a', 'A', [photo('a', 40, { mmPerPx: 1 })]), entry('b', 'B', [photo('b', 40, { mmPerPx: 0.05 })])],
+      { ...opts, minSizeMm: 10 },
+    );
+    expect(Number.isFinite(cmp.find((c) => c.siteId === 'b')!.report!.psd.D50)).toBe(false);
+    const csv = comparisonCsv(cmp, {});
+    expect(csv.split('\n').filter((l) => /(^|,)-?(NaN|Infinity)(,|$)/.test(l))).toEqual([]);
+  });
+});

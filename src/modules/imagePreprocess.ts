@@ -326,6 +326,14 @@ export function applyCLAHE(
   return { data: out, width, height };
 }
 
+/**
+ * The nearest fixed scale mode, for display: an 'auto' scale is usually not exactly 0.5 or 0.25
+ * (effectiveScaleFactor holds the exact value used in every conversion).
+ */
+export function scaleModeLabel(scale: number): Exclude<ScaleMode, 'auto'> {
+  return scale >= 1 ? '1.0x' : scale >= Math.SQRT1_2 * 0.5 ? '0.5x' : '0.25x';
+}
+
 /** Longest side of the working image in 'auto' scale mode (larger photos are shrunk to it). */
 export const AUTO_MAX_WORKING_SIDE = 1024;
 
@@ -369,10 +377,7 @@ export function prepareWorkingImage(
   validateImageDimensions(rgba, width, height);
 
   const targetScale = workingScaleFor(width, height, scaleMode);
-  // The nearest fixed mode, for display (an 'auto' scale is usually not exactly 0.5 or 0.25;
-  // effectiveScaleFactor holds the exact value used in every conversion).
-  const scaleModeApplied: Exclude<ScaleMode, 'auto'> =
-    targetScale === 1 ? '1.0x' : targetScale >= Math.SQRT1_2 * 0.5 ? '0.5x' : '0.25x';
+  const scaleModeApplied = scaleModeLabel(targetScale);
 
   if (targetScale === 1.0) {
     return {
