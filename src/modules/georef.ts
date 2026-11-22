@@ -5,6 +5,7 @@
  * raster it came from (same size, not rectified).
  */
 import { photoProcessingHistory, type PhotoGeoreference, type SitePhotoMetadata } from './siteTypes.js';
+import { lonLatProjector } from './projToLonLat.js';
 
 const num = (v: unknown): number => (typeof v === 'number' ? v : Number(v));
 
@@ -181,6 +182,73 @@ export function geoJsonToMap(pixelGeoJson: string, g: PhotoGeoreference): string
  */
 export function pamAuxXml(g: PhotoGeoreference): string | null {
   return g.epsg !== null ? `<PAMDataset>\n  <SRS>EPSG:${g.epsg}</SRS>\n</PAMDataset>\n` : null;
+}
+
+/**
+ * File name of the map-coordinate GeoJSON. It names the CRS (e.g. outlines_EPSG2193.geojson),
+ * because RFC 7946 readers (web maps, ArcGIS Online) take any .geojson as longitude / latitude and
+ * ignore its `crs` member: the name tells users this one is for GDAL-based GIS only.
+ */
+export function mapGeoJsonName(g: PhotoGeoreference): string {
+  return g.epsg !== null ? `outlines_EPSG${g.epsg}.geojson` : 'outlines_customCRS.geojson';
+}
+
+/** Whether the photo's CRS can be converted to longitude / latitude (see geoJsonToLonLat). */
+export function canExportLonLat(g: PhotoGeoreference): boolean {
+  return lonLatProjector(g.epsg, g.kind) !== null;
+}
+
+/** Signed area of a ring (positive = counter-clockwise in x-right, y-up axes). */
+function ringArea(ring: number[][]): number {
+  let s = 0;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) s += (ring[j]![0]! - ring[i]![0]!) * (ring[j]![1]! + ring[i]![1]!);
+  return s / 2;
+}
+
+/**
+ * RFC 7946 GeoJSON (WGS84 longitude / latitude, no `crs` member) from the pixel GeoJSON export,
+ * for web maps and other tools that read GeoJSON only as longitude / latitude. Null when the
+ * CRS is not one projToLonLat converts. Exterior rings counter-clockwise, holes clockwise
+ * (right-hand rule); coordinates to 1e-9 degree (about 0.1 mm). No datum shift is applied:
+ * the CRSs converted are within about a metre of WGS84.
+ */
+export function geoJsonToLonLat(pixelGeoJson: string, g: PhotoGeoreference): string | null {
+  const project = lonLatProjector(g.epsg, g.kind);
+  if (!project) return null;
+  const ll = (u: number, v: number): [number, number] => {
+    const [x, y] = toMap(g, u, v);
+    const [lon, lat] = project(x, y);
+    return [Math.round(lon * 1e9) / 1e9, Math.round(lat * 1e9) / 1e9];
+  };
+  const ring = (r: number[][], outer: boolean): number[][] => {
+    const out = r.map((p) => ll(p[0]!, p[1]!));
+    return (ringArea(out) > 0) === outer ? out : out.reverse();
+  };
+  const polygon = (rings: number[][][]): number[][][] => rings.map((r, i) => ring(r, i === 0));
+  const fc = JSON.parse(pixelGeoJson) as { metadata?: Record<string, unknown>; features: Array<{ geometry: { type: string; coordinates: unknown }; properties: Record<string, unknown> }> };
+  for (const feat of fc.features) {
+    const geom = feat.geometry;
+    geom.coordinates = geom.type === 'Polygon' ? polygon(geom.coordinates as number[][][]) : (geom.coordinates as number[][][][]).map(polygon);
+    const cx = feat.properties['centroidX'];
+    const cy = feat.properties['centroidY'];
+    if (typeof cx === 'number' && typeof cy === 'number') {
+      const [lon, lat] = ll(cx + 0.5, cy + 0.5);
+      feat.properties['centroidLon'] = lon;
+      feat.properties['centroidLat'] = lat;
+    }
+  }
+  return JSON.stringify({
+    type: 'FeatureCollection',
+    metadata: {
+      ...(fc.metadata ?? {}),
+      lonLatCoordinates: {
+        crs: 'WGS 84 longitude / latitude (RFC 7946)',
+        sourceCrs: `EPSG:${g.epsg}`,
+        note: `Converted from the source GeoTIFF's EPSG:${g.epsg} map coordinates without a datum shift (that datum is within about a metre of WGS84). For survey-grade positions use ${mapGeoJsonName(g)} (EPSG:${g.epsg} map coordinates). Sizes and areas in the properties are in photo pixels and mm.`,
+      },
+    },
+    features: fc.features,
+  });
 }
 
 /** World file (.pgw / .tfw) for an image of the photo's size: six lines, top-left pixel centre. */

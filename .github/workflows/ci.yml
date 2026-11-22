@@ -58,6 +58,9 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Map projections vs PROJ (every CRS in the table, built code)
+        run: node validation/geotiff/check_crs_table.mjs
+
       - name: Cache pinned model weights (U-Net + Cellpose-SAM INT8)
         uses: actions/cache@v4
         with:

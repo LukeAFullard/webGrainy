@@ -81,6 +81,11 @@ describe('map-coordinate exports', () => {
     const ctx = { site: null, session, siteReport: null, siteInputs: [], psdXAxis: 'mm' as const };
     expect(await buildExport('photo-geojson-map', { ...ctx, photo: photo as never })).not.toBeNull();
     expect(await buildExport('photo-geojson-map', { ...ctx, photo: { ...photo, metadata: {} } as never })).toBeNull();
+    // The map-coordinate GeoJSON names its CRS (web maps read any .geojson as longitude/latitude).
+    expect((await buildExport('photo-geojson-map', { ...ctx, photo: photo as never }))!.filename).toBe('ortho_tif_outlines_EPSG2193.geojson');
+    const custom = { ...photo, metadata: { georef: { ...georef, epsg: null } } };
+    expect((await buildExport('photo-geojson-map', { ...ctx, photo: custom as never }))!.filename).toBe('ortho_tif_outlines_customCRS.geojson');
+    expect((await buildExport('photo-geojson-lonlat', { ...ctx, photo: photo as never }))!.filename).toBe('ortho_tif_outlines_lonlat.geojson');
   });
 
   it('Download results adds map outlines and the mask world file for GeoTIFF photos', async () => {
@@ -90,12 +95,13 @@ describe('map-coordinate exports', () => {
       siteOptions: {}, sizeMetric: 'bAxis', psdXAxis: 'mm', includeProject: false,
     });
     const names = entries.map((e) => e.name);
-    expect(names).toContain('photos/ortho/outlines_map.geojson');
+    expect(names).toContain('photos/ortho/outlines_EPSG2193.geojson');
     expect(names).toContain('photos/ortho/mask16.pgw');
     expect(names).toContain('photos/ortho/mask_map.tif');
     expect(names).toContain('photos/ortho/mask16.png.aux.xml');
     const readme = entries.find((e) => e.name === 'README.txt')!.data as string;
-    expect(readme).toContain('mask_map.tif (the label mask as a GeoTIFF, CRS included');
+    expect(readme).toContain('mask_map.tif is the label mask as a GeoTIFF, CRS included');
+    expect(names).toContain('photos/ortho/outlines_lonlat.geojson');
     expect(readme).toContain('not map coordinates');
   });
 });

@@ -122,6 +122,14 @@ freely, subject to the following restrictions:
 3. This notice may not be removed or altered from any source distribution.
 ```
 
+### EPSG Geodetic Parameter Dataset — coordinate system parameters
+
+`src/modules/crsTable.ts` (bundled into `dist/ui/main.js`) holds projection parameters derived from
+the **EPSG Geodetic Parameter Dataset** (© IOGP, <https://epsg.org>), extracted with PROJ
+(<https://proj.org>, MIT) by `validation/geotiff/make_crs_table.py`. Used under the EPSG Dataset
+Terms of Use (<https://epsg.org/terms-of-use.html>). The parameters are used unchanged; only the
+subset described in that script is included.
+
 ---
 
 ## Model weights (downloaded at runtime, not bundled)

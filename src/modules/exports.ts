@@ -6,7 +6,7 @@ import type { SizeMetric } from '../types/index.js';
 import type { AnalysisSession } from './pipelineController.js';
 import { exportSiteArchive, type PhotoRecord, type SiteRecord } from './projectStorage.js';
 import { photoProcessingHistory } from './siteTypes.js';
-import { geoJsonToMap, pamAuxXml, photoGeoreference, worldFile } from './georef.js';
+import { geoJsonToLonLat, geoJsonToMap, mapGeoJsonName, pamAuxXml, photoGeoreference, worldFile } from './georef.js';
 import { encodeLabelGeoTiff } from './geotiffWriter.js';
 import {
   buildSiteExportMetadata,
@@ -32,6 +32,7 @@ export const EXPORT_KINDS = [
   'photo-mask-32',
   'photo-geojson',
   'photo-geojson-map',
+  'photo-geojson-lonlat',
   'photo-mask-worldfile',
   'photo-mask-geotiff',
   'photo-mask-auxxml',
@@ -183,9 +184,15 @@ export async function buildExport(kind: ExportKind, ctx: ExportContext): Promise
       return session && g
         ? {
             blob: new Blob([geoJsonToMap(session.exportGeoJson(photoMeta), g)], { type: 'application/geo+json' }),
-            filename: `${photoFile}_outlines_map.geojson`,
+            filename: `${photoFile}_${mapGeoJsonName(g)}`,
           }
         : null;
+    }
+    case 'photo-geojson-lonlat': {
+      // Longitude / latitude (RFC 7946) for web maps; null when the CRS is not convertible.
+      const g = photo ? photoGeoreference(photo).georef : null;
+      const json = session && g ? geoJsonToLonLat(session.exportGeoJson(photoMeta), g) : null;
+      return json ? { blob: new Blob([json], { type: 'application/geo+json' }), filename: `${photoFile}_outlines_lonlat.geojson` } : null;
     }
     case 'photo-mask-worldfile': {
       // World file placing the 16-bit mask PNG (same base name) on the map. It holds no CRS:
