@@ -97,6 +97,8 @@ export interface AppState {
   storageFullNotice: string | null;
   /** "Download results": also include the project file with the photos. */
   downloadIncludeProject: boolean;
+  /** Outline / mask exports: only the grains counted in the statistics (default: every grain). */
+  exportCountedOnly: boolean;
   /** A results download is being prepared. */
   downloadingResults: boolean;
 
@@ -194,6 +196,7 @@ export function createInitialState(): AppState {
     retentionHeld: [],
     storageFullNotice: null,
     downloadIncludeProject: false,
+    exportCountedOnly: false,
     downloadingResults: false,
 
     sites: [],

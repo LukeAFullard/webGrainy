@@ -81,3 +81,49 @@ describe('GeoJSON in longitude / latitude (RFC 7946, for web maps)', () => {
     expect(geoJsonToLonLat(session.exportGeoJson(), { ...g, epsg: null })).toBeNull();
   });
 });
+
+describe('Web Mercator rasters for web maps (no rotation needed in the viewer)', async () => {
+  const { webMercatorGrid, warpLabelsToWebMercator, warpRgbaToWebMercator } = await import('../src/modules/webMercatorWarp.js');
+  const { webMercatorForward } = await import('../src/modules/projToLonLat.js');
+  const { toMap } = await import('../src/modules/georef.js');
+  // The reported setting: NZTM, 2 cm pixels, 60 x 40 px; each label = its source pixel index + 1.
+  const g: PhotoGeoreference = { transform: [1793110.34, 0.02, 0, 5495817.62, 0, -0.02], epsg: 2193, kind: 'projected', width: 60, height: 40 };
+  const grid = webMercatorGrid(g)!;
+  const labels = Int32Array.from({ length: 60 * 40 }, (_, i) => i + 1);
+
+  it('north-up grid covering the rotated footprint with pixels no larger than the photo\'s', () => {
+    expect(grid.transform[2]).toBe(0);
+    expect(grid.transform[4]).toBe(0);
+    // NZTM grid north is rotated ~1.49 deg here, so the box is a little larger than 60 x 40.
+    expect(grid.width).toBeGreaterThanOrEqual(60);
+    expect(grid.height).toBeGreaterThanOrEqual(40);
+    expect(grid.width).toBeLessThan(64);
+  });
+
+  it('each source pixel centre lands on an output pixel holding that source pixel (independent inverse path)', () => {
+    const out = warpLabelsToWebMercator(labels, g, grid);
+    const toLonLat = lonLatProjector(2193, 'projected')!;
+    let hits = 0, n = 0;
+    for (let v = 2; v < 38; v += 3) {
+      for (let u = 2; u < 58; u += 3) {
+        const [x, y] = toMap(g, u + 0.5, v + 0.5);
+        const [X, Y] = webMercatorForward(...toLonLat(x, y));
+        const i = Math.floor((X - grid.transform[0]) / grid.transform[1]);
+        const j = Math.floor((grid.transform[3] - Y) / -grid.transform[5]);
+        const id = out[j * grid.width + i]! - 1;
+        const du = (id % 60) - u, dv = Math.floor(id / 60) - v;
+        n++;
+        if (Math.abs(du) <= 1 && Math.abs(dv) <= 1) hits++;
+      }
+    }
+    expect(hits).toBe(n); // within one source pixel everywhere (output pixels are a little larger)
+  });
+
+  it('outside the photo is background / transparent', () => {
+    const out = warpLabelsToWebMercator(labels, g, grid);
+    expect(out[0]).toBe(0); // a corner of the box lies outside the rotated footprint
+    const rgba = warpRgbaToWebMercator(new Uint8Array(60 * 40 * 4).fill(200), g, grid);
+    expect(rgba[3]).toBe(0);
+    expect(rgba[(Math.floor(grid.height / 2) * grid.width + Math.floor(grid.width / 2)) * 4 + 3]).toBe(255);
+  });
+});

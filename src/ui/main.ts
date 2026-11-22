@@ -13,7 +13,7 @@ import {
 } from '../modules/projectStorage.js';
 import { broadcastNoticeChannel, createSyncedRecords } from '../modules/recordSync.js';
 import { rectifyPerspective } from '../modules/roiAndRectify.js';
-import { grainPassesSizeCutoffs } from '../modules/sedimentStats.js';
+import { sizeCutoffExplanation } from '../modules/sedimentStats.js';
 import {
   buildSiteInputs,
   effectiveRoi,
@@ -472,24 +472,28 @@ function renderViewportExtras(state: AppState): void {
       const exclReasons: string[] = [];
       if (session.getRoiFilterResult()?.excludedGrainIds.has(grain.id)) exclReasons.push('ROI');
       if (session.getExcludeBorder() && grain.touchesBorder) exclReasons.push('edge');
-      if (
-        !grainPassesSizeCutoffs(grain, {
-          ...photoCutoffs(state.siteOptions, state.siteReport, activePhoto.photoId),
-          sizeMetric: state.siteOptions.sizeMetric ?? 'bAxis',
-        })
-      ) {
-        exclReasons.push('below cutoff');
-      }
+      // Name the rule and the numbers: "below cutoff" alone was read as the segmentation
+      // Min Size (px² / mm²), which is a different setting.
+      const cutoffWhy = sizeCutoffExplanation(grain, {
+        ...photoCutoffs(state.siteOptions, state.siteReport, activePhoto.photoId),
+        sizeMetric: state.siteOptions.sizeMetric ?? 'bAxis',
+      });
+      if (cutoffWhy) exclReasons.push(`below cutoff: ${cutoffWhy}`);
       inspectorEl.style.display = 'block';
       inspectorEl.innerHTML = `
         <div class="row-between" style="margin-bottom:4px;">
           <strong>Grain #${grain.id}</strong>${
             exclReasons.length > 0
-              ? ` <span class="badge warn" title="Excluded from PSD statistics (${esc(exclReasons.join(', '))})">not counted (${esc(exclReasons.join(', '))})</span>`
+              ? ` <span class="badge warn" title="Excluded from the size statistics">not counted</span>`
               : ''
           }
           <button type="button" class="btn btn-sm" data-action="close-inspector" aria-label="Close grain inspector">×</button>
         </div>
+        ${
+          exclReasons.length > 0
+            ? `<div class="field-hint" data-grain-excluded style="margin-bottom:4px;">Not counted: ${esc(exclReasons.join('; '))}.${cutoffWhy ? ' Change it under Results: <em>Min b-axis (px)</em> or <em>Field-count cutoff (mm)</em>. <em>Min Size</em> in the analysis settings is a different setting (a noise filter during segmentation).' : ''}</div>`
+            : ''
+        }
         <div style="font-family:var(--font-mono);line-height:1.5;">
           <div title="Minor axis of the moment-equivalent ellipse (not a caliper b-axis)">b (ellipse minor): ${grain.bAxisMm !== undefined ? `${grain.bAxisMm.toFixed(2)} mm` : `${grain.bAxisPx.toFixed(1)} px`}</div>
           <div title="Major axis of the moment-equivalent ellipse">a (ellipse major): ${grain.aAxisMm !== undefined ? `${grain.aAxisMm.toFixed(2)} mm` : `${grain.aAxisPx.toFixed(1)} px`}</div>
@@ -734,9 +738,10 @@ function renderAll(state: AppState): void {
     (state.activeModal === 'models' &&
       (prev.modelDownloads !== state.modelDownloads || prev.capabilities !== state.capabilities)) ||
     (state.activeModal === 'download-results' &&
-      (prev.downloadIncludeProject !== state.downloadIncludeProject || prev.downloadingResults !== state.downloadingResults)) ||
+      (prev.downloadIncludeProject !== state.downloadIncludeProject || prev.exportCountedOnly !== state.exportCountedOnly || prev.downloadingResults !== state.downloadingResults)) ||
     (state.activeModal === 'export' &&
       (prev.siteReport !== state.siteReport ||
+        prev.exportCountedOnly !== state.exportCountedOnly ||
         prev.activeSiteId !== state.activeSiteId ||
         prev.activePhotoId !== state.activePhotoId ||
         prev.sessions !== state.sessions))
@@ -1158,6 +1163,7 @@ async function downloadResults(includeProject: boolean): Promise<void> {
       renderPsdSvg: renderPrintablePsdSvg,
       reportHtml,
       includeProject,
+      countedGrainsOnly: st.exportCountedOnly,
     });
     triggerBlobDownload(blob, filename);
     markSiteBackedUp(site.siteId);
@@ -1189,6 +1195,7 @@ function runExport(kind: string): void {
     st.psdXAxis,
     st.siteOptions.sizeMetric ?? 'bAxis',
     st.siteOptions,
+    st.exportCountedOnly,
   ).then((saved) => {
     if (saved && kind === 'site-archive' && exportSite) {
       markSiteBackedUp(exportSite.siteId);

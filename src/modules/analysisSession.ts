@@ -912,16 +912,26 @@ export class AnalysisSession {
    */
   private maskForExport(
     bitDepth: 16 | 32,
-    options?: { resolution?: 'original' | 'working'; photoMetadata?: Record<string, unknown> },
+    options?: { resolution?: 'original' | 'working'; photoMetadata?: Record<string, unknown>; onlyIds?: ReadonlySet<number> },
   ): { masks: Int32Array; width: number; height: number; text: Record<string, string> } {
     const wi = this.workingImage;
     const resolution = options?.resolution ?? 'original';
     const width = resolution === 'original' ? wi.originalWidth : wi.width;
     const height = resolution === 'original' ? wi.originalHeight : wi.height;
-    const masks =
+    let masks =
       resolution === 'original'
         ? resizeLabelsNearest(this.workingMasks, wi.width, wi.height, width, height)
         : this.workingMasks;
+    const only = options?.onlyIds;
+    if (only) {
+      // Only the grains counted in the statistics: every other id becomes background.
+      const kept = new Int32Array(masks.length);
+      for (let i = 0; i < masks.length; i++) {
+        const id = masks[i]!;
+        if (id !== 0 && only.has(id)) kept[i] = id;
+      }
+      masks = kept;
+    }
     const meta = {
       ...this.getExportMetadata(options?.photoMetadata),
       mask: {
@@ -934,6 +944,7 @@ export class AnalysisSession {
         resampling: resolution === 'original' && (width !== wi.width || height !== wi.height) ? 'nearest-neighbour from working-image labels' : 'none',
         idEncoding: bitDepth === 16 ? '16-bit grayscale grain_id (clamped to 65535)' : '32-bit grain_id, big-endian in RGBA bytes',
         background: 0,
+        grains: only ? 'only the grains counted in the statistics (border rule, ROI and size cutoffs applied)' : 'all detected grains',
       },
     };
     return {
@@ -949,7 +960,7 @@ export class AnalysisSession {
 
   exportMaskPng(
     bitDepth: 16 | 32 = 16,
-    options?: { resolution?: 'original' | 'working'; photoMetadata?: Record<string, unknown> },
+    options?: { resolution?: 'original' | 'working'; photoMetadata?: Record<string, unknown>; onlyIds?: ReadonlySet<number> },
   ): Uint8Array {
     const m = this.maskForExport(bitDepth, options);
     return encodeMaskPng(m.masks, m.width, m.height, bitDepth, { text: m.text });
@@ -957,34 +968,44 @@ export class AnalysisSession {
 
   /** As `exportMaskPng`, deflate-compressed where the platform supports it (much smaller files). */
   /** Grain ids at the photo's own size (nearest-neighbour from the working image), 0 = background. */
-  labelMaskAtPhotoSize(): { masks: Int32Array; width: number; height: number } {
-    const m = this.maskForExport(32, { resolution: 'original' });
+  labelMaskAtPhotoSize(onlyIds?: ReadonlySet<number>): { masks: Int32Array; width: number; height: number } {
+    const m = this.maskForExport(32, { resolution: 'original', ...(onlyIds ? { onlyIds } : {}) });
     return { masks: m.masks, width: m.width, height: m.height };
   }
 
   async exportMaskPngCompressed(
     bitDepth: 16 | 32 = 16,
-    options?: { resolution?: 'original' | 'working'; photoMetadata?: Record<string, unknown> },
+    options?: { resolution?: 'original' | 'working'; photoMetadata?: Record<string, unknown>; onlyIds?: ReadonlySet<number> },
   ): Promise<Uint8Array> {
     const m = this.maskForExport(bitDepth, options);
     return encodeMaskPngCompressed(m.masks, m.width, m.height, bitDepth, { text: m.text });
   }
 
   /** Outlines in original-image coordinates, with measurements and provenance. */
-  exportGeoJson(photoMetadata?: Record<string, unknown>): string {
+  exportGeoJson(photoMetadata?: Record<string, unknown>, onlyIds?: ReadonlySet<number>): string {
     const grainById = new Map(this.grains.map((g) => [g.id, g]));
+    const grains = onlyIds ? this.workingGrains.filter((g) => onlyIds.has(g.id)) : this.workingGrains;
     return JSON.stringify(
-      buildContourGeoJson(this.workingMasks, this.workingGrains, this.workingImage.width, this.workingImage.height, {
+      buildContourGeoJson(this.workingMasks, grains, this.workingImage.width, this.workingImage.height, {
         scaleInv: this.outputScaleInv(),
         propertiesFor: (wg) => grainById.get(wg.id) ?? wg,
         // RFC 7946 §6.1 foreign member: provenance & coordinate system.
-        metadata: this.getExportMetadata(photoMetadata),
+        metadata: { ...this.getExportMetadata(photoMetadata), grains: onlyIds ? 'only the grains counted in the statistics (border rule, ROI and size cutoffs applied)' : 'all detected grains' },
       }),
     );
   }
 
-  exportSvg(photoMetadata?: Record<string, unknown>): string {
-    return buildContourSvg(this.workingMasks, this.workingGrains, this.workingImage.width, this.workingImage.height, {
+  /**
+   * Ids of the grains counted in the statistics: inside the ROI, border rule applied, and the
+   * size cutoffs for `sizeMetric` (the same grains as `included_in_stats` in the grain table).
+   */
+  countedGrainIds(sizeMetric: SizeMetric = 'bAxis', cutoffs?: { minBaxisPx?: number; minSizeMm?: number }): Set<number> {
+    return new Set(this.statsGrainsForSummaries(sizeMetric, cutoffs).map((g) => g.id));
+  }
+
+  exportSvg(photoMetadata?: Record<string, unknown>, onlyIds?: ReadonlySet<number>): string {
+    const grains = onlyIds ? this.workingGrains.filter((g) => onlyIds.has(g.id)) : this.workingGrains;
+    return buildContourSvg(this.workingMasks, grains, this.workingImage.width, this.workingImage.height, {
       scaleInv: this.outputScaleInv(),
       outWidth: this.workingImage.originalWidth,
       outHeight: this.workingImage.originalHeight,

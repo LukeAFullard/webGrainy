@@ -79,6 +79,12 @@ First public release.
   Mercator and geographic CRSs, within 0.04 mm of PROJ. The map-coordinate GeoJSON is renamed to name its
   CRS (`outlines_EPSG2193.geojson`, was `outlines_map.geojson`): web maps and ArcGIS Online read every
   GeoJSON as longitude/latitude (RFC 7946) and ignore its `crs` member.
+- Photo and mask GeoTIFFs reprojected to Web Mercator (EPSG:3857, north-up) for web maps that draw a
+  projected raster without rotating it by the grid convergence (about 1.5° for NZTM), which made correct
+  outlines look slightly rotated. Identical to GDAL's gdalwarp on the NZTM test tile.
+- Export option: outlines and masks of only the grains counted in the statistics, or (default) every grain.
+- The grain card says which cutoff excluded a grain and by how much (e.g. "b-axis 8.9 px < 15 px pixel
+  cutoff"), instead of "below cutoff", which read as the segmentation Min Size.
 - Licence notices for the bundled `utif2` and `pako` and for the optional PULSE upscaler weights added
   to `THIRD_PARTY_NOTICES.md`; the licence and notices are copied into the built app.
 

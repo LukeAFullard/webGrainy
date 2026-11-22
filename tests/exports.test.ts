@@ -37,8 +37,12 @@ describe('exports module', () => {
     // Map-coordinate exports need a georeferenced (GeoTIFF) photo.
     const photo = { ...ctx.photo!, width: s.workingImage.originalWidth, height: s.workingImage.originalHeight };
     const georef = { transform: [1000, 0.01, 0, 5000, 0, -0.01] as [number, number, number, number, number, number], epsg: 2193, kind: 'projected' as const, width: photo.width, height: photo.height };
-    const geoCtx: ExportContext = { ...ctx, photo: { ...photo, metadata: { ...(photo.metadata ?? {}), georef } } };
-    const geoKinds = new Set(['photo-geojson-map', 'photo-geojson-lonlat', 'photo-mask-worldfile', 'photo-mask-geotiff', 'photo-mask-auxxml']);
+    const geoCtx: ExportContext = {
+      ...ctx,
+      photo: { ...photo, metadata: { ...(photo.metadata ?? {}), georef } },
+      decodePhoto: async (p) => ({ data: new Uint8ClampedArray(p.width * p.height * 4).fill(128), width: p.width, height: p.height }),
+    };
+    const geoKinds = new Set(['photo-geojson-map', 'photo-geojson-lonlat', 'photo-mask-worldfile', 'photo-mask-geotiff', 'photo-mask-auxxml', 'photo-mask-webmercator', 'photo-image-webmercator']);
     for (const kind of EXPORT_KINDS) {
       if (kind === 'site-archive') continue;
       const f = await buildExport(kind, geoKinds.has(kind) ? geoCtx : ctx);
@@ -178,5 +182,42 @@ describe('exports provenance (regression)', () => {
     expect(at(Math.round(g2.centroidX), Math.round(g2.centroidY))).toBe(2);
     // Working resolution is still available on request.
     expect(new DataView(s.exportMaskPng(16, { resolution: 'working' }).buffer).getUint32(16)).toBe(60);
+  });
+});
+
+describe('outline / mask exports: every grain or only the counted ones (user request)', async () => {
+  const { squareGrainSession } = await import('./helpers/squareSession.js');
+  const { resizeLabelsNearest } = await import('../src/modules/exportFormats.js');
+  // Grains of 8, 10, 20, 30 px (1 mm/px): with the 15 px cutoff only 20 and 30 count.
+  const s = squareGrainSession([8, 10, 20, 30], { mmPerPx: 1 });
+  const photo = { photoId: 'p', label: 'ortho.tif', width: 600, height: 600 } as unknown as PhotoRecord;
+  const site = { siteId: 's', name: 'S', createdAt: 0, updatedAt: 0, options: {}, photoOrder: [] } as unknown as SiteRecord;
+  const ctx: ExportContext = { site, photo, session: s, siteReport: null, siteInputs: [], psdXAxis: 'mm', siteOptions: { minBaxisPx: 15 } };
+  const counted = s.countedGrainIds('bAxis', { minBaxisPx: 15 });
+
+  it('the counted grains are those marked included_in_stats in the grain table', async () => {
+    const csv = await (await buildExport('photo-grains-csv', ctx))!.blob.text();
+    const rows = csv.split('\n').filter((l) => !l.startsWith('#'));
+    const h = rows[0]!.split(',');
+    const inc = rows.slice(1).filter((l) => l).map((l) => l.split(',')).filter((c) => c[h.indexOf('included_in_stats')] === 'true').map((c) => Number(c[h.indexOf('grain_id')]));
+    expect(new Set(inc)).toEqual(counted);
+    expect(counted.size).toBe(2);
+  });
+
+  it('GeoJSON and SVG: all four by default, the two counted ones when asked', async () => {
+    const n = async (c: ExportContext) => (JSON.parse(await (await buildExport('photo-geojson', c))!.blob.text()) as { features: unknown[] }).features.length;
+    expect(await n(ctx)).toBe(4);
+    expect(await n({ ...ctx, countedGrainsOnly: true })).toBe(2);
+    const paths = async (c: ExportContext) => ((await (await buildExport('photo-svg', c))!.blob.text()).match(/<path /g) ?? []).length;
+    expect(await paths({ ...ctx, countedGrainsOnly: true })).toBe(2);
+  });
+
+  it('masks: other grains become background', () => {
+    const all = s.labelMaskAtPhotoSize();
+    const only = s.labelMaskAtPhotoSize(counted);
+    const ids = (m: Int32Array) => new Set([...m].filter((v) => v !== 0));
+    expect(ids(all.masks).size).toBe(4);
+    expect(ids(only.masks)).toEqual(counted);
+    void resizeLabelsNearest;
   });
 });

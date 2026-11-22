@@ -82,6 +82,21 @@ export async function encodeLabelGeoTiff(
     if (bps === 16) dv.setUint16(i * 2, v, true);
     else dv.setUint32(i * 4, v, true);
   }
+  return encodeGeoTiff({ raw, width, height, bitsPerSample: bps, samples: 1, nodata: '0' }, g, options);
+}
+
+/**
+ * GeoTIFF of an image placed by `g`: 1 band (grey / labels) or 4 bands (RGBA, unassociated
+ * alpha), unsigned integers, little-endian sample bytes in `raw`.
+ */
+export async function encodeGeoTiff(
+  img: { raw: Uint8Array; width: number; height: number; bitsPerSample: 8 | 16 | 32; samples: 1 | 4; nodata?: string },
+  g: PhotoGeoreference,
+  options: { compress?: boolean } = {},
+): Promise<Uint8Array> {
+  const { raw, width, height, samples } = img;
+  const bps = img.bitsPerSample;
+  if (raw.length !== width * height * samples * (bps / 8)) throw new Error('Image data size does not match.');
   const packed = options.compress === false ? null : await deflate(raw);
   const data = packed ?? raw;
 
@@ -90,16 +105,17 @@ export async function encodeLabelGeoTiff(
   const tags: Tag[] = [
     { tag: 256, type: 4, values: [width] },
     { tag: 257, type: 4, values: [height] },
-    { tag: 258, type: 3, values: [bps] },
+    { tag: 258, type: 3, values: Array(samples).fill(bps) },
     { tag: 259, type: 3, values: [packed ? 8 : 1] },
-    { tag: 262, type: 3, values: [1] },
+    { tag: 262, type: 3, values: [samples === 4 ? 2 : 1] },
     { tag: 273, type: 4, values: [0] }, // strip offset, filled in below
-    { tag: 277, type: 3, values: [1] },
+    { tag: 277, type: 3, values: [samples] },
     { tag: 278, type: 4, values: [height] },
     { tag: 279, type: 4, values: [data.length] },
     { tag: 284, type: 3, values: [1] },
-    { tag: 339, type: 3, values: [1] },
+    { tag: 339, type: 3, values: Array(samples).fill(1) },
   ];
+  if (samples === 4) tags.push({ tag: 338, type: 3, values: [2] }); // ExtraSamples: unassociated alpha
   if (c === 0 && e === 0) {
     tags.push({ tag: 33550, type: 12, values: [b, -f, 0] });
     tags.push({ tag: 33922, type: 12, values: [0, 0, 0, a, d, 0] });
@@ -109,7 +125,7 @@ export async function encodeLabelGeoTiff(
   tags.push({ tag: 34735, type: 3, values: keys.directory });
   if (keys.doubles.length > 0) tags.push({ tag: 34736, type: 12, values: keys.doubles });
   if (keys.ascii.length > 0) tags.push({ tag: 34737, type: 2, values: keys.ascii });
-  tags.push({ tag: 42113, type: 2, values: '0' }); // GDAL_NODATA: background
+  if (img.nodata !== undefined) tags.push({ tag: 42113, type: 2, values: img.nodata }); // GDAL_NODATA
   tags.sort((x, y) => x.tag - y.tag);
 
   // Layout: header (8) | IFD | out-of-line tag values | strip.

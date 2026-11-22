@@ -7,7 +7,8 @@ import type { AnalysisSession } from './pipelineController.js';
 import { exportSiteArchive, type PhotoRecord, type SiteRecord } from './projectStorage.js';
 import { photoProcessingHistory } from './siteTypes.js';
 import { geoJsonToLonLat, geoJsonToMap, mapGeoJsonName, pamAuxXml, photoGeoreference, worldFile } from './georef.js';
-import { encodeLabelGeoTiff } from './geotiffWriter.js';
+import { encodeGeoTiff, encodeLabelGeoTiff } from './geotiffWriter.js';
+import { warpLabelsToWebMercator, warpRgbaToWebMercator, webMercatorGeoref, webMercatorGrid } from './webMercatorWarp.js';
 import {
   buildSiteExportMetadata,
   exportSiteGrainsCsv,
@@ -36,6 +37,8 @@ export const EXPORT_KINDS = [
   'photo-mask-worldfile',
   'photo-mask-geotiff',
   'photo-mask-auxxml',
+  'photo-mask-webmercator',
+  'photo-image-webmercator',
   'photo-svg',
 ] as const;
 export type ExportKind = (typeof EXPORT_KINDS)[number];
@@ -53,6 +56,13 @@ export interface ExportContext {
   psdXAxis: 'mm' | 'phi';
   sizeMetric?: SizeMetric;
   siteOptions?: Partial<SiteAnalysisOptions>;
+  /**
+   * Outline and mask exports hold only the grains counted in the statistics (border rule, ROI and
+   * size cutoffs, as `included_in_stats` in the grain table) instead of every detected grain.
+   */
+  countedGrainsOnly?: boolean;
+  /** RGBA pixels of a photo at its own size (the UI decodes the stored image); for reprojected photo exports. */
+  decodePhoto?: (photo: PhotoRecord) => Promise<{ data: Uint8Array | Uint8ClampedArray; width: number; height: number } | null>;
   /** Printable PSD figure renderer (an SVG string); supplied by the UI's chart code. */
   renderPsdSvg?: (report: SiteAnalysisReport, title: string, xAxis: 'mm' | 'phi') => string;
 }
@@ -77,6 +87,7 @@ export async function buildExport(kind: ExportKind, ctx: ExportContext): Promise
   // Photo files use the same cutoffs as the site report (common mm cutoff included), so a photo's
   // own summary and grain table agree with the site's per-photo breakdown.
   const cutoffs = ctx.siteOptions ? photoCutoffs(ctx.siteOptions, siteReport, photo?.photoId ?? null) : undefined;
+  const onlyIds = ctx.countedGrainsOnly && session ? session.countedGrainIds(sizeMetric, cutoffs) : undefined;
   const photoMeta: Record<string, unknown> | undefined = photo
     ? {
         photoId: photo.photoId,
@@ -165,6 +176,7 @@ export async function buildExport(kind: ExportKind, ctx: ExportContext): Promise
       const depth = kind === 'photo-mask-16' ? 16 : 32;
       // Photo resolution (overlays the photo, matches the CSV coordinates), provenance in iTXt.
       const bytes = await session.exportMaskPngCompressed(depth, {
+        ...(onlyIds ? { onlyIds } : {}),
         resolution: 'original',
         ...(photoMeta ? { photoMetadata: photoMeta } : {}),
       });
@@ -174,7 +186,7 @@ export async function buildExport(kind: ExportKind, ctx: ExportContext): Promise
       // Original-image coordinates + provenance metadata.
       return session
         ? {
-            blob: new Blob([session.exportGeoJson(photoMeta)], { type: 'application/geo+json' }),
+            blob: new Blob([session.exportGeoJson(photoMeta, onlyIds)], { type: 'application/geo+json' }),
             filename: `${photoFile}_contours.geojson`,
           }
         : null;
@@ -183,7 +195,7 @@ export async function buildExport(kind: ExportKind, ctx: ExportContext): Promise
       const g = photo ? photoGeoreference(photo).georef : null;
       return session && g
         ? {
-            blob: new Blob([geoJsonToMap(session.exportGeoJson(photoMeta), g)], { type: 'application/geo+json' }),
+            blob: new Blob([geoJsonToMap(session.exportGeoJson(photoMeta, onlyIds), g)], { type: 'application/geo+json' }),
             filename: `${photoFile}_${mapGeoJsonName(g)}`,
           }
         : null;
@@ -191,7 +203,7 @@ export async function buildExport(kind: ExportKind, ctx: ExportContext): Promise
     case 'photo-geojson-lonlat': {
       // Longitude / latitude (RFC 7946) for web maps; null when the CRS is not convertible.
       const g = photo ? photoGeoreference(photo).georef : null;
-      const json = session && g ? geoJsonToLonLat(session.exportGeoJson(photoMeta), g) : null;
+      const json = session && g ? geoJsonToLonLat(session.exportGeoJson(photoMeta, onlyIds), g) : null;
       return json ? { blob: new Blob([json], { type: 'application/geo+json' }), filename: `${photoFile}_outlines_lonlat.geojson` } : null;
     }
     case 'photo-mask-worldfile': {
@@ -210,14 +222,36 @@ export async function buildExport(kind: ExportKind, ctx: ExportContext): Promise
       // The label mask as a GeoTIFF in the source GeoTIFF's position and CRS (any GIS).
       const g = photo ? photoGeoreference(photo).georef : null;
       if (!session || !g) return null;
-      const m = session.labelMaskAtPhotoSize();
+      const m = session.labelMaskAtPhotoSize(onlyIds);
       if (m.width !== g.width || m.height !== g.height) return null;
       const bytes = await encodeLabelGeoTiff(m.masks, m.width, m.height, g);
       return { blob: new Blob([bytes.slice().buffer], { type: 'image/tiff' }), filename: `${photoFile}_mask_map.tif` };
     }
+    case 'photo-mask-webmercator': {
+      // The label mask on a north-up Web Mercator grid: lines up with the longitude/latitude
+      // GeoJSON in web maps that draw rasters without rotating them.
+      const g = photo ? photoGeoreference(photo).georef : null;
+      const grid = g ? webMercatorGrid(g) : null;
+      if (!session || !g || !grid) return null;
+      const m = session.labelMaskAtPhotoSize(onlyIds);
+      if (m.width !== g.width || m.height !== g.height) return null;
+      const bytes = await encodeLabelGeoTiff(warpLabelsToWebMercator(m.masks, g, grid), grid.width, grid.height, webMercatorGeoref(grid));
+      return { blob: new Blob([bytes.slice().buffer], { type: 'image/tiff' }), filename: `${photoFile}_mask_webmercator.tif` };
+    }
+    case 'photo-image-webmercator': {
+      // The photo itself on the same Web Mercator grid (RGBA, transparent outside).
+      const g = photo ? photoGeoreference(photo).georef : null;
+      const grid = g ? webMercatorGrid(g) : null;
+      if (!photo || !g || !grid || !ctx.decodePhoto) return null;
+      const img = await ctx.decodePhoto(photo);
+      if (!img || img.width !== g.width || img.height !== g.height) return null;
+      const raw = warpRgbaToWebMercator(img.data, g, grid);
+      const bytes = await encodeGeoTiff({ raw, width: grid.width, height: grid.height, bitsPerSample: 8, samples: 4 }, webMercatorGeoref(grid));
+      return { blob: new Blob([bytes.slice().buffer], { type: 'image/tiff' }), filename: `${photoFile}_photo_webmercator.tif` };
+    }
     case 'photo-svg':
       return session
-        ? { blob: new Blob([session.exportSvg(photoMeta)], { type: 'image/svg+xml' }), filename: `${photoFile}_contours.svg` }
+        ? { blob: new Blob([session.exportSvg(photoMeta, onlyIds)], { type: 'image/svg+xml' }), filename: `${photoFile}_contours.svg` }
         : null;
   }
 }
