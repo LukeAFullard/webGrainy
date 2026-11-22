@@ -106,22 +106,53 @@ describe('map-coordinate exports', () => {
   });
 });
 
-describe('Export dialog', () => {
-  it('offers map-coordinate exports only for a georeferenced photo, and says why not otherwise', async () => {
+describe('Export dialog: outlines / mask / photo as choices, not one button per variant', () => {
+  const session = squareGrainSession([10], { w: 60, h: 60, scale: 0.5 });
+  const georef: PhotoGeoreference = { transform: [1000, 0.01, 0, 5000, 0, -0.01], epsg: 32759, kind: 'projected', width: 120, height: 120 };
+  const base = { photoId: 'p', siteId: 's', label: 'ortho.tif', imageBlob: new Blob([]), width: 120, height: 120, addedAt: 0, included: true };
+
+  it('every combination maps to the right export, labelled with the photo\'s own CRS', async () => {
+    const { photoExportChoice } = await import('../src/ui/modals.js');
+    const geo = { ...base, metadata: { georef } } as never;
+    const k = (what: string, format: string, coords: string) => photoExportChoice(geo, { what, format, coords }).kind;
+    expect(k('outlines', 'geojson', 'pixels')).toBe('photo-geojson');
+    expect(k('outlines', 'geojson', 'lonlat')).toBe('photo-geojson-lonlat');
+    expect(k('outlines', 'geojson', 'map')).toBe('photo-geojson-map');
+    expect(k('outlines', 'svg', 'lonlat')).toBe('photo-svg'); // SVG is photo pixels only
+    expect(k('mask', 'png16', 'map')).toBe('photo-mask-16');
+    expect(k('mask', 'png32', 'pixels')).toBe('photo-mask-32');
+    expect(k('mask', 'geotiff', 'map')).toBe('photo-mask-geotiff');
+    expect(k('mask', 'geotiff', 'webmercator')).toBe('photo-mask-webmercator');
+    expect(k('photo', 'geotiff', 'webmercator')).toBe('photo-image-webmercator');
+    const c = photoExportChoice(geo, { what: 'outlines', format: 'geojson', coords: 'map' });
+    expect(c.coordsList.map(([, t]) => t).join(' | ')).toContain('EPSG:32759');
+    expect(JSON.stringify(c)).not.toContain('2193');
+    // A user-defined CRS is named as such.
+    const custom = photoExportChoice({ ...base, metadata: { georef: { ...georef, epsg: null } } } as never, { what: 'outlines', format: 'geojson', coords: 'map' });
+    expect(custom.coordsList.map(([, t]) => t).join(' | ')).toContain('custom CRS');
+  });
+
+  it('a photo without a GeoTIFF offers only photo-pixel choices', async () => {
+    const { photoExportChoice } = await import('../src/ui/modals.js');
+    const c = photoExportChoice(base as never, { what: 'photo', format: 'geotiff', coords: 'lonlat' });
+    expect(c.whats.map(([w]) => w)).toEqual(['outlines', 'mask']);
+    expect(c.kind).toBe('photo-geojson'); // invalid selection falls back to valid defaults
+    expect(c.coordsList).toEqual([['pixels', 'Photo pixels']]);
+    expect(photoExportChoice(base as never, { what: 'mask' }).formats.map(([f]) => f)).toEqual(['png16', 'png32']);
+  });
+
+  it('the dialog shows selects and one Download button, and says why map exports are unavailable', async () => {
     const { renderExportModalHtml } = await import('../src/ui/modals.js');
     const { createInitialState } = await import('../src/ui/state.js');
-    const session = squareGrainSession([10], { w: 60, h: 60, scale: 0.5 });
-    const georef: PhotoGeoreference = { transform: [1000, 0.01, 0, 5000, 0, -0.01], epsg: 2193, kind: 'projected', width: 120, height: 120 };
-    const base = { photoId: 'p', siteId: 's', label: 'ortho.tif', imageBlob: new Blob([]), width: 120, height: 120, addedAt: 0, included: true };
     const state = (photo: object) => ({ ...createInitialState(), activePhotoId: 'p', photos: [photo], sessions: new Map([['p', session]]) }) as never;
     const geo = renderExportModalHtml(state({ ...base, metadata: { georef } }));
-    expect(geo).toContain('data-export="photo-geojson-map"');
-    expect(geo).toContain('EPSG:2193');
-    const plain = renderExportModalHtml(state(base));
-    expect(plain).not.toContain('photo-geojson-map');
-    expect(plain).toContain('not map coordinates');
+    expect(geo).toContain('data-export-opt="what"');
+    expect(geo).toContain('data-export-opt="coords"');
+    expect(geo).toContain('data-export="photo-geojson-lonlat"'); // default: outlines, GeoJSON, lon/lat
+    expect((geo.match(/data-export="photo-(geojson|mask|image|svg)/g) ?? []).length).toBe(1);
     const rectified = renderExportModalHtml(state({ ...base, metadata: { georef, processingHistory: [{ step: 'rectification' }] } }));
     expect(rectified).toContain('was rectified');
+    expect(rectified).toContain('data-export="photo-geojson"');
   });
 });
 

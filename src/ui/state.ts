@@ -99,6 +99,10 @@ export interface AppState {
   downloadIncludeProject: boolean;
   /** Outline / mask exports: only the grains counted in the statistics (default: every grain). */
   exportCountedOnly: boolean;
+  /** Export dialog choices for outlines / mask / photo (see photoExportChoice). */
+  exportWhat: string;
+  exportFormat: string;
+  exportCoords: string;
   /** A results download is being prepared. */
   downloadingResults: boolean;
 
@@ -197,6 +201,9 @@ export function createInitialState(): AppState {
     storageFullNotice: null,
     downloadIncludeProject: false,
     exportCountedOnly: false,
+    exportWhat: 'outlines',
+    exportFormat: 'geojson',
+    exportCoords: 'lonlat',
     downloadingResults: false,
 
     sites: [],
