@@ -431,7 +431,7 @@ export function comparisonCsv(sites: readonly ComparedSite[], metadata: Record<s
     for (const c of comparePercentile(sites, key)) {
       const pair = csvCell(`${c.a} vs ${c.b}`);
       const sec = `${key.toLowerCase()}_ratio`;
-      lines.push(`${sec},${pair},ratio,${c.ratio},ratio`);
+      lines.push(`${sec},${pair},ratio,${num(c.ratio)},ratio`);
       lines.push(`${sec},${pair},ratio_ci95_lo,${num(c.ratioLo)},ratio`);
       lines.push(`${sec},${pair},ratio_ci95_hi,${num(c.ratioHi)},ratio`);
       lines.push(`${sec},${pair},p_value_approx,${num(c.p)},p`);
@@ -444,7 +444,7 @@ export function comparisonCsv(sites: readonly ComparedSite[], metadata: Record<s
     const label = csvCell(`${ch.place}: ${ch.fromDate} -> ${ch.toDate}`);
     for (const key of ['D16', 'D50', 'D84'] as const) {
       const c = ch.changes[key];
-      lines.push(`survey_change,${label},${key}_ratio_later_over_earlier,${c.ratio},ratio`);
+      lines.push(`survey_change,${label},${key}_ratio_later_over_earlier,${num(c.ratio)},ratio`);
       lines.push(`survey_change,${label},${key}_ratio_ci95_lo,${num(c.ratioLo)},ratio`);
       lines.push(`survey_change,${label},${key}_ratio_ci95_hi,${num(c.ratioHi)},ratio`);
       lines.push(`survey_change,${label},${key}_p_value_approx,${num(c.p)},p`);

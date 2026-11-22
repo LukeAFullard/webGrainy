@@ -476,6 +476,11 @@ describe('regression: one working-scale rule; when 2x upscaling helps', () => {
     expect(workingScaleFor(1500, 1000, 'auto')).toBeCloseTo(1024 / 1500, 12);
   });
 
+  it('one scale label rule for analysis and imported projects', async () => {
+    const { scaleModeLabel } = await import('../src/modules/imagePreprocess.js');
+    expect([1, 0.68, 0.5, 0.36, 0.32, 0.25, 0.128].map(scaleModeLabel)).toEqual(['1.0x', '0.5x', '0.5x', '0.5x', '0.25x', '0.25x', '0.25x']);
+  });
+
   it('the auto working size never falls as the photo grows (audit: 2,048 px gave 1,024, 2,100 px only 525)', async () => {
     const { workingScaleFor } = await import('../src/modules/imagePreprocess.js');
     let prev = 0;
