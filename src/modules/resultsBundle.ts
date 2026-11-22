@@ -85,14 +85,22 @@ export async function resultsBundleEntries(input: ResultsBundleInput): Promise<Z
       const f = await buildExport(kind, { ...base, photo, session });
       if (f) entries.push({ name: `${dir}/${name}`, data: f.blob });
     }
-    // GeoTIFF photos: outlines in map coordinates, and a world file placing the mask.
-    for (const [kind, name] of [['photo-geojson-map', 'outlines_map.geojson'], ['photo-mask-worldfile', 'mask16.pgw']] as const) {
+    // GeoTIFF photos: outlines and the mask in map coordinates (with the CRS), and a world file
+    // + CRS sidecar that place mask16.png on the map.
+    let geo = false;
+    for (const [kind, name] of [
+      ['photo-geojson-map', 'outlines_map.geojson'],
+      ['photo-mask-geotiff', 'mask_map.tif'],
+      ['photo-mask-worldfile', 'mask16.pgw'],
+      ['photo-mask-auxxml', 'mask16.png.aux.xml'],
+    ] as const) {
       const f = await buildExport(kind, { ...base, photo, session });
       if (f) {
         entries.push({ name: `${dir}/${name}`, data: f.blob });
-        georeferenced++;
+        geo = true;
       }
     }
+    if (geo) georeferenced++;
   }
   if (photoCount > 0) {
     listed.push(
@@ -121,7 +129,7 @@ export async function resultsBundleEntries(input: ResultsBundleInput): Promise<Z
     "e.g. pandas.read_csv(path, comment='#'). In the '#' lines, % , ; and TAB are written as %25 %2C %3B %09.",
     '',
     georeferenced > 0
-      ? 'Mask and outline coordinates are photo pixels (x right, y down). GeoTIFF photos also have outlines_map.geojson (map coordinates, with the CRS) and mask16.pgw (a world file that places mask16.png on the map).'
+      ? 'GeoTIFF photos: for a GIS use outlines_map.geojson (grain outlines in the map coordinates and CRS of the source GeoTIFF; QGIS and other GDAL-based tools read the CRS, tools that expect GeoJSON in longitude/latitude cannot place it) and mask_map.tif (the label mask as a GeoTIFF, CRS included, background = nodata). mask16.png is placed by mask16.pgw (world file) with its CRS in mask16.png.aux.xml. outlines.geojson, grains.csv and the other mask files are in photo pixels (x right, y down), not map coordinates.'
       : 'Mask and outline coordinates are photo pixels (x right, y down), not map coordinates.',
     ...(coarse.length > 0
       ? [

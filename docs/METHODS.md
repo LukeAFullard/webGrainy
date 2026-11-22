@@ -696,10 +696,22 @@ enlargement setting (at most ×2), and dates in the future are reset. A file who
 do not match is refused.
 
 **GIS.** For a GeoTIFF photo (e.g. a drone orthomosaic tile), the app keeps the file's pixel-to-map
-transform and coordinate system. It then also exports the outlines as GeoJSON in map coordinates
-(with the coordinate system, read directly by QGIS and ArcGIS, and each grain's centroid in map
-coordinates), and a world file that places the label mask on the map. This is checked against GDAL.
-It applies while the photo is still the GeoTIFF raster: not after rectification or a 2× enhancement.
+transform and its GeoKeys (the coordinate system, also a user-defined one). It then also exports:
+
+- the **label mask as a GeoTIFF** (`mask_map.tif`) with the source file's transform and GeoKeys,
+  background as nodata: it opens in the right place in any GIS;
+- the **outlines as GeoJSON in map coordinates** (`outlines_map.geojson`), with each grain's
+  centroid in map coordinates and the CRS as a `crs` member. QGIS and other GDAL-based tools read
+  it; GeoJSON readers that follow RFC 7946 strictly (web maps, some ArcGIS tools) assume
+  longitude/latitude and cannot place projected coordinates;
+- a **world file** for the 16-bit PNG mask (`mask16.pgw`) with a `mask16.png.aux.xml` sidecar
+  naming the CRS (a world file alone holds no CRS).
+
+All of these were checked with GDAL 3.12 on an NZTM 2000 orthomosaic tile: CRS and extent equal the
+source GeoTIFF's, and the mask GeoTIFF holds the same grain ids as the PNG mask. The map position
+applies while the photo is still the GeoTIFF raster or a 2× upscale of it (the pixel size is then
+halved); not after rectification. All other exports (`outlines.geojson`, grain tables, other masks)
+are in photo pixels: a GIS would read their pixel coordinates as longitude/latitude.
 
 ---
 

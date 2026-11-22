@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import UTIF from 'utif2';
-import { extractGeoReference, geoJsonToMap, photoGeoreference, toMap, worldFile } from '../src/modules/georef.js';
+import { extractGeoReference, geoJsonToMap, pamAuxXml, photoGeoreference, toMap, worldFile } from '../src/modules/georef.js';
+import { encodeLabelGeoTiff, geoKeysFor } from '../src/modules/geotiffWriter.js';
+import { sanitizePhotoMetadata } from '../src/modules/archiveSanitize.js';
 import { decodeTiffBuffer } from '../src/modules/tiffDecode.js';
 import { buildExport } from '../src/modules/exports.js';
 import { resultsBundleEntries } from '../src/modules/resultsBundle.js';
@@ -74,7 +76,7 @@ describe('map-coordinate exports', () => {
 
   it('is offered only while the photo is still the GeoTIFF raster', async () => {
     expect(photoGeoreference(photo).georef).not.toBeNull();
-    expect(photoGeoreference({ ...photo, width: 240, height: 240 }).reason).toMatch(/enhanced/);
+    expect(photoGeoreference({ ...photo, width: 200, height: 200 }).reason).toMatch(/no longer has its GeoTIFF size/);
     expect(photoGeoreference({ ...photo, metadata: { georef, processingHistory: [{ step: 'rectification' } as never] } }).reason).toMatch(/rectified/);
     const ctx = { site: null, session, siteReport: null, siteInputs: [], psdXAxis: 'mm' as const };
     expect(await buildExport('photo-geojson-map', { ...ctx, photo: photo as never })).not.toBeNull();
@@ -90,7 +92,11 @@ describe('map-coordinate exports', () => {
     const names = entries.map((e) => e.name);
     expect(names).toContain('photos/ortho/outlines_map.geojson');
     expect(names).toContain('photos/ortho/mask16.pgw');
-    expect(entries.find((e) => e.name === 'README.txt')!.data as string).toContain('outlines_map.geojson (map coordinates');
+    expect(names).toContain('photos/ortho/mask_map.tif');
+    expect(names).toContain('photos/ortho/mask16.png.aux.xml');
+    const readme = entries.find((e) => e.name === 'README.txt')!.data as string;
+    expect(readme).toContain('mask_map.tif (the label mask as a GeoTIFF, CRS included');
+    expect(readme).toContain('not map coordinates');
   });
 });
 
@@ -110,5 +116,93 @@ describe('Export dialog', () => {
     expect(plain).toContain('not map coordinates');
     const rectified = renderExportModalHtml(state({ ...base, metadata: { georef, processingHistory: [{ step: 'rectification' }] } }));
     expect(rectified).toContain('was rectified');
+  });
+});
+
+describe('label mask GeoTIFF (audit: a world file carries no CRS)', () => {
+  const decode = (bytes: Uint8Array) => {
+    const ifd = UTIF.decode(bytes.slice().buffer)[0]! as unknown as Record<string, unknown> & { width: number; height: number; data: Uint8Array };
+    UTIF.decodeImage(bytes.slice().buffer, ifd as never);
+    return ifd;
+  };
+  // A source like the reported file: NZTM 2000, 2 cm pixels, citation in GeoAsciiParams.
+  const nztmKeys = { directory: [1, 1, 0, 7, 1024, 0, 1, 1, 1025, 0, 1, 1, 1026, 34737, 48, 0, 2049, 34737, 9, 48, 2054, 0, 1, 9102, 3072, 0, 1, 2193, 3076, 0, 1, 9001], ascii: 'NZGD2000 / New Zealand Transverse Mercator 2000|NZGD2000|' };
+  const g: PhotoGeoreference = { transform: [1793110.34, 0.02, 0, 5495817.62, 0, -0.02], epsg: 2193, kind: 'projected', width: 6, height: 4, geoKeys: nztmKeys };
+  const masks = Int32Array.from([0, 1, 1, 0, 2, 2, 0, 1, 1, 0, 2, 2, 0, 0, 0, 0, 0, 0, 3, 3, 3, 0, 0, 0]);
+
+  it('round-trips: same transform, same CRS keys and citation, same grain ids, background nodata', async () => {
+    for (const compress of [true, false]) {
+      const ifd = decode(await encodeLabelGeoTiff(masks, 6, 4, g, { compress }));
+      const back = extractGeoReference(ifd, 6, 4)!;
+      back.transform.forEach((v, i) => expect(v).toBeCloseTo(g.transform[i]!, 9));
+      expect(back.epsg).toBe(2193);
+      expect(back.geoKeys!.directory).toEqual(nztmKeys.directory);
+      expect(back.geoKeys!.ascii).toBe(nztmKeys.ascii);
+      expect(ifd['t42113']).toEqual(['0']);
+      const px = new Uint16Array(ifd.data.buffer, ifd.data.byteOffset, 24);
+      expect([...px]).toEqual([...masks]);
+    }
+  });
+
+  it('writes RasterType PixelIsArea (the transform is corner-based), adding it when missing', () => {
+    const point = { ...g, geoKeys: { directory: [1, 1, 0, 2, 1024, 0, 1, 1, 1025, 0, 1, 2] } };
+    expect(geoKeysFor(point).directory).toEqual([1, 1, 0, 2, 1024, 0, 1, 1, 1025, 0, 1, 1]);
+    const none = { ...g, geoKeys: { directory: [1, 1, 0, 1, 3072, 0, 1, 2193] } };
+    expect(geoKeysFor(none).directory).toEqual([1, 1, 0, 2, 1025, 0, 1, 1, 3072, 0, 1, 2193]);
+  });
+
+  it('rebuilds keys from the EPSG code for photos imported before keys were kept', async () => {
+    const { geoKeys: _k, ...old } = g;
+    expect(geoKeysFor(old).directory).toEqual([1, 1, 0, 3, 1024, 0, 1, 1, 1025, 0, 1, 1, 3072, 0, 1, 2193]);
+    const geo = { ...old, epsg: 4326, kind: 'geographic' as const };
+    expect(geoKeysFor(geo).directory).toEqual([1, 1, 0, 3, 1024, 0, 1, 2, 1025, 0, 1, 1, 2048, 0, 1, 4326]);
+    const back = extractGeoReference(decode(await encodeLabelGeoTiff(masks, 6, 4, old)), 6, 4)!;
+    expect(back.epsg).toBe(2193);
+  });
+
+  it('keeps a user-defined CRS through its own keys and parameters', async () => {
+    const custom: PhotoGeoreference = { ...g, epsg: null, geoKeys: { directory: [1, 1, 0, 2, 1024, 0, 1, 1, 3072, 0, 1, 32767], doubles: [173, -41, 0.9996] } };
+    const ifd = decode(await encodeLabelGeoTiff(masks, 6, 4, custom));
+    expect(extractGeoReference(ifd, 6, 4)!.geoKeys!.doubles).toEqual([173, -41, 0.9996]);
+  });
+
+  it('writes a rotated transform as ModelTransformation', async () => {
+    const rot: PhotoGeoreference = { ...g, transform: [1000, 0.5, 0.1, 2000, 0.1, -0.5] };
+    const ifd = decode(await encodeLabelGeoTiff(masks, 6, 4, rot));
+    expect(ifd['t33550']).toBeUndefined();
+    expect(toMap(extractGeoReference(ifd, 6, 4)!, 2, 3)).toEqual(toMap(rot, 2, 3));
+  });
+
+  it('a 32-bit file when a grain id exceeds 65535', async () => {
+    const big = masks.slice();
+    big[1] = 70000;
+    const ifd = decode(await encodeLabelGeoTiff(big, 6, 4, g));
+    expect(ifd['t258']).toEqual([32]);
+    expect(new Uint32Array(ifd.data.buffer, ifd.data.byteOffset, 24)[1]).toBe(70000);
+  });
+
+  it('aux.xml names the EPSG CRS for the PNG + world file; none for a user-defined CRS', () => {
+    expect(pamAuxXml(g)).toContain('<SRS>EPSG:2193</SRS>');
+    expect(pamAuxXml({ ...g, epsg: null })).toBeNull();
+  });
+
+  it('a 2x upscaled photo keeps its map position with half the pixel size', () => {
+    const up = { width: 12, height: 8, metadata: { georef: g, processingHistory: [{ step: 'enhancement', kind: 'upscale-2x' } as never] } };
+    const r = photoGeoreference(up).georef!;
+    expect(r.transform).toEqual([1793110.34, 0.01, 0, 5495817.62, 0, -0.01]);
+    expect([r.width, r.height]).toEqual([12, 8]);
+    expect(toMap(r, 12, 8)).toEqual(toMap(g, 6, 4)); // same ground footprint
+    // Not after rectification, and not for a size change without an upscale.
+    expect(photoGeoreference({ ...up, metadata: { georef: g } }).georef).toBeNull();
+  });
+
+  it('project files keep checked GeoKeys and drop malformed ones', () => {
+    const ok = sanitizePhotoMetadata({ georef: { ...g } })!.georef!;
+    expect(ok.geoKeys).toEqual(nztmKeys);
+    const bad = (geoKeys: unknown) => sanitizePhotoMetadata({ georef: { ...g, geoKeys } })!.georef!.geoKeys;
+    expect(bad({ directory: [1, 1, 0, 5, 1024, 0, 1, 1] })).toBeUndefined(); // count does not match
+    expect(bad({ directory: nztmKeys.directory, ascii: 'x<script>' + String.fromCharCode(0) })).toBeUndefined();
+    expect(bad({ directory: [1, 1, 0, 1, 1024, 0, 1, 70000] })).toBeUndefined();
+    expect(bad('nope')).toBeUndefined();
   });
 });

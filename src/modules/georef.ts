@@ -51,13 +51,46 @@ export function extractGeoReference(ifd: Record<string, unknown>, width: number,
   const t: PhotoGeoreference['transform'] = [a, b, c, d, e, f];
   if (!t.every(Number.isFinite) || Math.abs(b * f - c * e) < 1e-30) return undefined;
   const code = projected ?? geographic;
+  const geoKeys = rawGeoKeys(ifd);
   return {
     transform: t,
     epsg: code !== undefined && code > 0 && code !== 32767 ? code : null,
     kind: modelType === 1 ? 'projected' : modelType === 2 ? 'geographic' : 'unknown',
     width,
     height,
+    ...(geoKeys ? { geoKeys } : {}),
   };
+}
+
+/** Largest GeoKey directory / parameter lists kept (real files use a few dozen values). */
+export const MAX_GEOKEY_VALUES = 1024;
+export const MAX_GEOKEY_ASCII = 4096;
+
+/** Checked copy of GeoKeys (from a TIFF or a project file), or undefined if malformed. */
+export function cleanGeoKeys(dir: unknown, doubles: unknown, ascii: unknown): PhotoGeoreference['geoKeys'] {
+  if (!Array.isArray(dir) || dir.length < 4 || dir.length > MAX_GEOKEY_VALUES) return undefined;
+  const d = dir.map(num);
+  if (!d.every((v) => Number.isInteger(v) && v >= 0 && v <= 65535)) return undefined;
+  if (d.length !== 4 + 4 * d[3]!) return undefined;
+  const out: NonNullable<PhotoGeoreference['geoKeys']> = { directory: d };
+  if (Array.isArray(doubles) && doubles.length > 0) {
+    const p = doubles.map(num);
+    if (p.length > MAX_GEOKEY_VALUES || !p.every(Number.isFinite)) return undefined;
+    out.doubles = p;
+  }
+  if (typeof ascii === 'string' && ascii.length > 0) {
+    if (ascii.length > MAX_GEOKEY_ASCII || /[^\x20-\x7e|]/.test(ascii)) return undefined;
+    out.ascii = ascii;
+  }
+  return out;
+}
+
+function rawGeoKeys(ifd: Record<string, unknown>): PhotoGeoreference['geoKeys'] {
+  // UTIF gives an ASCII tag as an array of its NUL-separated strings; GeoAsciiParams is one
+  // '|'-separated string that the key offsets index into.
+  const a = ifd['t34737'];
+  const ascii = Array.isArray(a) ? a.join('') : typeof a === 'string' ? a : undefined;
+  return cleanGeoKeys(ifd['t34735'], ifd['t34736'], ascii);
 }
 
 /**
@@ -83,10 +116,16 @@ export function photoGeoreference(photo: {
   if (photoProcessingHistory(photo.metadata).some((s) => s.step === 'rectification')) {
     return { georef: null, reason: 'The photo was rectified, so its original map position no longer applies.' };
   }
-  if (photo.width !== g.width || photo.height !== g.height) {
-    return { georef: null, reason: 'The photo no longer has its GeoTIFF size (it was enhanced), so its map position no longer applies.' };
+  if (photo.width === g.width && photo.height === g.height) return { georef: g, reason: null };
+  // A 2x upscale only resamples the same ground onto a finer pixel grid: the map position still
+  // applies, with the pixel size divided by the factor.
+  const k = photo.width / g.width;
+  const upscaled = photoProcessingHistory(photo.metadata).some((s) => s.step === 'enhancement' && s.kind === 'upscale-2x');
+  if (upscaled && Number.isInteger(k) && k > 1 && photo.height === g.height * k) {
+    const [a, b, c, d, e, f] = g.transform;
+    return { georef: { ...g, transform: [a, b / k, c / k, d, e / k, f / k], width: photo.width, height: photo.height }, reason: null };
   }
-  return { georef: g, reason: null };
+  return { georef: null, reason: 'The photo no longer has its GeoTIFF size, so its map position no longer applies.' };
 }
 
 /** Map coordinates of a photo point given in pixel-CORNER coordinates. */
@@ -133,6 +172,15 @@ export function geoJsonToMap(pixelGeoJson: string, g: PhotoGeoreference): string
     },
     features: fc.features,
   });
+}
+
+/**
+ * GDAL PAM sidecar (`<image>.aux.xml`) naming the CRS, for an image placed by a world file (which
+ * holds no CRS): QGIS and other GDAL-based GIS then put it in the right place. Null without an
+ * EPSG code (a user-defined CRS has no short name; use the GeoTIFF mask instead).
+ */
+export function pamAuxXml(g: PhotoGeoreference): string | null {
+  return g.epsg !== null ? `<PAMDataset>\n  <SRS>EPSG:${g.epsg}</SRS>\n</PAMDataset>\n` : null;
 }
 
 /** World file (.pgw / .tfw) for an image of the photo's size: six lines, top-left pixel centre. */

@@ -6,7 +6,8 @@ import type { SizeMetric } from '../types/index.js';
 import type { AnalysisSession } from './pipelineController.js';
 import { exportSiteArchive, type PhotoRecord, type SiteRecord } from './projectStorage.js';
 import { photoProcessingHistory } from './siteTypes.js';
-import { geoJsonToMap, photoGeoreference, worldFile } from './georef.js';
+import { geoJsonToMap, pamAuxXml, photoGeoreference, worldFile } from './georef.js';
+import { encodeLabelGeoTiff } from './geotiffWriter.js';
 import {
   buildSiteExportMetadata,
   exportSiteGrainsCsv,
@@ -32,6 +33,8 @@ export const EXPORT_KINDS = [
   'photo-geojson',
   'photo-geojson-map',
   'photo-mask-worldfile',
+  'photo-mask-geotiff',
+  'photo-mask-auxxml',
   'photo-svg',
 ] as const;
 export type ExportKind = (typeof EXPORT_KINDS)[number];
@@ -185,9 +188,25 @@ export async function buildExport(kind: ExportKind, ctx: ExportContext): Promise
         : null;
     }
     case 'photo-mask-worldfile': {
-      // World file placing the 16-bit mask PNG (same base name) on the map.
+      // World file placing the 16-bit mask PNG (same base name) on the map. It holds no CRS:
+      // photo-mask-auxxml supplies that for GDAL-based GIS (QGIS).
       const g = photo ? photoGeoreference(photo).georef : null;
       return session && g ? { blob: new Blob([worldFile(g)], { type: 'text/plain' }), filename: `${photoFile}_mask16.pgw` } : null;
+    }
+    case 'photo-mask-auxxml': {
+      // GDAL sidecar naming the CRS of the 16-bit mask PNG + world file (EPSG photos only).
+      const g = photo ? photoGeoreference(photo).georef : null;
+      const xml = g ? pamAuxXml(g) : null;
+      return session && xml ? { blob: new Blob([xml], { type: 'application/xml' }), filename: `${photoFile}_mask16.png.aux.xml` } : null;
+    }
+    case 'photo-mask-geotiff': {
+      // The label mask as a GeoTIFF in the source GeoTIFF's position and CRS (any GIS).
+      const g = photo ? photoGeoreference(photo).georef : null;
+      if (!session || !g) return null;
+      const m = session.labelMaskAtPhotoSize();
+      if (m.width !== g.width || m.height !== g.height) return null;
+      const bytes = await encodeLabelGeoTiff(m.masks, m.width, m.height, g);
+      return { blob: new Blob([bytes.slice().buffer], { type: 'image/tiff' }), filename: `${photoFile}_mask_map.tif` };
     }
     case 'photo-svg':
       return session

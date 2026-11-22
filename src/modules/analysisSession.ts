@@ -956,6 +956,12 @@ export class AnalysisSession {
   }
 
   /** As `exportMaskPng`, deflate-compressed where the platform supports it (much smaller files). */
+  /** Grain ids at the photo's own size (nearest-neighbour from the working image), 0 = background. */
+  labelMaskAtPhotoSize(): { masks: Int32Array; width: number; height: number } {
+    const m = this.maskForExport(32, { resolution: 'original' });
+    return { masks: m.masks, width: m.width, height: m.height };
+  }
+
   async exportMaskPngCompressed(
     bitDepth: 16 | 32 = 16,
     options?: { resolution?: 'original' | 'working'; photoMetadata?: Record<string, unknown> },

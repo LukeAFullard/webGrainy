@@ -69,6 +69,11 @@ First public release.
 - TIFFs over 100 MP are refused with a clear message; the formula guard in CSV exports also covers pipe-
   and space-separated imports; cached model files are re-checked once per session; builds are
   reproducible (the same commit gives the same files).
+- GeoTIFF map exports: a GIS put the mask in the wrong place because the world file (`.pgw`) carries
+  no coordinate system. New **label mask GeoTIFF** (`mask_map.tif`) with the source GeoTIFF's position
+  and GeoKeys (any CRS, also user-defined), a `.aux.xml` CRS file next to the PNG mask's world file,
+  the map position kept after a 2× upscale, and accurate wording about which tools read the map
+  GeoJSON's CRS. Checked with GDAL on an NZTM 2000 orthomosaic tile.
 - Licence notices for the bundled `utif2` and `pako` and for the optional PULSE upscaler weights added
   to `THIRD_PARTY_NOTICES.md`; the licence and notices are copied into the built app.
 
