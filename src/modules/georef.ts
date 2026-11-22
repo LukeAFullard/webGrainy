@@ -184,6 +184,15 @@ export function pamAuxXml(g: PhotoGeoreference): string | null {
   return g.epsg !== null ? `<PAMDataset>\n  <SRS>EPSG:${g.epsg}</SRS>\n</PAMDataset>\n` : null;
 }
 
+/**
+ * File name of the map-coordinate GeoJSON. It names the CRS (e.g. outlines_EPSG2193.geojson),
+ * because RFC 7946 readers (web maps, ArcGIS Online) take any .geojson as longitude / latitude and
+ * ignore its `crs` member: the name tells users this one is for GDAL-based GIS only.
+ */
+export function mapGeoJsonName(g: PhotoGeoreference): string {
+  return g.epsg !== null ? `outlines_EPSG${g.epsg}.geojson` : 'outlines_customCRS.geojson';
+}
+
 /** Whether the photo's CRS can be converted to longitude / latitude (see geoJsonToLonLat). */
 export function canExportLonLat(g: PhotoGeoreference): boolean {
   return lonLatProjector(g.epsg, g.kind) !== null;
@@ -235,7 +244,7 @@ export function geoJsonToLonLat(pixelGeoJson: string, g: PhotoGeoreference): str
       lonLatCoordinates: {
         crs: 'WGS 84 longitude / latitude (RFC 7946)',
         sourceCrs: `EPSG:${g.epsg}`,
-        note: `Converted from the source GeoTIFF's EPSG:${g.epsg} map coordinates without a datum shift (that datum is within about a metre of WGS84). For survey-grade positions use outlines_map.geojson (EPSG:${g.epsg}). Sizes and areas in the properties are in photo pixels and mm.`,
+        note: `Converted from the source GeoTIFF's EPSG:${g.epsg} map coordinates without a datum shift (that datum is within about a metre of WGS84). For survey-grade positions use ${mapGeoJsonName(g)} (EPSG:${g.epsg} map coordinates). Sizes and areas in the properties are in photo pixels and mm.`,
       },
     },
     features: fc.features,

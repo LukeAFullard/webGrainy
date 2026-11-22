@@ -76,7 +76,9 @@ First public release.
   GeoJSON's CRS. Checked with GDAL on an NZTM 2000 orthomosaic tile.
 - GeoJSON in longitude/latitude (`outlines_lonlat.geojson`) for web maps, which ignore the map GeoJSON's
   CRS: converted offline for 2,698 EPSG coordinate systems (UTM, national grids, US State Plane) plus Web
-  Mercator and geographic CRSs, within 0.04 mm of PROJ.
+  Mercator and geographic CRSs, within 0.04 mm of PROJ. The map-coordinate GeoJSON is renamed to name its
+  CRS (`outlines_EPSG2193.geojson`, was `outlines_map.geojson`): web maps and ArcGIS Online read every
+  GeoJSON as longitude/latitude (RFC 7946) and ignore its `crs` member.
 - Licence notices for the bundled `utif2` and `pako` and for the optional PULSE upscaler weights added
   to `THIRD_PARTY_NOTICES.md`; the licence and notices are copied into the built app.
 

@@ -708,10 +708,12 @@ transform and its GeoKeys (the coordinate system, also a user-defined one). It t
   geographic CRSs. Only CRSs whose datum PROJ places within 1 m of WGS84 are included, and no
   datum shift is applied. Checked against PROJ 9.8.1 for every CRS: largest difference 0.04 mm
   (`validation/geotiff/`). For other CRSs this file is not offered;
-- the **outlines as GeoJSON in map coordinates** (`outlines_map.geojson`), exact, with each
+- the **outlines as GeoJSON in map coordinates** (`outlines_EPSG<code>.geojson`, e.g.
+  `outlines_EPSG2193.geojson`), exact, with each
   grain's centroid in map coordinates and the CRS as a `crs` member. QGIS and other GDAL-based
-  tools read it; readers that follow RFC 7946 (web maps, some ArcGIS tools) assume
-  longitude/latitude and cannot place it;
+  tools read it; readers that follow RFC 7946 (web maps, ArcGIS Online) ignore the `crs` member,
+  read every GeoJSON as longitude/latitude and cannot place it. The file name names the CRS for
+  that reason;
 - a **world file** for the 16-bit PNG mask (`mask16.pgw`) with a `mask16.png.aux.xml` sidecar
   naming the CRS (a world file alone holds no CRS).
 

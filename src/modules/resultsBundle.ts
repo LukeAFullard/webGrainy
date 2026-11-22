@@ -9,6 +9,7 @@ import type { PhotoRecord, SiteRecord } from './projectStorage.js';
 import type { SiteAnalysisReport, SitePhotoInput, SiteAnalysisOptions } from './siteAnalysis.js';
 import type { SizeMetric } from '../types/index.js';
 import { buildZip, type ZipEntry } from './zip.js';
+import { mapGeoJsonName, photoGeoreference } from './georef.js';
 
 export interface ResultsBundleInput {
   site: SiteRecord;
@@ -88,8 +89,9 @@ export async function resultsBundleEntries(input: ResultsBundleInput): Promise<Z
     // GeoTIFF photos: outlines and the mask in map coordinates (with the CRS), and a world file
     // + CRS sidecar that place mask16.png on the map.
     let geo = false;
+    const g = photoGeoreference(photo).georef;
     for (const [kind, name] of [
-      ['photo-geojson-map', 'outlines_map.geojson'],
+      ['photo-geojson-map', g ? mapGeoJsonName(g) : 'outlines_map.geojson'],
       ['photo-geojson-lonlat', 'outlines_lonlat.geojson'],
       ['photo-mask-geotiff', 'mask_map.tif'],
       ['photo-mask-worldfile', 'mask16.pgw'],
@@ -130,7 +132,7 @@ export async function resultsBundleEntries(input: ResultsBundleInput): Promise<Z
     "e.g. pandas.read_csv(path, comment='#'). In the '#' lines, % , ; and TAB are written as %25 %2C %3B %09.",
     '',
     georeferenced > 0
-      ? 'GeoTIFF photos: outlines_lonlat.geojson has the grain outlines in WGS84 longitude/latitude for web maps and any GeoJSON reader (when the CRS can be converted; no datum shift, within about a metre). outlines_map.geojson has them in the map coordinates and CRS of the source GeoTIFF (exact; QGIS and other GDAL-based tools read the CRS, tools that expect longitude/latitude cannot place it). mask_map.tif is the label mask as a GeoTIFF, CRS included, background = nodata. mask16.png is placed by mask16.pgw (world file) with its CRS in mask16.png.aux.xml. outlines.geojson, grains.csv and the other mask files are in photo pixels (x right, y down), not map coordinates.'
+      ? 'GeoTIFF photos: outlines_lonlat.geojson has the grain outlines in WGS84 longitude/latitude for web maps and any GeoJSON reader (when the CRS can be converted; no datum shift, within about a metre). outlines_EPSG<code>.geojson has them in the map coordinates and CRS of the source GeoTIFF (exact; for QGIS and other GDAL-based tools only: web maps and ArcGIS Online read every .geojson as longitude/latitude and cannot place it). mask_map.tif is the label mask as a GeoTIFF, CRS included, background = nodata. mask16.png is placed by mask16.pgw (world file) with its CRS in mask16.png.aux.xml. outlines.geojson, grains.csv and the other mask files are in photo pixels (x right, y down), not map coordinates.'
       : 'Mask and outline coordinates are photo pixels (x right, y down), not map coordinates.',
     ...(coarse.length > 0
       ? [
