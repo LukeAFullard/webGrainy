@@ -262,33 +262,121 @@ export function outlineResolutionWarningHtml(session: AnalysisSession | null): s
     For finer outlines, re-analyse with <em>Scale Mode: 1.0x Full</em> (slower; photos over 16.7 megapixels are still read at 16.7 MP).</div>`;
 }
 
+export type ExportWhat = 'outlines' | 'mask' | 'photo';
+export type ExportCoords = 'pixels' | 'lonlat' | 'map' | 'webmercator';
+
+/** What the photo exports offer for this photo, and the selection normalised to a valid one. */
+export interface PhotoExportChoice {
+  what: ExportWhat;
+  format: string;
+  coords: ExportCoords;
+  whats: Array<[ExportWhat, string]>;
+  formats: Array<[string, string]>;
+  coordsList: Array<[ExportCoords, string]>;
+  /** Export kind the Download button runs. */
+  kind: string;
+  /** One sentence on the file this choice gives. */
+  hint: string;
+}
+
 /**
- * Map-coordinate exports for a georeferenced photo (from its GeoTIFF), or a note that the
- * pixel exports are not map coordinates (and why a GeoTIFF's position no longer applies).
+ * The photo-export choices (what / format / coordinates) for a photo, from the user's last
+ * selection: options a photo cannot give are left out (e.g. map coordinates without a GeoTIFF),
+ * and an unavailable selection falls back to the first valid one. Coordinate labels name the
+ * photo's own CRS (any EPSG code, or "custom CRS").
  */
-function mapExportHtml(photo: PhotoRecord): string {
-  const { georef, reason } = photoGeoreference(photo);
-  if (georef) {
-    const lonLat = canExportLonLat(georef);
-    const warp = canWarpToWebMercator(georef);
-    return `<div class="row" style="flex-wrap:wrap;margin-top:6px;">
-        ${lonLat ? '<button type="button" class="btn btn-sm btn-primary" data-export="photo-geojson-lonlat" title="Grain outlines in WGS84 longitude/latitude: opens in web maps and any GeoJSON reader">GeoJSON (longitude/latitude)</button>' : ''}
-        <button type="button" class="btn btn-sm" data-export="photo-geojson-map" title="Grain outlines in the exact map coordinates of the source GeoTIFF, for QGIS / GDAL (not for web maps)">GeoJSON (${georef.epsg !== null ? `EPSG:${georef.epsg}` : 'custom CRS'}, for QGIS)</button>
-        <button type="button" class="btn btn-sm btn-primary" data-export="photo-mask-geotiff" title="Label mask as a GeoTIFF with the source GeoTIFF's position and CRS (background = nodata)">Label mask GeoTIFF (map)</button>
-        <button type="button" class="btn btn-sm" data-export="photo-mask-worldfile" title="World file that places the 16-bit PNG mask on the map (keep it next to the mask, same name)">World file for 16-bit mask (.pgw)</button>
-        ${warp ? '<button type="button" class="btn btn-sm" data-export="photo-image-webmercator" title="The photo reprojected to a north-up Web Mercator grid, so web maps show it without rotation">Photo GeoTIFF for web maps</button><button type="button" class="btn btn-sm" data-export="photo-mask-webmercator" title="The label mask reprojected to a north-up Web Mercator grid">Mask GeoTIFF for web maps</button>' : ''}
-        ${georef.epsg !== null ? '<button type="button" class="btn btn-sm" data-export="photo-mask-auxxml" title="CRS sidecar for the 16-bit PNG mask (QGIS / GDAL); keep it next to the mask">CRS file for 16-bit mask (.aux.xml)</button>' : ''}
-      </div>
-      <p class="field-hint" style="margin-top:4px;">This photo is a GeoTIFF${georef.epsg !== null ? ` (EPSG:${georef.epsg})` : ' with a custom coordinate system'}. The <strong>label mask GeoTIFF</strong> carries the CRS and opens in the right place in any GIS. ${lonLat ? 'For web maps and other GeoJSON readers use <strong>GeoJSON (longitude/latitude)</strong> (converted to WGS84 without a datum shift, within about a metre). ' : 'This coordinate system cannot be converted to longitude/latitude here, so web maps cannot place the GeoJSON. '}The <strong>GeoJSON for QGIS</strong> keeps the GeoTIFF's exact map coordinates: QGIS and other GDAL-based tools read its CRS, but web maps and ArcGIS Online read every GeoJSON as longitude/latitude and cannot place it.${warp ? ' Web maps that draw a projected raster north-up without rotating it (by the grid convergence, about 1.5° for NZTM) misalign it with the outlines: the <strong>GeoTIFFs for web maps</strong> are already on the north-up Web Mercator grid, so they line up exactly.' : ''} A world file holds no CRS: use it with the .aux.xml file, or set the CRS in your GIS. All other exports are in photo pixels, not map coordinates.</p>`;
+export function photoExportChoice(
+  photo: PhotoRecord,
+  sel: { what?: string; format?: string; coords?: string },
+): PhotoExportChoice {
+  const { georef } = photoGeoreference(photo);
+  const crs = georef ? (georef.epsg !== null ? `EPSG:${georef.epsg}` : 'custom CRS') : '';
+  const lonLat = georef ? canExportLonLat(georef) : false;
+  const warp = georef ? canWarpToWebMercator(georef) : false;
+  const whats: Array<[ExportWhat, string]> = [['outlines', 'Grain outlines (vector)'], ['mask', 'Label mask (raster)']];
+  if (warp) whats.push(['photo', 'Photo (raster)']);
+  const what = (whats.find(([w]) => w === sel.what)?.[0] ?? 'outlines') as ExportWhat;
+  const formats: Array<[string, string]> =
+    what === 'outlines'
+      ? [['geojson', 'GeoJSON'], ['svg', 'SVG']]
+      : what === 'mask'
+        ? [['png16', 'PNG, 16-bit'], ['png32', 'PNG, 32-bit'], ...(georef ? ([['geotiff', 'GeoTIFF']] as Array<[string, string]>) : [])]
+        : [['geotiff', 'GeoTIFF']];
+  const format = formats.find(([f]) => f === sel.format)?.[0] ?? formats[0]![0];
+  const coordsList: Array<[ExportCoords, string]> =
+    what === 'outlines' && format === 'geojson'
+      ? [
+          ['pixels', 'Photo pixels'],
+          ...(lonLat ? ([['lonlat', 'Longitude / latitude (WGS84): web maps, any GeoJSON reader']] as Array<[ExportCoords, string]>) : []),
+          ...(georef ? ([['map', `Map coordinates, ${crs}: QGIS / GDAL`]] as Array<[ExportCoords, string]>) : []),
+        ]
+      : what === 'mask' && format === 'geotiff'
+        ? [['map', `Map coordinates, ${crs}`], ...(warp ? ([['webmercator', 'Web Mercator, north-up: web maps']] as Array<[ExportCoords, string]>) : [])]
+        : what === 'photo'
+          ? [['webmercator', 'Web Mercator, north-up: web maps']]
+          : [['pixels', 'Photo pixels']];
+  const coords = (coordsList.find(([c]) => c === sel.coords)?.[0] ?? coordsList[0]![0]) as ExportCoords;
+  let kind: string;
+  let hint: string;
+  if (what === 'outlines') {
+    if (format === 'svg') {
+      kind = 'photo-svg';
+      hint = 'One path per grain in photo pixels (x right, y down), for drawings and figures.';
+    } else if (coords === 'lonlat') {
+      kind = 'photo-geojson-lonlat';
+      hint = `Standard GeoJSON (RFC 7946) in WGS84 longitude/latitude, converted from ${crs} without a datum shift (within about a metre): opens in web maps, ArcGIS Online and any GIS.`;
+    } else if (coords === 'map') {
+      kind = 'photo-geojson-map';
+      hint = `The GeoTIFF's exact ${crs} coordinates with the CRS written in the file: QGIS and other GDAL-based tools read it; web maps and ArcGIS Online read every GeoJSON as longitude/latitude and cannot place it.`;
+    } else {
+      kind = 'photo-geojson';
+      hint = `Outlines in photo pixels (x right, y down), not map coordinates${georef ? ': a GIS would read them as longitude/latitude, so choose another coordinate option for a map' : ''}.`;
+    }
+  } else if (what === 'mask') {
+    if (format === 'png16' || format === 'png32') {
+      kind = format === 'png16' ? 'photo-mask-16' : 'photo-mask-32';
+      hint = `Image at the photo's size: pixel value = grain_id in the grain table, 0 = background${format === 'png16' ? ' (ids above 65535 are clamped)' : ' (id in the RGBA bytes)'}.${georef ? ' The results .zip also places the 16-bit PNG on the map with a world file and a CRS file.' : ''}`;
+    } else if (coords === 'webmercator') {
+      kind = 'photo-mask-webmercator';
+      hint = 'The mask reprojected to a north-up Web Mercator grid (EPSG:3857): lines up with the longitude/latitude outlines in web maps that draw rasters without rotating them.';
+    } else {
+      kind = 'photo-mask-geotiff';
+      hint = `The mask as a GeoTIFF in the source GeoTIFF's position and ${crs} (background = nodata): opens in the right place in any GIS.`;
+    }
+  } else {
+    kind = 'photo-image-webmercator';
+    hint = 'The photo reprojected to a north-up Web Mercator grid (EPSG:3857, transparent outside): lines up with the longitude/latitude outlines and the Web Mercator mask in web maps.';
   }
-  return `<p class="field-hint" style="margin-top:6px;">Mask, GeoJSON and SVG coordinates are photo pixels (x right, y down), not map coordinates.${reason ? ` ${esc(reason)}` : ' Map-coordinate exports are offered for GeoTIFF photos.'}</p>`;
+  return { what, format, coords, whats, formats, coordsList, kind, hint };
+}
+
+/** The outlines / mask / photo export: what, format and coordinates as choices, one Download button. */
+function photoGeometryExportHtml(state: AppState, photo: PhotoRecord): string {
+  const c = photoExportChoice(photo, { what: state.exportWhat, format: state.exportFormat, coords: state.exportCoords });
+  const select = (name: string, label: string, options: Array<[string, string]>, value: string): string => `
+      <label class="field-label" style="min-width:160px;">
+        <span class="label-row">${label}</span>
+        <select class="select" data-export-opt="${name}" ${options.length < 2 ? 'disabled' : ''}>
+          ${options.map(([v, t]) => `<option value="${v}" ${v === value ? 'selected' : ''}>${esc(t)}</option>`).join('')}
+        </select>
+      </label>`;
+  const { reason } = photoGeoreference(photo);
+  return `
+      <div style="font-weight:600;margin-top:10px;">Outlines, mask, photo</div>
+      <div class="row" style="flex-wrap:wrap;gap:8px;align-items:flex-end;">
+        ${select('what', 'Export', c.whats, c.what)}
+        ${select('format', 'Format', c.formats, c.format)}
+        ${select('coords', 'Coordinates', c.coordsList, c.coords)}
+        <button type="button" class="btn btn-sm btn-primary" data-export="${c.kind}">Download</button>
+      </div>
+      <p class="field-hint" style="margin-top:4px;" data-export-hint>${esc(c.hint)}${reason ? ` ${esc(reason)}` : ''}</p>`;
 }
 
 /** Option shared by the Export and Download dialogs: outlines / masks of counted grains only. */
 function countedOnlyCheckbox(id: string, checked: boolean): string {
   return `<label class="checkbox-label" style="margin-top:8px;">
       <input type="checkbox" id="${id}" ${checked ? 'checked' : ''} />
-      Outlines and masks: only grains counted in the statistics (above the size cutoff, inside the ROI, not on the photo edge). Unticked: every detected grain. The grain tables always list every grain, with <code>included_in_stats</code>.
+      <span>Outlines and masks: only the grains counted in the statistics (above the size cutoff, inside the ROI, not on the photo edge). Unticked: every detected grain. Grain tables always list every grain, marked <code>included_in_stats</code>.</span>
     </label>`;
 }
 
@@ -368,7 +456,7 @@ export function renderExportModalHtml(state: AppState): string {
   return `
     <div class="modal-card">
       <div class="modal-header">
-        <h2 id="dialog-title" class="modal-title">Client-Side Export Drawer (100% Local Blob Downloads)</h2>
+        <h2 id="dialog-title" class="modal-title">Export (files are made in your browser)</h2>
         <button type="button" class="btn btn-sm" data-action="close-modal" autofocus>Close</button>
       </div>
       <div class="modal-body">
@@ -391,13 +479,9 @@ export function renderExportModalHtml(state: AppState): string {
             <button type="button" class="btn btn-sm" data-export="photo-grains-csv" ${activeSession ? '' : 'disabled'}>Photo Grains CSV</button>
             <button type="button" class="btn btn-sm" data-export="photo-summary-csv" ${activeSession ? '' : 'disabled'}>Photo Summary CSV</button>
             <button type="button" class="btn btn-sm" data-export="photo-summary-json" ${activeSession ? '' : 'disabled'}>Photo Summary JSON</button>
-            <button type="button" class="btn btn-sm" data-export="photo-mask-16" ${activeSession ? '' : 'disabled'}>16-bit PNG Mask</button>
-            <button type="button" class="btn btn-sm" data-export="photo-mask-32" ${activeSession ? '' : 'disabled'}>32-bit PNG Mask</button>
-            <button type="button" class="btn btn-sm" data-export="photo-geojson" ${activeSession ? '' : 'disabled'}>GeoJSON Contours</button>
-            <button type="button" class="btn btn-sm" data-export="photo-svg" ${activeSession ? '' : 'disabled'}>SVG Contours</button>
           </div>
-          ${activeSession && activePhoto ? mapExportHtml(activePhoto) : ''}
-          ${countedOnlyCheckbox('export-counted-only', state.exportCountedOnly)}
+          ${activeSession && activePhoto ? photoGeometryExportHtml(state, activePhoto) : ''}
+          ${activeSession ? countedOnlyCheckbox('export-counted-only', state.exportCountedOnly) : ''}
           ${outlineResolutionWarningHtml(activeSession)}
         </div>
       </div>

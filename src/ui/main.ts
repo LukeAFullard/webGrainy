@@ -742,6 +742,9 @@ function renderAll(state: AppState): void {
     (state.activeModal === 'export' &&
       (prev.siteReport !== state.siteReport ||
         prev.exportCountedOnly !== state.exportCountedOnly ||
+        prev.exportWhat !== state.exportWhat ||
+        prev.exportFormat !== state.exportFormat ||
+        prev.exportCoords !== state.exportCoords ||
         prev.activeSiteId !== state.activeSiteId ||
         prev.activePhotoId !== state.activePhotoId ||
         prev.sessions !== state.sessions))

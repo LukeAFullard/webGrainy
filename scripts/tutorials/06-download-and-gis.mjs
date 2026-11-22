@@ -50,21 +50,23 @@ export async function run(d) {
 
   await d.caption('For GIS, open <b>Export</b>.', { hold: 0 });
   await d.click(page.locator('#topbar button', { hasText: 'Export' }), { after: 1200 });
-  await d.ring(page.locator('[data-export="photo-geojson-map"]').locator('xpath=../..'));
-  await d.caption('For a GeoTIFF, <b>GeoJSON (longitude/latitude)</b> opens in web maps, <b>GeoJSON for QGIS</b> keeps the photo\'s own coordinate system, and the <b>label mask GeoTIFF</b> opens in the right place in any GIS.');
+  await d.ring(page.locator('[data-export-opt="coords"]').locator('xpath=../..'));
+  await d.caption('Choose what to export (outlines, mask or photo), the format and the coordinates. For a GeoTIFF, <b>longitude / latitude</b> opens in web maps; <b>map coordinates</b> keep the photo\'s own coordinate system for QGIS.');
+  await page.selectOption('[data-export-opt="coords"]', 'lonlat');
+  await page.waitForTimeout(400);
   const warn = page.getByText('Outlines are coarser than the photo.').locator('xpath=..');
   if (await warn.count()) {
     await d.ring(warn);
     await d.caption('Check this note: outlines are traced on a smaller working copy, so their edges step by a few mm. Re-analyse at full scale for finer outlines.');
   }
   await d.ring(null);
-  const geojson = JSON.parse(readFileSync(await d.download('[data-export="photo-geojson-map"]', { after: 800 }), 'utf8'));
+  const geojson = JSON.parse(readFileSync(await d.download('[data-export="photo-geojson-lonlat"]', { after: 800 }), 'utf8'));
   const f = geojson.features[0];
   const ring0 = f.geometry.coordinates[0];
   await d.card('In the GeoJSON', `${geojson.features.length} grain outlines`, [
-    `crs: ${geojson.crs?.properties?.name ?? '(none)'}`,
+    'WGS84 longitude / latitude (opens in web maps)',
     `first outline starts at`,
-    `  E ${ring0[0][0].toFixed(3)}  N ${ring0[0][1].toFixed(3)}`,
+    `  lon ${ring0[0][0].toFixed(7)}, lat ${ring0[0][1].toFixed(7)}`,
     `${Object.keys(f.properties).slice(0, 6).join(', ')}, …`,
   ].join('\n'), 5000, { mono: true });
   await d.click('[data-action="close-modal"]', { after: 600 });

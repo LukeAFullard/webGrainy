@@ -83,6 +83,9 @@ First public release.
   projected raster without rotating it by the grid convergence (about 1.5° for NZTM), which made correct
   outlines look slightly rotated. Identical to GDAL's gdalwarp on the NZTM test tile.
 - Export option: outlines and masks of only the grains counted in the statistics, or (default) every grain.
+- Export dialog: outlines, mask and photo are exported through three choices (what, format, coordinates)
+  and one Download button, with a line describing the selected file, instead of one button per variant.
+  Coordinate options name the photo's own CRS.
 - The grain card says which cutoff excluded a grain and by how much (e.g. "b-axis 8.9 px < 15 px pixel
   cutoff"), instead of "below cutoff", which read as the segmentation Min Size.
 - Licence notices for the bundled `utif2` and `pako` and for the optional PULSE upscaler weights added

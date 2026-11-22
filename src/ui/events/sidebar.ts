@@ -277,6 +277,12 @@ export function handleSidebarChange(target: ControlLike, ctx: EventContext): boo
     ctx.store.setState({ downloadIncludeProject: target.checked === true });
     return true;
   }
+  const exportOpt = (target as { dataset?: Record<string, string | undefined> }).dataset?.['exportOpt'];
+  if (exportOpt === 'what' || exportOpt === 'format' || exportOpt === 'coords') {
+    const key = exportOpt === 'what' ? 'exportWhat' : exportOpt === 'format' ? 'exportFormat' : 'exportCoords';
+    ctx.store.setState({ [key]: (target as { value: string }).value } as never);
+    return true;
+  }
   if ((target.id === 'export-counted-only' || target.id === 'download-counted-only') && isInput(target)) {
     ctx.store.setState({ exportCountedOnly: target.checked === true });
     return true;
