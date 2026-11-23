@@ -570,6 +570,7 @@ export async function importProjectArchive(
   }
 
   const decodedResults: PhotoResultRecord[] = [];
+  const maskRefsSeen = new Set<number>();
   for (const [i, ar] of arch.results.entries()) {
     const ctx = `results[${i}]`;
     if (!ar || !isId(ar.photoId)) {
@@ -583,8 +584,18 @@ export async function importProjectArchive(
     if (payload !== null && serializedSession !== undefined) {
       const ss = serializedSession as unknown as Record<string, unknown>;
       const wi = isObj(ss['workingImage']) ? ss['workingImage'] : {};
-      const masks = new Uint8Array(await refSlice(ss['workingMasksRef'], `${ctx}.workingMasksRef`).arrayBuffer());
-      if (masks.byteLength % 4 !== 0) throw new ArchiveValidationError(`${ctx}: corrupt mask bytes.`);
+      // Check the mask's size against its image, and that no two results share one mask, before
+      // reading any bytes: a crafted file could otherwise make every result decode one huge part.
+      const maskBlob = refSlice(ss['workingMasksRef'], `${ctx}.workingMasksRef`);
+      if (!isDim(wi['width']) || !isDim(wi['height']) || maskBlob.size !== wi['width'] * wi['height'] * 4) {
+        throw new ArchiveValidationError(`${ctx}: mask size does not match its working image.`);
+      }
+      const maskOffset = (ss['workingMasksRef'] as ArchiveRef).offset;
+      if (maskOffset !== undefined && maskBlob.size > 0) {
+        if (maskRefsSeen.has(maskOffset)) throw new ArchiveValidationError(`${ctx}: mask bytes shared with another result.`);
+        maskRefsSeen.add(maskOffset);
+      }
+      const masks = new Uint8Array(await maskBlob.arrayBuffer());
       bytes = {
         masks: littleEndianBytesToInt32Bytes(masks),
         image: wi['dataRef'] !== undefined ? new Uint8Array(await refSlice(wi['dataRef'], `${ctx}.dataRef`).arrayBuffer()) : new Uint8Array(0),
@@ -602,13 +613,16 @@ export async function importProjectArchive(
     });
   }
 
+  const importedPhotoIds = new Set(decodedPhotos.map((p) => p.photoId));
+
   // ---- Phase 2: resolve id collisions (never overwrite existing data) -----------
   // Untrusted settings and dates: only values the app can set (an unbounded bootstrap count froze
   // the page on every start-up), and no record times in the future (they pin the site first).
   let site: SiteRecord = {
     siteId: arch.site.siteId,
     name: arch.site.name.slice(0, 1024),
-    photoOrder: arch.site.photoOrder.filter((id): id is string => isId(id)),
+    // Only photos in this file, each once (a dangling or repeated id would list a missing photo).
+    photoOrder: [...new Set(arch.site.photoOrder.filter((id): id is string => isId(id) && importedPhotoIds.has(id)))],
     ...(typeof arch.site.place === 'string' ? { place: arch.site.place } : {}),
     ...(typeof arch.site.surveyDate === 'string' ? { surveyDate: arch.site.surveyDate } : {}),
     options: sanitizeSiteOptions(arch.site.options),

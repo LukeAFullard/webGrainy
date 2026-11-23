@@ -23,7 +23,7 @@ import { analyzeSite, buildSiteExportMetadata } from '../src/modules/siteAnalysi
 import { buildSiteInputs } from '../src/modules/siteWorkspace.js';
 import { photoProcessingHistory } from '../src/modules/siteTypes.js';
 import { photoGeoreference } from '../src/modules/georef.js';
-import { sanitizeProvenance, sanitizeRecommendation, workingScaleFromSizes } from '../src/modules/archiveSanitize.js';
+import { sanitizeCalibration, sanitizePhotoMetadata, sanitizeProvenance, sanitizeRecommendation, workingScaleFromSizes } from '../src/modules/archiveSanitize.js';
 import { ImageGrainsEngine, type InferenceSessionLike } from '../src/index.js';
 import { createInitialState, type AppState } from '../src/ui/state.js';
 import { renderSidebarHtml, type SidebarView } from '../src/ui/panels/sidebar.js';
@@ -215,5 +215,20 @@ describe('import size limits', () => {
     header['photos'] = Array.from({ length: MAX_ARCHIVE_PHOTOS + 1 }, (_, i) => ({ ...header['photos'][0], photoId: `P${i}` }));
     const db = { indexedDB: createProjectMockIDB() };
     await expect(importProjectArchive(pack(header, payload), db)).rejects.toThrow(/at most 10000 photos/);
+  });
+});
+
+describe('scale and georeference checks (audit S12)', () => {
+  it('rebuilds a non-positive stored length from the points', () => {
+    const c = sanitizeCalibration({ mmPerPx: 0.5, pointA: { x: 0, y: 0 }, pointB: { x: 100, y: 0 }, physicalLengthMm: -50, pixelDistance: 0 })!;
+    expect(c.physicalLengthMm).toBe(50);
+    expect(c.pixelDistance).toBe(100);
+  });
+  it('drops a singular transform or a non-positive size', () => {
+    const g = (over: Record<string, unknown>) => sanitizePhotoMetadata({ georef: { transform: [1000, 0.01, 0, 5000, 0, -0.01], epsg: 2193, kind: 'projected', width: 10, height: 10, ...over } })?.georef;
+    expect(g({})).toBeDefined();
+    expect(g({ transform: [0, 0, 0, 0, 0, 0] })).toBeUndefined();
+    expect(g({ width: -10 })).toBeUndefined();
+    expect(g({ height: 0 })).toBeUndefined();
   });
 });

@@ -519,6 +519,18 @@ describe('modelCache', () => {
       'ig2_cpsam_fp16',
       'ig2_unet_fp32',
     ]);
+    // The optional PULSE upscaler shares the store but is not a segmentation model (audit S14).
+    await new Promise<void>((resolve, reject) => {
+      const req = indexedDB.open(DB_NAME, DB_VERSION);
+      req.onsuccess = () => {
+        const tx = req.result.transaction(STORE_NAME, 'readwrite');
+        tx.objectStore(STORE_NAME).put({ modelId: 'pulse_2x_fp32', data: new ArrayBuffer(4), sizeBytes: 4, cachedAt: 1 });
+        tx.oncomplete = () => { req.result.close(); resolve(); };
+        tx.onerror = () => reject(tx.error);
+      };
+      req.onerror = () => reject(req.error);
+    });
+    expect((await getCachedModels()).map((c) => c.modelId).sort()).toEqual(['ig2_cpsam_fp16', 'ig2_unet_fp32']);
     const unetMeta = cached.find((c) => c.modelId === 'ig2_unet_fp32');
     expect(unetMeta?.fileName).toBe('ig2_unet_fp32.onnx');
     expect(unetMeta?.sizeBytes).toBe(2);

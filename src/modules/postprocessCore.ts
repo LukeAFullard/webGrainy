@@ -790,7 +790,7 @@ export const POSTPROCESS_LIMITS: Readonly<Record<keyof PostProcessOptions, reado
   cellprobThreshold: [-20, 20, false],
   flowThreshold: [0, 10, false],
   minSize: [0, 1e7, true],
-  minSeedDensity: [0, 1e6, false],
+  minSeedDensity: [1, 1e6, false], // 0 would make every pixel a seed (one merged component, no grains)
   excludeBorderMargin: [0, 1000, true],
   maxGrainAreaFraction: [0, 1, false],
 };

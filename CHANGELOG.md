@@ -170,5 +170,11 @@ First public release.
 - Results `.zip`: photo folders are always unique (a crafted name could make the download fail), and
   README.txt describes the CSV metadata, the `|` escape, the *Open* button and the GeoTIFF files
   correctly.
+- Seed density 0 (library API or project file) is refused: it made every pixel a seed and found no grains.
+- Project import: a scale with a non-positive stored length, a georeference that is singular or has a
+  non-positive size, photo-order entries for photos not in the file, and masks that are shared between
+  results or do not match their image size are dropped or refused before any mask is decoded.
+- The cached-model list counts only the segmentation models (the optional upscaler inflated it), and
+  deleting or clearing a model makes a later copy be re-checked by SHA-256 in the same session.
 
 [0.1.0]: https://github.com/LukeAFullard/webGrainy/releases/tag/v0.1.0
