@@ -47,6 +47,8 @@ export interface SiteReportProvenance {
   settings: Array<[string, string]>;
   /** Photos whose outlines were edited by hand (persisted edits, not only this page's undo history). */
   manualEditsCount: number;
+  /** Photos whose outlines were tidied ("Tidy outlines": fragments reassigned, holes filled). */
+  tidiedPhotosCount: number;
   /** Photos with an image enhancement step before analysis. */
   enhancedPhotosCount: number;
   /** Largest detection limit of the photos (report unit), as used for the common cutoff. */
@@ -95,6 +97,7 @@ export function siteReportProvenance(
     models,
     settings,
     manualEditsCount: used.filter((i) => i.session.getManualEditCount() > 0).length,
+    tidiedPhotosCount: used.filter((i) => i.session.getTidyCount() > 0).length,
     enhancedPhotosCount: used.filter((i) => photoProcessingHistory(i.metadata).some((s) => s.step === 'enhancement')).length,
     ...(limits.length > 0 ? { detectionLimit: Math.max(...limits) } : {}),
     ...(scales.length > 0 ? { resolutionRangeMmPerPx: [Math.min(...scales), Math.max(...scales)] as [number, number] } : {}),

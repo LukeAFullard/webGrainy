@@ -46,6 +46,14 @@ First public release.
   `photo_footprints` layer with each photo's D16 / D50 / D84. In the photos' shared map CRS, or
   longitude/latitude when they differ.
 
+### Optional outline clean-up
+
+- **Tidy outlines** (toolbar, or photo list → *Select* → *Tidy outlines*), only when the user chooses
+  it: every grain becomes one solid piece. Detached specks of a grain join the neighbouring grain they
+  share the longest edge with, become grains of their own (at least *Min size*) or are removed; holes
+  enclosed by one grain are filled. One undo step per photo; recorded in exports and the printable
+  report. Checked on the 40 held-out test images (`validation/tidy/`), with before/after examples.
+
 ### Fixed before release (pre-publication audit)
 
 - Imported `.webgrainy` files are checked field by field; a crafted file can no longer inject markup or

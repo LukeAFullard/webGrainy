@@ -352,5 +352,7 @@ export interface SerializedAnalysisSession {
   provenance?: AnalysisProvenance;
   /** Manual outline edits (split, merge, delete, add) kept in the masks; undo subtracts. */
   manualEdits?: number;
+  /** Times "Tidy outlines" was applied and kept. */
+  outlinesTidied?: number;
 }
 

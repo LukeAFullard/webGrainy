@@ -66,6 +66,7 @@ function setup() {
     refreshCapabilities: vi.fn(async () => {}),
     applyCalibrationToActive: vi.fn(async () => {}),
     updateActiveRoi: vi.fn(),
+    tidyOutlines: vi.fn(async () => {}),
   };
   const ui = {
     renderSidebar: vi.fn(),
@@ -448,3 +449,16 @@ describe('clear-areas action', () => {
     expect(next).toEqual({ exclusionPolygons: [], exclusionStrokes: [], unresolvedFinesFraction: 0.2 });
   });
 });
+
+describe('Tidy outlines actions', () => {
+  it('the toolbar button tidies the photo shown; the photo-list action the selected photos', () => {
+    const { ctx, store, actions } = setup();
+    store.setState({ activePhotoId: 'p1', photos: [{ photoId: 'p1' } as never, { photoId: 'p2' } as never, { photoId: 'p3' } as never] });
+    routeClick(el({ 'data-action': 'tidy-outlines' }), () => undefined, ctx);
+    expect(actions.tidyOutlines).toHaveBeenLastCalledWith(['p1']);
+    store.setState({ selectedPhotoIds: new Set(['p2', 'p3']) });
+    routeClick(el({ 'data-action': 'photo-bulk', 'data-bulk': 'tidy' }), () => undefined, ctx);
+    expect(actions.tidyOutlines).toHaveBeenLastCalledWith(['p2', 'p3']);
+  });
+});
+

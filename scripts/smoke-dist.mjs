@@ -328,6 +328,12 @@ try {
     await page.waitForTimeout(500);
     if (/\d+ excluded by ROI/.test(await page.evaluate(() => document.body.innerText))) fail('Clear areas did not remove the ROI');
     console.log('ok: ROI tool excludes grains outside it; Clear areas removes it');
+    // Tidy outlines (optional clean-up): reports what it changed, or that nothing needed tidying.
+    await page.click('button[data-action="tidy-outlines"]');
+    await page.waitForFunction(() => /Tidied 1 photo|nothing to tidy/.test(document.body.innerText), null, { timeout: 15000 });
+    const tidyMsg = await page.evaluate(() => document.body.innerText.match(/(Tidied 1 photo[^\n]*|Tidy outlines: nothing to tidy[^\n]*)/)?.[0] ?? '');
+    if (/^Tidied/.test(tidyMsg)) await page.click('button[data-action="undo"]'); // keep the counts below as analysed
+    console.log(`ok: Tidy outlines: ${tidyMsg.slice(0, 120)}`);
     // GeoPackage export through the Export dialog: a valid SQLite / GeoPackage file.
     await page.locator('[data-open-modal="export"]:visible').first().click();
     await page.selectOption('select[data-export-opt="what"]', 'outlines');

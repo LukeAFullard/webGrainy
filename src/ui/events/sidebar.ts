@@ -206,6 +206,8 @@ export const sidebarActions: Record<string, ActionHandler> = {
     const n = `${ids.length} photo${ids.length === 1 ? '' : 's'}`;
     if (what === 'include' || what === 'exclude') {
       void ctx.actions.setPhotosIncluded(ids, what === 'include');
+    } else if (what === 'tidy') {
+      void ctx.actions.tidyOutlines(ids);
     } else if (what === 'reanalyse') {
       if (confirmDiscardEdits(ctx, ids)) void ctx.actions.runBatch(ids);
     } else if (what === 'delete') {

@@ -174,6 +174,13 @@ describe('panel renderers', () => {
     expect(cal.subToolbar).not.toBe(after.subToolbar);
   });
 
+  it('toolbar: Tidy outlines only once the photo is analysed', () => {
+    expect(renderToolbarHtml({ ...analysedState(), sessions: new Map() }).toolbar).not.toContain('data-action="tidy-outlines"');
+    const html = renderToolbarHtml(analysedState()).toolbar;
+    expect(html).toContain('data-action="tidy-outlines"');
+    expect(html).toContain('data-help="tidyOutlines"');
+  });
+
   it('toolbar: Undo rectify only for a rectified photo', () => {
     const st = analysedState();
     expect(renderToolbarHtml(st).toolbar).not.toContain('data-action="rectify-undo"');

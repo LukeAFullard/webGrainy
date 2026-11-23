@@ -228,6 +228,31 @@ webGrainy's own implementation of Cellpose's procedure.
 You can then correct the outlines by hand: split, merge, delete or draw grains, with undo.
 Edits are kept with the results, and the number of edited photos is reported.
 
+**Detached fragments and holes; optional *Tidy outlines*.** Step 4 gives a pixel to the grain
+whose centre its flow reaches, without checking that the pixel touches that grain. Near grain
+edges, where the predicted flows are weak (often in the dark gaps between stones), a few pixels
+can therefore carry a grain's label while lying apart from it, and small holes can be left
+inside a grain. Upstream Cellpose behaves the same way here (its clean-up fills holes and drops
+small grains, but does not split off detached parts). Such fragments pull a grain's moment
+ellipse and convex hull outward (long axis, Feret widths), and make its exported outline a
+multipart polygon.
+
+*Tidy outlines* is an optional clean-up the user applies to chosen photos; the analysis never
+applies it. It works on the label mask, as GIS raster clean-up does (GDAL's sieve filter, ArcGIS
+*Eliminate*), so measurements, masks and outlines stay consistent:
+
+1. Each grain's 4-connected parts are found (pixels meeting only at a corner are separate parts,
+   matching the traced outlines). The largest part remains the grain.
+2. Every other part with at least the minimum grain size becomes a grain of its own (a detached
+   blob of that size is more likely a separate stone). A smaller part joins the neighbouring
+   grain it shares the longest edge with, or becomes background if it touches no other grain.
+3. Background regions enclosed by one grain (not touching the image edge or another grain) are
+   filled, as Cellpose's `fill_holes_and_remove_small_masks` does. Gaps between grains are kept.
+
+Each photo's tidy is one undoable edit; it is saved with the results, stated in every export's
+provenance (`outlinesTidied`) and counted in the printable report. Its effect on the held-out test
+images is in Section 15.
+
 **Defaults** (changeable under *Advanced analysis*, but the defaults are the tested values):
 
 | Setting | Default |

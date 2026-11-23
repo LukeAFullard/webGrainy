@@ -52,6 +52,7 @@ export async function buildPrintableReport(st: AppState, site: SiteRecord, repor
     settings: prov.settings,
     ...(detectionLimit !== undefined ? { detectionLimit } : {}),
     manualEditsCount: prov.manualEditsCount,
+    tidiedPhotosCount: prov.tidiedPhotosCount,
     ...(prov.enhancedPhotosCount > 0 ? { enhancedPhotosCount: prov.enhancedPhotosCount } : {}),
     ...(resolutionRangeMmPerPx ? { resolutionRangeMmPerPx } : {}),
     psdSvg: renderPsdChartSvg({

@@ -477,6 +477,7 @@ export function bulkBarHtml(state: AppState): string {
     <button type="button" class="btn btn-xs" data-action="photo-bulk" data-bulk="include" ${dis}>Include</button>
     <button type="button" class="btn btn-xs" data-action="photo-bulk" data-bulk="exclude" ${dis}>Leave out</button>
     <button type="button" class="btn btn-xs" data-action="photo-bulk" data-bulk="reanalyse" ${dis}>Re-analyse</button>
+    <button type="button" class="btn btn-xs" data-action="photo-bulk" data-bulk="tidy" ${dis} title="Optional: make every grain one solid piece in the selected analysed photos (detached specks reassigned or removed, holes inside a grain filled). Undo restores each photo.">Tidy outlines</button>
     <button type="button" class="btn btn-xs btn-danger" data-action="photo-bulk" data-bulk="delete" ${dis}>Delete…</button>
   </div>`;
 }

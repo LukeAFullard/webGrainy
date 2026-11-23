@@ -152,6 +152,9 @@ function deserializeSessionFromArchive(
     ...(typeof archived.manualEdits === 'number' && Number.isFinite(archived.manualEdits) && archived.manualEdits >= 0
       ? { manualEdits: Math.min(1e9, Math.floor(archived.manualEdits)) }
       : {}),
+    ...(typeof archived.outlinesTidied === 'number' && Number.isFinite(archived.outlinesTidied) && archived.outlinesTidied >= 0
+      ? { outlinesTidied: Math.min(1e9, Math.floor(archived.outlinesTidied)) }
+      : {}),
   };
 }
 

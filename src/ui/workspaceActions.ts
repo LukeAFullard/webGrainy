@@ -773,6 +773,51 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
     store.setState({ statusMessage: message, ...(full ? { storageFullNotice: message } : {}) });
   }
 
+  /**
+   * "Tidy outlines" for the given analysed photos (only when the user chooses it): every grain
+   * becomes one solid piece (tidyGrains.ts). Each photo's tidy is one undoable step.
+   */
+  async function tidyOutlines(photoIds: readonly string[]): Promise<void> {
+    const state = store.getState();
+    if (state.batchRunning || enhancing) return;
+    const total = { photos: 0, unchanged: 0, merged: 0, removed: 0, split: 0, holes: 0 };
+    const saves: Array<Promise<void>> = [];
+    for (const id of photoIds) {
+      const session = state.sessions.get(id);
+      if (!session) continue;
+      const r = session.tidyOutlines();
+      if (!r) {
+        total.unchanged++;
+        continue;
+      }
+      total.photos++;
+      total.merged += r.fragmentsMerged;
+      total.removed += r.fragmentsRemoved;
+      total.split += r.fragmentsSplitOff;
+      total.holes += r.holesFilled;
+      saves.push(persistActiveSession(id, session));
+    }
+    recomputeReports();
+    await deps.syncViewport(false);
+    const parts = [
+      `${total.merged} fragment${total.merged === 1 ? '' : 's'} joined a neighbouring grain`,
+      `${total.removed} removed`,
+      ...(total.split > 0 ? [`${total.split} became grains of their own`] : []),
+      `${total.holes} hole${total.holes === 1 ? '' : 's'} filled`,
+    ];
+    store.setState({
+      statusMessage:
+        total.photos === 0
+          ? `Tidy outlines: nothing to tidy (no detached fragments or enclosed holes in ${total.unchanged} photo${total.unchanged === 1 ? '' : 's'}).`
+          : `Tidied ${total.photos} photo${total.photos === 1 ? '' : 's'}: ${parts.join(', ')}.${total.unchanged > 0 ? ` ${total.unchanged} already tidy.` : ''} Undo restores each photo.`,
+    });
+    try {
+      await Promise.all(saves);
+    } catch (err) {
+      reportSaveFailure(err, 'the tidied outlines');
+    }
+  }
+
   async function persistActiveSession(photoId: string, session: AnalysisSession): Promise<void> {
     const owner = store.getState().photos.find((p) => p.photoId === photoId);
     if (owner) deps.markSiteChanged(owner.siteId);
@@ -1220,6 +1265,7 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
     setPhotosIncluded,
     deletePhotos,
     persistActiveSession,
+    tidyOutlines,
     applyCalibrationToActive,
     applyRectificationToActive,
     undoRectificationActive,

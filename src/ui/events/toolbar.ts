@@ -138,6 +138,10 @@ export const toolbarActions: Record<string, ActionHandler> = {
   'enhance-deblur': (_el, ctx) => void ctx.actions.enhanceActivePhoto('deblur'),
   'enhance-revert': (_el, ctx) => void ctx.actions.revertActivePhotoEnhancement(),
   'rectify-undo': (_el, ctx) => void ctx.actions.undoRectificationActive(),
+  'tidy-outlines': (_el, ctx) => {
+    const id = ctx.store.getState().activePhotoId;
+    if (id) void ctx.actions.tidyOutlines([id]);
+  },
 };
 
 /** Tool buttons; returns true when handled. */
