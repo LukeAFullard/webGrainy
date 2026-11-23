@@ -287,7 +287,7 @@ export const HELP_TOPICS = {
     group: 'Tools',
     what: 'Straightens a photo taken at an angle, using four points that form a rectangle on the ground (e.g. quadrat corners).',
     default: 'Not applied',
-    when: 'Use whenever the camera was noticeably tilted. Re-analyse the photo afterwards.',
+    when: 'Use whenever the camera was noticeably tilted. Click the corners in order around the rectangle (top-left, top-right, bottom-right, bottom-left). Rectifying replaces the photo and cannot be undone: to start over, remove the photo and add the original again. Re-analyse the photo afterwards.',
   },
   exclusion: {
     title: 'ROI and exclusion tools',

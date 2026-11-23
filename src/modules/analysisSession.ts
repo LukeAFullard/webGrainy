@@ -761,10 +761,13 @@ export class AnalysisSession {
     cutoffs?: { minBaxisPx?: number; minSizeMm?: number };
   }): string {
     const sizeMetric = options?.sizeMetric ?? 'bAxis';
+    const hasFeret = sizeMetric === 'minFeret' || this.grains.some((g) => g.minFeretPx !== undefined);
+    // Grains added, split or merged after Feret widths were computed have none yet: compute
+    // them for every grain so the Feret columns are never left blank for edited grains.
+    if (hasFeret) this.ensureFeret();
     const statsIds = new Set(this.statsGrainsForSummaries(sizeMetric, options?.cutoffs).map((g) => g.id));
-    const hasFeret = this.grains.some((g) => g.minFeretPx !== undefined);
     const header =
-      'grain_id,centroid_x,centroid_y,area_px,a_axis_px,b_axis_px,d_eq_px,a_axis_mm,b_axis_mm,d_eq_mm' +
+      'grain_id,centroid_x,centroid_y,area_px,a_axis_px,b_axis_px,d_eq_px,a_axis_mm,b_axis_mm,d_eq_mm,area_mm2' +
       (hasFeret ? ',min_feret_px,max_feret_px,min_feret_mm,max_feret_mm' : '') +
       ',touches_border' +
       (this.roiConfig !== undefined ? ',in_roi' : '') +
@@ -792,6 +795,7 @@ export class AnalysisSession {
         g.aAxisMm !== undefined ? g.aAxisMm : '',
         g.bAxisMm !== undefined ? g.bAxisMm : '',
         g.dEqMm !== undefined ? g.dEqMm : '',
+        g.areaMm2 !== undefined ? g.areaMm2 : '',
         ...(hasFeret
           ? [
               g.minFeretPx !== undefined ? g.minFeretPx : '',

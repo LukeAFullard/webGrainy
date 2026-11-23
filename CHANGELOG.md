@@ -119,5 +119,16 @@ First public release.
   the results `.zip` or a download.
 - After the CPU inference worker crashes or is stopped, the next analysis loads the model again instead of
   failing on the dead worker's session until reload.
+- Library build: shared code is emitted to `dist/chunks/`, so `ImageGrainsEngine` with the default
+  `useWorker: true` finds `dist/workers/` (it resolved a worker URL outside `dist/`); the build now fails
+  if any relative worker URL in `dist/` points to a missing file.
+- Photo `grains.csv`: Feret widths are filled in for grains added, split or merged after Feret widths
+  were first computed (they were blank), and a new `area_mm2` column matches the site pooled CSV.
+- Statistics settings: a cleared or out-of-range number (e.g. an empty *Min b-axis*, which read as 0
+  and switched the resolution floor off, or 9,999,999 bootstrap replicates) is refused with a message,
+  using the same limits as imported projects; a cleared facies weight is refused too.
+- Rectify: corners clicked out of order (a crossed shape) are refused instead of scrambling the photo,
+  output pixels beyond the horizon of a strongly oblique photo stay empty instead of showing an
+  upside-down copy, and the toolbar and help say that rectifying replaces the photo.
 
 [0.1.0]: https://github.com/LukeAFullard/webGrainy/releases/tag/v0.1.0

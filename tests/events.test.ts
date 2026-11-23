@@ -317,6 +317,27 @@ describe('form changes', () => {
     expect(Number.isFinite(store.getState().siteOptions.maxExcludedFraction)).toBe(true);
   });
 
+  it('refuses cleared and out-of-range site statistics inputs (audit B15)', () => {
+    const { ctx, store, actions } = setup();
+    const before = store.getState().siteOptions;
+    const num = (key: string, value: string) =>
+      routeChange(el({ 'data-site-opt': key }, { tagName: 'INPUT', type: 'number', value }), ctx);
+    num('minBaxisPx', ''); // Number('') would be 0: the resolution floor silently off
+    num('minBaxisPx', '   ');
+    num('minBaxisPx', '-50');
+    num('maxExcludedFraction', '5');
+    num('bootstrapReplicates', '9999999');
+    num('bootstrapSeed', '1.5');
+    expect(store.getState().siteOptions).toEqual(before);
+    expect(actions.recomputeReports).not.toHaveBeenCalled();
+    expect(store.getState().statusMessage).toMatch(/Not changed/);
+    // Valid values still apply (replicates rounded like an imported project).
+    num('minBaxisPx', '20');
+    num('bootstrapReplicates', '1234.4');
+    expect(store.getState().siteOptions.minBaxisPx).toBe(20);
+    expect(store.getState().siteOptions.bootstrapReplicates).toBe(1234);
+  });
+
   it('clears pending calibration and rectify points when switching photos via keyboard shortcut', () => {
     const { ctx, store } = setup();
     store.setState({

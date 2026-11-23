@@ -288,8 +288,10 @@ export function handleSidebarChange(target: ControlLike, ctx: EventContext): boo
     return true;
   }
   if (isInput(target) && target.dataset['photoFacies']) {
-    const w = Number(target.value);
+    const raw = target.value.trim();
+    const w = raw === '' ? Number.NaN : Number(raw);
     if (Number.isFinite(w) && w >= 0) updatePhoto(ctx, target.dataset['photoFacies'], { faciesWeight: w });
+    else ctx.store.setState({ statusMessage: 'Not changed: a facies weight must be a number of 0 or more.' });
     return true;
   }
   if (isInput(target) && target.dataset['sitePlace'] !== undefined) {

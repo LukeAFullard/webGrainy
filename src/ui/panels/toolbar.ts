@@ -129,6 +129,7 @@ export function renderToolbarHtml(state: AppState): { toolbar: string; subToolba
       <span>4-Pt Rectify (${state.pendingRectifyPoints.length}/4 TL→TR→BR→BL):</span>
       <input class="input" id="rect-w" type="number" value="${rectW}" step="10" min="10" aria-label="Rectification physical width in mm" style="width:60px;padding:2px 6px;" title="Width (mm)" />×
       <input class="input" id="rect-h" type="number" value="${rectH}" step="10" min="10" aria-label="Rectification physical height in mm" style="width:60px;padding:2px 6px;" title="Height (mm)" />mm
+      <span class="field-hint" title="Rectifying replaces the photo in this site. To start over, remove the photo and add the original again.">Replaces the photo (no undo)</span>
     `;
   }
 

@@ -15,6 +15,7 @@ import {
 import { computeExtendedMorphometrics, computeFeretDiameters } from '../src/modules/morphometricsExt.js';
 import { csvCell, metadataCommentLines } from '../src/modules/provenance.js';
 import { AnalysisSession } from '../src/modules/pipelineController.js';
+import { ScaleCalibrator } from '../src/modules/interactiveEditor.js';
 import {
   getPhoto,
   getSite,
@@ -366,5 +367,26 @@ describe('F-13 archive import validation', () => {
     expect(({} as Record<string, unknown>)['polluted']).toBeUndefined();
     const photo = await getPhoto('ph-1', { indexedDB: idb });
     expect(Object.prototype.hasOwnProperty.call(photo, '__proto__')).toBe(false);
+  });
+});
+
+describe('audit B14: grains.csv after editing', () => {
+  it('fills Feret widths for grains added after Feret was computed, and has area_mm2 when calibrated', () => {
+    const s = makeSession();
+    s.setCalibration(ScaleCalibrator.calibrate({ x: 0, y: 0 }, { x: 10, y: 0 }, 20, 'mm'));
+    s.ensureFeret();
+    expect(s.addPolygonGrain([{ x: 20, y: 18 }, { x: 30, y: 18 }, { x: 30, y: 28 }, { x: 20, y: 28 }])).toBeGreaterThan(0);
+    const lines = s.exportCsv().split('\n');
+    const cols = lines[0]!.split(',');
+    const rows = lines.slice(1).map((l) => l.split(','));
+    expect(rows.length).toBe(3);
+    for (const name of ['min_feret_px', 'max_feret_px', 'min_feret_mm', 'max_feret_mm', 'area_mm2']) {
+      const i = cols.indexOf(name);
+      expect(i, name).toBeGreaterThan(0);
+      for (const r of rows) expect(Number(r[i]), `${name} of grain ${r[0]}`).toBeGreaterThan(0);
+    }
+    const area = cols.indexOf('area_px');
+    const areaMm2 = cols.indexOf('area_mm2');
+    expect(Number(rows[0]![areaMm2])).toBeCloseTo(Number(rows[0]![area]) * 4, 9); // 2 mm/px
   });
 });

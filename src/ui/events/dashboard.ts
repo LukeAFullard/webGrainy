@@ -1,6 +1,7 @@
 /** Results panel events: scope, tabs, chart options and downloads, site statistics settings, compare. */
 import { baseExportMetadata } from '../../modules/provenance.js';
 import { effectiveRoi } from '../../modules/siteWorkspace.js';
+import { sanitizeSiteOptions, SITE_OPTION_LIMITS } from '../../modules/siteOptions.js';
 import { comparisonCsv } from '../../modules/siteComparison.js';
 import { placeName } from '../../modules/sitePlaces.js';
 import type { DashboardTab } from '../state.js';
@@ -124,9 +125,21 @@ export function handleDashboardChange(target: ControlLike, ctx: EventContext): b
   const nextOpts = { ...st.siteOptions } as Record<string, unknown>;
   if (isInput(target) && target.type === 'checkbox') nextOpts[siteOptKey] = target.checked;
   else if (isInput(target) && target.type === 'number') {
-    const v = Number(target.value);
-    if (!Number.isFinite(v)) return true;
-    nextOpts[siteOptKey] = v;
+    // Same checks as a saved or imported site (siteOptions.ts): a cleared field (Number('') is 0)
+    // or an out-of-range value is refused and the field shows the current value again.
+    const raw = target.value.trim();
+    const v = raw === '' ? Number.NaN : Number(raw);
+    const checked = Number.isFinite(v)
+      ? (sanitizeSiteOptions({ poolingMode: 'physical-area', [siteOptKey]: v }) as unknown as Record<string, unknown>)[siteOptKey]
+      : undefined;
+    const known = siteOptKey in SITE_OPTION_LIMITS || siteOptKey === 'bootstrapSeed';
+    if (typeof checked !== 'number' && (known || !Number.isFinite(v))) {
+      const lim = (SITE_OPTION_LIMITS as Record<string, readonly [number, number]>)[siteOptKey];
+      const range = lim ? `a number from ${lim[0]} to ${lim[1]}` : siteOptKey === 'bootstrapSeed' ? 'a whole number from 0 to 4294967295' : 'a number';
+      ctx.store.setState({ siteOptions: { ...st.siteOptions }, statusMessage: `Not changed: this setting needs ${range}.` });
+      return true;
+    }
+    nextOpts[siteOptKey] = typeof checked === 'number' ? checked : v;
   } else if (isSelect(target)) {
     if (target.dataset['numeric'] === 'true') {
       const v = Number(target.value);

@@ -573,6 +573,26 @@ function edgeLen(a: Point2D, b: Point2D): number {
 }
 
 /**
+ * True when the corners, in order, form a strictly convex quadrilateral (every turn the same
+ * way). A crossed "bowtie" (corners clicked zig-zag) or a dented shape still gives a solvable
+ * homography, but not a meaningful one: it scrambles the photo.
+ */
+export function isConvexQuad(c: readonly [Point2D, Point2D, Point2D, Point2D]): boolean {
+  let sign = 0;
+  for (let i = 0; i < 4; i++) {
+    const a = c[i]!;
+    const b = c[(i + 1) % 4]!;
+    const d = c[(i + 2) % 4]!;
+    const cross = (b.x - a.x) * (d.y - b.y) - (b.y - a.y) * (d.x - b.x);
+    if (!Number.isFinite(cross) || Math.abs(cross) < 1e-9) return false;
+    const s = Math.sign(cross);
+    if (sign === 0) sign = s;
+    else if (s !== sign) return false;
+  }
+  return true;
+}
+
+/**
  * Performs 4-point planar homography perspective rectification on an RGBA buffer
  * using inverse bilinear interpolation.
  */
@@ -598,6 +618,11 @@ export function rectifyPerspective(
   }
 
   const [tl, tr, br, bl] = input.srcCorners;
+  if (!isConvexQuad(input.srcCorners)) {
+    throw new Error(
+      'The four corners must outline the rectangle without crossing: click them in order around it (top-left, top-right, bottom-right, bottom-left).',
+    );
+  }
   const meanWpx = 0.5 * (edgeLen(tl, tr) + edgeLen(bl, br));
   const meanHpx = 0.5 * (edgeLen(tl, bl) + edgeLen(tr, br));
   if (meanWpx < 1 || meanHpx < 1) {
@@ -661,12 +686,16 @@ export function rectifyPerspective(
   const maxSrcX = srcW - 1;
   const maxSrcY = srcH - 1;
   const eps = 1e-6;
+  // The homogeneous coordinate has one sign over the ground in front of the camera (take it at
+  // the centre of the reference rectangle). Output pixels where it flips lie beyond the horizon:
+  // they would map to an upside-down copy of the photo, so they stay empty.
+  const wSign = Math.sign(ih20 * (paddingPx + refW / 2) + ih21 * (paddingPx + refH / 2) + ih22) || 1;
 
   for (let y = 0; y < outH; y++) {
     const rowOutOffset = y * outW * 4;
     for (let x = 0; x < outW; x++) {
       const w = ih20 * x + ih21 * y + ih22;
-      if (Math.abs(w) < 1e-12) continue;
+      if (w * wSign <= 1e-12) continue;
 
       const u = (ih00 * x + ih01 * y + ih02) / w;
       const v = (ih10 * x + ih11 * y + ih12) / w;
