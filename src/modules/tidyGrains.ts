@@ -9,7 +9,9 @@
  *    largest part stays the grain. Every other part:
  *      - with at least `minSize` pixels becomes a grain of its own;
  *      - else joins the neighbouring grain it shares the longest edge with (like GDAL's sieve
- *        filter / ArcGIS Eliminate), or becomes background if it touches no other grain.
+ *        filter / ArcGIS Eliminate), or becomes background if it touches no other grain. It may
+ *        join only a settled part (a grain's main part, or a fragment that already joined one),
+ *        never another grain's stray fragment, so afterwards every grain is one 4-connected piece.
  * 2. Holes. Background regions enclosed by a single grain (not touching the image edge or another
  *    grain) are filled, as Cellpose does for every mask; gaps between two grains are left.
  */
@@ -85,44 +87,73 @@ export function tidyLabelMask(masks: Int32Array, width: number, height: number, 
     changedPixels: 0, bbox: null, affectedIds: new Set(), newIds: [],
   };
 
-  // Decide every fragment from the original mask, then apply.
-  const target = new Map<number, number>();
+  // Final label of every part: main parts keep their grain; fragments of at least minSize
+  // become grains of their own. Smaller fragments may only join a part that is already settled
+  // (a grain's main part, a split-off grain, or a fragment that joined one in an earlier
+  // round), so a fragment never joins another grain's stray fragment and is left detached.
+  // Rounds are synchronous (decided from the previous round), so the result does not depend
+  // on scan order; a chain of specks reaching a grain joins it one link per round.
+  const finalOf = new Int32Array(partLabel.length).fill(-1);
+  const pending: number[] = [];
   for (let id = 0; id < partLabel.length; id++) {
     const lbl = partLabel[id]!;
-    if (mainPart.get(lbl) === id) continue;
+    if (mainPart.get(lbl) === id) {
+      finalOf[id] = lbl;
+      continue;
+    }
     result.affectedIds.add(lbl);
     if (partSize[id]! >= minSize) {
       const nid = ++maxId;
-      target.set(id, nid);
+      finalOf[id] = nid;
       result.newIds.push(nid);
       result.affectedIds.add(nid);
       result.fragmentsSplitOff++;
       continue;
     }
-    // Shared edge length with each neighbouring grain.
-    const edges = new Map<number, number>();
-    for (let k = partStart[id]!; k < partStart[id]! + partSize[id]!; k++) {
-      const p = order[k]!;
-      const x = p % width;
-      const nb = [x > 0 ? p - 1 : -1, x < width - 1 ? p + 1 : -1, p - width, p + width];
-      for (const q of nb) {
-        if (q < 0 || q >= n) continue;
-        const o = before[q]!;
-        if (o > 0 && o !== lbl) edges.set(o, (edges.get(o) ?? 0) + 1);
-      }
-    }
-    let best = 0;
-    let bestLen = 0;
-    for (const [o, len] of edges) if (len > bestLen || (len === bestLen && o < best)) { best = o; bestLen = len; }
-    target.set(id, best);
-    if (best > 0) {
-      result.fragmentsMerged++;
-      result.affectedIds.add(best);
-    } else {
-      result.fragmentsRemoved++;
-    }
+    pending.push(id);
   }
-  for (const [id, to] of target) {
+  let undecided = pending;
+  while (undecided.length > 0) {
+    const decided: Array<[number, number]> = [];
+    const still: number[] = [];
+    for (const id of undecided) {
+      // Shared edge length with each settled neighbouring part, by its final grain.
+      const edges = new Map<number, number>();
+      for (let k = partStart[id]!; k < partStart[id]! + partSize[id]!; k++) {
+        const p = order[k]!;
+        const x = p % width;
+        const nb = [x > 0 ? p - 1 : -1, x < width - 1 ? p + 1 : -1, p - width, p + width];
+        for (const q of nb) {
+          if (q < 0 || q >= n) continue;
+          const pq = part[q]!;
+          if (pq < 0 || pq === id) continue;
+          const f = finalOf[pq]!;
+          if (f > 0) edges.set(f, (edges.get(f) ?? 0) + 1);
+        }
+      }
+      let best = 0;
+      let bestLen = 0;
+      for (const [o, len] of edges) if (len > bestLen || (len === bestLen && o < best)) { best = o; bestLen = len; }
+      if (best > 0) decided.push([id, best]);
+      else still.push(id);
+    }
+    if (decided.length === 0) break;
+    for (const [id, to] of decided) {
+      finalOf[id] = to;
+      result.fragmentsMerged++;
+      result.affectedIds.add(to);
+    }
+    undecided = still;
+  }
+  // Fragments that reach no settled grain (stray specks in the background, or clusters of
+  // specks of several grains) are removed.
+  for (const id of undecided) {
+    finalOf[id] = 0;
+    result.fragmentsRemoved++;
+  }
+  for (let id = 0; id < partLabel.length; id++) {
+    const to = finalOf[id]!;
+    if (to === partLabel[id]) continue;
     for (let k = partStart[id]!; k < partStart[id]! + partSize[id]!; k++) masks[order[k]!] = to;
   }
 

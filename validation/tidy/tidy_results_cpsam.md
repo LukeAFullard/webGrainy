@@ -11,9 +11,9 @@ same statistic of the hand outlines. Produced by `validation/tidy/tidy_heldout.m
 | Median D50 error | 2.9% | 2.6% |
 | Mean D50 error | 8.9% | 8.7% |
 
-- Images with detached fragments or enclosed holes: 36 of 40; grains made of more than one piece: 339 of 4352.
-- Fragments: 423 joined a neighbouring grain, 215 removed, 0 became grains of their own; 152 holes filled.
+- Images with detached fragments or enclosed holes: 36 of 40; grains made of more than one piece: 339 of 4352 before Tidy, **0 after** (every grain should be one piece).
+- Fragments: 404 joined a neighbouring grain, 234 removed, 0 became grains of their own; 152 holes filled.
 - Pixels changed: median 0.003% of an image (max 0.160%).
-- Change per image (after − before): PQ median 0.0000 (range -0.0002 to 0.0007); D50 error median 0.00 percentage points (range -4.48 to 0.13); D50 itself median 0.00%.
+- Change per image (after − before): PQ median 0.0000 (range -0.0002 to 0.0007); D50 error median -0.00 percentage points (range -4.48 to 0.13); D50 itself median 0.00%.
 
 Examples (the photos with the most multi-part grains): `example_cpsam_1.png`, `example_cpsam_2.png`, `example_cpsam_3.png`.

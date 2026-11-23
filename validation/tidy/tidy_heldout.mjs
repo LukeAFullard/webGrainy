@@ -18,7 +18,7 @@ import { dirname, join, resolve } from 'node:path';
 import * as ort from 'onnxruntime-web';
 import { chromium } from 'playwright';
 import UTIF from 'utif2';
-import { APP_VERSION, ImageGrainsEngine, computeAllGrainMorphometrics, computeSedimentStats } from '../../dist/index.js';
+import { APP_VERSION, AnalysisSession, ImageGrainsEngine, computeAllGrainMorphometrics, computeSedimentStats } from '../../dist/index.js';
 import { resizeLabelsNearest } from '../../dist/modules/exportFormats.js';
 
 const ROOT = resolve(dirname(new URL(import.meta.url).pathname), '..', '..');
@@ -116,6 +116,44 @@ const engine = new ImageGrainsEngine({
 });
 await engine.initialize();
 
+/** Bumped when Tidy outlines changes: cached analyses are then tidied again (no new inference). */
+const TIDY_VERSION = 2;
+
+/**
+ * Tidies a cached analysis again: the session is rebuilt from the cached (untidied) working mask
+ * and checked against the cached "before" scores, so the "after" scores come from the same analysis.
+ */
+function retidy(row, wi, gt, old) {
+  const before = i32(join(CACHE, `${row.uid}.before.i32`));
+  const session = new AnalysisSession({
+    workingImage: { data: new Uint8ClampedArray(0), width: wi.width, height: wi.height, originalWidth: gt.w, originalHeight: gt.h, effectiveScaleFactor: wi.width / gt.w, scaleModeApplied: 'auto' },
+    recommendation: { model: kind, confidence: 1, reason: 'cached', metrics: {} },
+    masks: before.slice(),
+    workingGrains: computeAllGrainMorphometrics(before, wi.width, wi.height, 2),
+    excludeBorder: true,
+    borderMargin: 2,
+  });
+  const atPhoto = () => resizeLabelsNearest(session.getWorkingMasks(), wi.width, wi.height, gt.w, gt.h);
+  const gtD50 = d50(computeAllGrainMorphometrics(gt.labels, gt.w, gt.h, 2));
+  const pqBefore = pq(gt.labels, atPhoto());
+  const d50Before = session.getStats('bAxis', { minBaxisPx: 15 }).areaWeightedB.D50;
+  if (Math.abs(pqBefore - old.pqBefore) > 1e-9 || Math.abs(err(d50Before, gtD50) - old.d50ErrBefore) > 1e-6) {
+    throw new Error(`${row.uid}: the rebuilt analysis does not match the cached one (PQ ${pqBefore} vs ${old.pqBefore}, D50 error ${err(d50Before, gtD50)} vs ${old.d50ErrBefore})`);
+  }
+  const t = session.tidyOutlines();
+  const d50After = session.getStats('bAxis', { minBaxisPx: 15 }).areaWeightedB.D50;
+  return {
+    ...old,
+    tidyVersion: TIDY_VERSION,
+    multipartAfter: partsOf(session.getWorkingMasks(), wi.width),
+    merged: t?.fragmentsMerged ?? 0, removed: t?.fragmentsRemoved ?? 0, splitOff: t?.fragmentsSplitOff ?? 0, holes: t?.holesFilled ?? 0,
+    changedPct: t ? (t.changedPixels / (wi.width * wi.height)) * 100 : 0,
+    pqAfter: pq(gt.labels, atPhoto()),
+    d50ErrAfter: err(d50After, gtD50), d50ChangePct: ((d50After - d50Before) / d50Before) * 100,
+    afterMasks: session.getWorkingMasks().slice(),
+  };
+}
+
 const results = [];
 const examples = [];
 let stopped = false;
@@ -123,8 +161,20 @@ for (const [i, row] of rows.entries()) {
   const cached = join(CACHE, `${row.uid}.json`);
   if (existsSync(cached)) {
     const { r, wi } = JSON.parse(readFileSync(cached, 'utf8'));
-    results.push(r);
-    examples.push({ r, row, wi });
+    if (r.tidyVersion === TIDY_VERSION) {
+      results.push(r);
+      examples.push({ r, row, wi });
+      continue;
+    }
+    // Cached by an earlier Tidy: tidy the cached analysis again (no new inference).
+    const gt = readMask(local(row.mask));
+    const r2 = retidy(row, wi, gt, r);
+    writeFileSync(join(CACHE, `${row.uid}.after.i32`), Buffer.from(r2.afterMasks.buffer));
+    delete r2.afterMasks;
+    writeFileSync(cached, JSON.stringify({ r: r2, wi }));
+    results.push(r2);
+    examples.push({ r: r2, row, wi });
+    console.log(`${i + 1}/${rows.length} ${row.uid}: re-tidied; ${r2.multipartAfter} multi-part grains left; PQ ${r2.pqBefore.toFixed(3)} -> ${r2.pqAfter.toFixed(3)}; D50 err ${r2.d50ErrBefore.toFixed(1)}% -> ${r2.d50ErrAfter.toFixed(1)}%`);
     continue;
   }
   if (Date.now() - t0 > MAX_MS) {
@@ -142,6 +192,7 @@ for (const [i, row] of rows.entries()) {
   const t = session.tidyOutlines();
   const after = { masks: atPhoto(), d50: session.getStats('bAxis', { minBaxisPx: 15 }).areaWeightedB.D50, grains: session.getResult().grainCount };
   const r = {
+    tidyVersion: TIDY_VERSION, multipartAfter: partsOf(session.getWorkingMasks(), wi.width),
     uid: row.uid, site: row.site, grains: before.grains, multipartGrains: multipart,
     merged: t?.fragmentsMerged ?? 0, removed: t?.fragmentsRemoved ?? 0, splitOff: t?.fragmentsSplitOff ?? 0, holes: t?.holesFilled ?? 0,
     changedPct: t ? (t.changedPixels / (wi.width * wi.height)) * 100 : 0,
@@ -263,11 +314,13 @@ await browser.close();
 
 // Results.
 const n = results.length;
+const leftInPieces = results.reduce((s, r) => s + r.multipartAfter, 0);
+if (leftInPieces > 0) console.error(`WARNING: ${leftInPieces} grains are still in several pieces after Tidy`);
 const imgsWith = results.filter((r) => r.multipartGrains > 0 || r.holes > 0).length;
 const pqD = results.map((r) => r.pqAfter - r.pqBefore);
 const d50D = results.map((r) => r.d50ErrAfter - r.d50ErrBefore);
-const csv = ['uid,site,grains,multipart_grains,fragments_merged,fragments_removed,fragments_split_off,holes_filled,changed_pixels_pct,pq_before,pq_after,d50_err_before_pct,d50_err_after_pct,d50_change_pct',
-  ...results.map((r) => [r.uid, r.site, r.grains, r.multipartGrains, r.merged, r.removed, r.splitOff, r.holes, r.changedPct.toFixed(4), r.pqBefore.toFixed(4), r.pqAfter.toFixed(4), r.d50ErrBefore.toFixed(3), r.d50ErrAfter.toFixed(3), r.d50ChangePct.toFixed(3)].join(','))].join('\n');
+const csv = ['uid,site,grains,multipart_grains,multipart_grains_after_tidy,fragments_merged,fragments_removed,fragments_split_off,holes_filled,changed_pixels_pct,pq_before,pq_after,d50_err_before_pct,d50_err_after_pct,d50_change_pct',
+  ...results.map((r) => [r.uid, r.site, r.grains, r.multipartGrains, r.multipartAfter, r.merged, r.removed, r.splitOff, r.holes, r.changedPct.toFixed(4), r.pqBefore.toFixed(4), r.pqAfter.toFixed(4), r.d50ErrBefore.toFixed(3), r.d50ErrAfter.toFixed(3), r.d50ChangePct.toFixed(3)].join(','))].join('\n');
 writeFileSync(join(OUT, `tidy_per_image_${kind}.csv`), `${csv}\n`);
 const md = `# Tidy outlines on the held-out test images (${kind === 'unet' ? 'U-Net' : 'Cellpose-SAM INT8'})
 
@@ -282,7 +335,7 @@ same statistic of the hand outlines. Produced by \`validation/tidy/tidy_heldout.
 | Median D50 error | ${median(results.map((r) => r.d50ErrBefore)).toFixed(1)}% | ${median(results.map((r) => r.d50ErrAfter)).toFixed(1)}% |
 | Mean D50 error | ${mean(results.map((r) => r.d50ErrBefore)).toFixed(1)}% | ${mean(results.map((r) => r.d50ErrAfter)).toFixed(1)}% |
 
-- Images with detached fragments or enclosed holes: ${imgsWith} of ${n}; grains made of more than one piece: ${results.reduce((s, r) => s + r.multipartGrains, 0)} of ${results.reduce((s, r) => s + r.grains, 0)}.
+- Images with detached fragments or enclosed holes: ${imgsWith} of ${n}; grains made of more than one piece: ${results.reduce((s, r) => s + r.multipartGrains, 0)} of ${results.reduce((s, r) => s + r.grains, 0)} before Tidy, **${results.reduce((s, r) => s + r.multipartAfter, 0)} after** (every grain should be one piece).
 - Fragments: ${results.reduce((s, r) => s + r.merged, 0)} joined a neighbouring grain, ${results.reduce((s, r) => s + r.removed, 0)} removed, ${results.reduce((s, r) => s + r.splitOff, 0)} became grains of their own; ${results.reduce((s, r) => s + r.holes, 0)} holes filled.
 - Pixels changed: median ${median(results.map((r) => r.changedPct)).toFixed(3)}% of an image (max ${Math.max(...results.map((r) => r.changedPct)).toFixed(3)}%).
 - Change per image (after − before): PQ median ${median(pqD).toFixed(4)} (range ${Math.min(...pqD).toFixed(4)} to ${Math.max(...pqD).toFixed(4)}); D50 error median ${median(d50D).toFixed(2)} percentage points (range ${Math.min(...d50D).toFixed(2)} to ${Math.max(...d50D).toFixed(2)}); D50 itself median ${median(results.map((r) => r.d50ChangePct)).toFixed(2)}%.

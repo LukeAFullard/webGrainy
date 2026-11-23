@@ -331,6 +331,9 @@ QGIS *Delete holes*):
   parts, as in the outlines), and the largest part stays the grain.
 - Every other part joins the neighbouring grain it shares the longest edge with; becomes a grain
   of its own if it has at least *Min size* pixels; or is removed if it touches no other grain.
+  A speck joins only a grain's main body (or a speck already joined to one), so a cluster of
+  specks of several grains floating in a gap between stones is removed. Afterwards every grain
+  is one piece: in a GIS each grain is a single polygon.
 - Holes enclosed by one grain are filled, as Cellpose does. Gaps between two grains are kept.
 
 Each photo's tidy is one undo step, and exports and the printable report say it was applied.
