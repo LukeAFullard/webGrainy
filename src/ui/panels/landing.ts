@@ -530,6 +530,7 @@ export function renderWorkflowSectionHtml(activeStep: WorkflowStepId): string {
               role="tab"
               class="workflow-tab"
               id="wf-tab-${esc(step.id)}"
+              aria-controls="wf-panel-${esc(step.id)}"
               data-action="workflow-step"
               data-step="${esc(step.id)}"
               aria-selected="${selected ? 'true' : 'false'}"
@@ -659,7 +660,7 @@ export function renderLandingHtml(state: AppState, view: LandingView): string {
             </button>
           </div>
 
-          <div class="landing-drop-callout" id="landing-dropzone" data-action="add-photos" role="button" tabindex="0" aria-label="Add or drop gravel photos or a .webgrainy project archive to start">
+          <div class="landing-drop-callout" id="landing-dropzone" data-action="add-photos" role="button" tabindex="0">
             <strong>Drop gravel photos or a <code>.webgrainy</code> project file anywhere on this page</strong>
             <span>Supports JPEG, PNG, WebP, TIFF &amp; GeoTIFF · Stored only in this browser${siteCount > 0 ? ` · ${siteCount} saved site${siteCount === 1 ? '' : 's'} here` : ''}</span>
           </div>

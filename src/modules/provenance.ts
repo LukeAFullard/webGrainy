@@ -29,7 +29,7 @@ export const CITATION_NOTICE =
  * keeps them in step.
  */
 export const ACCURACY_NOTICE =
-  'Accuracy: on the held-out ImageGrains 2.0 test photos (new photos of the 13 training sites, mostly analysed at full resolution), the median D50 error was 2.9% with Cellpose-SAM and 5.7% with U-Net, but 5% and 10% of photos had D50 errors above 50%. Accuracy at new sites and on large photos analysed at reduced resolution is not established; check the outlines.';
+  'Accuracy: on the held-out ImageGrains 2.0 test photos (held-out tiles from the 13 training sites, many cut from the same source photos as training tiles, mostly analysed at full resolution), the median D50 error was 2.9% with Cellpose-SAM and 5.7% with U-Net, but 5% and 10% of photos had D50 errors above 50%. Accuracy at new sites and on large photos analysed at reduced resolution is not established; check the outlines.';
 
 /** Definition of the reported "b-axis" size metric, included in every export. */
 export const SIZE_METRIC_DEFINITION =

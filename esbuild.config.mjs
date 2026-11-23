@@ -248,6 +248,9 @@ const SHELL_ASSETS = [
   './workers/ortWasm.worker.js',
   './gpucheck.html',
   './ui/gpucheck.js',
+  // Linked from the About dialog: available offline too.
+  './LICENSE.txt',
+  './THIRD_PARTY_NOTICES.md',
 ];
 const ORT_ASSETS = ORT_RUNTIME_FILES.map((f) => `./ort/${f}`);
 const hash = crypto.createHash('sha256');

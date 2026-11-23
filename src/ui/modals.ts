@@ -171,7 +171,7 @@ export function renderModelsModalHtml(
         <h2 id="dialog-title" class="modal-title">Offline ONNX Model Cache (IndexedDB: imagegrains-onnx-cache-v1)</h2>
         <button type="button" class="btn btn-sm" data-action="close-modal" autofocus>Close</button>
       </div>
-      <div class="modal-body">
+      <div class="modal-body" tabindex="0">
         <div class="basis-banner">
           Models are streamed client-side from <code>inYourOwnBrowser/imagegrains-2.0-onnx</code> on Hugging Face and cached locally in IndexedDB for offline use. User photos never leave your device.
         </div>
@@ -409,7 +409,7 @@ export function renderDownloadResultsModalHtml(state: AppState): string {
         <h2 id="dialog-title" class="modal-title">Download results${site ? `: ${esc(site.name)}` : ''}</h2>
         <button type="button" class="btn btn-sm" data-action="close-modal">Close</button>
       </div>
-      <div class="modal-body">
+      <div class="modal-body" tabindex="0">
         <p>One .zip with every result file of this site (${analysed} analysed photo${analysed === 1 ? '' : 's'}): site summary (CSV and JSON), pooled grains, grain-size curve and printable report; for each photo its grains, summary, label mask and outlines; and a README describing the files.${
           state.photos.some((p) => state.sessions.has(p.photoId) && photoGeoreference(p).georef)
             ? ' GeoTIFF photos also get their outlines in map coordinates and a world file that places the mask on the map; the other files use photo pixels.'
@@ -459,7 +459,7 @@ export function renderExportModalHtml(state: AppState): string {
         <h2 id="dialog-title" class="modal-title">Export (files are made in your browser)</h2>
         <button type="button" class="btn btn-sm" data-action="close-modal" autofocus>Close</button>
       </div>
-      <div class="modal-body">
+      <div class="modal-body" tabindex="0">
         <div class="stat-card" style="padding:10px;">
           <div style="font-weight:700;margin-bottom:6px;">Site-Level Exports (${activeSite ? esc(activeSite.name) : 'No Site'})</div>
           ${siteDisabledReason ? `<div class="warning-banner" style="margin-bottom:8px;">${esc(siteDisabledReason)}</div>` : ''}
@@ -496,7 +496,7 @@ export function renderAboutModalHtml(): string {
         <h2 id="dialog-title" class="modal-title">About, Privacy &amp; Scientific Citations</h2>
         <button type="button" class="btn btn-sm" data-action="close-modal" autofocus>Close</button>
       </div>
-      <div class="modal-body">
+      <div class="modal-body" tabindex="0">
         <div class="warning-banner" style="line-height:1.5;">
           <strong>Disclaimer &amp; Attribution:</strong> This is an <strong>independent, unofficial</strong> browser implementation and is <strong>not affiliated with, endorsed by, or maintained by</strong> the original ImageGrains or Cellpose authors. It is an independent effort to convert and quantize the pretrained weights into ONNX (<code>inYourOwnBrowser/imagegrains-2.0-onnx</code>) and build a browser-native processing pipeline around them. The architecture, post-processing, and workflows differ from the official Python library at <strong>dmair1989/imagegrains</strong>. Please cite the original authors' work below if you use these models or methods.
         </div>

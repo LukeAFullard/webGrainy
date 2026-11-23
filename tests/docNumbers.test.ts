@@ -30,6 +30,17 @@ describe('quoted validation figures match the results files', () => {
     expect(prov).toContain(`median D50 error was ${median(cpsam)} with Cellpose-SAM and ${median(unet)} with U-Net, but ${tail(cpsam)} and ${tail(unet)} of photos had D50 errors above 50%`);
   });
 
+  it('held-out accuracy in the settings guide (section 11 table)', () => {
+    const rows = rowsOf(read('validation/heldout/heldout_app_results.md'));
+    const guide = read('docs/SETTINGS_GUIDE.md');
+    const pct = (cell: string): number => Number(cell.split(' ')[0]!.replace('%', ''));
+    for (const [label, r] of [['Cellpose-SAM', rows.find((x) => x[0]!.startsWith('Cellpose-SAM'))!], ['U-Net', rows.find((x) => x[0] === 'U-Net')!]] as const) {
+      const n = Number(r[1]);
+      const off = Math.round((pct(r[5]!) / 100) * n);
+      expect(guide, label).toContain(`| **${label}** | about ${Math.round(pct(r[3]!))}% | about ${Math.round(pct(r[2]!))}% | ${off} of ${n} |`);
+    }
+  });
+
   it('min-Feret vs b-axis D50 (help and settings guide)', () => {
     const rows = rowsOf(read('validation/heldout/feret_ratio_results.md')).filter((r) => r[0] === 'U-Net' || r[0]!.startsWith('Cellpose-SAM'));
     const median = rows.map((r) => Number(r[2]!.replace('%', '')));

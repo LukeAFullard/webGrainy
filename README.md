@@ -59,7 +59,7 @@ Measured on the held-out test split of the ImageGrains 2.0 data (`IG2_data.zip`,
 | Cellpose-SAM | webGrainy | 8.9% [4.0, 15.6] | 2.9% [2.0, 4.9] | 6.3% / 1.3% | 0.652 |
 | Cellpose-SAM | ImageGrains (PyTorch) | 14.3% [8.0, 21.8] | 4.4% [2.4, 8.3] | 8.7% / 2.0% | 0.642 |
 
-- **Within-site, not unseen sites.** All 13 sites also contributed training images, so these figures describe new photos of familiar sites, not new rivers.
+- **Within-site, not unseen sites.** All 13 sites also contributed training images, and more than half of the test images (at least 22 of 40) are tiles cut from the same source photo, orthomosaic or CT scan as training tiles. These figures therefore describe held-out tiles of familiar beds, closer to an optimistic within-photo estimate than to new photos, and say nothing about new rivers.
 - **Tails are long.** 5% of Cellpose-SAM images and 10% of U-Net images have D50 errors above 50% (17.5% of U-Net images in the earlier benchmark below). Check the outlines.
 - **Quantized weights.** INT8 and FP4 Cellpose-SAM give the same benchmark accuracy as FP16 (outline agreement with FP16: PQ 0.994 and 0.966).
 - **Field comparison (one site).** At the K1 site, with the field count's 13 mm minimum applied to the photos, the app's D50 agrees with a 251-stone pebble count within 3% and D84 within 5–6% (both models). Without that cutoff, Cellpose-SAM's D50 is 31% finer and U-Net's 22% finer, because the photos include the many grains below 13 mm the count skipped. This is a consistency check, not an independent validation: both photos overlap the ImageGrains training data. To compare with a field count, set **Field-count cutoff (mm)** to its minimum size. Details: [`validation/k1/k1_app_results.md`](validation/k1/k1_app_results.md).

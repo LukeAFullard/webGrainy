@@ -176,5 +176,17 @@ First public release.
   results or do not match their image size are dropped or refused before any mask is decoded.
 - The cached-model list counts only the segmentation models (the optional upscaler inflated it), and
   deleting or clearing a model makes a later copy be re-checked by SHA-256 in the same session.
+- Offline and updates: the licence and third-party notices linked from *About* are precached, and the
+  page itself is served from the same build's cache as its scripts (a newer page with older scripts
+  could mismatch); new versions are still found and offered as before.
+- Accessibility: the landing drop zone's accessible name matches its visible text; workflow tabs name
+  their panels; scrollable dialog bodies can be scrolled from the keyboard; workspace shortcuts no
+  longer act while the landing page is shown; contrast fixes for grain-card flags (light), completed
+  guide steps (dark), photo errors and remove links (dark) and the GPU check page.
+- Docs: the held-out benchmark is described as held-out tiles from the training sites (more than half
+  cut from the same source photos as training tiles, so the figures are optimistic), in the README,
+  METHODS, the settings guide and every export's accuracy note; the settings guide's accuracy table,
+  U-Net figure, CLAHE recipe and *Copy scale to photos…* name are corrected, and a test keeps its
+  table in step with the results file.
 
 [0.1.0]: https://github.com/LukeAFullard/webGrainy/releases/tag/v0.1.0

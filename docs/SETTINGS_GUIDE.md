@@ -84,7 +84,7 @@ analyse a photo. They do not change photos that are already analysed.
   reasonably modern graphics card for good speed. Without a suitable graphics card it
   still works, but runs on the processor and takes **several minutes per photo**.
 - **U-Net** is **small and fast** and works on almost any device, including phones. It is
-  **less accurate**: median D50 error was about 15%.
+  **less accurate**: median D50 error was about 6%, with more photos far off (see section 11).
 - **Auto** picks one based on the photo and your hardware. It avoids CP-SAM when your
   device can't run it efficiently, and **always picks U-Net on phones and tablets**:
   CP-SAM needs about 1.5 GB of memory and can take 10+ minutes per photo on a phone,
@@ -306,8 +306,8 @@ and some statistics (Folk & Ward, Wentworth classes) are switched off.
 **Tips:**
 - Measure the **longest** reference you can. Short references give larger errors.
 - Put the reference **flat on the gravel**, not raised above it.
-- **Copy Scale to Site** applies one photo's scale to all photos in the site. Only use it
-  if every photo was taken at the **same height with the same camera and zoom**.
+- **Copy scale to photos…** (Calibrate toolbar) gives one photo's scale to the photos you select.
+  Only use it if those photos were taken at the **same height with the same camera and zoom**.
 
 ### 4-Pt Rectify
 Corrects photos taken at an angle. Click four points that form a rectangle on the ground
@@ -437,7 +437,7 @@ metric, cutoffs), so the comparison is like for like. Sites must be calibrated t
 plotted together.
 
 If a site shows "No scale yet", press *Open* next to it, select each photo and use
-*Scale → Calibrate* (or *Copy Scale to Site* after calibrating one photo, if all photos share
+*Scale → Calibrate* (or *Copy scale to photos…* after calibrating one photo, if all photos share
 the same camera and height). *Compare in pixels* compares uncalibrated sites directly; this is
 only meaningful if all photos were taken with the same camera at the same height.
 *Analyse all sites* (under the site selector) analyses every photo not yet analysed in all sites.
@@ -510,7 +510,7 @@ All settings are recorded in every export.
 | Comparing with a field pebble count | As above, plus **Field-count cutoff = your field minimum** (e.g. 10–16 mm). Consider **min-Feret** if the field data are caliper b-axes. |
 | Big cobbles or boulders, few per photo | Scale Mode **0.5x**; **Max Area Frac 1.0** if a single stone fills much of the frame; take more photos to reach 100+ grains. |
 | Fine gravel, many small grains | Scale Mode **1.0x Full**; consider **Min Size 15**; get the camera closer. |
-| Harsh sun, deep shadows | Turn on **CLAHE**; use **Exclude → Brush** on deep shadows; check for split or merged grains. |
+| Harsh sun, deep shadows | Use **Areas → Brush** on deep shadows; check for split or merged grains. (CLAHE lowered accuracy in testing; see *Apply CLAHE*.) |
 | Huge false "grains" over sand or water | Lower **Max Area Frac** (e.g. 0.2), or exclude those areas. |
 | Many grains missed | Lower **Cellprob** (−1), then try raising **Flow Threshold** (0.6). |
 | Messy, ragged outlines | Raise **Cellprob** (+1), or lower **Flow Threshold** (0.3). |
@@ -520,21 +520,22 @@ All settings are recorded in every export.
 
 ## 11. How accurate is it?
 
-Tested on 40 held-out photos from the ImageGrains dataset, against grain outlines drawn
-by hand:
+Tested on 40 held-out test images from the ImageGrains dataset, against grain outlines drawn
+by hand (`validation/heldout/heldout_app_results.md`):
 
 | Model | Typical (median) D50 error | Average D50 error | Photos more than 50% off |
 |---|---|---|---|
-| **Cellpose-SAM** | about 3% | about 12% | 3 of 40 |
-| **U-Net** | about 15% | about 27% | 7 of 40 |
+| **Cellpose-SAM** | about 3% | about 9% | 2 of 40 |
+| **U-Net** | about 6% | about 16% | 4 of 40 |
 
 On these figures webGrainy is **as accurate as the original ImageGrains software**: the
 small differences are within the noise of 40 photos. Its grain outlines are a little
 less precise than the original's.
 
 **Important limits:**
-- **Test coverage:** the test photos come from rivers the model was trained on. Accuracy
-  on a completely new river is not yet known.
+- **Test coverage:** the test images come from rivers the model was trained on, and more than
+  half are tiles cut from the same source photos as training tiles, so these figures are
+  optimistic. Accuracy on a completely new river is not yet known.
 - **Occasional large errors:** most photos are accurate, but a few are badly wrong (for
   example when one huge stone dominates the frame). **Always look at the outlines.**
 - **Sizes are 2D:** they come from the visible top-down outline. Buried or overlapping
