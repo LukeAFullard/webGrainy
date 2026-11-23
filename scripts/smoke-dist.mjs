@@ -251,36 +251,38 @@ try {
   console.log('ok: app loaded without console errors');
   await checkHostileProject(browser);
 
+  // Small synthetic "gravel" image drawn in the browser (PNG, base64).
+  const drawGravel = (img) => page.evaluate(async (img) => {
+    const c = new OffscreenCanvas(img.w, img.h);
+    const g = c.getContext('2d');
+    g.fillStyle = '#3a3630';
+    g.fillRect(0, 0, img.w, img.h);
+    let seed = img.seed ?? 7;
+    const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    for (let i = 0; i < img.n; i++) {
+      const r = img.r0 + rnd() * img.dr;
+      const x = r + rnd() * (img.w - 2 * r);
+      const y = r + rnd() * (img.h - 2 * r);
+      const grad = g.createRadialGradient(x - r / 3, y - r / 3, 1, x, y, r);
+      const v = 150 + Math.floor(rnd() * 90);
+      grad.addColorStop(0, `rgb(${v},${v - 8},${v - 20})`);
+      grad.addColorStop(1, `rgb(${v - 70},${v - 76},${v - 86})`);
+      g.fillStyle = grad;
+      g.beginPath();
+      g.ellipse(x, y, r, r * (0.6 + rnd() * 0.35), rnd() * Math.PI, 0, Math.PI * 2);
+      g.fill();
+    }
+    const blob = await c.convertToBlob({ type: 'image/png' });
+    const buf = new Uint8Array(await blob.arrayBuffer());
+    let s = '';
+    for (const b of buf) s += String.fromCharCode(b);
+    return btoa(s);
+  }, img);
+
   if (skipInference) {
     console.log('SMOKE PASS (inference skipped)');
   } else {
-    // Small synthetic "gravel" image drawn in the browser.
-    const pngB64 = await page.evaluate(async (img) => {
-      const c = new OffscreenCanvas(img.w, img.h);
-      const g = c.getContext('2d');
-      g.fillStyle = '#3a3630';
-      g.fillRect(0, 0, img.w, img.h);
-      let seed = 7;
-      const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-      for (let i = 0; i < img.n; i++) {
-        const r = img.r0 + rnd() * img.dr;
-        const x = r + rnd() * (img.w - 2 * r);
-        const y = r + rnd() * (img.h - 2 * r);
-        const grad = g.createRadialGradient(x - r / 3, y - r / 3, 1, x, y, r);
-        const v = 150 + Math.floor(rnd() * 90);
-        grad.addColorStop(0, `rgb(${v},${v - 8},${v - 20})`);
-        grad.addColorStop(1, `rgb(${v - 70},${v - 76},${v - 86})`);
-        g.fillStyle = grad;
-        g.beginPath();
-        g.ellipse(x, y, r, r * (0.6 + rnd() * 0.35), rnd() * Math.PI, 0, Math.PI * 2);
-        g.fill();
-      }
-      const blob = await c.convertToBlob({ type: 'image/png' });
-      const buf = new Uint8Array(await blob.arrayBuffer());
-      let s = '';
-      for (const b of buf) s += String.fromCharCode(b);
-      return btoa(s);
-    }, IMG);
+    const pngB64 = await drawGravel(IMG);
     await page.setInputFiles('#photo-file-input', {
       name: 'smoke.png',
       mimeType: 'image/png',
@@ -410,6 +412,66 @@ try {
     await page.waitForTimeout(500);
     if (!sizeBefore || (await sizeText()) !== sizeBefore) fail(`Undo rectify did not restore the photo size (${sizeBefore} -> ${await sizeText()})`);
     console.log(`ok: Rectify, then Undo rectify restores the original ${sizeBefore} photo`);
+    // Undo rectify brings back the photo unanalysed: analyse it again for the reports below.
+    await page.click('button[data-action="run-active"]');
+    await page.waitForFunction(() => /Batch complete[^\n]*1 done, 0 failed/.test(document.body.innerText), null, { timeout: TIMEOUT_MS, polling: 1000 });
+    // Site reports need a scale: calibrate with two clicks (the default 100 mm ruler).
+    const calibrate = async () => {
+      await page.click('button[data-tool="calibrate"]');
+      await page.waitForTimeout(300);
+      const cs = await page.locator('#canvas-stage').boundingBox();
+      for (const fx of [0.2, 0.8]) {
+        await page.mouse.click(cs.x + cs.width * fx, cs.y + cs.height * 0.5);
+        await page.waitForTimeout(200);
+      }
+      await page.waitForFunction(() => /mm\/px/.test(document.querySelector('[data-scale-readout]')?.textContent ?? ''), null, { timeout: 15000 });
+      await page.click('button[data-tool="inspect"]');
+    };
+    await calibrate();
+    // Printable report with options: the "counted vs not counted" overlay and its legend.
+    await page.locator('[data-open-modal="export"]:visible').first().click();
+    await page.click('details.report-options > summary');
+    await page.selectOption('select[data-report-opt="photoOverlay"]', 'counted');
+    const [reportTab] = await Promise.all([page.waitForEvent('popup'), page.click('button[data-action="printable-report"]')]);
+    await reportTab.waitForFunction(() => document.querySelector('h1') && document.querySelector('.photos'), null, { timeout: 30000 });
+    const reportText = await reportTab.evaluate(() => document.body.innerText);
+    if (!/Counted in the statistics/.test(reportText) || !/Grain shape and fabric/.test(reportText)) fail(`printable report: no counted-overlay legend or shape section (${reportText.slice(0, 200)})`);
+    await reportTab.close();
+    await page.click('button[data-action="close-modal"]');
+    console.log('ok: printable report with the counted-grains overlay, shape and fabric');
+    // Two surveys of one place, compared over time.
+    const commit = async (sel, value) => { await page.fill(sel, value); await page.press(sel, 'Tab'); await page.waitForTimeout(400); };
+    await commit('input[data-site-place]', 'Smoke reach');
+    await commit('input[data-site-date]', '2024-05-01');
+    page.once('dialog', (d) => d.accept('Smoke reach 2025'));
+    await page.click('button[data-action="new-survey"]');
+    await page.waitForFunction(() => /New survey of Smoke reach/.test(document.body.innerText), null, { timeout: 15000 });
+    await page.waitForFunction(() => document.querySelectorAll('.photo-item').length === 0, null, { timeout: 15000 });
+    await commit('input[data-site-date]', '2025-05-01');
+    const coarser = await drawGravel({ ...IMG, n: Math.round(IMG.n * 0.6), r0: IMG.r0 + 6, seed: 11 });
+    await page.setInputFiles('#photo-file-input', { name: 'smoke2.png', mimeType: 'image/png', buffer: Buffer.from(coarser, 'base64') });
+    await page.waitForSelector('.photo-item', { timeout: 30000 });
+    await page.click('button[data-action="run-active"]');
+    await page.waitForFunction(() => /Batch complete[^\n]*1 done, 0 failed/.test(document.body.innerText), null, { timeout: TIMEOUT_MS, polling: 2000 });
+    await calibrate();
+    await page.click('button[data-action="compare-place"]');
+    await page.waitForFunction(() => document.querySelectorAll('.compare-table tbody tr').length >= 2 && !/Loading the chosen sites/.test(document.body.innerText), null, { timeout: 30000 });
+    const cmpText = await page.evaluate(() => document.body.innerText);
+    if (!/2024-05-01 → 2025-05-01/.test(cmpText) || (await page.locator('[data-chart-dl="compare-time"]').count()) === 0) {
+      fail(`Compare over time: no change table or time chart (${cmpText.slice(cmpText.indexOf("Whole site"), cmpText.indexOf("Whole site") + 1500)})`);
+    }
+    const [cmpCsv] = await Promise.all([page.waitForEvent('download'), page.click('button[data-action="export-comparison"]')]);
+    const cmpCsvText = readFileSync(await cmpCsv.path(), 'utf8');
+    if (!/survey_change,"?Smoke reach: 2024-05-01 -> 2025-05-01/.test(cmpCsvText)) fail('comparison CSV: no survey change row');
+    const [cmpTab] = await Promise.all([page.waitForEvent('popup'), page.click('button[data-action="compare-report"]')]);
+    await cmpTab.waitForFunction(() => document.querySelector('h1'), null, { timeout: 30000 });
+    const cmpReport = await cmpTab.evaluate(() => ({ h1: document.querySelector('h1')?.textContent ?? '', text: document.body.innerText, svgs: document.querySelectorAll('svg').length }));
+    if (cmpReport.h1 !== 'Smoke reach: 2 surveys' || !/Change over time/.test(cmpReport.text) || !/Differences between sites/.test(cmpReport.text) || cmpReport.svgs < 4) {
+      fail(`comparison report: ${cmpReport.h1} | ${cmpReport.svgs} charts | ${cmpReport.text.slice(0, 300)}`);
+    }
+    if (process.env.SMOKE_SHOTS) await cmpTab.screenshot({ path: join(process.env.SMOKE_SHOTS, 'compare-report.png'), fullPage: true });
+    await cmpTab.close();
+    console.log(`ok: Compare over time (2 surveys of one place), comparison CSV and printable comparison report (${cmpReport.svgs} charts)`);
     if (process.env.SMOKE_SCREENSHOT) {
       // Optional visual check: grain ellipses and orientation vectors over the photo.
       await page.click('details.display-menu > summary');

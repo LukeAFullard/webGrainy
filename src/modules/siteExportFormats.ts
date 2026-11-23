@@ -211,6 +211,10 @@ export function exportSiteSummaryCsv(
       lines.push(`${sec}_count,${label},${b.grainCount},count`);
     }
   }
+  const sh = report.shape;
+  lines.push(`shape,grain_count,${sh.n},count`);
+  lines.push(`shape,median_aspect_ratio_b_over_a,${numCell(sh.medianAspectRatio)},ratio`);
+  sh.aspectRatioCounts.forEach((c, i, all) => lines.push(`shape_bin,${(i / all.length).toFixed(1)}-${((i + 1) / all.length).toFixed(1)},${c},count`));
   const fr = report.fabricRose;
   lines.push(`fabric,grain_count,${fr.grainCount},count`);
   lines.push(`fabric,mean_axial_orientation_deg,${numCell(fr.meanAxialDeg)},deg (0 = image vertical)`);

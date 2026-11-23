@@ -482,6 +482,15 @@ export interface ContourExportOptions {
   metadata?: Record<string, unknown>;
 }
 
+/** Fill and outline of one grain in an SVG export (colours as CSS colour strings). */
+export interface GrainSvgStyle {
+  fill: string;
+  stroke: string;
+}
+
+/** Default SVG grain style (translucent blue). */
+export const DEFAULT_GRAIN_SVG_STYLE: GrainSvgStyle = { fill: 'rgba(56, 189, 248, 0.25)', stroke: '#0284c7' };
+
 /** Signed area of a ring (positive = counter-clockwise with x to the right and y up). */
 export function signedRingArea(ring: readonly (readonly number[])[]): number {
   let s = 0;
@@ -558,13 +567,20 @@ export function buildContourSvg(
   grains: readonly GrainMorphometrics[],
   width: number,
   height: number,
-  options: ContourExportOptions & { outWidth?: number; outHeight?: number } = {},
+  options: ContourExportOptions & {
+    outWidth?: number;
+    outHeight?: number;
+    /** Per-grain style (default: translucent blue); null leaves the grain out. */
+    styleOf?: (g: GrainMorphometrics) => GrainSvgStyle | null;
+  } = {},
 ): string {
   if (width <= 0 || height <= 0 || masks.length !== width * height) {
     throw new Error('Invalid mask dimensions for SVG export.');
   }
   const paths: string[] = [];
   for (const g of grains) {
+    const style = options.styleOf ? options.styleOf(g) : DEFAULT_GRAIN_SVG_STYLE;
+    if (style === null) continue;
     const { outers, holes } = traceGrainContours(masks, width, height, g.id, g.bbox, options.scaleInv ?? 1);
     if (outers.length === 0) continue;
     const dParts: string[] = [];
@@ -581,7 +597,7 @@ export function buildContourSvg(
     }
     if (dParts.length > 0) {
       paths.push(
-        `  <path data-grain-id="${g.id}" fill="rgba(56, 189, 248, 0.25)" stroke="#0284c7" stroke-width="1" fill-rule="evenodd" d="${dParts.join(' ')}" />`,
+        `  <path data-grain-id="${g.id}" fill="${style.fill}" stroke="${style.stroke}" stroke-width="1" fill-rule="evenodd" d="${dParts.join(' ')}" />`,
       );
     }
   }

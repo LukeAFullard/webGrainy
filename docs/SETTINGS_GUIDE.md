@@ -342,6 +342,16 @@ grain's measured long axis and Feret widths outward, so tidying removes that bia
 gravel (grains of 15–30 px), where a few pixels are a large share of a grain, it can move D50 by
 a few percent, so use it consistently across the photos you compare.
 
+*Can a setting prevent the specks instead?* Not without a cost, on the 40 held-out test photos
+with U-Net (`validation/tidy/settings_sweep_unet.md`). Raising *Cellprob Thresh* to +0.5 removed
+about 13% of the fragments but shrank the outlines (PQ 0.540 → 0.526, worse on 26 of 40 photos);
+*Flow Threshold* 0.3 removed about 18% but lost 5% of the grains and raised the median D50 error
+from 5.7% to 7.1%; *Seed density*, *Flow steps* and *Min Size* made no difference. More pixels per
+grain (*1.0x Full* for a photo larger than 1024 px, or *Enlarge for fine grains*) gives better
+outlines of small grains but more specks, which Tidy removes: on the one large test photo of
+fine gravel, *1.0x Full* raised PQ from 0.63 to 0.69 and cut the D50 error from 8.5% to 2.9%.
+So keep the defaults, give small grains enough pixels, and tidy.
+
 ---
 
 ## 6. Excluding areas (toolbar)
@@ -463,6 +473,24 @@ per site only large differences show. Treat adjusted p < 0.05 as "likely differe
 the curves; for a formal
 test use a full two-sample method such as GSDtools (Eaton et al. 2019). *Download
 comparison CSV* saves the table and the pairwise results; each chart has SVG/PNG buttons.
+
+**Printable comparison report** (next to *Download comparison CSV*) opens the whole comparison as
+an A4 report to print or save as a PDF, with the sites in their colours throughout:
+- a *Read this first* box with the like-for-like checks: settings that differ between the sites,
+  one-photo or few-photo sites, sites left out (no results, or not calibrated), and the common
+  size range;
+- the summary table, the overlaid cumulative curves and size distributions, and the Wentworth
+  composition;
+- with *Order by survey date* ticked, **change over time**: D16, D50 and D84 by date with interval
+  bars, and the change between consecutive surveys of each place (later ÷ earlier) with its
+  interval and p-value; the report is then titled by the place (e.g. "Rakaia reach 3: 3 surveys");
+- the pairwise D16 / D50 / D84 tests, the extra statistics (Folk & Ward, interval width,
+  adequacy, size cutoff, median b/a, fabric), and the shape and fabric charts of every site
+  (left out when *Grain shape and fabric charts* is off in the printable report options);
+- the methods: the shared statistics settings, how the tests work, the analysis settings of each
+  site side by side (settings that differ are highlighted), and the references.
+
+It shows the same sites, tests and numbers as the view (and the comparison CSV).
 
 ### Uncertainty & sampling (expandable section)
 | Setting | Default | What it does | When to change it |
@@ -605,22 +633,39 @@ pixel classes before calibration); the Shape tab shows the aspect-ratio distribu
 
 ### Printable report
 
-**Export → Printable report** opens an A4 report of the open site in a new tab (usually three
-to five pages, numbered, with the site name in the footer). Use its button, or Ctrl+P / ⌘P, to
+**Export → Printable report** opens an A4 report of the open site in a new tab (usually four
+to seven pages, numbered, with the site name in the footer). Use its button, or Ctrl+P / ⌘P, to
 print it or save it as a PDF (turn off the browser's own headers and footers). It contains:
 - a summary: D16, D50 and D84 with their confidence intervals, grains counted, photos, scale and
   the sample-adequacy rating;
-- 1, the cumulative curve (with a legend for every line and point), every percentile D5–D95 with
+- the cumulative curve (with a legend for every line and point), every percentile D5–D95 with
   its interval, and the size-class histogram;
-- 2, Folk & Ward, Dg, σg, Sauter mean, D65, Cu and the Wentworth classes as a bar;
-- 3, sample adequacy, photos to check and warnings;
-- 4, a table of results by photo: scale, grains counted / detected, D16 / D50 / D84 and each
+- Folk & Ward, Dg, σg, Sauter mean, D65, Cu and the Wentworth classes as a bar;
+- grain shape (the b/a histogram and median b/a) and fabric (the orientation rose, mean
+  orientation, alignment R and Rayleigh p);
+- sample adequacy, photos to check and warnings, with the D50 convergence curve (D50 as photos
+  are added) and each photo's influence on D50 (leave one photo out);
+- a table of results by photo: scale, grains counted / detected, D16 / D50 / D84 and each
   photo's share of the site statistics;
-- 5, each photo, two to a row, with its outlines and a scale bar when calibrated;
-- 6, the methods summary, settings, software and model versions, and 7, the references to cite.
+- each photo with its grains drawn over it and a scale bar when calibrated;
+- the methods summary, settings, software and model versions, and the references to cite.
 
-Its numbers are the same as in the Site Summary CSV. If pop-ups are blocked, the report is
-downloaded as an HTML file instead: open it and print it from the browser.
+Sections and figures are numbered in order, so a section you leave out leaves no gap.
+
+**Printable report options** (under the buttons; remembered in this browser, and also used for the
+report inside *Download results*):
+
+| Option | Choices |
+|---|---|
+| **Grains on the photos** | *Outlines* (default); *Size colours (Wentworth)*: each grain filled with the colour of its size class, the same colours as *Display → Size colours*, with a legend of the classes present (grains not counted in the statistics are drawn faintly; needs a scale); *Counted vs not counted*: blue for the grains in the statistics, red outlines for the others (photo edge, outside the ROI, below the size cutoff); *None*: the photos alone. |
+| **Photo size** | *Two per row*, or *One per row (large)*, which fills the page width at twice the resolution. |
+| **Photos** | Leave out the photos section (a shorter report). |
+| **Grain shape and fabric charts** | Leave out the shape and fabric section. |
+| **Convergence and photo-influence charts** | Leave out the two charts in the adequacy section. |
+
+Its numbers are the same as in the Site Summary CSV (which now also has the shape summary:
+`shape,median_aspect_ratio_b_over_a` and the b/a histogram). If pop-ups are blocked, the report
+is downloaded as an HTML file instead: open it and print it from the browser.
 
 ### Your results: download them, the browser only keeps them for a while
 
@@ -720,7 +765,8 @@ time**. The table is then ordered oldest first with a *Survey date* column, and 
 D16, D50 and D84 over time with bootstrap interval bars. Sites without a date are listed under
 the chart and not plotted. The comparison CSV includes each site's date. Use the same
 statistics settings and the same kind of sampling area at each survey; otherwise changes
-over time may come from the method rather than the riverbed.
+over time may come from the method rather than the riverbed. *Printable comparison report* puts the chart, the
+change table and the tests into one report (see *Compare sites*).
 
 ### The extra statistics (Results → PSD → More statistics)
 

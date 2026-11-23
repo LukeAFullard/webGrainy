@@ -244,6 +244,15 @@ describe('form changes', () => {
     expect(store.getState().analysisParams).toEqual({ ...defaultAnalysisParams(), flowThreshold: 0.6, skipTilesOutsideRoi: false, model: 'cpsam' });
   });
 
+  it('printable report options: overlay, layout and sections, checked and remembered', () => {
+    const { ctx, store } = setup();
+    routeChange(el({ 'data-report-opt': 'photoOverlay' }, { tagName: 'SELECT', value: 'wentworth' }), ctx);
+    routeChange(el({ 'data-report-opt': 'photosPerRow' }, { tagName: 'SELECT', value: '1' }), ctx);
+    routeChange(el({ 'data-report-opt': 'includeUncertainty' }, { tagName: 'INPUT', type: 'checkbox', checked: false }), ctx);
+    routeChange(el({ 'data-report-opt': 'photoOverlay' }, { tagName: 'SELECT', value: 'bogus' }), ctx);
+    expect(store.getState().reportOptions).toEqual({ photoOverlay: 'outlines', photosPerRow: 1, includePhotos: true, includeShapeFabric: true, includeUncertainty: false });
+  });
+
   it('site statistics options are saved with the site', () => {
     const { ctx, store, storage, actions } = setup();
     routeChange(el({ 'data-site-opt': 'confidenceLevel', 'data-numeric': 'true' }, { tagName: 'SELECT', value: '0.9' }), ctx);

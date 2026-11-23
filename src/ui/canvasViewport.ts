@@ -1,6 +1,7 @@
 import { ellipseRotationDeg, majorAxisDirection } from '../modules/orientationGeometry.js';
 import { grainPassesSizeCutoffs } from '../modules/sedimentStats.js';
 import { firstHitAlongPolyline } from '../modules/interactiveEditor.js';
+import { wentworthRgb } from '../modules/wentworthColors.js';
 import type { GrainMorphometrics, Point2D, SizeMetric } from '../types/index.js';
 import type { AnalysisSession } from '../modules/pipelineController.js';
 import type { PhotoRecord } from '../modules/projectStorage.js';
@@ -32,18 +33,7 @@ function hashColor(id: number): [number, number, number] {
 }
 
 function wentworthColor(grain: GrainMorphometrics, sizeMetric: SizeMetric = 'bAxis'): [number, number, number] {
-  const mm =
-    sizeMetric === 'minFeret'
-      ? (grain.minFeretMm ?? grain.bAxisMm)
-      : sizeMetric === 'dEq'
-        ? (grain.dEqMm ?? grain.bAxisMm)
-        : grain.bAxisMm;
-  if (mm === undefined || mm <= 0) return hashColor(grain.id);
-  if (mm < 2) return [245, 166, 35];      // Sand: amber
-  if (mm < 16) return [59, 158, 255];     // Fine/Med Gravel: sky blue
-  if (mm < 64) return [46, 204, 113];     // Coarse/V.Coarse Gravel: green
-  if (mm < 256) return [155, 89, 182];    // Cobble: purple
-  return [231, 76, 60];                   // Boulder: red
+  return wentworthRgb(grain, sizeMetric) ?? hashColor(grain.id);
 }
 
 export class CanvasViewport {

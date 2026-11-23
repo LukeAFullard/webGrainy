@@ -404,3 +404,17 @@ describe('accessibility', () => {
     expect(landing).not.toContain('<h1');
   });
 });
+
+describe('printable report options', () => {
+  it('offers overlay, layout and sections; size colours need a scale', async () => {
+    const { reportOptionsHtml } = await import('../src/ui/modals.js');
+    const base = createInitialState();
+    const px = reportOptionsHtml({ ...base, siteReport: { unit: 'px' } as never }, true);
+    expect(px).toMatch(/<option value="wentworth"[^>]*disabled/);
+    expect(px).toContain('data-report-opt="includeShapeFabric" checked');
+    const mm = reportOptionsHtml({ ...base, siteReport: { unit: 'mm' } as never, reportOptions: { ...base.reportOptions, photoOverlay: 'wentworth', photosPerRow: 1 } }, true);
+    expect(mm).toMatch(/<option value="wentworth" selected/);
+    expect(mm).toMatch(/<option value="1" selected/);
+    expect(mm).not.toContain('needs a scale');
+  });
+});

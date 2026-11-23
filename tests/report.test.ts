@@ -3,7 +3,7 @@ import { AnalysisSession } from '../src/modules/analysisSession.js';
 import { computeGrainMorphometrics } from '../src/modules/postprocessCore.js';
 import type { SiteRecord } from '../src/modules/projectStorage.js';
 import { analyzeSite, exportSiteSummaryCsv, type SitePhotoInput } from '../src/modules/siteAnalysis.js';
-import { buildSiteReportHtml, PRINT_SCRIPT } from '../src/ui/report.js';
+import { buildSiteReportHtml, DEFAULT_REPORT_OPTIONS, PRINT_SCRIPT, sanitizeReportOptions } from '../src/ui/report.js';
 
 const CAL = { pointA: { x: 0, y: 0 }, pointB: { x: 100, y: 0 }, knownLength: 100, unit: 'mm', mmPerPx: 1, pixelDistance: 100 } as never;
 
@@ -106,5 +106,87 @@ describe('printable site report', () => {
     // 4000 px x 0.5 mm = 2 m wide: a 20 cm bar is 10 % of the width.
     expect(withBar).toContain('<div class="sbar" style="width:10.00%"></div><div class="slabel">20 cm</div>');
     expect(html).not.toContain('class="sbar"'); // no size: no bar
+  });
+
+  describe('options', () => {
+    const base = {
+      site,
+      report,
+      generatedAt: '2026-11-18T10:00:00.000Z',
+      metadata: {},
+      settings: [] as Array<[string, string]>,
+      psdSvg: '<svg id="psd"></svg>',
+      histogramSvg: '<svg id="hist"></svg>',
+      photos: report.perPhoto.map((p) => ({ label: p.label, validGrainCount: p.validGrainCount, D50: p.D50, outlierReasons: [], outlineSvg: '<svg viewBox="0 0 1 1"></svg>' })),
+    };
+    const sections = (h: string): string[] => [...h.matchAll(/<h2><span class="no">(\d+)<\/span>([^<]+)<\/h2>/g)].map((m) => `${m[1]} ${m[2]}`);
+
+    it('adds shape, fabric and uncertainty figures, numbered in reading order, with numbers from the CSV', async () => {
+      const h = buildSiteReportHtml({ ...base, shapeSvg: '<svg id="shape"></svg>', fabricSvg: '<svg id="rose"></svg>', convergenceSvg: '<svg id="conv"></svg>', jackknifeSvg: '<svg id="jk"></svg>' });
+      expect(sections(h)).toEqual([
+        '1 Grain-size distribution', '2 Distribution statistics', '3 Grain shape and fabric', '4 Sample adequacy and checks',
+        '5 Results by photo', '6 Photos', '7 Methods, settings and software', '8 References (please cite)',
+      ]);
+      const figs = [...h.matchAll(/Figure (\d+)\./g)].map((m) => Number(m[1]));
+      expect(figs).toEqual([1, 2, 3, 4, 5, 6]);
+      expect(h.indexOf('id="psd"')).toBeLessThan(h.indexOf('id="shape"'));
+      expect(h.indexOf('id="rose"')).toBeLessThan(h.indexOf('id="conv"'));
+      const csv = await exportSiteSummaryCsv(report, { exportedAt: 'x' }).text();
+      const rows = new Map(csv.split('\n').map((l) => l.split(',')).map((c) => [`${c[0]}/${c[1]}`, c[2]!]));
+      for (const key of ['shape/median_aspect_ratio_b_over_a', 'fabric/mean_axial_orientation_deg', 'fabric/resultant_length_R']) {
+        const m = h.match(new RegExp(`data-csv="${key}" data-value="([^"]+)"`));
+        expect(m, key).not.toBeNull();
+        expect(rows.get(key), key).toBe(m![1]);
+      }
+    });
+
+    it('leaves out what is switched off, without gaps in the numbering', () => {
+      const h = buildSiteReportHtml({
+        ...base,
+        shapeSvg: '<svg id="shape"></svg>',
+        convergenceSvg: '<svg id="conv"></svg>',
+        options: { photoOverlay: 'outlines', photosPerRow: 2, includePhotos: false, includeShapeFabric: false, includeUncertainty: false },
+      });
+      expect(h).not.toContain('id="shape"');
+      expect(h).not.toContain('id="conv"');
+      expect(h).not.toContain('Photos</h2>');
+      expect(sections(h).map((x) => x.split(' ')[0])).toEqual(['1', '2', '3', '4', '5', '6']);
+    });
+
+    it('draws the chosen overlay with its legend, one photo per row, or photos only', () => {
+      const legend = [{ label: 'Cobble (64–256 mm)', fill: 'rgba(1, 2, 3, 0.5)', stroke: 'rgba(1, 2, 3, 1)' }];
+      const w = buildSiteReportHtml({ ...base, overlayLegend: legend, options: { ...DEFAULT_REPORT_OPTIONS, photoOverlay: 'wentworth', photosPerRow: 1 } });
+      expect(w).toContain('<div class="photos single">');
+      expect(w).toContain('Cobble (64–256 mm)');
+      expect(w).not.toContain('Detected grain outlines');
+      expect(w).toContain('class="outlines"');
+      const none = buildSiteReportHtml({ ...base, options: { ...DEFAULT_REPORT_OPTIONS, photoOverlay: 'none' } });
+      expect(none).not.toContain('class="outlines"');
+      expect(none).toContain('<div class="photos">');
+    });
+
+    it('reads stored options safely', () => {
+      expect(sanitizeReportOptions(null)).toEqual(DEFAULT_REPORT_OPTIONS);
+      expect(sanitizeReportOptions({ photoOverlay: '<x>', photosPerRow: 7, includePhotos: 'yes', includeShapeFabric: false })).toEqual({ ...DEFAULT_REPORT_OPTIONS, includeShapeFabric: false });
+      expect(sanitizeReportOptions({ photoOverlay: 'counted', photosPerRow: 1 })).toMatchObject({ photoOverlay: 'counted', photosPerRow: 1 });
+    });
+  });
+
+  it('colours report photos by Wentworth class (the Display colours), faint when not counted', async () => {
+    const { reportOverlaySvg, overlayLegend } = await import('../src/ui/reportBuilder.js');
+    const sess = inputs[0]!.session;
+    const seen = new Set<number>();
+    const all = new Set(sess.getResult().grains.map((g) => g.id));
+    const svg = reportOverlaySvg(sess, 'wentworth', 'bAxis', all, seen);
+    // 1 mm/px grains of 10-40 px: fine-medium and coarse gravel.
+    expect([...seen].sort()).toEqual([1, 2]);
+    expect(svg).toContain('fill="rgba(59, 158, 255, 0.5)"');
+    expect(svg).toContain('fill="rgba(46, 204, 113, 0.5)"');
+    expect(overlayLegend('wentworth', seen).map((l) => l.label)).toEqual(['Fine–medium gravel (2–16 mm)', 'Coarse gravel (16–64 mm)']);
+    const faint = reportOverlaySvg(sess, 'wentworth', 'bAxis', new Set(), new Set());
+    expect(faint).not.toContain('0.5)"');
+    const counted = reportOverlaySvg(sess, 'counted', 'bAxis', new Set([[...all][0]!]), new Set());
+    expect(counted.match(/stroke="#0369a1"/g)).toHaveLength(1);
+    expect(counted).toContain('stroke="#e53e3e"');
   });
 });

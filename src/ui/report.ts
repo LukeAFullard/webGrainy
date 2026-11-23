@@ -31,6 +31,46 @@ export interface ReportPhoto {
   outlierReasons: string[];
 }
 
+/** How grains are drawn over the report's photos. */
+export type ReportPhotoOverlay = 'outlines' | 'wentworth' | 'counted' | 'none';
+
+/** Report options (Export → Printable report → Options); remembered in this browser. */
+export interface ReportOptions {
+  /** Grain overlay on the photos: outlines, Wentworth size colours, counted vs not counted, or none. */
+  photoOverlay: ReportPhotoOverlay;
+  /** Photos per row (1 = full page width). */
+  photosPerRow: 1 | 2;
+  /** Include the photos section. */
+  includePhotos: boolean;
+  /** Include grain shape (b/a) and fabric (orientation rose). */
+  includeShapeFabric: boolean;
+  /** Include the convergence and leave-one-photo-out charts. */
+  includeUncertainty: boolean;
+}
+
+export const DEFAULT_REPORT_OPTIONS: ReportOptions = {
+  photoOverlay: 'outlines',
+  photosPerRow: 2,
+  includePhotos: true,
+  includeShapeFabric: true,
+  includeUncertainty: true,
+};
+
+const OVERLAYS: readonly ReportPhotoOverlay[] = ['outlines', 'wentworth', 'counted', 'none'];
+
+/** Report options from stored or untrusted values (unknown keys and bad values fall back to the defaults). */
+export function sanitizeReportOptions(raw: unknown): ReportOptions {
+  const o = raw !== null && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+  const bool = (k: keyof ReportOptions): boolean => (typeof o[k] === 'boolean' ? (o[k] as boolean) : (DEFAULT_REPORT_OPTIONS[k] as boolean));
+  return {
+    photoOverlay: OVERLAYS.includes(o['photoOverlay'] as ReportPhotoOverlay) ? (o['photoOverlay'] as ReportPhotoOverlay) : DEFAULT_REPORT_OPTIONS.photoOverlay,
+    photosPerRow: o['photosPerRow'] === 1 ? 1 : 2,
+    includePhotos: bool('includePhotos'),
+    includeShapeFabric: bool('includeShapeFabric'),
+    includeUncertainty: bool('includeUncertainty'),
+  };
+}
+
 export interface ReportInput {
   site: SiteRecord;
   report: SiteAnalysisReport;
@@ -52,6 +92,15 @@ export interface ReportInput {
   psdSvg: string;
   histogramSvg: string | null;
   photos: ReportPhoto[];
+  /** Report options (defaults when omitted). */
+  options?: ReportOptions;
+  /** Legend of the photo overlay (colour swatches), for the Wentworth and counted overlays. */
+  overlayLegend?: Array<{ label: string; fill: string; stroke: string }>;
+  /** Optional figures (light theme SVG). */
+  shapeSvg?: string | null;
+  fabricSvg?: string | null;
+  convergenceSvg?: string | null;
+  jackknifeSvg?: string | null;
 }
 
 const fmt = (v: number, digits = 2): string => (Number.isFinite(v) ? v.toFixed(digits) : '–');
@@ -88,9 +137,108 @@ const histogramBasisText = (mode: string): string =>
 
 const fmtLen = (mm: number): string => (mm >= 1000 ? `${mm / 1000} m` : mm >= 10 ? `${mm / 10} cm` : `${mm} mm`);
 
+/**
+ * The printable page around a report body: A4 page set-up with a running footer (`footerText`)
+ * and page numbers, the shared styles, and the Print button.
+ */
+export function reportDocument(title: string, footerText: string, body: string): string {
+  // Plain text for the CSS page footer (<style> is raw text: no entities, and no "<" so it cannot close the tag).
+  const footerCss = footerText.replace(/[\\"<>\n\r]/g, ' ').slice(0, 100);
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${esc(title)}</title>
+<style>
+  @page { size: A4; margin: 16mm 14mm 18mm;
+    @bottom-left { content: "${footerCss}"; font: 7.5pt system-ui, sans-serif; color: #718096; }
+    @bottom-right { content: "Page " counter(page) " of " counter(pages); font: 7.5pt system-ui, sans-serif; color: #718096; } }
+  :root { color-scheme: light; --ink: #1a202c; --muted: #4a5568; --line: #e2e8f0; --accent: #2b6cb0; --soft: #f7fafc; }
+  * { box-sizing: border-box; }
+  body { font: 10pt/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: var(--ink); background: #fff; margin: 0 auto; max-width: 182mm; padding: 14px; }
+  header.doc { border-bottom: 3px solid var(--accent); padding-bottom: 8px; margin-bottom: 12px; }
+  .kicker { text-transform: uppercase; letter-spacing: .08em; font-size: 8pt; font-weight: 700; color: var(--accent); }
+  h1 { font-size: 20pt; line-height: 1.15; margin: 2px 0 4px; }
+  .sub { color: var(--muted); margin: 0; font-size: 9.5pt; }
+  h2 { font-size: 12pt; margin: 18px 0 8px; padding-bottom: 3px; border-bottom: 1px solid #cbd5e0; color: #1a365d; }
+  h2 .no { color: var(--accent); margin-right: 6px; }
+  .tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 10px 0 4px; }
+  .tile { border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 4px; padding: 6px 9px; background: var(--soft); }
+  .tile .tl { font-size: 7.5pt; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 600; }
+  .tile .tv { font-size: 16pt; font-weight: 700; line-height: 1.2; font-variant-numeric: tabular-nums; }
+  .tile .ts { font-size: 7.5pt; color: var(--muted); }
+  .tile.good { border-left-color: #2f855a; } .tile.warnc { border-left-color: #c05621; } .tile.bad { border-left-color: #c53030; }
+  .lede { font-size: 9pt; color: #2d3748; margin: 8px 0 0; }
+  figure { margin: 0; }
+  .chart svg, .chart img { width: 100%; height: auto; display: block; }
+  .fig-table { display: grid; grid-template-columns: 11fr 8fr; gap: 14px; align-items: start; }
+  .fig-hist { max-width: 115mm; margin: 6px auto 0; }
+  .cap { font-size: 8pt; color: var(--muted); margin: 4px 0 0; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-items: start; }
+  table { border-collapse: collapse; width: 100%; font-size: 9pt; }
+  th, td { text-align: left; padding: 3px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  thead th { font-size: 7.5pt; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); border-bottom: 1.5px solid #a0aec0; white-space: normal; vertical-align: bottom; }
+  th { font-weight: 600; white-space: nowrap; }
+  td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.key th, tr.key td { background: #ebf4ff; font-weight: 600; }
+  td.lbl { overflow-wrap: anywhere; min-width: 30mm; }
+  .perphoto { font-size: 8.5pt; }
+  .wbar { display: flex; height: 14px; border-radius: 3px; overflow: hidden; border: 1px solid var(--line); margin-top: 10px; }
+  .wbar span { display: block; height: 100%; }
+  .wlegend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 8.5pt; margin-top: 4px; }
+  .wlegend i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+  .kv { display: grid; grid-template-columns: auto 1fr auto 1fr; gap: 2px 12px; font-size: 8.5pt; margin: 0; }
+  .kv dt { font-weight: 600; color: #2d3748; } .kv dd { margin: 0; overflow-wrap: anywhere; }
+  .methods-box { margin-top: 10px; padding: 8px 10px; background: var(--soft); border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 4px; font-size: 8.5pt; color: #2d3748; }
+  .cite { font-size: 8pt; color: var(--muted); padding-left: 16px; margin: 0; }
+  .cite li { break-inside: avoid; margin-bottom: 3px; }
+  .photos { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 14px; }
+  .photos.single { grid-template-columns: 1fr; }
+  .photo { break-inside: avoid; }
+  .photo figcaption { font-size: 8pt; line-height: 1.35; margin-top: 4px; color: #2d3748; }
+  .thumb { position: relative; background: #edf2f7; border: 1px solid #cbd5e0; }
+  .thumb img { width: 100%; height: auto; display: block; }
+  .thumb img.outlines { position: absolute; inset: 0; height: 100%; }
+  .noimg { padding: 30px; text-align: center; color: var(--muted); font-size: 8pt; }
+  .scalebar { position: absolute; left: 3%; bottom: 4%; width: 94%; }
+  .sbar { height: 5px; background: #fff; border: 1px solid #000; box-shadow: 0 0 0 1px rgba(255,255,255,.7); }
+  .slabel { display: inline-block; margin-top: 2px; font-size: 7.5pt; font-weight: 700; color: #000; background: rgba(255,255,255,.85); padding: 0 3px; border-radius: 2px; }
+  .legend-note { font-size: 8pt; color: var(--muted); margin: 0 0 8px; }
+  .legend-note i { display: inline-block; width: 14px; height: 9px; background: rgba(56,189,248,.25); border: 1.5px solid #0284c7; vertical-align: -1px; margin-right: 4px; }
+  .legend-note .lg { white-space: nowrap; margin-right: 10px; }
+  table.compact { width: auto; min-width: 60%; margin-top: 8px; }
+  table.compact th { padding-right: 10px; } table.compact td.n { padding-right: 18px; }
+  figure.rose { max-width: 80mm; justify-self: center; }
+  .warn { color: #9c4221; }
+  .small { font-size: 8.5pt; color: var(--muted); }
+  .actions { margin: 0 0 12px; padding: 8px 10px; background: var(--soft); border: 1px solid var(--line); border-radius: 4px; }
+  .actions button { font: inherit; padding: 4px 12px; }
+  section { break-inside: avoid; }
+  section.flow { break-inside: auto; }
+  .page-break { break-before: page; }
+  footer.doc { margin-top: 18px; padding-top: 6px; border-top: 1px solid var(--line); font-size: 7.5pt; color: var(--muted); }
+  @media print { .actions { display: none; } body { padding: 0; max-width: none; } h2 { break-after: avoid; } }
+  @media (max-width: 640px) { .tiles { grid-template-columns: 1fr 1fr; } .grid2, .photos, .fig-table { grid-template-columns: 1fr; } .kv { grid-template-columns: auto 1fr; } }
+</style>
+</head>
+<body>
+<div class="actions"><button type="button" data-print="">Print / Save as PDF</button> <span class="small">or press Ctrl+P (⌘P on a Mac). Tip: turn off the browser's own headers and footers; the report numbers its pages.</span></div>
+${PRINT_SCRIPT}
+${body}
+</body>
+</html>`;
+}
+
 export function buildSiteReportHtml(input: ReportInput): string {
   const { site, report: r } = input;
+  const opts = input.options ?? DEFAULT_REPORT_OPTIONS;
   const u = r.unit;
+  // Sections are numbered in order, so optional ones leave no gaps.
+  let secNo = 0;
+  const h2 = (title: string): string => `<h2><span class="no">${++secNo}</span>${title}</h2>`;
+  let figNo = 0;
+  const fig = (): string => `Figure ${++figNo}.`;
   const ciPct = Math.round(r.bootstrapCi.confidenceLevel * 100);
   const ciNote =
     r.ciStatus === 'few-photos'
@@ -192,91 +340,51 @@ export function buildSiteReportHtml(input: ReportInput): string {
             })()
           : '';
       return `<figure class="photo">
-  <div class="thumb">${p.imageDataUrl ? `<img src="${p.imageDataUrl}" alt="">` : '<div class="noimg">photo not available</div>'}${p.outlineSvg ? `<img class="outlines" src="${svgDataUrl(p.outlineSvg.replace(/stroke-width="1"/g, 'stroke-width="1" vector-effect="non-scaling-stroke"'))}" alt="">` : ''}${bar}</div>
+  <div class="thumb">${p.imageDataUrl ? `<img src="${p.imageDataUrl}" alt="">` : '<div class="noimg">photo not available</div>'}${p.outlineSvg && opts.photoOverlay !== 'none' ? `<img class="outlines" src="${svgDataUrl(p.outlineSvg.replace(/stroke-width="1"/g, 'stroke-width="1" vector-effect="non-scaling-stroke"'))}" alt="">` : ''}${bar}</div>
   <figcaption><strong>Photo ${i + 1}. ${esc(p.label)}</strong> — ${p.validGrainCount} grains counted · D50 ${fmt(p.D50)} ${u}${p.mmPerPx !== undefined ? ` · ${p.mmPerPx.toFixed(3)} mm/px` : ''}${p.outlierReasons.length > 0 ? ` · <span class="warn">${esc(p.outlierReasons.join('; '))}</span>` : ''}</figcaption>
 </figure>`;
     })
     .join('\n');
 
-  // Plain text for the CSS page footer (<style> is raw text: no entities, and no "<" so it cannot close the tag).
-  const siteNameCss = site.name.replace(/[\\"<>\n\r]/g, ' ').slice(0, 80);
-  return `<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${esc(site.name)} — grain-size report</title>
-<style>
-  @page { size: A4; margin: 16mm 14mm 18mm;
-    @bottom-left { content: "${siteNameCss} · grain-size report"; font: 7.5pt system-ui, sans-serif; color: #718096; }
-    @bottom-right { content: "Page " counter(page) " of " counter(pages); font: 7.5pt system-ui, sans-serif; color: #718096; } }
-  :root { color-scheme: light; --ink: #1a202c; --muted: #4a5568; --line: #e2e8f0; --accent: #2b6cb0; --soft: #f7fafc; }
-  * { box-sizing: border-box; }
-  body { font: 10pt/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: var(--ink); background: #fff; margin: 0 auto; max-width: 182mm; padding: 14px; }
-  header.doc { border-bottom: 3px solid var(--accent); padding-bottom: 8px; margin-bottom: 12px; }
-  .kicker { text-transform: uppercase; letter-spacing: .08em; font-size: 8pt; font-weight: 700; color: var(--accent); }
-  h1 { font-size: 20pt; line-height: 1.15; margin: 2px 0 4px; }
-  .sub { color: var(--muted); margin: 0; font-size: 9.5pt; }
-  h2 { font-size: 12pt; margin: 18px 0 8px; padding-bottom: 3px; border-bottom: 1px solid #cbd5e0; color: #1a365d; }
-  h2 .no { color: var(--accent); margin-right: 6px; }
-  .tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 10px 0 4px; }
-  .tile { border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 4px; padding: 6px 9px; background: var(--soft); }
-  .tile .tl { font-size: 7.5pt; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 600; }
-  .tile .tv { font-size: 16pt; font-weight: 700; line-height: 1.2; font-variant-numeric: tabular-nums; }
-  .tile .ts { font-size: 7.5pt; color: var(--muted); }
-  .tile.good { border-left-color: #2f855a; } .tile.warnc { border-left-color: #c05621; } .tile.bad { border-left-color: #c53030; }
-  .lede { font-size: 9pt; color: #2d3748; margin: 8px 0 0; }
-  figure { margin: 0; }
-  .chart svg, .chart img { width: 100%; height: auto; display: block; }
-  .fig-table { display: grid; grid-template-columns: 11fr 8fr; gap: 14px; align-items: start; }
-  .fig-hist { max-width: 115mm; margin: 6px auto 0; }
-  .cap { font-size: 8pt; color: var(--muted); margin: 4px 0 0; }
-  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-items: start; }
-  table { border-collapse: collapse; width: 100%; font-size: 9pt; }
-  th, td { text-align: left; padding: 3px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
-  thead th { font-size: 7.5pt; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); border-bottom: 1.5px solid #a0aec0; white-space: normal; vertical-align: bottom; }
-  th { font-weight: 600; white-space: nowrap; }
-  td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-  tr.key th, tr.key td { background: #ebf4ff; font-weight: 600; }
-  td.lbl { overflow-wrap: anywhere; min-width: 30mm; }
-  .perphoto { font-size: 8.5pt; }
-  .wbar { display: flex; height: 14px; border-radius: 3px; overflow: hidden; border: 1px solid var(--line); margin-top: 10px; }
-  .wbar span { display: block; height: 100%; }
-  .wlegend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 8.5pt; margin-top: 4px; }
-  .wlegend i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
-  .kv { display: grid; grid-template-columns: auto 1fr auto 1fr; gap: 2px 12px; font-size: 8.5pt; margin: 0; }
-  .kv dt { font-weight: 600; color: #2d3748; } .kv dd { margin: 0; overflow-wrap: anywhere; }
-  .methods-box { margin-top: 10px; padding: 8px 10px; background: var(--soft); border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 4px; font-size: 8.5pt; color: #2d3748; }
-  .cite { font-size: 8pt; color: var(--muted); padding-left: 16px; margin: 0; }
-  .cite li { break-inside: avoid; margin-bottom: 3px; }
-  .photos { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 14px; }
-  .photos.single { grid-template-columns: 1fr; }
-  .photo { break-inside: avoid; }
-  .photo figcaption { font-size: 8pt; line-height: 1.35; margin-top: 4px; color: #2d3748; }
-  .thumb { position: relative; background: #edf2f7; border: 1px solid #cbd5e0; }
-  .thumb img { width: 100%; height: auto; display: block; }
-  .thumb img.outlines { position: absolute; inset: 0; height: 100%; }
-  .noimg { padding: 30px; text-align: center; color: var(--muted); font-size: 8pt; }
-  .scalebar { position: absolute; left: 3%; bottom: 4%; width: 94%; }
-  .sbar { height: 5px; background: #fff; border: 1px solid #000; box-shadow: 0 0 0 1px rgba(255,255,255,.7); }
-  .slabel { display: inline-block; margin-top: 2px; font-size: 7.5pt; font-weight: 700; color: #000; background: rgba(255,255,255,.85); padding: 0 3px; border-radius: 2px; }
-  .legend-note { font-size: 8pt; color: var(--muted); margin: 0 0 8px; }
-  .legend-note i { display: inline-block; width: 14px; height: 9px; background: rgba(56,189,248,.25); border: 1.5px solid #0284c7; vertical-align: -1px; margin-right: 4px; }
-  .warn { color: #9c4221; }
-  .small { font-size: 8.5pt; color: var(--muted); }
-  .actions { margin: 0 0 12px; padding: 8px 10px; background: var(--soft); border: 1px solid var(--line); border-radius: 4px; }
-  .actions button { font: inherit; padding: 4px 12px; }
-  section { break-inside: avoid; }
-  section.flow { break-inside: auto; }
-  .page-break { break-before: page; }
-  footer.doc { margin-top: 18px; padding-top: 6px; border-top: 1px solid var(--line); font-size: 7.5pt; color: var(--muted); }
-  @media print { .actions { display: none; } body { padding: 0; max-width: none; } h2 { break-after: avoid; } }
-  @media (max-width: 640px) { .tiles { grid-template-columns: 1fr 1fr; } .grid2, .photos, .fig-table { grid-template-columns: 1fr; } .kv { grid-template-columns: auto 1fr; } }
-</style>
-</head>
-<body>
-<div class="actions"><button type="button" data-print="">Print / Save as PDF</button> <span class="small">or press Ctrl+P (⌘P on a Mac). Tip: turn off the browser's own headers and footers; the report numbers its pages.</span></div>
-${PRINT_SCRIPT}
+  // Photo overlay legend.
+  const swatch = (fill: string, stroke: string): string => `<i style="background:${fill};border-color:${stroke}"></i>`;
+  const overlayLegendHtml =
+    opts.photoOverlay === 'none'
+      ? ''
+      : input.overlayLegend && input.overlayLegend.length > 0
+        ? input.overlayLegend.map((l) => `<span class="lg">${swatch(l.fill, l.stroke)}${esc(l.label)}</span>`).join(' ')
+        : `${swatch('rgba(56,189,248,.25)', '#0284c7')}Detected grain outlines`;
+
+  // Grain shape (b/a) and fabric (orientation), with their summary numbers.
+  const fr = r.fabricRose;
+  const fmtP = (p: number | null): string => (p === null ? '–' : p < 0.001 ? '&lt; 0.001' : p.toFixed(3));
+  const shapeFabric = (): string =>
+    opts.includeShapeFabric && (input.shapeSvg || input.fabricSvg)
+      ? `<section>
+${h2('Grain shape and fabric')}
+<div class="grid2">
+  ${input.shapeSvg ? `<figure class="chart">${input.shapeSvg}<figcaption class="cap">${fig()} Grain shape: b/a ratio of the fitted ellipse (1 = round, low = elongated), every counted grain once.</figcaption></figure>` : '<div></div>'}
+  ${input.fabricSvg ? `<figure class="chart rose">${input.fabricSvg}<figcaption class="cap">${fig()} Fabric: long-axis orientation of the grains (axial, 0° = up–down in each photo).</figcaption></figure>` : '<div></div>'}
+</div>
+<table class="compact">
+  <tr><th>Median b/a</th><td class="n">${num(r.shape.medianAspectRatio, 'shape/median_aspect_ratio_b_over_a')}</td><th>Grains</th><td class="n">${r.shape.n}</td></tr>
+  ${fr.grainCount > 0 ? `<tr><th>Mean orientation</th><td class="n">${num(fr.meanAxialDeg, 'fabric/mean_axial_orientation_deg', 0)}°</td><th>Alignment R</th><td class="n">${num(fr.resultantLength, 'fabric/resultant_length_R')}</td></tr>
+  <tr><th>Rayleigh p</th><td class="n">${fr.rayleighP !== null && fr.rayleighP >= 0.001 ? num(fr.rayleighP, 'fabric/rayleigh_p', 3) : fmtP(fr.rayleighP)}</td><th></th><td class="small">${fr.rayleighP !== null && fr.rayleighP < 0.05 ? 'a preferred direction' : 'no clear preferred direction'} (n = ${fr.grainCount})</td></tr>` : ''}
+</table>
+<p class="cap">R: 0 = orientations random, 1 = all parallel (axial statistics, Curray 1956; Mardia &amp; Jupp 2000). Orientations are relative to each photo's frame, so they combine meaningfully only when the photos were taken the same way round (e.g. top of the photo upstream).</p>
+</section>`
+      : '';
+
+  // How stable the site result is: D50 as photos are added, and each photo's influence.
+  const uncertainty = (): string =>
+    opts.includeUncertainty && (input.convergenceSvg || input.jackknifeSvg)
+      ? `<div class="grid2" style="margin-top:8px;">
+  ${input.convergenceSvg ? `<figure class="chart">${input.convergenceSvg}<figcaption class="cap">${fig()} D50 as photos are added: a curve that has levelled off means more photos would change little.</figcaption></figure>` : '<div></div>'}
+  ${input.jackknifeSvg ? `<figure class="chart">${input.jackknifeSvg}<figcaption class="cap">${fig()} Change in the site D50 when each photo is left out: one long bar means one photo drives the result.</figcaption></figure>` : '<div></div>'}
+</div>`
+      : '';
+
+  return reportDocument(`${site.name} — grain-size report`, `${site.name.slice(0, 80)} · grain-size report`, `
 <header class="doc">
 <div class="kicker">Surface grain-size report</div>
 <h1>${esc(site.name)}</h1>
@@ -296,10 +404,10 @@ ${PRINT_SCRIPT}
 </section>
 
 <section>
-<h2><span class="no">1</span>Grain-size distribution</h2>
+${h2('Grain-size distribution')}
 <div class="fig-table">
   <figure class="chart">${input.psdSvg}
-    <figcaption class="cap">Figure 1. Cumulative grain-size distribution (${esc(r.statisticalBasisLabel)}). Shaded band: ${ciPct}% confidence interval; grey lines: individual photos; coloured points: D16, D50 and D84.</figcaption>
+    <figcaption class="cap">${fig()} Cumulative grain-size distribution (${esc(r.statisticalBasisLabel)}). Shaded band: ${ciPct}% confidence interval; grey lines: individual photos; coloured points: D16, D50 and D84.</figcaption>
   </figure>
   <div>
   <table>
@@ -312,11 +420,11 @@ ${PRINT_SCRIPT}
 </section>
 
 <section>
-${input.histogramSvg ? `<figure class="chart fig-hist">${input.histogramSvg}<figcaption class="cap">Figure 2. Share of the sample in 1 φ size classes (${esc(histogramBasisText(r.poolingMode))}).</figcaption></figure>` : '<p class="small">Size classes in mm need a calibrated scale.</p>'}
+${input.histogramSvg ? `<figure class="chart fig-hist">${input.histogramSvg}<figcaption class="cap">${fig()} Share of the sample in 1 φ size classes (${esc(histogramBasisText(r.poolingMode))}).</figcaption></figure>` : '<p class="small">Size classes in mm need a calibrated scale.</p>'}
 </section>
 
 <section>
-<h2><span class="no">2</span>Distribution statistics</h2>
+${h2('Distribution statistics')}
 <div class="grid2">
   <table>
     <thead><tr><th colspan="2">Folk &amp; Ward (graphic)</th></tr></thead>
@@ -337,16 +445,18 @@ ${input.histogramSvg ? `<figure class="chart fig-hist">${input.histogramSvg}<fig
 ${wentworthBar}
 </section>
 
+${shapeFabric()}
 <section>
-<h2><span class="no">3</span>Sample adequacy and checks</h2>
+${h2('Sample adequacy and checks')}
 <p><strong>${esc(r.adequacy.rating)}</strong>${r.adequacy.limitedByPhotoCount ? ` (${esc(adequacyCapNote(true, r.includedPhotoCount))})` : ''} — effective grain count ${r.adequacy.effectiveGrainCount}; largest grain ${fmt(r.adequacy.largestClastAreaRatio * 100, 1)}% of the grain area${r.adequacy.largestClastWarning !== 'none' ? ' <span class="warn">(large: one stone has a big effect)</span>' : ''}.
 ${r.jackknife ? ` Leaving out one photo at a time changes D50 by a standard error of ${fmt(r.jackknife.seD50)} ${u}.` : ''}</p>
 ${r.adequacy.outlierPhotos.length > 0 ? `<p class="warn">Photos to check: ${r.adequacy.outlierPhotos.map((o) => `${esc(o.label)} (${esc(o.reasons.join('; '))})`).join(' · ')}</p>` : ''}
 ${r.warnings.length > 0 ? `<ul class="warn small">${r.warnings.map((m) => `<li>${esc(m)}</li>`).join('')}</ul>` : '<p class="small">No warnings.</p>'}
+${uncertainty()}
 </section>
 
 <section class="flow">
-<h2><span class="no">4</span>Results by photo</h2>
+${h2('Results by photo')}
 <table class="perphoto">
   <thead><tr><th class="n">#</th><th>Photo</th><th class="n">mm/px</th><th class="n">Grains${input.photos.some((p) => p.rawGrainCount !== undefined) ? ' (counted / detected)' : ''}</th><th class="n">D16</th><th class="n">D50</th><th class="n">D84</th><th class="n">Weight %</th><th>Notes</th></tr></thead>
   <tbody>${photoRows}</tbody>
@@ -354,16 +464,20 @@ ${r.warnings.length > 0 ? `<ul class="warn small">${r.warnings.map((m) => `<li>$
 <p class="cap">Sizes in ${esc(u)}. Weight %: each photo's share of the site statistics (${esc(r.statisticalBasisLabel)}).</p>
 </section>
 
-<section class="flow page-break">
-<h2><span class="no">5</span>Photos</h2>
-<p class="legend-note"><i></i>Detected grain outlines${input.photos.some((p) => p.mmPerPx !== undefined && p.widthPx !== undefined) ? '; the bar in the lower left is a scale bar' : ''}. Photo numbers match the table above.</p>
-<div class="photos${input.photos.length === 1 ? ' single' : ''}">
+${
+  opts.includePhotos
+    ? `<section class="flow page-break">
+${h2('Photos')}
+<p class="legend-note">${overlayLegendHtml}${overlayLegendHtml ? '. ' : ''}${input.photos.some((p) => p.mmPerPx !== undefined && p.widthPx !== undefined) ? 'The bar in the lower left is a scale bar. ' : ''}Photo numbers match the table above.</p>
+<div class="photos${input.photos.length === 1 || opts.photosPerRow === 1 ? ' single' : ''}">
 ${photoFigures}
 </div>
-</section>
+</section>`
+    : ''
+}
 
 <section class="page-break">
-<h2><span class="no">6</span>Methods, settings and software</h2>
+${h2('Methods, settings and software')}
 <div class="methods-box"><strong>Methods summary:</strong> ${esc(methodsSentence)} Sizes are 2D surface measurements from photos (${esc(r.sizeMetric)} of each grain's visible outline), not sieve sizes; subsurface fines are not observed.</div>
 <h3 class="small" style="margin:12px 0 4px;font-weight:700;">Settings and provenance</h3>
 <dl class="kv">
@@ -386,11 +500,9 @@ ${[
 </section>
 
 <section>
-<h2><span class="no">7</span>References (please cite)</h2>
+${h2('References (please cite)')}
 <ol class="cite">${r.citations.map((c) => `<li>${esc(c)}</li>`).join('')}</ol>
 </section>
 
-<footer class="doc">Made with webGrainy${appVersion ? ` ${esc(appVersion)}` : ''} on ${esc(dateOnly)}. Every number in this report is also in the site summary CSV and JSON exports.</footer>
-</body>
-</html>`;
+<footer class="doc">Made with webGrainy${appVersion ? ` ${esc(appVersion)}` : ''} on ${esc(dateOnly)}. Every number in this report is also in the site summary CSV and JSON exports.</footer>`);
 }

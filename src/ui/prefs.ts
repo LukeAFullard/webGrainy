@@ -1,4 +1,5 @@
 /** Small per-browser on/off preferences (localStorage; silently ignored if storage is blocked). */
+import { sanitizeReportOptions, type ReportOptions } from './report.js';
 
 export const EXPORTED_ONCE_KEY = 'webgrainy-exported-once';
 export const SKIP_LANDING_KEY = 'webgrainy-skip-landing';
@@ -58,4 +59,24 @@ export function readRetentionSince(now = Date.now()): number {
     /* storage blocked */
   }
   return now;
+}
+
+/** Printable report options (Export → Printable report → Options). */
+export const REPORT_OPTIONS_KEY = 'webgrainy-report-options';
+
+export function readReportOptions(): ReportOptions {
+  try {
+    const raw = localStorage.getItem(REPORT_OPTIONS_KEY);
+    return sanitizeReportOptions(raw ? JSON.parse(raw) : null);
+  } catch {
+    return sanitizeReportOptions(null);
+  }
+}
+
+export function writeReportOptions(o: ReportOptions): void {
+  try {
+    localStorage.setItem(REPORT_OPTIONS_KEY, JSON.stringify(o));
+  } catch {
+    /* storage blocked: the choice lasts for this view only */
+  }
 }

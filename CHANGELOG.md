@@ -56,6 +56,26 @@ First public release.
   before/after examples: outline agreement unchanged; median D50 error unchanged (U-Net) or slightly
   lower (Cellpose-SAM, 2.9% → 2.6%).
 
+### Reports and comparisons
+
+- **Printable report options** (Export → Printable report options, remembered in the browser):
+  grains on the photos drawn as outlines, **Wentworth size colours** (the Display colours, with a
+  legend of the classes present), counted vs not counted, or not at all; photos two per row or one
+  per row at twice the resolution; and the optional sections below.
+- The printable report adds **grain shape** (b/a histogram, median b/a) and **fabric** (orientation
+  rose, mean orientation, R, Rayleigh p), and the D50 **convergence** and **leave-one-photo-out**
+  charts in the adequacy section. Sections and figures are numbered in order whatever is left out.
+  The site summary CSV gains the shape summary.
+- **Printable comparison report** (Compare sites): the compared sites side by side with their
+  curves, size distributions and composition; with *Order by survey date*, the **change over time**
+  chart and the change between consecutive surveys of each place; the pairwise D16 / D50 / D84
+  tests; shape and fabric by site; the like-for-like checks up front; and each site's analysis
+  settings side by side, with differences highlighted.
+- The Compare sites view and its report share one calculation (`comparisonView.ts`); the D16 and D84
+  tests of each pair are matched to the pair by site, not by position in a list.
+- `validation/tidy/settings_sweep.mjs`: which analysis settings reduce stray grain fragments, and
+  at what cost (none does without one; Tidy outlines is the remedy).
+
 ### Navigation, image export and removals
 
 - **Prev flagged / Next flagged** step backwards and forwards through grains that need checking, and a

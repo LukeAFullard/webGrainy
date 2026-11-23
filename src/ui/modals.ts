@@ -407,6 +407,39 @@ function photoGeometryExportHtml(state: AppState, photo: PhotoRecord): string {
 }
 
 /** Option shared by the Export and Download dialogs: outlines / masks of counted grains only. */
+/** Printable report options: photo overlay and layout, optional sections. */
+export function reportOptionsHtml(state: AppState, hasSiteReport: boolean): string {
+  const o = state.reportOptions;
+  const calibrated = state.siteReport?.unit === 'mm';
+  const opt = (v: string, label: string, sel: boolean, disabled = false): string =>
+    `<option value="${v}" ${sel ? 'selected' : ''} ${disabled ? 'disabled' : ''}>${label}</option>`;
+  const box = (key: string, label: string, on: boolean): string =>
+    `<label class="checkbox-label"><input type="checkbox" data-report-opt="${key}" ${on ? 'checked' : ''} /> ${label}</label>`;
+  return `<details class="advanced-block report-options" data-keep-open="report-options" style="margin-top:8px;">
+      <summary>Printable report options <span class="summary-note">photo overlay, layout, sections</span></summary>
+      <div class="report-options-grid" ${hasSiteReport ? '' : 'aria-disabled="true"'}>
+        <label class="field-label">Grains on the photos
+          <select class="select" data-report-opt="photoOverlay">
+            ${opt('outlines', 'Outlines', o.photoOverlay === 'outlines')}
+            ${opt('wentworth', `Size colours (Wentworth)${calibrated ? '' : ': needs a scale'}`, o.photoOverlay === 'wentworth', !calibrated && o.photoOverlay !== 'wentworth')}
+            ${opt('counted', 'Counted vs not counted', o.photoOverlay === 'counted')}
+            ${opt('none', 'None (photos only)', o.photoOverlay === 'none')}
+          </select>
+        </label>
+        <label class="field-label">Photo size
+          <select class="select" data-report-opt="photosPerRow">
+            ${opt('2', 'Two per row', o.photosPerRow === 2)}
+            ${opt('1', 'One per row (large)', o.photosPerRow === 1)}
+          </select>
+        </label>
+        ${box('includePhotos', 'Photos', o.includePhotos)}
+        ${box('includeShapeFabric', 'Grain shape and fabric charts', o.includeShapeFabric)}
+        ${box('includeUncertainty', 'Convergence and photo-influence charts', o.includeUncertainty)}
+      </div>
+      <p class="field-hint">Remembered in this browser. Also used for the report in <em>Download results</em>.${o.photoOverlay === 'wentworth' && !calibrated ? ' Size colours need a scale: this site shows outlines instead.' : ''}</p>
+    </details>`;
+}
+
 function countedOnlyCheckbox(id: string, checked: boolean): string {
   return `<label class="checkbox-label" style="margin-top:8px;">
       <input type="checkbox" id="${id}" ${checked ? 'checked' : ''} />
@@ -512,6 +545,7 @@ export function renderExportModalHtml(state: AppState): string {
             <button type="button" class="btn btn-sm" data-export="site-archive" ${activeSite ? '' : 'disabled'}>Export .webgrainy Archive</button>
             ${siteGpkgButtonHtml(state)}
           </div>
+          ${reportOptionsHtml(state, hasSiteReport)}
         </div>
 
         <div class="stat-card" style="padding:10px;">

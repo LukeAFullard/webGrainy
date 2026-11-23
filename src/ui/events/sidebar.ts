@@ -11,6 +11,8 @@ import { isWorkflowStepId, nextWorkflowStepForKey } from '../panels/landing.js';
 import { workingScaleFactorFor } from '../panels/sidebar.js';
 import { visiblePhotos, type PhotoFilter } from '../photoList.js';
 import { getActivePhoto, getActiveSite } from '../workspaceActions.js';
+import { sanitizeReportOptions } from '../report.js';
+import { writeReportOptions } from '../prefs.js';
 import { confirmDiscardEdits, isInput, isSelect, type ActionHandler, type ControlLike, type ElementLike, type EventContext } from './context.js';
 
 export const sidebarActions: Record<string, ActionHandler> = {
@@ -283,6 +285,16 @@ export function handleSidebarChange(target: ControlLike, ctx: EventContext): boo
   if (exportOpt === 'what' || exportOpt === 'format' || exportOpt === 'coords') {
     const key = exportOpt === 'what' ? 'exportWhat' : exportOpt === 'format' ? 'exportFormat' : 'exportCoords';
     ctx.store.setState({ [key]: (target as { value: string }).value } as never);
+    return true;
+  }
+  const reportOpt = (target as { dataset?: Record<string, string | undefined> }).dataset?.['reportOpt'];
+  if (reportOpt) {
+    const st = ctx.store.getState();
+    const raw: Record<string, unknown> = { ...st.reportOptions };
+    raw[reportOpt] = isInput(target) && target.type === 'checkbox' ? target.checked === true : reportOpt === 'photosPerRow' ? Number((target as { value: string }).value) : (target as { value: string }).value;
+    const reportOptions = sanitizeReportOptions(raw);
+    writeReportOptions(reportOptions);
+    ctx.store.setState({ reportOptions });
     return true;
   }
   if ((target.id === 'export-counted-only' || target.id === 'download-counted-only') && isInput(target)) {

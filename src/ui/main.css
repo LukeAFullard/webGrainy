@@ -2283,3 +2283,8 @@ kbd {
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
   gap: 8px;
 }
+
+/* Export → Printable report options */
+.report-options-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; margin-top: 6px; align-items: end; }
+.report-options-grid .checkbox-label { grid-column: span 2; margin: 0; }
+@media (max-width: 520px) { .report-options-grid { grid-template-columns: 1fr; } .report-options-grid .checkbox-label { grid-column: auto; } }
