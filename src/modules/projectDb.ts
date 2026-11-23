@@ -42,6 +42,14 @@ export interface PhotoOriginalBackup {
   metadata?: SitePhotoMetadata;
 }
 
+/**
+ * The photo as it was before its first perspective rectification (image, scale, ROI, metadata
+ * and its own enhancement backup), so "Undo rectify" restores it exactly.
+ */
+export interface PhotoRectifyBackup extends PhotoOriginalBackup {
+  originalBackup?: PhotoOriginalBackup;
+}
+
 export interface PhotoRecord {
   photoId: string;
   siteId: string;
@@ -58,6 +66,8 @@ export interface PhotoRecord {
   metadata?: SitePhotoMetadata;
   /** Preserved original photo before optional AI enhancement, enabling 1-click revert. */
   originalBackup?: PhotoOriginalBackup;
+  /** The photo before perspective rectification, enabling "Undo rectify". */
+  rectifyBackup?: PhotoRectifyBackup;
 }
 
 export type PhotoProcessStatus = 'pending' | 'running' | 'done' | 'error';

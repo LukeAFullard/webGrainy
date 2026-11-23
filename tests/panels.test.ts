@@ -174,6 +174,16 @@ describe('panel renderers', () => {
     expect(cal.subToolbar).not.toBe(after.subToolbar);
   });
 
+  it('toolbar: Undo rectify only for a rectified photo', () => {
+    const st = analysedState();
+    expect(renderToolbarHtml(st).toolbar).not.toContain('data-action="rectify-undo"');
+    const rectified = {
+      ...st,
+      photos: st.photos.map((p) => (p.photoId === 'p1' ? { ...p, rectifyBackup: { imageBlob: new Blob(['o']), width: 120, height: 80 } } : p)),
+    };
+    expect(renderToolbarHtml(rectified).toolbar).toContain('data-action="rectify-undo"');
+  });
+
   it('toolbar: ROI tool, and Clear areas once the photo has an ROI or exclusion', () => {
     const st = analysedState();
     expect(renderToolbarHtml(st).toolbar).toContain('data-tool="roiPoly"');

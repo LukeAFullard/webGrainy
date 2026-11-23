@@ -79,6 +79,11 @@ export function renderToolbarHtml(state: AppState): { toolbar: string; subToolba
       <button type="button" class="btn btn-sm" data-action="fit-view" ${activePhoto ? '' : 'disabled'} title="Fit the photo to the view">Fit</button>
     </span>
     ${
+      activePhoto?.rectifyBackup
+        ? `<button type="button" class="btn btn-sm" data-action="rectify-undo" ${state.batchRunning || state.enhancing ? 'disabled' : ''} title="Restore the photo as it was before rectification (image, scale and areas); it then needs analysing again">Undo rectify</button>`
+        : ''
+    }
+    ${
       activePhoto
         ? `<span class="tool-group" role="group" aria-label="Optional image enhancement">
             <span class="tool-group-label">Enhance</span>
@@ -129,7 +134,7 @@ export function renderToolbarHtml(state: AppState): { toolbar: string; subToolba
       <span>4-Pt Rectify (${state.pendingRectifyPoints.length}/4 TL→TR→BR→BL):</span>
       <input class="input" id="rect-w" type="number" value="${rectW}" step="10" min="10" aria-label="Rectification physical width in mm" style="width:60px;padding:2px 6px;" title="Width (mm)" />×
       <input class="input" id="rect-h" type="number" value="${rectH}" step="10" min="10" aria-label="Rectification physical height in mm" style="width:60px;padding:2px 6px;" title="Height (mm)" />mm
-      <span class="field-hint" title="Rectifying replaces the photo in this site. To start over, remove the photo and add the original again.">Replaces the photo (no undo)</span>
+      <span class="field-hint" title="Rectifying replaces the photo; Undo rectify (toolbar) brings back the original, with its scale and areas.">Replaces the photo; Undo rectify restores it</span>
     `;
   }
 

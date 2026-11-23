@@ -28,6 +28,7 @@ import {
   savePhotoResult,
   saveSite,
   type PhotoOriginalBackup,
+  type PhotoRectifyBackup,
   type PhotoRecord,
   type PhotoResultRecord,
   type ProjectStorageOptions,
@@ -40,19 +41,26 @@ interface ArchivedPhotoBackup extends Omit<PhotoOriginalBackup, 'imageBlob'> {
   imageMimeType: string;
 }
 
+/** The photo before rectification, with the enhancement backup it had then. */
+interface ArchivedRectifyBackup extends ArchivedPhotoBackup {
+  originalBackup?: ArchivedPhotoBackup;
+}
+
 /** Byte range in a v2 archive's binary payload (after the header). */
 interface ArchiveRef {
   offset: number;
   length: number;
 }
 
-interface ArchivedPhotoRecord extends Omit<PhotoRecord, 'imageBlob' | 'originalBackup'> {
+interface ArchivedPhotoRecord extends Omit<PhotoRecord, 'imageBlob' | 'originalBackup' | 'rectifyBackup'> {
   /** v1: image bytes as base64. v2: `imageRef` into the binary payload instead. */
   imageBase64?: string;
   imageRef?: ArchiveRef;
   imageMimeType: string;
   /** The photo before enhancement (so "Revert" still works after an export/import). */
   originalBackup?: ArchivedPhotoBackup;
+  /** The photo before rectification (so "Undo rectify" still works after an export/import). */
+  rectifyBackup?: ArchivedRectifyBackup;
 }
 
 const ARCHIVE_IMAGE_MIME = /^image\/(jpeg|png|webp|gif|bmp|tiff|avif)$/i;
@@ -193,14 +201,18 @@ export async function exportProjectArchive(
   const archivedResults: ArchivedResultRecord[] = [];
 
   for (const photo of photos) {
-    const { imageBlob, originalBackup, ...restPhoto } = photo;
-    let archivedBackup: ArchivedPhotoBackup | undefined;
-    if (originalBackup !== undefined) {
-      const { imageBlob: backupBlob, ...restBackup } = originalBackup;
-      archivedBackup = {
-        ...restBackup,
-        imageRef: addPart(backupBlob),
-        imageMimeType: backupBlob.type || 'application/octet-stream',
+    const { imageBlob, originalBackup, rectifyBackup, ...restPhoto } = photo;
+    const archiveBackup = (b: PhotoOriginalBackup): ArchivedPhotoBackup => {
+      const { imageBlob: backupBlob, ...restBackup } = b;
+      return { ...restBackup, imageRef: addPart(backupBlob), imageMimeType: backupBlob.type || 'application/octet-stream' };
+    };
+    const archivedBackup = originalBackup !== undefined ? archiveBackup(originalBackup) : undefined;
+    let archivedRectify: ArchivedRectifyBackup | undefined;
+    if (rectifyBackup !== undefined) {
+      const { originalBackup: innerBackup, ...rectifyRest } = rectifyBackup;
+      archivedRectify = {
+        ...archiveBackup(rectifyRest),
+        ...(innerBackup !== undefined ? { originalBackup: archiveBackup(innerBackup) } : {}),
       };
     }
     archivedPhotos.push({
@@ -208,6 +220,7 @@ export async function exportProjectArchive(
       imageRef: addPart(imageBlob),
       imageMimeType: imageBlob.type || 'application/octet-stream',
       ...(archivedBackup !== undefined ? { originalBackup: archivedBackup } : {}),
+      ...(archivedRectify !== undefined ? { rectifyBackup: archivedRectify } : {}),
     });
 
     const res = await getPhotoResult(photo.photoId, options);
@@ -513,29 +526,27 @@ export async function importProjectArchive(
     }
     validateCalibration(ap.calibration, ctx);
     validateRoi(ap.roiConfig, ctx);
-    const { imageRef, imageMimeType, originalBackup: archivedBackup } = ap;
+    const { imageRef, imageMimeType, originalBackup: archivedBackup, rectifyBackup: archivedRectify } = ap;
     const imageBlob =
       payload !== null
         ? refSlice(imageRef, ctx, archiveMime(imageMimeType))
         : new Blob([base64ToUint8(ap.imageBase64!).slice().buffer], { type: archiveMime(imageMimeType) });
-    let originalBackup: PhotoOriginalBackup | undefined;
-    if (archivedBackup !== undefined && archivedBackup !== null) {
-      const bctx = `${ctx}.originalBackup`;
-      if (typeof archivedBackup !== 'object' || (payload === null ? typeof archivedBackup.imageBase64 !== 'string' : archivedBackup.imageRef === undefined)) {
+    const decodeBackup = (archived: ArchivedPhotoBackup, bctx: string): PhotoOriginalBackup => {
+      if (typeof archived !== 'object' || (payload === null ? typeof archived.imageBase64 !== 'string' : archived.imageRef === undefined)) {
         throw new ArchiveValidationError(`${bctx}: missing image data.`);
       }
-      if (!isDim(archivedBackup.width) || !isDim(archivedBackup.height)) {
+      if (!isDim(archived.width) || !isDim(archived.height)) {
         throw new ArchiveValidationError(`${bctx}: width/height must be integers in [1, ${MAX_ARCHIVE_DIMENSION}].`);
       }
-      validateCalibration(archivedBackup.calibration, bctx);
-      validateRoi(archivedBackup.roiConfig, bctx);
-      const { imageBase64: backupB64, imageRef: backupRef, imageMimeType: backupMime } = archivedBackup;
-      const backupCal = sanitizeCalibration(archivedBackup.calibration);
-      const backupRoi = sanitizeRoi(archivedBackup.roiConfig);
-      const backupMeta = sanitizePhotoMetadata(archivedBackup.metadata);
-      originalBackup = {
-        width: archivedBackup.width,
-        height: archivedBackup.height,
+      validateCalibration(archived.calibration, bctx);
+      validateRoi(archived.roiConfig, bctx);
+      const { imageBase64: backupB64, imageRef: backupRef, imageMimeType: backupMime } = archived;
+      const backupCal = sanitizeCalibration(archived.calibration);
+      const backupRoi = sanitizeRoi(archived.roiConfig);
+      const backupMeta = sanitizePhotoMetadata(archived.metadata);
+      return {
+        width: archived.width,
+        height: archived.height,
         ...(backupCal !== undefined ? { calibration: backupCal } : {}),
         ...(backupRoi !== undefined ? { roiConfig: backupRoi } : {}),
         ...(backupMeta !== undefined ? { metadata: backupMeta } : {}),
@@ -543,6 +554,16 @@ export async function importProjectArchive(
           payload !== null
             ? refSlice(backupRef, bctx, archiveMime(backupMime))
             : new Blob([base64ToUint8(backupB64!).slice().buffer], { type: archiveMime(backupMime) }),
+      };
+    };
+    const originalBackup =
+      archivedBackup !== undefined && archivedBackup !== null ? decodeBackup(archivedBackup, `${ctx}.originalBackup`) : undefined;
+    let rectifyBackup: PhotoRectifyBackup | undefined;
+    if (archivedRectify !== undefined && archivedRectify !== null) {
+      const inner = archivedRectify.originalBackup;
+      rectifyBackup = {
+        ...decodeBackup(archivedRectify, `${ctx}.rectifyBackup`),
+        ...(inner !== undefined && inner !== null ? { originalBackup: decodeBackup(inner, `${ctx}.rectifyBackup.originalBackup`) } : {}),
       };
     }
     // Only the fields the app writes, each checked: imported text must never reach the page as
@@ -566,6 +587,7 @@ export async function importProjectArchive(
       ...(metadata !== undefined ? { metadata } : {}),
       imageBlob,
       ...(originalBackup !== undefined ? { originalBackup } : {}),
+      ...(rectifyBackup !== undefined ? { rectifyBackup } : {}),
     });
   }
 

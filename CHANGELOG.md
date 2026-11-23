@@ -128,8 +128,10 @@ First public release.
   and switched the resolution floor off, or 9,999,999 bootstrap replicates) is refused with a message,
   using the same limits as imported projects; a cleared facies weight is refused too.
 - Rectify: corners clicked out of order (a crossed shape) are refused instead of scrambling the photo,
-  output pixels beyond the horizon of a strongly oblique photo stay empty instead of showing an
-  upside-down copy, and the toolbar and help say that rectifying replaces the photo.
+  and output pixels beyond the horizon of a strongly oblique photo stay empty instead of showing an
+  upside-down copy. New **Undo rectify** (toolbar) restores the photo as it was before rectification
+  (image, scale, areas, metadata and any enhancement backup); the original is kept in browser storage
+  and in `.webgrainy` project files.
 - `site_summary.csv`: `per_photo` rows for a photo whose name needs quoting (comma, quote, `#`) were
   malformed (`"a,b.jpg"_D50`) and rejected by strict CSV readers (Python `csv` strict mode, DuckDB,
   Polars); the whole metric name is now one quoted cell.

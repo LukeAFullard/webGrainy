@@ -311,9 +311,12 @@ and some statistics (Folk & Ward, Wentworth classes) are switched off.
 
 ### 4-Pt Rectify
 Corrects photos taken at an angle. Click four points that form a rectangle on the ground
-(e.g. the corners of a quadrat). The photo is straightened and must then be re-analysed.
+(e.g. the corners of a quadrat), in order around it: top-left, top-right, bottom-right,
+bottom-left. The photo is straightened and must then be re-analysed.
 **Use it** whenever the camera was noticeably tilted. Perspective makes far grains look
-smaller.
+smaller. **Undo rectify** (toolbar) restores the original photo with its scale and areas;
+after several rectifications it returns to the photo as it was before the first. The
+original is kept in project files, so undo also works after re-opening a project.
 
 ---
 

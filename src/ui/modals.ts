@@ -403,6 +403,7 @@ export function renderDownloadResultsModalHtml(state: AppState): string {
   let photoBytes = 0;
   for (const p of state.photos) {
     photoBytes += p.imageBlob.size + (p.originalBackup?.imageBlob.size ?? 0);
+    photoBytes += (p.rectifyBackup?.imageBlob.size ?? 0) + (p.rectifyBackup?.originalBackup?.imageBlob.size ?? 0);
     // The project file also holds each analysed photo's label mask (4 bytes per working pixel).
     const wi = state.sessions.get(p.photoId)?.workingImage;
     if (wi) photoBytes += wi.width * wi.height * 4;

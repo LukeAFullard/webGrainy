@@ -127,6 +127,30 @@ describe('project archive v2', () => {
   });
 });
 
+describe('rectification backup in project files', () => {
+  it('round-trips the photo before rectification, with its own enhancement backup', async () => {
+    const a = { indexedDB: createProjectMockIDB() };
+    await saveSite({ ...site, photoOrder: ['P'] }, a);
+    const cal = { mmPerPx: 2, pointA: { x: 0, y: 0 }, pointB: { x: 10, y: 0 }, physicalLengthMm: 20, pixelDistance: 10 };
+    await savePhoto({
+      photoId: 'P', siteId: 'S', label: 'q', width: 200, height: 120, addedAt: 1, included: true,
+      imageBlob: new Blob([new Uint8Array([1, 2, 3])], { type: 'image/png' }),
+      rectifyBackup: {
+        imageBlob: new Blob([new Uint8Array([4, 5, 6, 7])], { type: 'image/jpeg' }), width: 80, height: 60, calibration: cal,
+        originalBackup: { imageBlob: new Blob([new Uint8Array([8, 9])], { type: 'image/jpeg' }), width: 40, height: 30 },
+      },
+    }, a);
+    const b = { indexedDB: createProjectMockIDB() };
+    await importProjectArchive(await exportProjectArchive('S', a), b);
+    const [p] = await listSitePhotos('S', b);
+    const rb = p!.rectifyBackup!;
+    expect([rb.width, rb.height, rb.calibration?.mmPerPx]).toEqual([80, 60, 2]);
+    expect([...new Uint8Array(await rb.imageBlob.arrayBuffer())]).toEqual([4, 5, 6, 7]);
+    expect([...new Uint8Array(await rb.originalBackup!.imageBlob.arrayBuffer())]).toEqual([8, 9]);
+    expect(rb.originalBackup!.width).toBe(40);
+  });
+});
+
 describe('project import checks (audit S12)', () => {
   /** Re-assemble a v2 archive with an edited header and the original payload. */
   async function withHeader(blob: Blob, edit: (h: Record<string, unknown>) => void): Promise<Blob> {

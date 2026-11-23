@@ -137,6 +137,7 @@ export const toolbarActions: Record<string, ActionHandler> = {
   },
   'enhance-deblur': (_el, ctx) => void ctx.actions.enhanceActivePhoto('deblur'),
   'enhance-revert': (_el, ctx) => void ctx.actions.revertActivePhotoEnhancement(),
+  'rectify-undo': (_el, ctx) => void ctx.actions.undoRectificationActive(),
 };
 
 /** Tool buttons; returns true when handled. */

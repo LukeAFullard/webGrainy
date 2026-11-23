@@ -328,7 +328,25 @@ try {
     await page.waitForTimeout(500);
     if (/\d+ excluded by ROI/.test(await page.evaluate(() => document.body.innerText))) fail('Clear areas did not remove the ROI');
     console.log('ok: ROI tool excludes grains outside it; Clear areas removes it');
-    await page.click('button[data-tool="inspect"]');
+    // Rectify on four corners in order, then Undo rectify brings back the original photo.
+    const sizeText = () => page.evaluate(() => document.getElementById('viewport-footer')?.innerText.match(/\d+×\d+px/)?.[0] ?? '');
+    const sizeBefore = await sizeText();
+    await page.click('button[data-tool="rectify"]');
+    await page.waitForTimeout(300);
+    const rstage = await page.locator('#canvas-stage').boundingBox(); // the sub-toolbar moved it
+    for (const [fx, fy] of [[0.35, 0.35], [0.65, 0.35], [0.65, 0.65], [0.35, 0.65]]) {
+      await page.mouse.click(rstage.x + rstage.width * fx, rstage.y + rstage.height * fy);
+      await page.waitForTimeout(150);
+    }
+    await page.waitForSelector('button[data-action="rectify-undo"]', { timeout: 20000 }).catch(async () => {
+      fail(`rectification did not complete: ${await page.evaluate(() => `${document.querySelector('.toolbar')?.textContent?.match(/Rectify \(\d\/4/)?.[0] ?? ''} | ${document.getElementById('viewport-footer')?.innerText ?? ''}`)}`);
+    });
+    await page.click('button[data-action="rectify-undo"]');
+    await page.waitForFunction(() => /Undid the rectification/.test(document.body.innerText), null, { timeout: 20000 });
+    if (await page.locator('button[data-action="rectify-undo"]').count()) fail('Undo rectify button still shown after undo');
+    await page.waitForTimeout(500);
+    if (!sizeBefore || (await sizeText()) !== sizeBefore) fail(`Undo rectify did not restore the photo size (${sizeBefore} -> ${await sizeText()})`);
+    console.log(`ok: Rectify, then Undo rectify restores the original ${sizeBefore} photo`);
     if (process.env.SMOKE_SCREENSHOT) {
       // Optional visual check: grain ellipses and orientation vectors over the photo.
       await page.click('details.display-menu > summary');

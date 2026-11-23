@@ -13,7 +13,7 @@ import { readRetentionSince } from './prefs.js';
 import { AnalysisSession } from '../modules/analysisSession.js';
 import type { ImageGrainsEngine } from '../modules/engine.js';
 import * as projectStorage from '../modules/projectStorage.js';
-import { isStorageFullError, type PhotoRecord, type SiteRecord } from '../modules/projectStorage.js';
+import { isStorageFullError, type PhotoRecord, type PhotoRectifyBackup, type SiteRecord } from '../modules/projectStorage.js';
 import { buildSiteInputs, computeWorkspaceReports, effectiveRoi } from '../modules/siteWorkspace.js';
 import type { SiteAnalysisOptions, SitePhotoInput } from '../modules/siteAnalysis.js';
 import {
@@ -863,7 +863,18 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
         return;
       }
 
-      const { roiConfig: _dropRoi, originalBackup: _dropBackup, metadata: oldMeta, ...photoBase } = latestPhoto;
+      const { roiConfig: _dropRoi, originalBackup: _dropBackup, rectifyBackup: earlierRectify, metadata: oldMeta, ...photoBase } = latestPhoto;
+      // Everything rectification replaces, kept for "Undo rectify". After a second rectification
+      // the first backup is kept, so undo always returns to the photo as it was imported.
+      const rectifyBackup: PhotoRectifyBackup = earlierRectify ?? {
+        imageBlob: latestPhoto.imageBlob,
+        width: latestPhoto.width,
+        height: latestPhoto.height,
+        ...(latestPhoto.calibration ? { calibration: latestPhoto.calibration } : {}),
+        ...(latestPhoto.roiConfig ? { roiConfig: latestPhoto.roiConfig } : {}),
+        ...(oldMeta ? { metadata: oldMeta } : {}),
+        ...(latestPhoto.originalBackup ? { originalBackup: latestPhoto.originalBackup } : {}),
+      };
       // The new image is a different raster: drop the current-enhancement record (its scale
       // factor no longer applies), but keep every step in the provenance history.
       const { enhancement: _dropEnh, ...restMeta } = oldMeta ?? {};
@@ -890,6 +901,7 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
         height: rectified.height,
         calibration: cal,
         metadata: nextMeta,
+        rectifyBackup,
       };
       await savePhoto(updatedPhoto);
       await storage.savePhotoResult({
@@ -916,7 +928,7 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
         photoStatuses: nextStatuses,
         pendingRectifyPoints: [],
         activeTool: 'inspect',
-        statusMessage: `Rectified ${latestPhoto.label} (${rectified.width}×${rectified.height}px, ${cal.mmPerPx.toFixed(4)} mm/px). Ready to re-analyze.`,
+        statusMessage: `Rectified ${latestPhoto.label} (${rectified.width}×${rectified.height}px, ${cal.mmPerPx.toFixed(4)} mm/px). Ready to re-analyse. Undo rectify restores the original.`,
       });
       recomputeReports();
       deps.onStorageChanged();
@@ -927,6 +939,60 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
         statusMessage: `Rectification failed: ${err instanceof Error ? err.message : String(err)}`,
       });
       await deps.syncViewport(false);
+    }
+  }
+
+  /** Restores the active photo as it was before its first rectification (see rectifyBackup). */
+  async function undoRectificationActive(): Promise<void> {
+    const state = store.getState();
+    if (state.batchRunning || enhancing) return;
+    const photo = getActivePhoto(state);
+    const backup = photo?.rectifyBackup;
+    if (!photo || !backup) return;
+    const {
+      rectifyBackup: _drop,
+      originalBackup: _ob,
+      calibration: _c,
+      roiConfig: _r,
+      metadata: _m,
+      ...base
+    } = photo;
+    const restoredPhoto: PhotoRecord = {
+      ...base,
+      imageBlob: backup.imageBlob,
+      width: backup.width,
+      height: backup.height,
+      ...(backup.calibration ? { calibration: backup.calibration } : {}),
+      ...(backup.roiConfig ? { roiConfig: backup.roiConfig } : {}),
+      ...(backup.metadata ? { metadata: backup.metadata } : {}),
+      ...(backup.originalBackup ? { originalBackup: backup.originalBackup } : {}),
+    };
+    try {
+      await savePhoto(restoredPhoto);
+      // The analysis was of the rectified image: the photo needs analysing again.
+      await storage.savePhotoResult({ photoId: photo.photoId, status: 'pending', updatedAt: Date.now() });
+      const latestState = store.getState();
+      const oldUrl = latestState.thumbUrls.get(photo.photoId);
+      if (oldUrl) revokeUrl(oldUrl);
+      const nextThumbs = new Map(latestState.thumbUrls);
+      nextThumbs.set(photo.photoId, createUrl(backup.imageBlob));
+      const nextSessions = new Map(latestState.sessions);
+      nextSessions.delete(photo.photoId);
+      const nextStatuses = new Map(latestState.photoStatuses);
+      nextStatuses.set(photo.photoId, 'pending');
+      store.setState({
+        photos: latestState.photos.map((p) => (p.photoId === photo.photoId ? restoredPhoto : p)),
+        thumbUrls: nextThumbs,
+        sessions: nextSessions,
+        photoStatuses: nextStatuses,
+        pendingRectifyPoints: [],
+        statusMessage: `Undid the rectification of ${photo.label}: back to the original ${backup.width}×${backup.height}px photo${backup.calibration ? ' and its scale' : ''}. Ready to analyse.`,
+      });
+      recomputeReports();
+      deps.onStorageChanged();
+      await deps.syncViewport(true);
+    } catch (err) {
+      store.setState({ statusMessage: `Undo rectify failed: ${err instanceof Error ? err.message : String(err)}` });
     }
   }
 
@@ -1156,6 +1222,7 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
     persistActiveSession,
     applyCalibrationToActive,
     applyRectificationToActive,
+    undoRectificationActive,
     enhanceActivePhoto,
     revertActivePhotoEnhancement,
     refreshComparison,
