@@ -9,7 +9,7 @@ import type { PhotoRecord, SiteRecord } from './projectStorage.js';
 import type { SiteAnalysisReport, SitePhotoInput, SiteAnalysisOptions } from './siteAnalysis.js';
 import type { SizeMetric } from '../types/index.js';
 import { buildZip, type ZipEntry } from './zip.js';
-import { mapGeoJsonName, photoGeoreference } from './georef.js';
+import { gpkgMapSrs, mapGeoJsonName, photoGeoreference } from './georef.js';
 
 export interface ResultsBundleInput {
   site: SiteRecord;
@@ -97,9 +97,15 @@ export async function resultsBundleEntries(input: ResultsBundleInput): Promise<Z
     // + CRS sidecar that place mask16.png on the map.
     let geo = false;
     const g = photoGeoreference(photo).georef;
+    // One GeoPackage (e.g. for ArcGIS Pro): in the map CRS when it can be written, else lon/lat.
+    const mapSrs = g ? gpkgMapSrs(g) : null;
+    const gpkg: ['photo-gpkg-map' | 'photo-gpkg-lonlat', string] = mapSrs
+      ? ['photo-gpkg-map', `outlines_EPSG${mapSrs.id}.gpkg`]
+      : ['photo-gpkg-lonlat', 'outlines_lonlat.gpkg'];
     for (const [kind, name] of [
       ['photo-geojson-map', g ? mapGeoJsonName(g) : 'outlines_map.geojson'],
       ['photo-geojson-lonlat', 'outlines_lonlat.geojson'],
+      gpkg,
       ['photo-mask-geotiff', 'mask_map.tif'],
       ['photo-mask-webmercator', 'mask_webmercator.tif'],
       ['photo-mask-worldfile', 'mask16.pgw'],
@@ -118,7 +124,7 @@ export async function resultsBundleEntries(input: ResultsBundleInput): Promise<Z
       `photos/<photo name>/  (${photoCount} analysed photo${photoCount === 1 ? '' : 's'})\n` +
         PHOTO_FILES.map(([, name, what]) => `    ${name}: ${what}`).join('\n') +
         (georeferenced > 0
-          ? '\n    GeoTIFF photos also (see above): outlines_EPSG<code>.geojson, outlines_lonlat.geojson, mask_map.tif,\n' +
+          ? '\n    GeoTIFF photos also (see above): outlines_EPSG<code>.geojson / .gpkg, outlines_lonlat.geojson, mask_map.tif,\n' +
             '    mask_webmercator.tif, mask16.pgw and mask16.png.aux.xml (each only when the CRS allows it).'
           : ''),
     );
@@ -149,7 +155,7 @@ export async function resultsBundleEntries(input: ResultsBundleInput): Promise<Z
     'The summary CSVs (section,metric,value,unit) hold the same metadata as rows whose first cell is "metadata".',
     '',
     georeferenced > 0
-      ? 'GeoTIFF photos: outlines_lonlat.geojson has the grain outlines in WGS84 longitude/latitude for web maps and any GeoJSON reader (when the CRS can be converted; no datum shift, within about a metre). outlines_EPSG<code>.geojson has them in the map coordinates and CRS of the source GeoTIFF (exact; for QGIS and other GDAL-based tools only: web maps and ArcGIS Online read every .geojson as longitude/latitude and cannot place it). mask_map.tif is the label mask as a GeoTIFF, CRS included, background = nodata; mask_webmercator.tif is the same mask reprojected to the north-up Web Mercator grid (EPSG:3857), for web maps that draw rasters without rotating them. mask16.png is placed by mask16.pgw (world file) with its CRS in mask16.png.aux.xml. outlines.geojson, grains.csv and the other mask files are in photo pixels (x right, y down), not map coordinates.'
+      ? 'GeoTIFF photos: outlines_lonlat.geojson has the grain outlines in WGS84 longitude/latitude for web maps and any GeoJSON reader (when the CRS can be converted; no datum shift, within about a metre). outlines_EPSG<code>.geojson has them in the map coordinates and CRS of the source GeoTIFF (exact; for QGIS and other GDAL-based tools only: web maps and ArcGIS Online read every .geojson as longitude/latitude and cannot place it). outlines_EPSG<code>.gpkg is the same as an OGC GeoPackage with its CRS, for ArcGIS Pro and any GIS (outlines_lonlat.gpkg, in longitude/latitude, when the CRS cannot be written). mask_map.tif is the label mask as a GeoTIFF, CRS included, background = nodata; mask_webmercator.tif is the same mask reprojected to the north-up Web Mercator grid (EPSG:3857), for web maps that draw rasters without rotating them. mask16.png is placed by mask16.pgw (world file) with its CRS in mask16.png.aux.xml. outlines.geojson, grains.csv and the other mask files are in photo pixels (x right, y down), not map coordinates.'
       : 'Mask and outline coordinates are photo pixels (x right, y down), not map coordinates.',
     ...(coarse.length > 0
       ? [

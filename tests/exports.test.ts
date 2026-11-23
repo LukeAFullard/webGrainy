@@ -42,7 +42,7 @@ describe('exports module', () => {
       photo: { ...photo, metadata: { ...(photo.metadata ?? {}), georef } },
       decodePhoto: async (p) => ({ data: new Uint8ClampedArray(p.width * p.height * 4).fill(128), width: p.width, height: p.height }),
     };
-    const geoKinds = new Set(['photo-geojson-map', 'photo-geojson-lonlat', 'photo-mask-worldfile', 'photo-mask-geotiff', 'photo-mask-auxxml', 'photo-mask-webmercator', 'photo-image-webmercator']);
+    const geoKinds = new Set(['photo-geojson-map', 'photo-geojson-lonlat', 'photo-gpkg-map', 'photo-gpkg-lonlat', 'photo-mask-worldfile', 'photo-mask-geotiff', 'photo-mask-auxxml', 'photo-mask-webmercator', 'photo-image-webmercator']);
     for (const kind of EXPORT_KINDS) {
       if (kind === 'site-archive') continue;
       const f = await buildExport(kind, geoKinds.has(kind) ? geoCtx : ctx);

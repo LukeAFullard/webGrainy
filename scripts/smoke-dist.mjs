@@ -328,6 +328,27 @@ try {
     await page.waitForTimeout(500);
     if (/\d+ excluded by ROI/.test(await page.evaluate(() => document.body.innerText))) fail('Clear areas did not remove the ROI');
     console.log('ok: ROI tool excludes grains outside it; Clear areas removes it');
+    // GeoPackage export through the Export dialog: a valid SQLite / GeoPackage file.
+    await page.locator('[data-open-modal="export"]:visible').first().click();
+    await page.selectOption('select[data-export-opt="what"]', 'outlines');
+    await page.selectOption('select[data-export-opt="format"]', 'gpkg');
+    const [gpkgDl] = await Promise.all([page.waitForEvent('download'), page.click('button[data-export="photo-gpkg"]')]);
+    const gpkgPath = await gpkgDl.path();
+    const { DatabaseSync } = await import('node:sqlite');
+    const gdb = new DatabaseSync(gpkgPath, { readOnly: true });
+    const integrity = gdb.prepare('PRAGMA integrity_check').get().integrity_check;
+    const appId = gdb.prepare('PRAGMA application_id').get().application_id;
+    const nGpkg = gdb.prepare('SELECT count(*) AS c FROM grain_outlines').get().c;
+    gdb.close();
+    // Same grains as the GeoJSON export (every detected grain, not only the counted ones).
+    await page.selectOption('select[data-export-opt="format"]', 'geojson');
+    const [jsonDl] = await Promise.all([page.waitForEvent('download'), page.click('button[data-export="photo-geojson"]')]);
+    const nJson = JSON.parse(readFileSync(await jsonDl.path(), 'utf8')).features.length;
+    if (integrity !== 'ok' || appId !== 0x47504b47 || nGpkg !== nJson || nGpkg < Number(nText)) {
+      fail(`GeoPackage export: integrity ${integrity}, application_id ${appId}, ${nGpkg} grains (GeoJSON ${nJson}, counted ${nText})`);
+    }
+    console.log(`ok: GeoPackage export (${gpkgDl.suggestedFilename()}, ${nGpkg} grains) opens in SQLite`);
+    await page.click('button[data-action="close-modal"]');
     // Rectify on four corners in order, then Undo rectify brings back the original photo.
     const sizeText = () => page.evaluate(() => document.getElementById('viewport-footer')?.innerText.match(/\d+×\d+px/)?.[0] ?? '');
     const sizeBefore = await sizeText();

@@ -30,7 +30,7 @@ Photos and results never leave your device. The only network requests are the on
   - Each site is one survey. Repeat surveys of a place share a place name and can be followed over time.
   - Sites are compared side by side and over time like for like: same statistics settings and common size range, with a warning when photos were analysed differently.
 - **Exports.**
-  - Per-grain and summary CSV/JSON, label-mask PNGs, GeoJSON/SVG outlines, chart images and a printable report.
+  - Per-grain and summary CSV/JSON, label-mask PNGs, GeoJSON / GeoPackage / SVG outlines, chart images and a printable report.
   - Every export records the app version and commit, model and its SHA-256, and all settings.
   - Projects can be saved and reopened as `.webgrainy` files.
 
