@@ -5,7 +5,8 @@ For each image, network outputs (flows dY,dX + cellprob) are produced by:
             diameter=None, tile_overlap=0.25, normalize=True, bfloat16 default)
   ONNX@CP   our ONNX model inside Cellpose's own normalisation + tiling + blending
             (net swapped)  -> isolates model/export differences
-  OURS      webGrainy's real output (dumped by dump_ours.mjs from dist/)
+  OURS      webGrainy's legacy-pipeline output (dumped by dump_ours.mjs from dist/; the legacy
+            pipeline and that script were removed after v0.1.0, see the git history)
   V-*       numpy re-implementations of our pipeline with ONE change each
 and every variant is turned into masks with the SAME Cellpose dynamics, then scored:
   - agreement with PT outputs (cellprob corr, flow-direction agreement)

@@ -1128,6 +1128,52 @@ details.settings-block > summary {
   cursor: pointer;
   font-weight: 600;
 }
+.flag-list > summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.flag-groups {
+  position: relative; /* offsetTop of the entries is measured from the list */
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1rem;
+  max-height: 9.5rem;
+  overflow-y: auto;
+  padding: 0.3rem 0 0.15rem;
+}
+.flag-group {
+  min-width: 12rem;
+  max-width: 100%;
+}
+.flag-group-title {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 0.2rem;
+}
+.flag-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+.flag-item {
+  font: inherit;
+  font-size: 0.72rem;
+  padding: 0.1rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 0.3rem;
+  background: var(--bg-elevated);
+  color: var(--text-primary, inherit);
+  cursor: pointer;
+}
+.flag-item.active {
+  border-color: var(--accent);
+  outline: 1px solid var(--accent);
+}
+.flag-meta {
+  color: var(--text-secondary);
+  font-weight: 400;
+}
 .display-options {
   display: flex;
   flex-wrap: wrap;

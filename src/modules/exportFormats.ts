@@ -353,6 +353,26 @@ function itxtData(keyword: string, text: string): Uint8Array {
   return out;
 }
 
+/**
+ * Adds UTF-8 text chunks (`iTXt`, e.g. provenance) to an encoded PNG, right after its IHDR chunk
+ * (as the PNG spec recommends for text that should be read before the image data).
+ */
+export function insertPngText(png: Uint8Array, text: Record<string, string>): Uint8Array {
+  const sig = [137, 80, 78, 71, 13, 10, 26, 10];
+  if (png.length < 33 || sig.some((b, i) => png[i] !== b)) throw new Error('Not a PNG file.');
+  const ihdrEnd = 8 + 12 + 13; // signature + IHDR (length, type, 13 data bytes, CRC)
+  const chunks = Object.entries(text).map(([k, v]) => makePngChunk('iTXt', itxtData(k, v)));
+  const out = new Uint8Array(png.length + chunks.reduce((n, c) => n + c.length, 0));
+  out.set(png.subarray(0, ihdrEnd), 0);
+  let o = ihdrEnd;
+  for (const c of chunks) {
+    out.set(c, o);
+    o += c.length;
+  }
+  out.set(png.subarray(ihdrEnd), o);
+  return out;
+}
+
 function assemblePng(
   width: number,
   height: number,

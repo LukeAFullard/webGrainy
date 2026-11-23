@@ -71,8 +71,6 @@ export interface UiAnalysisParams {
   niter: number;
   /** Advanced: minimum converging pixels to seed a grain. */
   minSeedDensity: number;
-  /** Advanced: inference tiling pipeline. */
-  inferencePipeline: 'cellpose' | 'legacy';
   /** Skip inference tiles outside the photo's ROI / exclusions. */
   skipTilesOutsideRoi: boolean;
 }
@@ -160,6 +158,8 @@ export interface AppState {
   batchRunning: boolean;
   /** True while an optional AI enhancement (2× Upscale / Deblur) is running. */
   enhancing?: boolean;
+  /** True while Save image is drawing the full-resolution PNG. */
+  savingView?: boolean;
   batchProgress: {
     completed: number;
     total: number;
@@ -312,7 +312,6 @@ export function toAnalysisConfig(
     applyClahe: params.applyClahe,
     claheClipLimit: params.claheClipLimit,
     excludeBorder: params.excludeBorder,
-    inferencePipeline: params.inferencePipeline,
     skipTilesOutsideRoi: params.skipTilesOutsideRoi,
     postProcess: {
       flowThreshold: params.flowThreshold,
@@ -344,7 +343,6 @@ export function defaultAnalysisParams(): UiAnalysisParams {
   excludeBorderMargin: DEFAULT_POSTPROCESS_OPTIONS.excludeBorderMargin,
   niter: DEFAULT_POSTPROCESS_OPTIONS.niter,
   minSeedDensity: DEFAULT_POSTPROCESS_OPTIONS.minSeedDensity,
-    inferencePipeline: 'cellpose',
   skipTilesOutsideRoi: true,
 };
 }

@@ -732,10 +732,20 @@ export class CanvasViewport {
     const w = Math.max(1, Math.floor(rect.width));
     const h = Math.max(1, Math.floor(rect.height));
     this.svgOverlay.setAttribute('viewBox', `0 0 ${w} ${h}`);
+    this.svgOverlay.innerHTML = this.overlayParts({ zoom: this.zoom, panX: this.panX, panY: this.panY, w, h, forExport: false }).join('');
+  }
 
+  /**
+   * SVG elements of the vector overlay (ROI, exclusions, grain ellipses / orientations / flags,
+   * calibration line, shapes being drawn) for a view: image point (x, y) is drawn at
+   * (x * zoom + panX, y * zoom + panY) in a `w` x `h` view. `forExport` leaves out shapes still
+   * being drawn (rubber band, unfinished calibration / rectify points).
+   */
+  private overlayParts(v: { zoom: number; panX: number; panY: number; w: number; h: number; forExport: boolean }): string[] {
+    const { w, h } = v;
     const parts: string[] = [];
-    const toSx = (x: number): number => x * this.zoom + this.panX;
-    const toSy = (y: number): number => y * this.zoom + this.panY;
+    const toSx = (x: number): number => x * v.zoom + v.panX;
+    const toSy = (y: number): number => y * v.zoom + v.panY;
 
     // Region of interest (green: only grains inside count), then exclusion polygons & strokes
     if (this.photo?.roiConfig) {
@@ -752,7 +762,7 @@ export class CanvasViewport {
       for (const stroke of this.photo.roiConfig.exclusionStrokes) {
         if (stroke.points.length < 2) continue;
         const pts = stroke.points.map((p) => `${toSx(p.x).toFixed(1)},${toSy(p.y).toFixed(1)}`).join(' ');
-        parts.push(`<polyline points="${pts}" fill="none" stroke="rgba(231, 76, 60, 0.55)" stroke-width="${(stroke.radiusPx * 2 * this.zoom).toFixed(1)}" stroke-linecap="round" stroke-linejoin="round" />`);
+        parts.push(`<polyline points="${pts}" fill="none" stroke="rgba(231, 76, 60, 0.55)" stroke-width="${(stroke.radiusPx * 2 * v.zoom).toFixed(1)}" stroke-linecap="round" stroke-linejoin="round" />`);
       }
     }
 
@@ -776,8 +786,8 @@ export class CanvasViewport {
         });
 
         if (this.overlays.ellipses || isSelected) {
-          const rx = Math.max(1, (g.aAxisPx / 2) * this.zoom);
-          const ry = Math.max(1, (g.bAxisPx / 2) * this.zoom);
+          const rx = Math.max(1, (g.aAxisPx / 2) * v.zoom);
+          const ry = Math.max(1, (g.bAxisPx / 2) * v.zoom);
           const deg = ellipseRotationDeg(g.orientationRad);
           const strokeCol = isSelected ? '#ffd166' : '#5ab0ff';
           parts.push(
@@ -786,7 +796,7 @@ export class CanvasViewport {
         }
 
         if (this.overlays.orientations) {
-          const halfLen = (g.aAxisPx / 2) * this.zoom;
+          const halfLen = (g.aAxisPx / 2) * v.zoom;
           const dir = majorAxisDirection(g.orientationRad);
           const dx = dir.dx * halfLen;
           const dy = dir.dy * halfLen;
@@ -803,7 +813,7 @@ export class CanvasViewport {
     }
 
     // Calibration line
-    if (this.calPoints.length > 0) {
+    if (this.calPoints.length > 0 && !v.forExport) {
       for (const pt of this.calPoints) {
         parts.push(`<circle cx="${toSx(pt.x).toFixed(1)}" cy="${toSy(pt.y).toFixed(1)}" r="4" fill="#2ecc71" stroke="#0c1014" stroke-width="1.5" />`);
       }
@@ -818,7 +828,7 @@ export class CanvasViewport {
     }
 
     // 4-point Rectify quad
-    if (this.rectifyPoints.length > 0) {
+    if (this.rectifyPoints.length > 0 && !v.forExport) {
       const pts = this.rectifyPoints.map((p) => `${toSx(p.x).toFixed(1)},${toSy(p.y).toFixed(1)}`).join(' ');
       parts.push(`<polyline points="${pts}" fill="none" stroke="#ffd166" stroke-width="2" />`);
       this.rectifyPoints.forEach((p, idx) => {
@@ -829,7 +839,7 @@ export class CanvasViewport {
     }
 
     // Active rubber-band shape
-    if (this.activePoints.length > 0) {
+    if (this.activePoints.length > 0 && !v.forExport) {
       const allPts = this.mouseImgPt && this.tool !== 'excludeBrush'
         ? [...this.activePoints, this.mouseImgPt]
         : this.activePoints;
@@ -838,7 +848,93 @@ export class CanvasViewport {
       parts.push(`<polyline points="${pts}" fill="none" stroke="${col}" stroke-width="2" stroke-dasharray="4,2" />`);
     }
 
-    this.svgOverlay.innerHTML = parts.join('');
+    return parts;
+  }
+
+  /**
+   * The photo as it is drawn on screen (mask colours and opacity, ellipses, orientation lines,
+   * flags, ROI / exclusions, calibration line) as a PNG at the photo's own resolution: the whole
+   * photo, or only the part visible in the view. Very large outputs are scaled down to what the
+   * browser can draw (`scale` < 1). Lines and markers are thickened with the output size so
+   * they read as on screen. Null when no photo is shown or the browser cannot encode it.
+   */
+  async exportViewImage(area: 'photo' | 'visible'): Promise<{ blob: Blob; width: number; height: number; scale: number } | null> {
+    if (!this.photo || !this.imageBitmap) return null;
+    const pw = this.photo.width;
+    const ph = this.photo.height;
+    let x0 = 0, y0 = 0, x1 = pw, y1 = ph;
+    if (area === 'visible') {
+      const rect = this.stage.getBoundingClientRect();
+      x0 = Math.max(0, Math.floor(-this.panX / this.zoom));
+      y0 = Math.max(0, Math.floor(-this.panY / this.zoom));
+      x1 = Math.min(pw, Math.ceil((rect.width - this.panX) / this.zoom));
+      y1 = Math.min(ph, Math.ceil((rect.height - this.panY) / this.zoom));
+      if (x1 <= x0 || y1 <= y0) return null;
+    }
+    const cw = x1 - x0;
+    const ch = y1 - y0;
+    // Browser canvas limits: 16384 px a side, and about 16.7 MP on Safari (try more elsewhere).
+    for (const maxArea of [40e6, 16.7e6, 8e6]) {
+      const scale = Math.min(1, 16384 / Math.max(cw, ch), Math.sqrt(maxArea / (cw * ch)));
+      const ow = Math.max(1, Math.round(cw * scale));
+      const oh = Math.max(1, Math.round(ch * scale));
+      const blob = await this.drawViewImage(x0, y0, cw, ch, ow, oh);
+      if (blob) return { blob, width: ow, height: oh, scale };
+    }
+    return null;
+  }
+
+  private async drawViewImage(x0: number, y0: number, cw: number, ch: number, ow: number, oh: number): Promise<Blob | null> {
+    const canvas = document.createElement('canvas');
+    canvas.width = ow;
+    canvas.height = oh;
+    const ctx = canvas.getContext('2d');
+    if (!ctx || !this.photo || !this.imageBitmap) return null;
+    const s = ow / cw;
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    const bx = this.imageBitmap.width / this.photo.width;
+    const by = this.imageBitmap.height / this.photo.height;
+    ctx.drawImage(this.imageBitmap, x0 * bx, y0 * by, cw * bx, ch * by, 0, 0, ow, oh);
+    if (this.session && (this.overlays.instanceIds || this.overlays.wentworthColors)) {
+      if (this.maskDirty) this.rebuildMaskOffscreen();
+      const m = this.maskOffscreen;
+      const fx = m.width / this.photo.width;
+      const fy = m.height / this.photo.height;
+      ctx.save();
+      ctx.globalAlpha = this.overlays.opacity;
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(m, x0 * fx, y0 * fy, cw * fx, ch * fy, 0, 0, ow, oh);
+      ctx.restore();
+    }
+    // The vector overlay is built in a smaller virtual view and scaled up, so line widths and
+    // markers grow with the output (about 1 px per 1000 px of its long side, at least 1).
+    const k = Math.max(1, Math.max(ow, oh) / 1000);
+    const vw = ow / k;
+    const vh = oh / k;
+    const z = s / k;
+    const parts = this.overlayParts({ zoom: z, panX: -x0 * z, panY: -y0 * z, w: vw, h: vh, forExport: true });
+    if (parts.length > 0) {
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${ow}" height="${oh}" viewBox="0 0 ${vw} ${vh}">${parts.join('')}</svg>`;
+      const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
+      try {
+        const img = new Image();
+        img.src = url;
+        await img.decode();
+        ctx.drawImage(img, 0, 0, ow, oh);
+      } catch {
+        return null;
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+    }
+    return new Promise((resolve) => {
+      try {
+        canvas.toBlob((b) => resolve(b), 'image/png');
+      } catch {
+        resolve(null);
+      }
+    });
   }
 
   private renderLoupe(): void {

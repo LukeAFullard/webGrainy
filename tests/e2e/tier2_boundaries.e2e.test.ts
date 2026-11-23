@@ -7,11 +7,7 @@ import {
   applyCLAHE,
   prepareWorkingImage,
   recommendModel,
-  normalizeGray,
-  normalizeRgbJoint99,
   createInferenceSession,
-  runUnetInference,
-  runCpsamTiledInference,
   float32ToFloat16,
   float16ToFloat32,
   flowsToMasksBrowser,
@@ -27,10 +23,10 @@ import {
   exportSvg,
   ImageGrainsEngine,
 } from '../../src/index.js';
+import { cpNormalizeRgbPerChannel } from '../../src/modules/cellposeTiling.js';
 import type {
   DownloadProgress,
   GrainMorphometrics,
-  InferenceProgress,
   ModelKind,
 } from '../../src/types/index.js';
 import {
@@ -126,25 +122,18 @@ describe('Tier 2: Boundary & Corner Cases — ImageGrains 2.0 Web', () => {
       const img = createFlatImage(1, 1, 100);
       const clahe = applyCLAHE({ data: img.data, width: 1, height: 1 });
       const scaled = prepareWorkingImage(img.data, 1, 1, 'auto');
-      const gray = normalizeGray(img.data, 1, 1);
-      const rgb = normalizeRgbJoint99(img.data, 1, 1);
+      const rgb = cpNormalizeRgbPerChannel(img.data, 1, 1);
 
       expect(clahe.data.length).toBe(4);
       expect(scaled.width).toBe(1);
       expect(scaled.height).toBe(1);
-      expect(Number.isFinite(gray[0])).toBe(true);
       expect(Number.isFinite(rgb[0])).toBe(true);
     });
 
     it('handles uniform-flat image (p99 === p1) without NaN or Infinity', () => {
       const flat = createFlatImage(64, 64, 200);
-      const gray = normalizeGray(flat.data, 64, 64);
-      const rgb = normalizeRgbJoint99(flat.data, 64, 64);
+      const rgb = cpNormalizeRgbPerChannel(flat.data, 64, 64);
 
-      for (let i = 0; i < gray.length; i++) {
-        expect(Number.isNaN(gray[i])).toBe(false);
-        expect(Number.isFinite(gray[i])).toBe(true);
-      }
       for (let i = 0; i < rgb.length; i++) {
         expect(Number.isNaN(rgb[i])).toBe(false);
         expect(Number.isFinite(rgb[i])).toBe(true);
@@ -186,12 +175,6 @@ describe('Tier 2: Boundary & Corner Cases — ImageGrains 2.0 Web', () => {
       } catch (err) {
         expect(err).toBeInstanceOf(Error);
       }
-      try {
-        const gray = normalizeGray(empty, 0, 0);
-        expect(gray.length).toBe(0);
-      } catch (err) {
-        expect(err).toBeInstanceOf(Error);
-      }
     });
 
     it('recommendModel runs within < 5 ms budget on 256x256 thumbnail after warm-up', async () => {
@@ -206,119 +189,6 @@ describe('Tier 2: Boundary & Corner Cases — ImageGrains 2.0 Web', () => {
   // 3. ONNX Inference Boundaries (F3.1–F3.3)
   // =========================================================================
   describe('ONNX Inference Boundaries (F3.1–F3.3)', () => {
-    it('runUnetInference reflection-pads arbitrary non-multiple-of-16 dimensions (17x33 -> 32x48), keeps ch1=0, and crops back', async () => {
-      const session = createMockOnnxSession({ mode: 'unet' });
-      const w = 17;
-      const h = 33;
-      const gray = new Float32Array(w * h);
-      for (let y = 0; y < h; y++) {
-        for (let x = 0; x < w; x++) {
-          gray[y * w + x] = 0.1 + ((x + 1) * 0.02) + ((y + 1) * 0.01);
-        }
-      }
-
-      const out = await runUnetInference(session, gray, w, h);
-
-      expect(session.observedInputShapes[0]).toEqual([1, 2, 48, 32]);
-      const captured = session.capturedInputs[0];
-      expect(captured).toBeDefined();
-      const padW = 32;
-      const padH = 48;
-      const hwPad = padW * padH;
-      // Channel 1 must be all zeros
-      const ch1 = captured!.data.subarray(hwPad, 2 * hwPad);
-      expect(ch1.every((v) => v === 0)).toBe(true);
-
-      // Padded right border (x = 17, y = 5) and bottom border (x = 5, y = 33) must be reflection-padded (not zero)
-      const rightPadVal = captured!.data[5 * padW + 17] ?? 0;
-      const bottomPadVal = captured!.data[33 * padW + 5] ?? 0;
-      expect(rightPadVal).toBeGreaterThan(0);
-      expect(bottomPadVal).toBeGreaterThan(0);
-      // Matches reflected edge pixel (either x=16 or x=15 depending on reflect mode)
-      const edgeX16 = gray[5 * w + 16] ?? 0;
-      const edgeX15 = gray[5 * w + 15] ?? 0;
-      expect(
-        Math.abs(rightPadVal - edgeX16) < 1e-5 || Math.abs(rightPadVal - edgeX15) < 1e-5
-      ).toBe(true);
-
-      expect(out.width).toBe(w);
-      expect(out.height).toBe(h);
-      expect(out.cellprob.length).toBe(w * h);
-    });
-
-    it('runUnetInference handles sub-16px image (8x8 -> padded to 16x16)', async () => {
-      const session = createMockOnnxSession({ mode: 'unet' });
-      const gray = new Float32Array(8 * 8).fill(0.5);
-      const out = await runUnetInference(session, gray, 8, 8);
-
-      expect(session.observedInputShapes[0]).toEqual([1, 2, 16, 16]);
-      expect(out.width).toBe(8);
-      expect(out.height).toBe(8);
-    });
-
-    it('runCpsamTiledInference reflection-pads images smaller than 256x256 (e.g. 120x90) with non-zero borders', async () => {
-      const session = createMockOnnxSession({ mode: 'cpsam' });
-      const w = 120;
-      const h = 90;
-      const rgb = new Float32Array(3 * w * h);
-      for (let y = 0; y < h; y++) {
-        for (let x = 0; x < w; x++) {
-          const p = (y * w + x) * 3;
-          rgb[p] = 0.2 + (x + y) / 500;
-          rgb[p + 1] = 0.3 + (x + y) / 500;
-          rgb[p + 2] = 0.4 + (x + y) / 500;
-        }
-      }
-
-      const out = await runCpsamTiledInference(session, rgb, w, h);
-
-      expect(session.observedInputShapes[0]).toEqual([1, 3, 256, 256]);
-      const captured = session.capturedInputs[0];
-      expect(captured).toBeDefined();
-      // Inspect channel 0 padded region beyond (120, 90): must be non-zero reflection-padded
-      const rawRightPad = captured!.data[5 * 256 + 120] ?? 0;
-      const rawBottomPad = captured!.data[90 * 256 + 5] ?? 0;
-      const rightPadVal =
-        captured!.data instanceof Uint16Array ? float16ToFloat32(rawRightPad) : Number(rawRightPad);
-      const bottomPadVal =
-        captured!.data instanceof Uint16Array ? float16ToFloat32(rawBottomPad) : Number(rawBottomPad);
-      expect(rightPadVal).toBeGreaterThan(0.1);
-      expect(bottomPadVal).toBeGreaterThan(0.1);
-
-      expect(out.width).toBe(w);
-      expect(out.height).toBe(h);
-      expect(out.flowY.length).toBe(w * h);
-    });
-
-    it('runCpsamTiledInference aborts cleanly when AbortSignal is pre-aborted', async () => {
-      const session = createMockOnnxSession({ mode: 'cpsam' });
-      const rgb = new Float32Array(3 * 512 * 512).fill(0.1);
-      const ac = new AbortController();
-      ac.abort();
-
-      await expect(
-        runCpsamTiledInference(session, rgb, 512, 512, { signal: ac.signal })
-      ).rejects.toThrow();
-    });
-
-    it('runCpsamTiledInference aborts mid-flight between tiles when AbortSignal fires', async () => {
-      const session = createMockOnnxSession({ mode: 'cpsam' });
-      // 900x900 -> 5x5 = 25 tiles -> 2 batches (16 + 9)
-      const rgb = new Float32Array(3 * 900 * 900).fill(0.25);
-      const ac = new AbortController();
-
-      await expect(
-        runCpsamTiledInference(session, rgb, 900, 900, {
-          signal: ac.signal,
-          onProgress: (p: InferenceProgress) => {
-            if (p.completedTiles >= 1) {
-              ac.abort();
-            }
-          },
-        })
-      ).rejects.toThrow();
-      expect(session.observedInputShapes.length).toBeLessThan(2);
-    });
 
     it('float32ToFloat16 handles zero, negative zero, overflow, and subnormal values', () => {
       expect(float16ToFloat32(float32ToFloat16(0))).toBe(0);
@@ -639,7 +509,7 @@ describe('Tier 2: Boundary & Corner Cases — ImageGrains 2.0 Web', () => {
       const img = createUniformGravelImage(64, 64);
 
       await expect(
-        engine.analyzeImage(img, { inferencePipeline: 'legacy', model: 'unet', signal: ac.signal })
+        engine.analyzeImage(img, { model: 'unet', signal: ac.signal })
       ).rejects.toThrow();
     });
 
@@ -648,7 +518,7 @@ describe('Tier 2: Boundary & Corner Cases — ImageGrains 2.0 Web', () => {
         sessionFactory: async (kind: ModelKind) => createMockOnnxSession({ mode: kind }),
       });
       const img = createFlatImage(1, 1, 128);
-      const session = await engine.analyzeImage(img, { inferencePipeline: 'legacy', model: 'unet' });
+      const session = await engine.analyzeImage(img, { model: 'unet' });
 
       expect(session.getResult().grainCount).toBe(0);
       expect(session.getStats().totalGrains).toBe(0);
@@ -662,7 +532,7 @@ describe('Tier 2: Boundary & Corner Cases — ImageGrains 2.0 Web', () => {
 
       const img = createUniformGravelImage(64, 64);
       const stages: string[] = [];
-      await engine.analyzeImage(img, { inferencePipeline: 'legacy',
+      await engine.analyzeImage(img, {
         model: 'unet',
         onProgress: (stage: string) => stages.push(stage),
       });
@@ -678,7 +548,7 @@ describe('Tier 2: Boundary & Corner Cases — ImageGrains 2.0 Web', () => {
       await engine.initialize();
 
       const img = createUniformGravelImage(64, 64);
-      const session = await engine.analyzeImage(img, { inferencePipeline: 'legacy', model: 'unet' });
+      const session = await engine.analyzeImage(img, { model: 'unet' });
 
       expect(session.undo()).toBe(false);
       expect(session.redo()).toBe(false);
@@ -695,7 +565,7 @@ describe('Tier 2: Boundary & Corner Cases — ImageGrains 2.0 Web', () => {
       await engine.initialize();
 
       const img = createUniformGravelImage(128, 128);
-      const session = await engine.analyzeImage(img, { inferencePipeline: 'legacy',
+      const session = await engine.analyzeImage(img, {
         model: 'unet',
         scaleMode: '1.0x',
         excludeBorder: true,

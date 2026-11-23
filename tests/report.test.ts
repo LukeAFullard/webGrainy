@@ -88,4 +88,23 @@ describe('printable site report', () => {
     expect(html).toContain(PRINT_SCRIPT);
     expect((html.match(/data:image\/svg\+xml;base64,/g) ?? []).length).toBe(3);
   });
+
+  it('lists every percentile with its interval, a row per photo, and a scale bar on calibrated photos', () => {
+    for (const k of ['D5', 'D10', 'D16', 'D25', 'D50', 'D75', 'D84', 'D90', 'D95']) {
+      expect(html, k).toContain(`data-csv="psd/${k}"`);
+      expect(html, k).toContain(`data-csv="psd_bootstrap_ci_lo/${k}"`);
+    }
+    expect(html).toContain('Results by photo');
+    expect((html.match(/<td class="lbl">/g) ?? []).length).toBe(3);
+    expect(html).toContain('Page " counter(page) " of " counter(pages)');
+    // Site name in the CSS page footer: plain text, cannot close the <style> tag.
+    expect(html).toContain('content: "Reach  A  & B · grain-size report"');
+    const withBar = buildSiteReportHtml({
+      site, report, generatedAt: 'x', metadata: {}, settings: [], psdSvg: '', histogramSvg: null,
+      photos: [{ label: 'a.jpg', validGrainCount: 1, D50: 20, mmPerPx: 0.5, widthPx: 4000, heightPx: 3000, outlierReasons: [] }],
+    });
+    // 4000 px x 0.5 mm = 2 m wide: a 20 cm bar is 10 % of the width.
+    expect(withBar).toContain('<div class="sbar" style="width:10.00%"></div><div class="slabel">20 cm</div>');
+    expect(html).not.toContain('class="sbar"'); // no size: no bar
+  });
 });

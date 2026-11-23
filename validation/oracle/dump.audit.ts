@@ -3,7 +3,7 @@ import { it } from 'vitest';
 import { writeFileSync } from 'node:fs';
 import { weightedPsdPercentiles, computeFolkWardStats, computePsdPercentiles } from '../../src/modules/sedimentStats';
 import { computeGrainMorphometrics } from '../../src/modules/postprocessCore';
-import { float32ToFloat16, tileStarts, makeBlendWindow, reflectIndex } from '../../src/modules/onnxInference';
+import { float32ToFloat16 } from '../../src/modules/onnxInference';
 import { solveHomography, applyHomographyPoint } from '../../src/modules/roiAndRectify';
 import { mulberry32 } from '../../src/modules/siteAnalysis';
 
@@ -59,15 +59,6 @@ it('fp16', () => {
   for (let i = 0; i < 20000; i++) { const e = (rnd() - 0.5) * 60; xs.push((rnd() < 0.5 ? -1 : 1) * rnd() * 2 ** e); }
   const f32 = Array.from(new Float32Array(xs)); // compare after f32 rounding like the real tensor path
   out.fp16 = { x: f32.map((v) => (Number.isNaN(v) ? 'NaN' : v === Infinity ? 'Inf' : v === -Infinity ? '-Inf' : v)), h: f32.map((v) => float32ToFloat16(v)) };
-});
-
-it('tiling', () => {
-  const r: unknown[] = [];
-  for (const L of [1, 100, 255, 256, 257, 300, 448, 449, 640, 1000, 1023, 4000]) r.push({ L, starts: tileStarts(L, 256, 192) });
-  const win = makeBlendWindow(256);
-  let mn = Infinity; for (const v of win) mn = Math.min(mn, v);
-  const refl: number[] = []; for (let i = -12; i < 25; i++) refl.push(reflectIndex(i, 5));
-  out.tiling = { r, winMin: mn, win0: Array.from(win.slice(0, 256)), refl };
 });
 
 it('homography', () => {

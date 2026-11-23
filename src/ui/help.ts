@@ -121,13 +121,6 @@ export const HELP_TOPICS = {
     default: '250',
     when: 'Rarely needed. Increase (e.g. 400) if very large or elongated grains are split into several pieces. Higher values are slower. The default is the tested value.',
   },
-  inferencePipeline: {
-    title: 'Inference pipeline',
-    group: 'Advanced analysis',
-    what: 'How the photo is prepared and cut into tiles before the neural network runs. "Cellpose" reproduces the original ImageGrains / Cellpose software exactly. "Legacy" runs U-Net on the whole image and blends overlapping tiles its own way.',
-    default: 'Cellpose (matches ImageGrains)',
-    when: 'Keep "Cellpose". In tests it matched the original software exactly, and gave better outlines than Legacy (outline score 0.445 vs 0.413 for U-Net, 0.565 vs 0.488 for Cellpose-SAM on 7 test photos). Choose "Legacy" only to reproduce earlier results made with it.',
-  },
   cpuThreads: {
     title: 'CPU threads',
     group: 'Advanced analysis',

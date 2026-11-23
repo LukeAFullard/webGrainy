@@ -8,13 +8,8 @@ import {
   applyCLAHE,
   prepareWorkingImage,
   recommendModel,
-  normalizeGray,
-  normalizeRgbJoint99,
   float32ToFloat16,
   float16ToFloat32,
-  makeBlendWindow,
-  runUnetInference,
-  runCpsamTiledInference,
   multigridJacobiHeat,
   evaluateGrainFlowQcV4,
   trySplitDumbbellV4,
@@ -366,72 +361,12 @@ describe('Tier 5: Adversarial Hardening — ImageGrains 2.0 Web', () => {
       }
     });
 
-    it('normalizeGray and normalizeRgbJoint99 handle 1x1 images without NaN', () => {
-      const px = createFlatImage(1, 1, 120);
-      const gray = normalizeGray(px.data, 1, 1);
-      expect(gray.length).toBe(1);
-      expect(Number.isFinite(gray[0]!)).toBe(true);
-
-      const rgb = normalizeRgbJoint99(px.data, 1, 1);
-      expect(rgb.length).toBe(3);
-      for (let i = 0; i < 3; i++) {
-        expect(Number.isFinite(rgb[i]!)).toBe(true);
-      }
-    });
   });
 
   // =========================================================================
   // 3. OnnxInference Adversarial Cases
   // =========================================================================
   describe('OnnxInference Adversarial', () => {
-    it('checks AbortSignal immediately after session.run() on 256x256 fast path and 300x300 tiled path', async () => {
-      const ac1 = new AbortController();
-      const fastSession = {
-        run: vi.fn(async () => {
-          ac1.abort(new Error('aborted-in-fast-run'));
-          return {
-            flows_cellprob: new ort.Tensor(
-              'float32',
-              new Float32Array(3 * 256 * 256),
-              [1, 3, 256, 256],
-            ),
-          };
-        }),
-      } as unknown as ort.InferenceSession;
-
-      await expect(
-        runCpsamTiledInference(fastSession, new Float32Array(256 * 256 * 3), 256, 256, {
-          signal: ac1.signal,
-        }),
-      ).rejects.toThrow('aborted-in-fast-run');
-
-      const ac2 = new AbortController();
-      const tiledSession = {
-        run: vi.fn(async () => {
-          ac2.abort(new Error('aborted-in-tiled-run'));
-          return {
-            flows_cellprob: new ort.Tensor(
-              'float32',
-              new Float32Array(4 * 3 * 256 * 256),
-              [4, 3, 256, 256],
-            ),
-          };
-        }),
-      } as unknown as ort.InferenceSession;
-
-      await expect(
-        runCpsamTiledInference(tiledSession, new Float32Array(300 * 300 * 3), 300, 300, {
-          signal: ac2.signal,
-        }),
-      ).rejects.toThrow('aborted-in-tiled-run');
-    });
-
-    it('makeBlendWindow throws RangeError for NaN, 0, -4, and non-integer values', () => {
-      expect(() => makeBlendWindow(Number.NaN)).toThrow(RangeError);
-      expect(() => makeBlendWindow(0)).toThrow(RangeError);
-      expect(() => makeBlendWindow(-4)).toThrow(RangeError);
-      expect(() => makeBlendWindow(1.5)).toThrow(RangeError);
-    });
 
     it('handles FP16 subnormal-to-normal carry, tie-to-even, sNaN preservation, and -0', () => {
       // 2^-14 - 2^-25 carries up to smallest normal 2^-14 (0x0400)
@@ -463,101 +398,6 @@ describe('Tier 5: Adversarial Hardening — ImageGrains 2.0 Web', () => {
       expect(Number.isNaN(float16ToFloat32(fp16Nan))).toBe(true);
     });
 
-    it('validates invalid lengths, missing flows_cellprob, overlap >= tileSize, 1x300/300x1, and 16 vs 17 tile batch boundary', async () => {
-      const mockSession = createMockOnnxSession({ mode: 'unet' });
-
-      await expect(
-        runUnetInference(mockSession, new Float32Array(5), 4, 4),
-      ).rejects.toThrow(RangeError);
-
-      await expect(
-        runCpsamTiledInference(mockSession, new Float32Array(10), 4, 4),
-      ).rejects.toThrow(RangeError);
-
-      await expect(
-        runCpsamTiledInference(mockSession, new Float32Array(16 * 16 * 3), 16, 16, {
-          tileSize: 16,
-          overlap: 16,
-        }),
-      ).rejects.toThrow(RangeError);
-
-      const missingOutSession = {
-        run: vi.fn(async () => ({})),
-      } as unknown as ort.InferenceSession;
-
-      await expect(
-        runUnetInference(missingOutSession, new Float32Array(16), 4, 4),
-      ).rejects.toThrow(/flows_cellprob/);
-
-      await expect(
-        runCpsamTiledInference(missingOutSession, new Float32Array(16 * 16 * 3), 16, 16, {
-          tileSize: 16,
-          overlap: 4,
-        }),
-      ).rejects.toThrow(/flows_cellprob/);
-
-      // 1x300 and 300x1 with custom small tileSize
-      const cpsamSession = createMockOnnxSession({ mode: 'cpsam' });
-      const res1x300 = await runCpsamTiledInference(
-        cpsamSession,
-        new Float32Array(1 * 300 * 3),
-        1,
-        300,
-      );
-      expect(res1x300.width).toBe(1);
-      expect(res1x300.height).toBe(300);
-
-      const res300x1 = await runCpsamTiledInference(
-        cpsamSession,
-        new Float32Array(300 * 1 * 3),
-        300,
-        1,
-      );
-      expect(res300x1.width).toBe(300);
-      expect(res300x1.height).toBe(1);
-
-      // 16 vs 17 tile batch boundary (tileSize=32, overlap=8 => stride=24)
-      // width = 32 + 15*24 = 392 -> 16 tiles -> 1 batch call
-      // width = 393 -> 17 tiles -> 2 batch calls (16 + 1)
-      let runCalls16 = 0;
-      const batchCountSession = (onCall: () => void) =>
-        ({
-          run: vi.fn(async (feeds: Record<string, ort.Tensor>) => {
-            onCall();
-            const b = feeds['image']!.dims[0]!;
-            return {
-              flows_cellprob: new ort.Tensor(
-                'float32',
-                new Float32Array(b * 3 * 32 * 32),
-                [b, 3, 32, 32],
-              ),
-            };
-          }),
-        }) as unknown as ort.InferenceSession;
-
-      await runCpsamTiledInference(
-        batchCountSession(() => {
-          runCalls16++;
-        }),
-        new Float32Array(392 * 1 * 3),
-        392,
-        1,
-        { tileSize: 32, overlap: 8 },
-      );
-      expect(runCalls16).toBe(1);
-
-      let runCalls17 = 0;
-      await runCpsamTiledInference(
-        batchCountSession(() => {
-          runCalls17++;
-        }),
-        new Float32Array(393 * 1 * 3),
-        393,
-        1,
-        { tileSize: 32, overlap: 8 },
-      );
-      expect(runCalls17).toBe(2);
-    });
   });
 
   // =========================================================================
@@ -590,7 +430,7 @@ describe('Tier 5: Adversarial Hardening — ImageGrains 2.0 Web', () => {
 
       const imgData = createUniformGravelImage(32, 32);
 
-      const analysisPromise = engine.analyzeImage(imgData, { inferencePipeline: 'legacy', model: 'unet' });
+      const analysisPromise = engine.analyzeImage(imgData, { model: 'unet' });
 
       // Wait until worker.postMessage has been called
       await vi.waitFor(() => {
@@ -681,12 +521,12 @@ describe('Tier 5: Adversarial Hardening — ImageGrains 2.0 Web', () => {
 
       const img = createUniformGravelImage(32, 32);
 
-      await expect(engine.analyzeImage(img, { inferencePipeline: 'legacy', model: 'unet' })).rejects.toThrow(
+      await expect(engine.analyzeImage(img, { model: 'unet' })).rejects.toThrow(
         /simulated worker crash/,
       );
 
       // Second call must succeed with a fresh worker
-      const session = await engine.analyzeImage(img, { inferencePipeline: 'legacy', model: 'unet' });
+      const session = await engine.analyzeImage(img, { model: 'unet' });
       expect(session).toBeDefined();
       expect(workerNum).toBe(2);
       await engine.dispose();
@@ -705,8 +545,8 @@ describe('Tier 5: Adversarial Hardening — ImageGrains 2.0 Web', () => {
       const img = createUniformGravelImage(32, 32);
 
       const [s1, s2] = await Promise.all([
-        engine.analyzeImage(img, { inferencePipeline: 'legacy', model: 'unet' }),
-        engine.analyzeImage(img, { inferencePipeline: 'legacy', model: 'unet' }),
+        engine.analyzeImage(img, { model: 'unet' }),
+        engine.analyzeImage(img, { model: 'unet' }),
       ]);
       expect(s1).toBeDefined();
       expect(s2).toBeDefined();
@@ -723,7 +563,7 @@ describe('Tier 5: Adversarial Hardening — ImageGrains 2.0 Web', () => {
           }),
       });
 
-      const pending = engine2.analyzeImage(img, { inferencePipeline: 'legacy', model: 'unet' });
+      const pending = engine2.analyzeImage(img, { model: 'unet' });
       await vi.waitFor(() => {
         expect(resolveSession).toBeDefined();
       });
@@ -796,7 +636,7 @@ describe('Tier 5: Adversarial Hardening — ImageGrains 2.0 Web', () => {
       globalThis.indexedDB = origIdb;
 
       const session = await engine.analyzeImage(
-        createUniformGravelImage(64, 64), { inferencePipeline: 'legacy', model: 'unet', applyClahe: true, claheClipLimit: 4.0 },
+        createUniformGravelImage(64, 64), { model: 'unet', applyClahe: true, claheClipLimit: 4.0 },
       );
       expect(session.getResult().width).toBe(64);
       await engine.dispose();

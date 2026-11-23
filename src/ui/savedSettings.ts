@@ -12,7 +12,6 @@ const OPTIONS: Partial<Record<keyof UiAnalysisParams, readonly string[]>> = {
   model: ['auto', 'unet', 'cpsam'],
   cpsamWeights: ['auto', 'fp16', 'int8', 'fp4'],
   scaleMode: ['auto', '1.0x', '0.5x', '0.25x'],
-  inferencePipeline: ['cellpose', 'legacy'],
 };
 
 export const PARAM_RANGES: Partial<Record<keyof UiAnalysisParams, [number, number]>> = {

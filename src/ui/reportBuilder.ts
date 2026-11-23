@@ -20,14 +20,19 @@ export async function buildPrintableReport(st: AppState, site: SiteRecord, repor
   const photos: ReportPhoto[] = [];
   for (const p of report.perPhoto) {
     const rec = st.photos.find((x) => x.photoId === p.photoId);
-    const thumb = rec ? await photoThumbDataUrl(rec.imageBlob, 480) : undefined;
+    // Large enough for a two-column A4 page at print resolution (about 88 mm wide at 300+ dpi).
+    const thumb = rec ? await photoThumbDataUrl(rec.imageBlob, 1400) : undefined;
     const sess = st.sessions.get(p.photoId);
     photos.push({
       label: p.label,
       ...(thumb ? { imageDataUrl: thumb } : {}),
-      ...(sess ? { outlineSvg: sess.exportSvg() } : {}),
+      ...(sess ? { outlineSvg: sess.exportSvg(), widthPx: sess.workingImage.originalWidth, heightPx: sess.workingImage.originalHeight } : {}),
+      rawGrainCount: p.rawGrainCount,
       validGrainCount: p.validGrainCount,
+      D16: p.D16,
       D50: p.D50,
+      D84: p.D84,
+      weightPct: p.weightContributionPct,
       ...(p.mmPerPx !== undefined ? { mmPerPx: p.mmPerPx } : {}),
       outlierReasons: p.outlierReasons,
     });

@@ -52,7 +52,25 @@ First public release.
   it: every grain becomes one solid piece. Detached specks of a grain join the neighbouring grain they
   share the longest edge with, become grains of their own (at least *Min size*) or are removed; holes
   enclosed by one grain are filled. One undo step per photo; recorded in exports and the printable
-  report. Checked on the 40 held-out test images (`validation/tidy/`), with before/after examples.
+  report. Checked with both models on the 40 held-out test images (`validation/tidy/`), with
+  before/after examples: outline agreement unchanged; median D50 error unchanged (U-Net) or slightly
+  lower (Cellpose-SAM, 2.9% → 2.6%).
+
+### Navigation, image export and removals
+
+- **Prev flagged / Next flagged** step backwards and forwards through grains that need checking, and a
+  **Flagged** list groups them by reason (touches the photo edge; outside the ROI or in an excluded area;
+  very elongated), each entry jumping to its grain.
+- **Save image** (next to *Display*): the photo as shown on screen (outline colours and opacity,
+  ellipses, orientation lines, markers, ROI and exclusions, calibration line) as a PNG at the photo's own
+  resolution, for the whole photo or only the visible area, with provenance in the PNG text.
+- **Printable report** redesigned: a summary of key figures, numbered sections and figures, every
+  percentile D5–D95 with its interval, a table of results by photo, larger photos (two to a row) with
+  scale bars, and page numbers.
+- The grain-size curve has a **legend** naming the D16 / D50 / D84 points (with their values), the
+  confidence band, the photo curves and the detection limit, and a y-axis label.
+- The **Legacy inference pipeline** is removed: every analysis uses the Cellpose tiling, which reproduces
+  the original ImageGrains software. Older projects and exports that recorded "legacy" still open.
 
 ### Fixed before release (pre-publication audit)
 

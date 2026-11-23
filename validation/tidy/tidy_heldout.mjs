@@ -8,7 +8,10 @@
 //   python3 -I validation/parity/fetch_ig2_files.py .cache/ig2 <test image and mask paths from heldout_manifest.csv>
 //   node validation/tidy/tidy_heldout.mjs unet        # or cpsam (INT8 weights, slow on CPU)
 //
-// Writes validation/tidy/tidy_results_<model>.md, tidy_per_image_<model>.csv and example PNGs.
+// Resumable: each image's result (and its before / after masks, for the examples) is cached in
+// .cache/tidy_<model>/, and a run with MAX_MINUTES=<n> stops after about n minutes; run it again to
+// continue. Writes validation/tidy/tidy_results_<model>.md, tidy_per_image_<model>.csv and example
+// PNGs once all 40 images are done.
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -35,6 +38,11 @@ if (createHash('sha256').update(readFileSync(weightsPath)).digest('hex') !== WEI
 const rows = readFileSync(join(ROOT, 'validation/heldout/heldout_manifest.csv'), 'utf8').trim().split('\n').slice(1)
   .map((l) => l.split(',')).filter((c) => c[2] === 'test').map((c) => ({ uid: c[0], site: c[1], image: c[3], mask: c[4] }));
 const local = (p) => join(ROOT, '.cache', 'ig2', p.replaceAll('/', '__')); // fetch_ig2_files.py flattens paths
+const CACHE = join(ROOT, '.cache', `tidy_${kind}`);
+mkdirSync(CACHE, { recursive: true });
+const MAX_MS = Number(process.env.MAX_MINUTES ?? Infinity) * 60_000;
+const t0 = Date.now();
+const i32 = (path) => { const b = readFileSync(path); return new Int32Array(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength)); };
 
 const browser = await chromium.launch();
 const page = await browser.newPage();
@@ -110,10 +118,22 @@ await engine.initialize();
 
 const results = [];
 const examples = [];
+let stopped = false;
 for (const [i, row] of rows.entries()) {
+  const cached = join(CACHE, `${row.uid}.json`);
+  if (existsSync(cached)) {
+    const { r, wi } = JSON.parse(readFileSync(cached, 'utf8'));
+    results.push(r);
+    examples.push({ r, row, wi });
+    continue;
+  }
+  if (Date.now() - t0 > MAX_MS) {
+    stopped = true;
+    break;
+  }
   const img = await decode(local(row.image));
   const gt = readMask(local(row.mask));
-  const session = await engine.analyzeImage(img, { model: kind, cpsamWeights: 'int8', inferencePipeline: 'cellpose', scaleMode: 'auto' });
+  const session = await engine.analyzeImage(img, { model: kind, cpsamWeights: 'int8', scaleMode: 'auto' });
   const wi = session.workingImage;
   const atPhoto = () => resizeLabelsNearest(session.getWorkingMasks(), wi.width, wi.height, wi.originalWidth, wi.originalHeight);
   const gtD50 = d50(computeAllGrainMorphometrics(gt.labels, gt.w, gt.h, 2));
@@ -129,13 +149,26 @@ for (const [i, row] of rows.entries()) {
     d50ErrBefore: err(before.d50, gtD50), d50ErrAfter: err(after.d50, gtD50), d50ChangePct: ((after.d50 - before.d50) / before.d50) * 100,
   };
   results.push(r);
-  examples.push({ r, img, wi, beforeMasks: before.working, afterMasks: session.getWorkingMasks().slice() });
+  const wiDims = { width: wi.width, height: wi.height };
+  writeFileSync(join(CACHE, `${row.uid}.before.i32`), Buffer.from(before.working.buffer));
+  writeFileSync(join(CACHE, `${row.uid}.after.i32`), Buffer.from(session.getWorkingMasks().slice().buffer));
+  writeFileSync(cached, JSON.stringify({ r, wi: wiDims }));
+  examples.push({ r, row, wi: wiDims });
   console.log(`${i + 1}/${rows.length} ${row.uid}: ${multipart} multi-part grains, ${r.merged}+${r.removed}+${r.splitOff} fragments, ${r.holes} holes; PQ ${r.pqBefore.toFixed(3)} -> ${r.pqAfter.toFixed(3)}; D50 err ${r.d50ErrBefore.toFixed(1)}% -> ${r.d50ErrAfter.toFixed(1)}%`);
+}
+
+if (stopped) {
+  await browser.close();
+  console.log(`Stopped after ${((Date.now() - t0) / 60_000).toFixed(0)} min: ${results.length} of ${rows.length} images done (cached in ${CACHE}). Run again to continue.`);
+  process.exit(0);
 }
 
 // Before / after examples: the photos with the most multi-part grains, around the worst grain.
 async function render(ex, file) {
-  const { img, wi, beforeMasks, afterMasks } = ex;
+  const { wi } = ex;
+  const img = await decode(local(ex.row.image));
+  const beforeMasks = i32(join(CACHE, `${ex.r.uid}.before.i32`));
+  const afterMasks = i32(join(CACHE, `${ex.r.uid}.after.i32`));
   // Bounding box of the first grain with the most parts, padded.
   const ww = wi.width;
   const counts = new Map();
@@ -165,7 +198,7 @@ async function render(ex, file) {
     photo.getContext('2d').putImageData(new ImageData(rgba, w, h), 0, 0);
     const [cx0, cy0, cx1, cy1] = crop;
     const cw = cx1 - cx0 + 1, ch = cy1 - cy0 + 1;
-    const S = Math.max(2, Math.floor(420 / Math.max(cw, ch)));
+    const S = Math.max(1, Math.floor(420 / Math.max(cw, ch))); // 1x for a large crop keeps the PNG small
     const sx = w / ws, sy = h / hs; // photo px per working px
     const pane = (masks, label) => {
       const c = new OffscreenCanvas(cw * S, ch * S + 22);
@@ -198,12 +231,17 @@ async function render(ex, file) {
     };
     const pb = pane(mb, 'Before (as analysed)');
     const pa = pane(ma, 'After Tidy outlines');
-    const out = new OffscreenCanvas(pb.width * 2 + 12, pb.height + 44);
+    const [l1, l2] = title.split(' | ');
+    // Wide enough for the caption, so it is never cut off on a narrow crop.
+    const font = '12px system-ui, sans-serif';
+    const m = new OffscreenCanvas(1, 1).getContext('2d');
+    m.font = font;
+    const textW = Math.ceil(Math.max(m.measureText(l1).width, m.measureText(l2 ?? '').width)) + 12;
+    const out = new OffscreenCanvas(Math.max(pb.width * 2 + 12, textW), pb.height + 44);
     const g = out.getContext('2d');
     g.fillStyle = '#fff'; g.fillRect(0, 0, out.width, out.height);
     g.drawImage(pb, 0, 0); g.drawImage(pa, pb.width + 12, 0);
-    g.fillStyle = '#444'; g.font = '12px system-ui, sans-serif';
-    const [l1, l2] = title.split(' | ');
+    g.fillStyle = '#444'; g.font = font;
     g.fillText(l1, 6, out.height - 26);
     g.fillText(l2 ?? '', 6, out.height - 8);
     const blob = await out.convertToBlob({ type: 'image/png' });

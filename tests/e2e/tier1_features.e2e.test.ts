@@ -11,12 +11,8 @@ import {
   applyCLAHE,
   prepareWorkingImage,
   recommendModel,
-  normalizeGray,
-  normalizeRgbJoint99,
   // M2: ONNX Inference
   createInferenceSession,
-  runUnetInference,
-  runCpsamTiledInference,
   float32ToFloat16,
   float16ToFloat32,
   // M3: Post-Processing v4.1
@@ -43,7 +39,6 @@ import type {
   CachedModelInfo,
   DownloadProgress,
   GrainMorphometrics,
-  InferenceProgress,
   ModelKind,
   WorkerRequest,
   WorkerResponse,
@@ -218,23 +213,6 @@ describe('Tier 1: Feature Coverage — ImageGrains 2.0 Web', () => {
       expect(recGravel.metrics.hasWebGPU).toBe(false);
     });
 
-    it('F2.4: normalizeGray and normalizeRgbJoint99 perform 1st–99th percentile normalization', () => {
-      const img = createUniformGravelImage(64, 64);
-      const gray = normalizeGray(img.data, img.width, img.height);
-      const rgb = normalizeRgbJoint99(img.data, img.width, img.height);
-
-      expect(gray).toBeInstanceOf(Float32Array);
-      expect(gray.length).toBe(64 * 64);
-      expect(rgb).toBeInstanceOf(Float32Array);
-      expect(rgb.length).toBe(3 * 64 * 64);
-
-      for (let i = 0; i < gray.length; i++) {
-        expect(Number.isFinite(gray[i])).toBe(true);
-      }
-      for (let i = 0; i < rgb.length; i++) {
-        expect(Number.isFinite(rgb[i])).toBe(true);
-      }
-    });
   });
 
   // =========================================================================
@@ -257,47 +235,6 @@ describe('Tier 1: Feature Coverage — ImageGrains 2.0 Web', () => {
       expect(resWasm.executionProvider).toBe('wasm');
     });
 
-    it('F3.2: runUnetInference pads to multiple of 16 with [1, 2, H_pad, W_pad] and crops back to [H, W]', async () => {
-      const session = createMockOnnxSession({ mode: 'unet' });
-      const w = 100;
-      const h = 70;
-      const gray = new Float32Array(w * h).fill(0.5);
-
-      const out = await runUnetInference(session, gray, w, h);
-
-      expect(session.observedInputShapes[0]).toEqual([1, 2, 80, 112]);
-      expect(out.width).toBe(w);
-      expect(out.height).toBe(h);
-      expect(out.flowY.length).toBe(w * h);
-      expect(out.flowX.length).toBe(w * h);
-      expect(out.cellprob.length).toBe(w * h);
-    });
-
-    it('F3.3: runCpsamTiledInference tiles 256x256 with 64px overlap (192 stride) and Hanning taper', async () => {
-      const session = createMockOnnxSession({ mode: 'cpsam' });
-      const w = 448; // ceil((448-256)/192)+1 = 2 tiles across
-      const h = 448;
-      const rgb = new Float32Array(3 * w * h).fill(0.3);
-
-      const progress: InferenceProgress[] = [];
-      const out = await runCpsamTiledInference(session, rgb, w, h, {
-        onProgress: (p: InferenceProgress) => progress.push({ ...p }),
-      });
-
-      expect(out.width).toBe(w);
-      expect(out.height).toBe(h);
-      expect(out.flowY.length).toBe(w * h);
-      expect(progress.length).toBeGreaterThan(0);
-      const lastProgress = progress[progress.length - 1];
-      expect(lastProgress).toBeDefined();
-      expect(lastProgress!.percent).toBeCloseTo(100, 1);
-      for (const shape of session.observedInputShapes) {
-        expect(shape[1]).toBe(3);
-        expect(shape[2]).toBe(256);
-        expect(shape[3]).toBe(256);
-      }
-    });
-
     it('F3.3: IEEE-754 Float32 <-> Float16 conversion round-trips accurately', () => {
       const testValues = [0, 1.0, -1.0, 0.5, -3.25, 12.75, 0.0009765625];
       for (const v of testValues) {
@@ -307,20 +244,6 @@ describe('Tier 1: Feature Coverage — ImageGrains 2.0 Web', () => {
       }
     });
 
-    it('F3.3: runCpsamTiledInference emits monotonic tile completion progress', async () => {
-      const session = createMockOnnxSession({ mode: 'cpsam' });
-      const rgb = new Float32Array(3 * 512 * 256).fill(0.2);
-      const percents: number[] = [];
-
-      await runCpsamTiledInference(session, rgb, 512, 256, {
-        onProgress: (p: InferenceProgress) => percents.push(p.percent),
-      });
-
-      expect(percents.length).toBeGreaterThanOrEqual(1);
-      for (let i = 1; i < percents.length; i++) {
-        expect(percents[i]!).toBeGreaterThanOrEqual(percents[i - 1]!);
-      }
-    });
   });
 
   // =========================================================================
@@ -767,7 +690,7 @@ describe('Tier 1: Feature Coverage — ImageGrains 2.0 Web', () => {
 
       const img = createUniformGravelImage(128, 128);
       const stages: string[] = [];
-      const session = await engine.analyzeImage(img, { inferencePipeline: 'legacy',
+      const session = await engine.analyzeImage(img, {
         model: 'unet',
         scaleMode: '1.0x',
         onProgress: (stage: string) => stages.push(stage),
@@ -785,7 +708,7 @@ describe('Tier 1: Feature Coverage — ImageGrains 2.0 Web', () => {
       await engine.initialize();
 
       const img = createUniformGravelImage(128, 128);
-      const session = await engine.analyzeImage(img, { inferencePipeline: 'legacy', model: 'unet', scaleMode: '1.0x' });
+      const session = await engine.analyzeImage(img, { model: 'unet', scaleMode: '1.0x' });
       const initialCount = session.getResult().grainCount;
       expect(initialCount).toBeGreaterThanOrEqual(2);
 
@@ -799,12 +722,23 @@ describe('Tier 1: Feature Coverage — ImageGrains 2.0 Web', () => {
 
     it('F7.1: AnalysisSession supports calibration updates and exports', async () => {
       const engine = new ImageGrainsEngine({
-        sessionFactory: async (kind: ModelKind) => createMockOnnxSession({ mode: kind }),
+        sessionFactory: async (kind: ModelKind) =>
+          createMockOnnxSession({
+            mode: kind,
+            image: { width: 128, height: 128 },
+            customFlowGenerator: (w: number, h: number) =>
+              createIsolatedEllipsesFlowField(w, h, [
+                { cx: 32, cy: 32, rx: 14, ry: 10 },
+                { cx: 96, cy: 32, rx: 12, ry: 12 },
+                { cx: 32, cy: 96, rx: 10, ry: 8 },
+                { cx: 96, cy: 96, rx: 16, ry: 12 },
+              ]),
+          }),
       });
       await engine.initialize();
 
       const img = createUniformGravelImage(128, 128);
-      const session = await engine.analyzeImage(img, { inferencePipeline: 'legacy', model: 'unet' });
+      const session = await engine.analyzeImage(img, { model: 'unet' });
 
       session.setCalibration(
         ScaleCalibrator.calibrate({ x: 0, y: 0 }, { x: 100, y: 0 }, 50, 'mm')
@@ -822,7 +756,7 @@ describe('Tier 1: Feature Coverage — ImageGrains 2.0 Web', () => {
       await engine.initialize();
 
       const boulder = createCoarseBoulderImage(256, 256);
-      const session = await engine.analyzeImage(boulder, { inferencePipeline: 'legacy', model: 'auto' });
+      const session = await engine.analyzeImage(boulder, { model: 'auto' });
       expect(session.recommendation.model).toBe('cpsam');
     });
   });

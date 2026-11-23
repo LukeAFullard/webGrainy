@@ -3,8 +3,7 @@
 // Usage: node validation/k1/run_engine_k1.mjs <unet|cpsam> <model.onnx> <img.rgba> <w> <h> <outPrefix>
 import { readFileSync, writeFileSync } from 'node:fs';
 import * as ort from 'onnxruntime-web';
-import { normalizeGray, normalizeRgbJoint99 } from '../../dist/modules/imagePreprocess.js';
-import { runUnetInference, runCpsamTiledInference } from '../../dist/modules/onnxInference.js';
+import { runUnetCellposeInference, runCpsamCellposeInference } from '../../dist/modules/onnxInference.js';
 import { flowsToMasksBrowser, DEFAULT_POSTPROCESS_OPTIONS } from '../../dist/modules/postprocessCore.js';
 import { computeExtendedMorphometrics } from '../../dist/modules/morphometricsExt.js';
 const [kind, model, raw, w, h, outPrefix] = process.argv.slice(2);
@@ -14,8 +13,8 @@ const rgba = new Uint8ClampedArray(readFileSync(raw));
 const s = await ort.InferenceSession.create(readFileSync(model), { executionProviders: ['wasm'] });
 const t0 = Date.now();
 const inf = kind === 'unet'
-  ? await runUnetInference(s, normalizeGray(rgba, W, H), W, H)
-  : await runCpsamTiledInference(s, normalizeRgbJoint99(rgba, W, H), W, H, { batchSize: Number(process.env.BATCH ?? 1), onProgress: (p) => process.stderr.write(`\r${p.percent}%`) });
+  ? await runUnetCellposeInference(s, rgba, W, H)
+  : await runCpsamCellposeInference(s, rgba, W, H, { onProgress: (p) => process.stderr.write(`\r${p.percent}%`) });
 const pp = flowsToMasksBrowser(inf.flowY, inf.flowX, inf.cellprob, W, H, { ...DEFAULT_POSTPROCESS_OPTIONS });
 const ext = computeExtendedMorphometrics(pp.masks, pp.grains, W, H, 1);
 writeFileSync(`${outPrefix}_masks.i32`, Buffer.from(pp.masks.buffer));

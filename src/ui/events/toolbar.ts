@@ -1,4 +1,6 @@
 /** Toolbar and photo events: tools, shape buttons, undo/redo, merge, scale copy, Display menu. */
+import { insertPngText } from '../../modules/exportFormats.js';
+import { APP_VERSION, BUILD_COMMIT } from '../../modules/provenance.js';
 import { upscaleIncreasesWorkingResolution } from '../../modules/imagePreprocess.js';
 import { planScaleCopy, suggestScaleTargets } from '../../modules/scaleCopy.js';
 import type { PhotoRecord } from '../../modules/projectStorage.js';
@@ -28,7 +30,12 @@ export const toolbarActions: Record<string, ActionHandler> = {
     const photo = getActivePhoto(st);
     const sess = photo ? st.sessions.get(photo.photoId) : null;
     if (!sess) return;
-    const target = navigateGrains(navGrainsFor(sess), st.inspectedGrainId, (el.dataset['nav'] ?? 'next') as GrainNavMode);
+    const grains = navGrainsFor(sess);
+    const mode = el.dataset['nav'] ?? 'next';
+    const target =
+      mode === 'goto'
+        ? grains.find((g) => g.id === Number(el.dataset['grainId'])) ?? null
+        : navigateGrains(grains, st.inspectedGrainId, mode as GrainNavMode);
     if (!target) {
       ctx.store.setState({ statusMessage: 'No flagged grains on this photo.' });
       return;
@@ -38,6 +45,55 @@ export const toolbarActions: Record<string, ActionHandler> = {
     void ctx.ui.syncViewport(false);
   },
   'fit-view': (_el, ctx) => ctx.ui.viewport()?.fitToScreen(),
+  'save-view': (el, ctx) => {
+    const st = ctx.store.getState();
+    const photo = getActivePhoto(st);
+    const vp = ctx.ui.viewport();
+    if (!photo || !vp || st.savingView) return;
+    const area = el.dataset['area'] === 'visible' ? 'visible' : 'photo';
+    ctx.store.setState({ savingView: true, statusMessage: 'Drawing the full-resolution image…' });
+    void (async () => {
+      try {
+        const out = await vp.exportViewImage(area);
+        if (!out) {
+          ctx.store.setState({ statusMessage: 'Could not draw the image (the browser ran out of canvas memory).' });
+          return;
+        }
+        const ov = st.overlays;
+        const shown = [
+          ov.instanceIds && !ov.wentworthColors ? 'grain outlines (random colours)' : '',
+          ov.wentworthColors ? 'Wentworth size colours' : '',
+          ov.ellipses ? 'ellipses' : '',
+          ov.orientations ? 'orientation lines' : '',
+          ov.borderTruncated ? 'edge / too-small markers' : '',
+        ].filter(Boolean);
+        const meta = {
+          source: photo.label,
+          area: area === 'visible' ? 'visible part of the view' : 'whole photo',
+          widthPx: out.width,
+          heightPx: out.height,
+          pixelsPerPhotoPixel: Number(out.scale.toFixed(4)),
+          overlays: shown,
+          overlayOpacity: ov.opacity,
+          appVersion: APP_VERSION,
+          appCommit: BUILD_COMMIT,
+          exportedAt: new Date().toISOString(),
+        };
+        const png = insertPngText(new Uint8Array(await out.blob.arrayBuffer()), {
+          Software: `webGrainy ${APP_VERSION}`,
+          Description: `${photo.label}: ${shown.length ? shown.join(', ') : 'photo only'}`,
+          webGrainy: JSON.stringify(meta),
+        });
+        const stem = photo.label.replace(/\.[^.]+$/, '').replace(/[^a-zA-Z0-9_-]+/g, '_') || 'photo';
+        ctx.ui.download(new Blob([png.slice().buffer], { type: 'image/png' }), `${stem}_${area === 'visible' ? 'view' : 'overlay'}.png`);
+        ctx.store.setState({
+          statusMessage: `Saved ${out.width} × ${out.height} px image${out.scale < 0.999 ? ` (scaled to ${Math.round(out.scale * 100)}%: the browser cannot draw the full size)` : ''}.`,
+        });
+      } finally {
+        ctx.store.setState({ savingView: false });
+      }
+    })();
+  },
   'finish-shape': (_el, ctx) => ctx.ui.viewport()?.finishShape(),
   'cancel-shape': (_el, ctx) => ctx.ui.viewport()?.cancelShape(),
   'clear-areas': (_el, ctx) => {

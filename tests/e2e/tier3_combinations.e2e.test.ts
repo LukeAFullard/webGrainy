@@ -5,11 +5,7 @@ import {
   applyCLAHE,
   prepareWorkingImage,
   recommendModel,
-  normalizeGray,
-  normalizeRgbJoint99,
   createInferenceSession,
-  runUnetInference,
-  runCpsamTiledInference,
   flowsToMasksBrowser,
   splitGrainAtLine,
   mergeGrains,
@@ -83,6 +79,7 @@ describe('Tier 3: Cross-Feature Combinations — ImageGrains 2.0 Web', () => {
       sessionFactory: async (kind: ModelKind) =>
         createMockOnnxSession({
           mode: kind,
+          image: { width: 400, height: 300 },
           customFlowGenerator: (w: number, h: number) =>
             createIsolatedEllipsesFlowField(w, h, [
               { cx: Math.floor(w * 0.5), cy: Math.floor(h * 0.5), rx: radiusWorkingPx, ry: radiusWorkingPx },
@@ -91,7 +88,7 @@ describe('Tier 3: Cross-Feature Combinations — ImageGrains 2.0 Web', () => {
     });
     await engine.initialize();
 
-    const session = await engine.analyzeImage(img, { inferencePipeline: 'legacy',
+    const session = await engine.analyzeImage(img, {
       model: 'unet',
       scaleMode: '0.5x',
       calibration: cal,
@@ -137,29 +134,6 @@ describe('Tier 3: Cross-Feature Combinations — ImageGrains 2.0 Web', () => {
     );
     const fallbackRes = await createInferenceSession(new Uint8Array(64));
     expect(fallbackRes.executionProvider).toBe('wasm');
-  });
-
-  it('C5: normalizeGray + runUnetInference + flowsToMasksBrowser extracts valid grains end-to-end', async () => {
-    const img = createUniformGravelImage(128, 128);
-    const gray = normalizeGray(img.data, img.width, img.height);
-    const session = createMockOnnxSession({ mode: 'unet' });
-    const flow = await runUnetInference(session, gray, img.width, img.height);
-    const post = flowsToMasksBrowser(flow.flowY, flow.flowX, flow.cellprob, flow.width, flow.height);
-
-    expect(post.grainCount).toBe(4);
-    expect(post.grains.every((g: GrainMorphometrics) => g.areaPx > 0 && g.bAxisPx > 0)).toBe(true);
-  });
-
-  it('C6: normalizeRgbJoint99 + runCpsamTiledInference (Hanning taper) + flowsToMasksBrowser', async () => {
-    const img = createCoarseBoulderImage(320, 320);
-    const rgb = normalizeRgbJoint99(img.data, img.width, img.height);
-    const session = createMockOnnxSession({ mode: 'cpsam' });
-    const flow = await runCpsamTiledInference(session, rgb, img.width, img.height);
-    const post = flowsToMasksBrowser(flow.flowY, flow.flowX, flow.cellprob, flow.width, flow.height);
-
-    expect(post.width).toBe(320);
-    expect(post.height).toBe(320);
-    expect(post.grainCount).toBeGreaterThanOrEqual(1);
   });
 
   it('C7: F3_SplitOnFailure + maxGrainAreaFraction guard (3ca10b7c) + touchesBorder combined', () => {
@@ -358,7 +332,7 @@ describe('Tier 3: Cross-Feature Combinations — ImageGrains 2.0 Web', () => {
     expect(status.cachedModels.some((m: CachedModelInfo) => m.modelId === 'ig2_unet_fp32')).toBe(true);
 
     const img = createUniformGravelImage(128, 128);
-    const session = await engine.analyzeImage(img, { inferencePipeline: 'legacy', model: 'unet' });
+    const session = await engine.analyzeImage(img, { model: 'unet' });
     expect(session.getResult().grainCount).toBeGreaterThanOrEqual(1);
   });
 });

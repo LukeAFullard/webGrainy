@@ -227,3 +227,26 @@ describe('outline / mask exports: every grain or only the counted ones (user req
     void resizeLabelsNearest;
   });
 });
+
+describe('insertPngText (Save image provenance)', () => {
+  it('adds iTXt chunks after IHDR without touching the image data', async () => {
+    const { encodeMaskPng, insertPngText } = await import('../src/modules/exportFormats.js');
+    const png = encodeMaskPng(new Int32Array([1, 2, 3, 4]), 2, 2);
+    const out = insertPngText(png, { Software: 'webGrainy test', webGrainy: '{"a":"é"}' });
+    expect(out.length).toBeGreaterThan(png.length);
+    expect([...out.subarray(0, 33)]).toEqual([...png.subarray(0, 33)]);
+    expect([...out.subarray(out.length - (png.length - 33))]).toEqual([...png.subarray(33)]);
+    // Chunk walk: IHDR, iTXt, iTXt, then the original chunks; every length is consistent.
+    const types: string[] = [];
+    const dv = new DataView(out.buffer, out.byteOffset, out.byteLength);
+    for (let o = 8; o < out.length; ) {
+      const len = dv.getUint32(o);
+      types.push(String.fromCharCode(...out.subarray(o + 4, o + 8)));
+      o += 12 + len;
+    }
+    expect(types.slice(0, 3)).toEqual(['IHDR', 'iTXt', 'iTXt']);
+    expect(types.at(-1)).toBe('IEND');
+    expect(new TextDecoder().decode(out)).toContain('{"a":"é"}');
+    expect(() => insertPngText(new Uint8Array(40), {})).toThrow(/Not a PNG/);
+  });
+});

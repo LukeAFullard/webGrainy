@@ -45,14 +45,14 @@ export interface PsdChartInput {
 
 export function renderPsdChartSvg(input: PsdChartInput): string {
   const W = 400;
-  const H = 240;
-  const padL = 44;
+  const padL = 48;
   const padR = 14;
   // A subtitle gets its own line under the title (side by side, long names overlapped).
   const padT = input.subtitle ? 36 : 26;
-  const padB = 34;
   const plotW = W - padL - padR;
-  const plotH = H - padT - padB;
+  // The plot keeps its size; the legend below it adds rows to the height.
+  const plotH = 240 - padT - 34;
+  let H = 240;
 
   const fg = input.lightTheme ? '#1a202c' : '#e8eef4';
   const muted = input.lightTheme ? '#4a5568' : '#8fa0b2';
@@ -154,6 +154,7 @@ export function renderPsdChartSvg(input: PsdChartInput): string {
   }
 
   // Effective pixel detection limit marker
+  let drewLimit = false;
   if (
     typeof input.detectionLimit === 'number' &&
     Number.isFinite(input.detectionLimit) &&
@@ -161,6 +162,7 @@ export function renderPsdChartSvg(input: PsdChartInput): string {
   ) {
     const dx = xPx(toXVal(input.detectionLimit));
     if (dx >= padL && dx <= padL + plotW) {
+      drewLimit = true;
       const limCol = input.lightTheme ? '#b7791f' : '#f5a623';
       const limText = `Min ~${input.detectionLimit.toFixed(input.unit === 'mm' ? 1 : 0)} ${input.unit}`;
       const anchor = dx > padL + plotW - 72 ? 'end' : 'start';
@@ -175,7 +177,8 @@ export function renderPsdChartSvg(input: PsdChartInput): string {
   }
 
   // Faint individual photo curves (D16-D50-D84)
-  if (input.perPhotoCurves && input.perPhotoCurves.length > 1) {
+  const drawPhotoCurves = (input.perPhotoCurves?.length ?? 0) > 1;
+  if (input.perPhotoCurves && drawPhotoCurves) {
     for (const ph of input.perPhotoCurves) {
       if (ph.D16 > 0 && ph.D50 > 0 && ph.D84 > 0) {
         const pts = [
@@ -191,6 +194,7 @@ export function renderPsdChartSvg(input: PsdChartInput): string {
   }
 
   // 95% Bootstrap CI ribbon
+  let drewCi = false;
   if (input.ciLower && input.ciUpper) {
     const loPts: string[] = [];
     const hiPts: string[] = [];
@@ -203,6 +207,7 @@ export function renderPsdChartSvg(input: PsdChartInput): string {
       }
     }
     if (loPts.length > 1 && hiPts.length > 1) {
+      drewCi = true;
       parts.push(
         `<polygon points="${[...loPts, ...hiPts].join(' ')}" fill="rgba(59, 158, 255, 0.22)" />`,
       );
@@ -223,12 +228,13 @@ export function renderPsdChartSvg(input: PsdChartInput): string {
     );
   }
 
-  // D16, D50, D84 reference lines & markers
-  for (const { key, pct, col } of [
+  // D16, D50, D84 reference lines & markers (named, with their values, in the legend)
+  const MARKERS = [
     { key: 'D16' as const, pct: 16, col: '#2ecc71' },
-    { key: 'D50' as const, pct: 50, col: '#f5a623' },
+    { key: 'D50' as const, pct: 50, col: input.lightTheme ? '#dd8a0b' : '#f5a623' },
     { key: 'D84' as const, pct: 84, col: '#e74c3c' },
-  ]) {
+  ];
+  for (const { key, pct, col } of MARKERS) {
     const v = input.psd[key];
     if (v > 0) {
       const x = xPx(toXVal(v));
@@ -252,8 +258,72 @@ export function renderPsdChartSvg(input: PsdChartInput): string {
     );
   }
   parts.push(
-    `<text x="${padL + plotW / 2}" y="${H - 5}" text-anchor="middle" fill="${muted}" font-size="10" font-family="system-ui, sans-serif">${usePhi ? 'Grain Size (φ = -log₂ mm)' : `Grain Size (${input.unit}, log₁₀ scale)`}</text>`,
+    `<text x="${padL + plotW / 2}" y="${padT + plotH + 26}" text-anchor="middle" fill="${muted}" font-size="10" font-family="system-ui, sans-serif">${usePhi ? 'Grain Size (φ = -log₂ mm)' : `Grain Size (${input.unit}, log₁₀ scale)`}</text>`,
   );
+  const yMid = padT + plotH / 2;
+  parts.push(
+    `<text x="11" y="${yMid.toFixed(1)}" transform="rotate(-90 11 ${yMid.toFixed(1)})" text-anchor="middle" fill="${muted}" font-size="9" font-family="system-ui, sans-serif">% finer (cumulative)</text>`,
+  );
+
+  // Legend: what every colour and line means, with the D16 / D50 / D84 values.
+  const fmt = (v: number): string =>
+    input.unit === 'px' ? `${v.toFixed(0)} px` : `${v.toFixed(v < 1 ? 2 : 1)} mm${usePhi ? ` (${(-Math.log2(v)).toFixed(2)} φ)` : ''}`;
+  type Item = { sym: (x: number, y: number) => string; text: string };
+  const items: Item[] = [];
+  for (const { key, col } of MARKERS) {
+    const v = input.psd[key];
+    if (v > 0 && Number.isFinite(v)) {
+      items.push({
+        sym: (x, y) => `<circle cx="${x + 5}" cy="${y - 3}" r="3.5" fill="${col}" stroke="${bg}" stroke-width="1" />`,
+        text: `${key} = ${fmt(v)}`,
+      });
+    }
+  }
+  const lineItems: Item[] = [
+    {
+      sym: (x, y) => `<line x1="${x}" y1="${y - 3}" x2="${x + 12}" y2="${y - 3}" stroke="#3b9eff" stroke-width="2.4" />`,
+      text: 'Cumulative PSD',
+    },
+  ];
+  if (drewCi) {
+    lineItems.push({ sym: (x, y) => `<rect x="${x}" y="${y - 7}" width="12" height="8" fill="rgba(59, 158, 255, 0.22)" />`, text: '95% CI (bootstrap)' });
+  }
+  if (drawPhotoCurves) {
+    lineItems.push({ sym: (x, y) => `<line x1="${x}" y1="${y - 3}" x2="${x + 12}" y2="${y - 3}" stroke="rgba(159, 176, 192, 0.7)" stroke-width="1" />`, text: 'Each photo (D16–D50–D84)' });
+  }
+  if (drewLimit) {
+    const limCol = input.lightTheme ? '#b7791f' : '#f5a623';
+    lineItems.push({ sym: (x, y) => `<line x1="${x + 6}" y1="${y - 8}" x2="${x + 6}" y2="${y + 1}" stroke="${limCol}" stroke-width="1.2" stroke-dasharray="3,2" />`, text: 'Smallest measurable grain' });
+  }
+  const rows: Item[][] = [];
+  for (const group of [items, lineItems]) {
+    let row: Item[] = [];
+    let width = 0;
+    for (const it of group) {
+      const w = 18 + it.text.length * 4.7 + 10;
+      if (row.length > 0 && width + w > W - padL - padR + 20) {
+        rows.push(row);
+        row = [];
+        width = 0;
+      }
+      row.push(it);
+      width += w;
+    }
+    if (row.length > 0) rows.push(row);
+  }
+  let y = padT + plotH + 44;
+  for (const row of rows) {
+    let x = padL - 20;
+    for (const it of row) {
+      parts.push(it.sym(x, y));
+      parts.push(`<text x="${x + 16}" y="${y}" fill="${fg}" font-size="9" font-family="system-ui, sans-serif">${esc(it.text)}</text>`);
+      x += 18 + it.text.length * 4.7 + 10;
+    }
+    y += 14;
+  }
+  H = Math.max(240, y - 4);
+  parts[0] = `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`;
+  parts[1] = `<rect width="${W}" height="${H}" fill="${bg}" />`;
 
   parts.push('</svg>');
   return parts.join('');

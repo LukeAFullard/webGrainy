@@ -63,19 +63,8 @@ nan_ok = np.all(((got[nan] & 0x7c00) == 0x7c00) & ((got[nan] & 0x3ff) != 0))
 check(all(x[i] == 0 and got[i] == 0x8000 for i in np.nonzero(bad)[0]) and bool(nan_ok), f'fp16: {int(bad.sum())} mismatches, NaN ok {bool(nan_ok)}')
 print(f'[fp16] {len(x)} values, mismatches vs numpy float16 (non-NaN) = {int(bad.sum())}, NaN encoded as NaN: {bool(nan_ok)}')
 for i in np.nonzero(bad)[0][:8]: print(f'    x={x[i]!r} ts=0x{got[i]:04x} np=0x{ref[i]:04x}')
-# 5. tiling coverage + reflect
-for t in d['tiling']['r']:
-    L, st = t['L'], t['starts']; cov = np.zeros(max(L, 256), int)
-    for s in st: cov[s:s + 256] += 1
-    ok = cov[:L].min() > 0 and (st[-1] + 256 >= L if L >= 256 else True) and all(s >= 0 for s in st)
-    check(ok, f'tiles L={L} not covered')
-    print(f'  [tiles] L={L:5d} starts={st if len(st) < 8 else str(st[:3])+"..."+str(st[-2:])} covered={ok} last_end={st[-1]+256}')
-hann_ok = np.allclose(np.clip(np.hanning(256),1e-3,1), d["tiling"]["win0"], atol=1e-6) or np.allclose(np.outer(np.clip(np.hanning(256),1e-3,1),np.clip(np.hanning(256),1e-3,1))[0], d["tiling"]["win0"], atol=1e-6)
-check(hann_ok, 'hann window differs from numpy')
-print(f'[hann] min window weight = {d["tiling"]["winMin"]:.2e}; np.clip(np.hanning(256),1e-3,1) match = {np.allclose(np.clip(np.hanning(256),1e-3,1), d["tiling"]["win0"], atol=1e-6) or np.allclose(np.outer(np.clip(np.hanning(256),1e-3,1),np.clip(np.hanning(256),1e-3,1))[0], d["tiling"]["win0"], atol=1e-6)}')
-refl_ref = [int(np.pad(np.arange(5), 12, mode="reflect")[i + 12]) for i in range(-12, 25 - 12)]
-check(d['tiling']['refl'][:25] == refl_ref, 'reflect padding differs from np.pad')
-print(f'[reflect] matches np.pad reflect over [-12,13): {d["tiling"]["refl"][:25] == refl_ref}')
+# 5. (removed: the legacy tiling helpers it checked were deleted; the Cellpose tiling is
+#    tested against Cellpose's own functions in tests/cellposeTiling.test.ts)
 # 6. homography
 for c in d['homography']:
     err = max(math.hypot(m['x'] - t['x'], m['y'] - t['y']) for m, t in zip(c['mapped'], c['dst']))

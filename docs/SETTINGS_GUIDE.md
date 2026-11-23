@@ -239,17 +239,6 @@ models (U-Net PQ −0.01 to −0.02, Cellpose-SAM −0.03 to −0.04) and made s
 - **Increase the margin** (5–10 px) if the photo edges are blurred, vignetted or
   distorted. The margin applies the next time photos are analysed.
 
-### Advanced: Inference pipeline
-| | |
-|---|---|
-| **Options** | `Cellpose (matches ImageGrains)` · `Legacy (whole-image tiling)` |
-| **Default** | **Cellpose** |
-| **What it does** | How the photo is prepared and cut into tiles before the neural network runs. "Cellpose" reproduces the original ImageGrains/Cellpose software exactly: identical grain outlines to the original in tests. |
-
-**When to change it:** keep **Cellpose**. In tests on 7 photos it gave clearly better
-outlines and D50 than Legacy (median D50 error 3.3 % vs 8.6 % for Cellpose-SAM). Choose
-**Legacy** only to reproduce results made with the earlier whole-image tiling.
-
 ### Advanced (rarely needed): Flow steps, Seed density
 | | |
 |---|---|
@@ -345,9 +334,10 @@ QGIS *Delete holes*):
 - Holes enclosed by one grain are filled, as Cellpose does. Gaps between two grains are kept.
 
 Each photo's tidy is one undo step, and exports and the printable report say it was applied.
-On the 40 held-out test images it changed a median 0.005% of each image's pixels and left the
-outline agreement (PQ) and the median D50 error unchanged with U-Net (and with Cellpose-SAM on
-the 32 images checked so far; METHODS, Section 15, and `validation/tidy/`). Specks pull a
+On the 40 held-out test images it changed a median 0.005% (U-Net) and 0.003% (Cellpose-SAM) of
+each image's pixels. Outline agreement (PQ) was unchanged, and the median D50 error was unchanged
+with U-Net and slightly lower with Cellpose-SAM (2.9% → 2.6%; METHODS, Section 15, and
+`validation/tidy/`). Specks pull a
 grain's measured long axis and Feret widths outward, so tidying removes that bias. On very fine
 gravel (grains of 15–30 px), where a few pixels are a large share of a grain, it can move D50 by
 a few percent, so use it consistently across the photos you compare.
@@ -508,7 +498,7 @@ a drag moves the photo when zoomed in and scrolls the page otherwise; a tap uses
 
 | Panel | Settings |
 |---|---|
-| **Left panel → Analysis settings** | Model, CP-SAM weights, Scale mode, Exclude border grains; *Fine-tuning:* Flow threshold, Cellprob threshold, Min size, Max area fraction, Border margin, CLAHE; *Advanced:* Flow steps, Inference pipeline, Seed density, CPU threads, Skip areas outside the ROI |
+| **Left panel → Analysis settings** | Model, CP-SAM weights, Scale mode, Exclude border grains; *Fine-tuning:* Flow threshold, Cellprob threshold, Min size, Max area fraction, Border margin, CLAHE; *Advanced:* Flow steps, Seed density, CPU threads, Skip areas outside the ROI |
 | **Left sidebar → photo list** | Include/exclude photo from the site; Facies weight (Facies-weighted mode only) |
 | **Toolbar (above the photo)** | *Scale:* Calibrate, Rectify · *Areas:* ROI, Exclude, Brush, Clear areas · *Edit grains* (after analysis): Split, Merge, Delete, Add · Display |
 | **Right-hand panel → Statistics settings** | Pooling mode, Size metric, Field-count cutoff, Min b-axis, Exclusion overlap, Harmonize cutoff, *Uncertainty & sampling:* Confidence level, Bootstrap repeats, Bootstrap seed, Two-stage bootstrap, Virtual Wolman points |
@@ -615,13 +605,19 @@ pixel classes before calibration); the Shape tab shows the aspect-ratio distribu
 
 ### Printable report
 
-**Export → Printable report** opens a one- or two-page summary of the open site in a new tab.
-Use its button, or Ctrl+P / ⌘P, to print it or save it as a PDF. It contains:
-- the cumulative curve and the size distribution;
-- D16/D50/D84 with bootstrap intervals, Dg, σg, Sauter mean, D65, Cu, Folk & Ward, and Wentworth %;
-- sample adequacy and photos to check;
-- a thumbnail of each photo with its outlines;
-- the settings, software and model versions, warnings and citations.
+**Export → Printable report** opens an A4 report of the open site in a new tab (usually three
+to five pages, numbered, with the site name in the footer). Use its button, or Ctrl+P / ⌘P, to
+print it or save it as a PDF (turn off the browser's own headers and footers). It contains:
+- a summary: D16, D50 and D84 with their confidence intervals, grains counted, photos, scale and
+  the sample-adequacy rating;
+- 1, the cumulative curve (with a legend for every line and point), every percentile D5–D95 with
+  its interval, and the size-class histogram;
+- 2, Folk & Ward, Dg, σg, Sauter mean, D65, Cu and the Wentworth classes as a bar;
+- 3, sample adequacy, photos to check and warnings;
+- 4, a table of results by photo: scale, grains counted / detected, D16 / D50 / D84 and each
+  photo's share of the site statistics;
+- 5, each photo, two to a row, with its outlines and a scale bar when calibrated;
+- 6, the methods summary, settings, software and model versions, and 7, the references to cite.
 
 Its numbers are the same as in the Site Summary CSV. If pop-ups are blocked, the report is
 downloaded as an HTML file instead: open it and print it from the browser.
@@ -668,14 +664,29 @@ and download your results:
 
 ### Checking outlines quickly (grain inspector)
 
-With the **Inspect** tool on an analysed photo, the bar above the photo has **Largest** and
-**Flagged (n)**. In the inspector card, **◀ Prev** and **Next ▶** step through the grains,
-and the view pans and zooms to each one. **Next flagged** jumps to grains worth a second look:
+With the **Inspect** tool on an analysed photo, the bar above the photo has **Largest**,
+**‹ Prev flagged**, **Next flagged ›** and a **Flagged (n)** list. In the inspector card,
+**◀ Prev** and **Next ▶** step through the grains, and the view pans and zooms to each one.
+**Prev flagged** / **Next flagged** step backwards and forwards through grains worth a second look:
 - grains touching the photo edge;
 - grains outside the ROI or in an excluded area;
 - very elongated grains (b/a below 0.35), which are often two stones merged or a stone cut by a shadow.
 
-The card says why a grain was flagged.
+Open the **Flagged (n)** list to see them grouped by these reasons (a grain can be in more than
+one group); click a grain number to jump to it. The card also says why a grain was flagged.
+
+### Saving the photo as shown (Save image)
+
+**Save image** (next to *Display*, above the photo) downloads the photo with everything currently
+drawn on it (grain outlines in their colours and opacity, Wentworth size colours, ellipses,
+orientation lines, edge / too-small markers, ROI and exclusion areas, the calibration line) as a PNG:
+- **Whole photo (full resolution)**: one image pixel per photo pixel, whatever the zoom;
+- **Visible area only**: the part of the photo in the view, at full resolution.
+
+Lines and markers are drawn thicker on large images so they stay visible, as on screen. Turn the
+Display options on or off first to choose what is drawn. Very large photos are scaled down to what
+the browser can draw (the status bar says so). The PNG records the photo, the options shown and the
+app version in its text fields.
 
 ### Keyboard shortcuts
 

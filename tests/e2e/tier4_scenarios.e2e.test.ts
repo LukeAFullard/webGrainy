@@ -38,6 +38,7 @@ describe('Tier 4: Real-World Application Scenarios — ImageGrains 2.0 Web', () 
       sessionFactory: async (kind: ModelKind) =>
         createMockOnnxSession({
           mode: kind,
+          image: { width: 512, height: 512 },
           customFlowGenerator: (w: number, h: number) =>
             createIsolatedEllipsesFlowField(w, h, [
               { cx: 120, cy: 120, rx: 14, ry: 10 },
@@ -53,7 +54,7 @@ describe('Tier 4: Real-World Application Scenarios — ImageGrains 2.0 Web', () 
     // 1 px = 0.5 mm => bAxis ~ 18-24 px => 9-12 mm (fine/medium gravel: 2-64 mm)
     const calibration = ScaleCalibrator.calibrate({ x: 0, y: 0 }, { x: 200, y: 0 }, 100, 'mm');
 
-    const session = await engine.analyzeImage(gravel, { inferencePipeline: 'legacy',
+    const session = await engine.analyzeImage(gravel, {
       model: 'auto',
       scaleMode: '1.0x',
       calibration,
@@ -91,7 +92,7 @@ describe('Tier 4: Real-World Application Scenarios — ImageGrains 2.0 Web', () 
     await engine.initialize();
 
     const calibration = ScaleCalibrator.calibrate({ x: 0, y: 0 }, { x: 100, y: 0 }, 200, 'mm'); // 2 mm/px on original
-    const session = await engine.analyzeImage(boulder, { inferencePipeline: 'legacy',
+    const session = await engine.analyzeImage(boulder, {
       model: 'auto',
       scaleMode: 'auto',
       applyClahe: true,
@@ -126,7 +127,7 @@ describe('Tier 4: Real-World Application Scenarios — ImageGrains 2.0 Web', () 
     });
     await giantEngine.initialize();
     const img = createUniformGravelImage(160, 160);
-    const giantSession = await giantEngine.analyzeImage(img, { inferencePipeline: 'legacy',
+    const giantSession = await giantEngine.analyzeImage(img, {
       model: 'unet',
       scaleMode: '1.0x',
       postProcess: { maxGrainAreaFraction: 0.15 },
@@ -142,7 +143,7 @@ describe('Tier 4: Real-World Application Scenarios — ImageGrains 2.0 Web', () 
         }),
     });
     await dumbbellEngine.initialize();
-    const dumbbellSession = await dumbbellEngine.analyzeImage(img, { inferencePipeline: 'legacy',
+    const dumbbellSession = await dumbbellEngine.analyzeImage(img, {
       model: 'unet',
       scaleMode: '1.0x',
       postProcess: { flowThreshold: 0.45, maxGrainAreaFraction: 0.15, minSize: 15 },
@@ -155,6 +156,7 @@ describe('Tier 4: Real-World Application Scenarios — ImageGrains 2.0 Web', () 
       sessionFactory: async (kind: ModelKind) =>
         createMockOnnxSession({
           mode: kind,
+          image: { width: 160, height: 160 },
           customFlowGenerator: (w: number, h: number) =>
             createIsolatedEllipsesFlowField(w, h, [
               { cx: 50, cy: 50, rx: 25, ry: 12 },
@@ -166,7 +168,7 @@ describe('Tier 4: Real-World Application Scenarios — ImageGrains 2.0 Web', () 
     await engine.initialize();
 
     const img = createUniformGravelImage(160, 160);
-    const session = await engine.analyzeImage(img, { inferencePipeline: 'legacy', model: 'unet', scaleMode: '1.0x' });
+    const session = await engine.analyzeImage(img, { model: 'unet', scaleMode: '1.0x' });
     const initialCount = session.getResult().grainCount;
     expect(initialCount).toBe(3);
 
@@ -243,11 +245,11 @@ describe('Tier 4: Real-World Application Scenarios — ImageGrains 2.0 Web', () 
     ac.abort();
     const img = createUniformGravelImage(128, 128);
     await expect(
-      engine.analyzeImage(img, { inferencePipeline: 'legacy', model: 'unet', signal: ac.signal })
+      engine.analyzeImage(img, { model: 'unet', signal: ac.signal })
     ).rejects.toThrow();
 
     // Run offline analysis & compare border filter toggle
-    const session = await engine.analyzeImage(img, { inferencePipeline: 'legacy',
+    const session = await engine.analyzeImage(img, {
       model: 'unet',
       scaleMode: '1.0x',
       excludeBorder: true,
