@@ -1,3 +1,4 @@
+import { cellposeTileMock } from './helpers/cellposeTileMock.js';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as ort from 'onnxruntime-web';
 import { BUILD_ID } from '../src/modules/buildId.js';
@@ -89,12 +90,35 @@ function makeEllipsesFlowField(
   return { flowY, flowX, cellprob };
 }
 
+/**
+ * Mock model. With `image` (the working image size), the ellipses are in working-image pixels and
+ * each run returns its Cellpose tile of that field; without it, every tile gets the ellipses in
+ * tile coordinates.
+ */
 function createMockSession(
   mode: ModelKind,
   ellipses: readonly EllipseSpec[],
+  image?: { width: number; height: number },
 ): InferenceSessionLike {
+  const tiled = image
+    ? cellposeTileMock(mode, image.width, image.height, makeEllipsesFlowField(image.width, image.height, ellipses))
+    : null;
+  let call = 0;
   return {
     async run(feeds: Record<string, unknown>) {
+      if (tiled) {
+        const t = tiled.tile(call++);
+        const out = new Float32Array(3 * t.th * t.tw);
+        out.set(t.flowY, 0);
+        out.set(t.flowX, t.th * t.tw);
+        out.set(t.cellprob, 2 * t.th * t.tw);
+        return {
+          flows_cellprob: {
+            data: mode === 'unet' ? out : float32ArrayToFloat16Bits(out),
+            dims: [1, 3, t.th, t.tw],
+          },
+        };
+      }
       const tensor = feeds['image'] as {
         dims: readonly number[];
         data: Float32Array | Uint16Array;
@@ -188,7 +212,7 @@ describe('pipelineController (ImageGrainsEngine & AnalysisSession)', () => {
         createMockSession(kind, [
           { cx: 40, cy: 40, rx: 14, ry: 10 },
           { cx: 90, cy: 80, rx: 12, ry: 12 },
-        ]),
+        ], { width: 128, height: 128 }),
     });
 
     const engineStages: string[] = [];
@@ -196,7 +220,7 @@ describe('pipelineController (ImageGrainsEngine & AnalysisSession)', () => {
 
     const configStages: string[] = [];
     const img = makeRgbaImage(128, 128, 'uniform');
-    const session = await engine.analyzeImage(img, { inferencePipeline: 'legacy',
+    const session = await engine.analyzeImage(img, {
       model: 'unet',
       scaleMode: '1.0x',
       applyClahe: true,
@@ -237,7 +261,7 @@ describe('pipelineController (ImageGrainsEngine & AnalysisSession)', () => {
     await engine.initialize();
 
     const coarse = makeRgbaImage(256, 256, 'coarse');
-    const session = await engine.analyzeImage(coarse, { inferencePipeline: 'legacy',
+    const session = await engine.analyzeImage(coarse, {
       model: 'auto',
       scaleMode: '1.0x',
     });
@@ -252,7 +276,7 @@ describe('pipelineController (ImageGrainsEngine & AnalysisSession)', () => {
   it('rescales morphometrics back to original pixels when effectiveScaleFactor < 1', async () => {
     const engine = new ImageGrainsEngine({
       sessionFactory: async (kind) =>
-        createMockSession(kind, [{ cx: 100, cy: 80, rx: 20, ry: 15 }]),
+        createMockSession(kind, [{ cx: 100, cy: 80, rx: 20, ry: 15 }], { width: 200, height: 160 }),
     });
 
     const img = makeRgbaImage(400, 320, 'uniform');
@@ -262,7 +286,7 @@ describe('pipelineController (ImageGrainsEngine & AnalysisSession)', () => {
       50,
       'mm',
     ); // 0.5 mm/px
-    const session = await engine.analyzeImage(img, { inferencePipeline: 'legacy',
+    const session = await engine.analyzeImage(img, {
       model: 'unet',
       scaleMode: '0.5x',
       calibration: cal,
@@ -294,11 +318,11 @@ describe('pipelineController (ImageGrainsEngine & AnalysisSession)', () => {
           { cx: 120, cy: 50, rx: 14, ry: 12 },
           { cx: 120, cy: 110, rx: 14, ry: 12 },
           { cx: 3, cy: 80, rx: 8, ry: 8 }, // border-touching grain
-        ]),
+        ], { width: 160, height: 160 }),
     });
 
     const img = makeRgbaImage(160, 160, 'uniform');
-    const session = await engine.analyzeImage(img, { inferencePipeline: 'legacy',
+    const session = await engine.analyzeImage(img, {
       model: 'unet',
       scaleMode: '1.0x',
       excludeBorder: true,
@@ -423,7 +447,7 @@ describe('pipelineController (ImageGrainsEngine & AnalysisSession)', () => {
 
     const img = makeRgbaImage(64, 64, 'uniform');
     await expect(
-      engine.analyzeImage(img, { inferencePipeline: 'legacy', model: 'unet', signal: preAc.signal }),
+      engine.analyzeImage(img, { model: 'unet', signal: preAc.signal }),
     ).rejects.toThrow(/abort/i);
 
     // Mid-flight abort during sessionFactory
@@ -436,7 +460,7 @@ describe('pipelineController (ImageGrainsEngine & AnalysisSession)', () => {
     });
 
     await expect(
-      midEngine.analyzeImage(img, { inferencePipeline: 'legacy', model: 'unet', signal: midAc.signal }),
+      midEngine.analyzeImage(img, { model: 'unet', signal: midAc.signal }),
     ).rejects.toThrow(/abort/i);
 
     await engine.dispose();
@@ -475,13 +499,13 @@ describe('pipelineController (ImageGrainsEngine & AnalysisSession)', () => {
     const ac = new AbortController();
     await expect(
       engine.analyzeImage(img, {
-        inferencePipeline: 'legacy', model: 'unet', scaleMode: '1.0x', signal: ac.signal,
+        model: 'unet', scaleMode: '1.0x', signal: ac.signal,
         onProgress: (stage) => { if (stage === 'postprocess') queueMicrotask(() => ac.abort()); },
       }),
     ).rejects.toMatchObject({ name: 'AbortError' });
     expect(workers).toHaveLength(1);
     expect(workers[0]!.terminate).toHaveBeenCalledTimes(1);
-    const ok = await engine.analyzeImage(img, { inferencePipeline: 'legacy', model: 'unet', scaleMode: '1.0x' });
+    const ok = await engine.analyzeImage(img, { model: 'unet', scaleMode: '1.0x' });
     expect(workers).toHaveLength(2);
     expect(ok.getResult().grainCount).toBe(1);
     await engine.dispose();
@@ -542,7 +566,7 @@ describe('pipelineController (ImageGrainsEngine & AnalysisSession)', () => {
     });
 
     const img = makeRgbaImage(64, 64, 'uniform');
-    const session = await engine.analyzeImage(img, { inferencePipeline: 'legacy',
+    const session = await engine.analyzeImage(img, {
       model: 'unet',
       scaleMode: '1.0x',
     });
@@ -667,7 +691,7 @@ describe('pipelineController (ImageGrainsEngine & AnalysisSession)', () => {
     await engine.dispose();
   });
 
-  it('defaults to the upstream-exact Cellpose pipeline (tiles, channels, provenance)', async () => {
+  it('runs the upstream-exact Cellpose pipeline (tiles, channels, provenance)', async () => {
     Object.defineProperty(globalThis, 'navigator', { value: {}, configurable: true });
     const calls: Array<{ dims: number[]; type: string }> = [];
     const recorder = (): InferenceSessionLike => ({
@@ -694,11 +718,6 @@ describe('pipelineController (ImageGrainsEngine & AnalysisSession)', () => {
     expect(calls.length).toBeGreaterThan(1);
     for (const c of calls) expect(c).toEqual({ dims: [1, 3, 256, 256], type: 'float16' });
 
-    // Legacy remains selectable and is recorded.
-    calls.length = 0;
-    const legacy = await engine.analyzeImage(makeRgbaImage(64, 64, 'uniform'), { model: 'unet', scaleMode: '1.0x', inferencePipeline: 'legacy' });
-    expect(legacy.getProvenance()?.inferencePipeline).toBe('legacy');
-    expect(calls).toEqual([{ dims: [1, 2, 64, 64], type: 'float32' }]);
     await engine.dispose();
   });
 
@@ -783,7 +802,7 @@ describe('pipelineController (ImageGrainsEngine & AnalysisSession)', () => {
     });
     await engine.initialize();
     const img = makeRgbaImage(64, 64, 'uniform');
-    const opts = { inferencePipeline: 'legacy', model: 'unet', scaleMode: '1.0x' } as const;
+    const opts = { model: 'unet', scaleMode: '1.0x' } as const;
     await engine.analyzeImage(img, opts);
     await engine.analyzeImage(img, opts);
     expect(made).toHaveLength(1); // cached while alive
@@ -813,7 +832,7 @@ describe('pipelineController (ImageGrainsEngine & AnalysisSession)', () => {
       },
     });
     await engine.initialize();
-    const s = await engine.analyzeImage(makeRgbaImage(64, 64, 'uniform'), { inferencePipeline: 'legacy', model: 'cpsam', scaleMode: '1.0x' });
+    const s = await engine.analyzeImage(makeRgbaImage(64, 64, 'uniform'), { model: 'cpsam', scaleMode: '1.0x' });
     expect(ids).toEqual(['ig2_cpsam_fp16', 'ig2_cpsam_int8_wo_fp32scale']);
     expect(s.getProvenance()?.modelId).toBe('ig2_cpsam_int8_wo_fp32scale');
     await engine.dispose();
@@ -838,7 +857,7 @@ describe('pipelineController (ImageGrainsEngine & AnalysisSession)', () => {
     });
     await engine.initialize();
     await expect(
-      engine.analyzeImage(makeRgbaImage(64, 64, 'uniform'), { inferencePipeline: 'legacy', model: 'unet', scaleMode: '1.0x' }),
+      engine.analyzeImage(makeRgbaImage(64, 64, 'uniform'), { model: 'unet', scaleMode: '1.0x' }),
     ).rejects.toThrow(/device lost/i);
     expect(created).toBe(2);
     await engine.dispose();
@@ -887,7 +906,7 @@ describe('pipelineController (ImageGrainsEngine & AnalysisSession)', () => {
     const img = makeRgbaImage(64, 64, 'uniform');
     // Device loss: the lost session is evicted, WebGPU is disabled for the page, and the
     // same image is retried once on a fresh (WASM) session instead of failing.
-    const session = await engine.analyzeImage(img, { inferencePipeline: 'legacy', model: 'unet', scaleMode: '1.0x' });
+    const session = await engine.analyzeImage(img, { model: 'unet', scaleMode: '1.0x' });
     expect(callCount).toBe(2);
     expect(warnings.some((w) => w.code === 'webgpu-device-lost')).toBe(true);
     expect(engine.getWebGpuDisabledReason()).toMatch(/device was lost/i);
@@ -896,7 +915,7 @@ describe('pipelineController (ImageGrainsEngine & AnalysisSession)', () => {
     expect(capsAfter.hasWebGPU).toBe(false);
     expect(capsAfter.hasShaderF16).toBe(false);
     // Later analyses reuse the WASM session (no further session creation).
-    await engine.analyzeImage(img, { inferencePipeline: 'legacy', model: 'unet', scaleMode: '1.0x' });
+    await engine.analyzeImage(img, { model: 'unet', scaleMode: '1.0x' });
     expect(callCount).toBe(2);
 
     const statsFeret = session.getStats('minFeret');
@@ -931,7 +950,7 @@ function postprocessWorkerOfBuild(build: string | undefined): Worker {
 describe('build mismatch (newer version activated in another tab)', () => {
   it('the engine refuses a post-processing result from another build, and accepts its own', async () => {
     const img = makeRgbaImage(64, 64, 'uniform');
-    const cfg = { inferencePipeline: 'legacy' as const, model: 'unet' as const, scaleMode: '1.0x' as const };
+    const cfg = { model: 'unet' as const, scaleMode: '1.0x' as const };
     const other = new ImageGrainsEngine({
       sessionFactory: async (kind) => createMockSession(kind, [{ cx: 32, cy: 32, rx: 12, ry: 10 }]),
       workerFactory: () => postprocessWorkerOfBuild('newer@2099-01-01'),

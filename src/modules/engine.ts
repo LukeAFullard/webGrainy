@@ -29,8 +29,6 @@ import {
 } from './modelCache.js';
 import {
   applyCLAHE,
-  normalizeGray,
-  normalizeRgbJoint99,
   prepareWorkingImage,
   upscaleWorkingImage,
   MAX_FINE_GRAIN_UPSCALE,
@@ -44,9 +42,7 @@ import {
   NumericInstabilityError,
   probeWebGpuCapabilities,
   runCpsamCellposeInference,
-  runCpsamTiledInference,
   runUnetCellposeInference,
-  runUnetInference,
   type SessionCreateOptions,
 } from './onnxInference.js';
 import { DEFAULT_POSTPROCESS_OPTIONS, flowsToMasksBrowser } from './postprocessCore.js';
@@ -361,10 +357,9 @@ export class ImageGrainsEngine {
       scaleFactor: workingImage.effectiveScaleFactor,
     });
 
-    const pipeline = config?.inferencePipeline ?? 'cellpose';
-    // Skip tiles that cannot affect grains in the ROI (Cellpose pipeline only).
+    // Skip tiles that cannot affect grains in the ROI.
     const needRegion =
-      pipeline === 'cellpose' && config?.inferenceRoi !== undefined
+      config?.inferenceRoi !== undefined
         ? buildRegionNeedTest(
             workingImage.width,
             workingImage.height,
@@ -373,58 +368,14 @@ export class ImageGrainsEngine {
           )
         : null;
     const skipOpts = needRegion ? { needRegion, needRegionMarginPx: ROI_TILE_MARGIN_PX } : {};
+    // Upstream-exact Cellpose tiling (reproduces PyTorch ImageGrains; validation/parity/).
     const runInference = async (
       session: ort.InferenceSession | InferenceSessionLike,
     ): Promise<InferenceOutput> => {
-      const onTileProgress = (progress: unknown): void => emit('inference', progress);
-      if (pipeline === 'cellpose') {
-        // Upstream-exact Cellpose tiling (reproduces PyTorch ImageGrains; validation/parity/).
-        return selectedModel === 'unet'
-          ? runUnetCellposeInference(
-              session as ort.InferenceSession,
-              workingImage.data,
-              workingImage.width,
-              workingImage.height,
-              { ...(signal ? { signal } : {}), onProgress: onTileProgress, ...skipOpts },
-            )
-          : runCpsamCellposeInference(
-              session as ort.InferenceSession,
-              workingImage.data,
-              workingImage.width,
-              workingImage.height,
-              { ...(signal ? { signal } : {}), onProgress: onTileProgress, ...skipOpts },
-            );
-      }
-      if (selectedModel === 'unet') {
-        const gray = normalizeGray(
-          workingImage.data,
-          workingImage.width,
-          workingImage.height,
-        );
-        return runUnetInference(
-          session as ort.InferenceSession,
-          gray,
-          workingImage.width,
-          workingImage.height,
-        );
-      }
-      const rgb = normalizeRgbJoint99(
-        workingImage.data,
-        workingImage.width,
-        workingImage.height,
-      );
-      return runCpsamTiledInference(
-        session as ort.InferenceSession,
-        rgb,
-        workingImage.width,
-        workingImage.height,
-        {
-          signal,
-          onProgress: onTileProgress,
-          // One tile per run on CPU: a 16-tile ViT-L batch exhausts the 4 GB WASM heap.
-          ...(this.sessionExecutionProviders.get(modelId) === 'webgpu' ? {} : { batchSize: 1 }),
-        },
-      );
+      const opts = { ...(signal ? { signal } : {}), onProgress: (progress: unknown): void => emit('inference', progress), ...skipOpts };
+      return selectedModel === 'unet'
+        ? runUnetCellposeInference(session as ort.InferenceSession, workingImage.data, workingImage.width, workingImage.height, opts)
+        : runCpsamCellposeInference(session as ort.InferenceSession, workingImage.data, workingImage.width, workingImage.height, opts);
     };
 
     let session = await this.acquireSession(modelId, signal, emit);
@@ -508,7 +459,7 @@ export class ImageGrainsEngine {
         ...(this.sessionExecutionProviders.has(modelId)
           ? { executionProvider: this.sessionExecutionProviders.get(modelId)! }
           : {}),
-        inferencePipeline: pipeline,
+        inferencePipeline: 'cellpose',
         ...(inferenceOut.tiling !== undefined ? { tileSkipping: inferenceOut.tiling } : {}),
         scaleMode: config?.scaleMode ?? 'auto',
         ...(fineGrainUpscale !== undefined ? { fineGrainUpscale } : {}),

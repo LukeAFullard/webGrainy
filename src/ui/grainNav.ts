@@ -5,7 +5,8 @@
  */
 import type { AnalysisSession } from '../modules/analysisSession.js';
 
-export type GrainNavMode = 'prev' | 'next' | 'largest' | 'flagged';
+/** `flagged` / `prevFlagged`: the next / previous flagged grain. */
+export type GrainNavMode = 'prev' | 'next' | 'largest' | 'flagged' | 'prevFlagged';
 
 export interface NavGrain {
   id: number;
@@ -41,11 +42,26 @@ export function navigateGrains(grains: readonly NavGrain[], currentId: number | 
   const n = sorted.length;
   if (mode === 'prev') return sorted[idx === -1 ? n - 1 : (idx - 1 + n) % n]!;
   if (mode === 'next') return sorted[(idx + 1) % n]!;
+  const step = mode === 'prevFlagged' ? -1 : 1;
+  const start = idx === -1 && step === -1 ? n : idx;
   for (let k = 1; k <= n; k++) {
-    const g = sorted[(idx + k + n) % n]!;
+    const g = sorted[(((start + step * k) % n) + n) % n]!;
     if (grainFlags(g).length > 0) return g;
   }
   return null;
+}
+
+/** The reasons a grain can be flagged, in the order the flagged list shows them. */
+export const FLAG_REASONS = [
+  { key: 'edge', label: 'Touches the photo edge', test: (g: NavGrain) => g.touchesBorder },
+  { key: 'excluded', label: 'Outside the ROI or in an excluded area', test: (g: NavGrain) => g.excluded === true },
+  { key: 'elongated', label: `Very elongated (b/a < ${ELONGATED_ASPECT})`, test: (g: NavGrain) => g.aspectRatio !== undefined && g.aspectRatio < ELONGATED_ASPECT },
+] as const;
+
+/** Flagged grains grouped by reason, in id order (a grain with several reasons is in each group). */
+export function flaggedByReason(grains: readonly NavGrain[]): Array<{ key: string; label: string; grains: NavGrain[] }> {
+  const sorted = [...grains].sort((a, b) => a.id - b.id);
+  return FLAG_REASONS.map((r) => ({ key: r.key, label: r.label, grains: sorted.filter((g) => r.test(g)) }));
 }
 
 export function countFlagged(grains: readonly NavGrain[]): number {

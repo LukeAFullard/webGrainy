@@ -174,6 +174,15 @@ describe('panel renderers', () => {
     expect(cal.subToolbar).not.toBe(after.subToolbar);
   });
 
+  it('toolbar: previous / next flagged and the flagged list by reason', () => {
+    const st = { ...analysedState(), activeTool: 'inspect' as const };
+    const html = renderToolbarHtml(st).subToolbar;
+    expect(html).toContain('data-nav="prevFlagged"');
+    expect(html).toContain('data-nav="flagged"');
+    // The test photo's grains do not touch the edge and are not elongated: no list.
+    expect(html).toContain('No flagged grains');
+  });
+
   it('toolbar: Tidy outlines only once the photo is analysed', () => {
     expect(renderToolbarHtml({ ...analysedState(), sessions: new Map() }).toolbar).not.toContain('data-action="tidy-outlines"');
     const html = renderToolbarHtml(analysedState()).toolbar;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { countFlagged, grainFlags, navigateGrains, type NavGrain } from '../src/ui/grainNav.js';
+import { countFlagged, flaggedByReason, grainFlags, navigateGrains, type NavGrain } from '../src/ui/grainNav.js';
 
 const grains: NavGrain[] = [
   { id: 3, areaPx: 400, touchesBorder: false, aspectRatio: 0.7 },
@@ -30,6 +30,24 @@ describe('grain inspector navigation', () => {
     expect(countFlagged(grains)).toBe(3);
     expect(navigateGrains(grains.filter((g) => grainFlags(g).length === 0), null, 'flagged')).toBeNull();
     expect(navigateGrains([], null, 'next')).toBeNull();
+  });
+
+  it('goes back through flagged grains too, wrapping around', () => {
+    expect(navigateGrains(grains, null, 'prevFlagged')!.id).toBe(7);
+    expect(navigateGrains(grains, 7, 'prevFlagged')!.id).toBe(5);
+    expect(navigateGrains(grains, 5, 'prevFlagged')!.id).toBe(1);
+    expect(navigateGrains(grains, 1, 'prevFlagged')!.id).toBe(7);
+    expect(navigateGrains(grains, 9, 'prevFlagged')!.id).toBe(7); // from an unflagged grain
+  });
+
+  it('groups flagged grains by reason for the list', () => {
+    const both: NavGrain = { id: 11, areaPx: 50, touchesBorder: true, aspectRatio: 0.1 };
+    const groups = flaggedByReason([...grains, both]);
+    expect(groups.map((g) => [g.key, g.grains.map((x) => x.id)])).toEqual([
+      ['edge', [1, 11]],
+      ['excluded', [5]],
+      ['elongated', [7, 11]],
+    ]);
   });
 
   it('explains why a grain is flagged', () => {

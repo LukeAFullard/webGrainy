@@ -1,3 +1,4 @@
+import { cellposeTileMock } from '../../helpers/cellposeTileMock.js';
 import { vi } from 'vitest';
 import type * as ort from 'onnxruntime-web';
 
@@ -358,6 +359,12 @@ export interface MockOnnxSessionOptions {
     width: number,
     height: number
   ) => { flowY: Float32Array; flowX: Float32Array; cellprob: Float32Array };
+  /**
+   * The working image size. When set, `customFlowGenerator` draws in working-image pixels and
+   * each run returns its Cellpose tile of that field (see tests/helpers/cellposeTileMock.ts);
+   * otherwise every tile gets the generator's field in tile coordinates.
+   */
+  image?: { width: number; height: number };
 }
 
 export interface CapturedOnnxInput {
@@ -373,6 +380,11 @@ export interface MockOnnxSession extends ort.InferenceSession {
 }
 
 export function createMockOnnxSession(options: MockOnnxSessionOptions): MockOnnxSession {
+  const tiled =
+    options.image && options.customFlowGenerator
+      ? cellposeTileMock(options.mode, options.image.width, options.image.height, options.customFlowGenerator(options.image.width, options.image.height))
+      : null;
+  let call = 0;
   const observedInputShapes: Array<readonly number[]> = [];
   const observedInputTypes: string[] = [];
   const capturedInputs: CapturedOnnxInput[] = [];
@@ -407,6 +419,23 @@ export function createMockOnnxSession(options: MockOnnxSessionOptions): MockOnnx
         type: input.type,
         data: input.data.slice(),
       });
+
+      if (tiled) {
+        const t = tiled.tile(call++);
+        const hw = t.th * t.tw;
+        const out = new Float32Array(3 * hw);
+        out.set(t.flowY, 0);
+        out.set(t.flowX, hw);
+        out.set(t.cellprob, 2 * hw);
+        const f16 = input.type === 'float16';
+        return {
+          flows_cellprob: {
+            dims: [1, 3, t.th, t.tw],
+            type: f16 ? 'float16' : 'float32',
+            data: f16 ? Uint16Array.from(out, (v) => float32ToFloat16Bits(v)) : out,
+          } as unknown as ort.Tensor,
+        };
+      }
 
       if (options.mode === 'unet') {
         const batch = input.dims[0] ?? 0;

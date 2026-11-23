@@ -277,13 +277,6 @@ export function renderSidebarHtml(state: AppState, view: SidebarView): string {
               <span class="label-row">Flow steps ${helpButton('niter')}</span>
               <input class="input" type="number" step="10" min="50" max="1000" value="${p.niter}" data-param="niter" />
             </label>
-            <label class="field-label" style="grid-column: 1 / -1;">
-              <span class="label-row">Inference pipeline ${helpButton('inferencePipeline')}</span>
-              <select class="select" data-param="inferencePipeline">
-                <option value="cellpose" ${p.inferencePipeline === 'cellpose' ? 'selected' : ''}>Cellpose (matches ImageGrains)</option>
-                <option value="legacy" ${p.inferencePipeline === 'legacy' ? 'selected' : ''}>Legacy (whole-image tiling)</option>
-              </select>
-            </label>
             <label class="field-label">
               <span class="label-row">Seed density ${helpButton('minSeedDensity')}</span>
               <input class="input" type="number" step="1" min="1" max="20" value="${p.minSeedDensity}" data-param="minSeedDensity" />

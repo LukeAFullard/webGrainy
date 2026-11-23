@@ -109,19 +109,6 @@ export interface TileSkipRecord {
 /** Region test in working-image px (end-exclusive): true = run inference there. */
 export type RegionNeedTest = (x0: number, y0: number, x1: number, y1: number) => boolean;
 
-export interface CpsamInferenceOptions {
-  tileSize?: number;
-  overlap?: number;
-  /**
-   * Tiles per `session.run` call (default 16). Use 1 on the WASM backend: a 16-tile
-   * ViT-L batch exceeds the 4 GB wasm32 heap (std::bad_alloc on full-size photos), and
-   * batching gives little speed-up on CPU.
-   */
-  batchSize?: number;
-  signal?: AbortSignal;
-  onProgress?: (progress: InferenceProgress) => void;
-}
-
 export interface PostProcessOptions {
   niter?: number;
   cellprobThreshold?: number;
@@ -267,12 +254,6 @@ export interface SedimentStatsReport {
   warnings?: string[];
 }
 
-/**
- * 'cellpose' (default): upstream-exact Cellpose tiling, which reproduces PyTorch ImageGrains.
- * 'legacy': whole-image U-Net, reflect padding, Hanning-blended tiles (not ImageGrains' own tiling).
- */
-export type InferencePipeline = 'cellpose' | 'legacy';
-
 export interface AnalysisConfig {
   model?: ModelKind | 'auto';
   /**
@@ -289,7 +270,6 @@ export interface AnalysisConfig {
   inferenceRoi?: import('../modules/roiAndRectify.js').RoiExclusionConfig;
   /** Skip tiles outside the photo's ROI during batch analysis (default true). */
   skipTilesOutsideRoi?: boolean;
-  inferencePipeline?: InferencePipeline;
   scaleMode?: ScaleMode;
   /**
    * Enlarge the working image by this factor before inference (e.g. 1.5). In testing this
@@ -327,6 +307,7 @@ export interface AnalysisProvenance {
   modelRevision: string;
   modelSha256: string;
   executionProvider?: string;
+  /** Always 'cellpose' (upstream-exact tiling); archives from before v0.2 may say 'legacy'. */
   inferencePipeline?: string;
   scaleMode?: string;
   /** Working image enlarged by this factor for fine gravel (U-Net), if any. */

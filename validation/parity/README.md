@@ -66,5 +66,7 @@ every pipeline, including PyTorch, and dominates the U-Net means.
 - `unet_parity.py`, `cpsam_parity.py`: variant experiments. Results are in
   `parity_unet_results.json` and `parity_cpsam_results.jsonl`.
 - `cpsam_tile_probe.py`: found the 8 px border by capturing Cellpose's actual input tiles.
-- `dump_ours*.mjs`, `score_dirs.py`, `our_postprocess.mjs`, `score_masks.py`: TypeScript
-  output dumps and scoring. Results are in `score_unet.json` and `score_cpsam.json`.
+- `dump_ours_cellpose.mjs`, `score_dirs.py`, `our_postprocess.mjs`, `score_masks.py`: TypeScript
+  output dumps and scoring. The legacy pipeline (and its dump scripts `dump_ours.mjs` /
+  `dump_ours_unet.mjs`) was removed from the app after v0.1.0; its rows above are kept as a
+  record, and the scripts are in the git history (e.g. commit 886691f). Results are in `score_unet.json` and `score_cpsam.json`.

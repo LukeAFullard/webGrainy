@@ -35,6 +35,8 @@ export interface ViewportControls {
   finishShape(): void;
   cancelShape(): void;
   markMasksDirty(): void;
+  /** The photo as shown (whole photo or the visible part) as a full-resolution PNG. */
+  exportViewImage(area: 'photo' | 'visible'): Promise<{ blob: Blob; width: number; height: number; scale: number } | null>;
 }
 
 export interface EventContext {

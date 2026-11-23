@@ -27,6 +27,9 @@ photo distribution is cut at the same 13 mm, D50 agrees with the field count to 
 - **Engine:** shipped webGrainy code (`dist/`) and pinned, SHA-256-verified weights,
   WASM backend, full resolution, default post-processing settings
   (`run_engine_k1.mjs`). Size metric is the reported `bAxis`; both photos pooled.
+  The results above were made with the earlier whole-image ("legacy") tiling, which was
+  removed after v0.1.0; `run_engine_k1.mjs` now runs the Cellpose pipeline the app uses (the
+  original script is in the git history, e.g. commit 886691f).
 - **Analysis:** `analyze_k1.py`. Full output in `k1_results.txt`. Bootstrap 95% CIs
   use 2000 resamples.
 

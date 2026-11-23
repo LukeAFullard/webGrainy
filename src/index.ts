@@ -22,8 +22,6 @@ export {
   applyCLAHE,
   prepareWorkingImage,
   recommendModel,
-  normalizeGray,
-  normalizeRgbJoint99,
   type ImageBufferLike,
   type HardwareCapabilities,
 } from './modules/imagePreprocess.js';
@@ -33,19 +31,12 @@ export {
   float16ToFloat32,
   float32ArrayToFloat16Bits,
   float16BitsToFloat32Array,
-  reflectIndex,
-  tileStarts,
-  makeBlendWindow,
   createInferenceSession,
   probeWebGpuCapabilities,
   hasWebGpuAdapter,
   WebGpuDeviceLostError,
   isWebGpuDeviceLostError,
   resolveWasmPaths,
-  /** @deprecated Legacy whole-image pipeline; does not reproduce upstream ImageGrains. Use runUnetCellposeInference. */
-  runUnetInference,
-  /** @deprecated Legacy tiling; does not reproduce upstream ImageGrains. Use runCpsamCellposeInference. */
-  runCpsamTiledInference,
   runUnetCellposeInference,
   runCpsamCellposeInference,
   assertPlausibleOutput,

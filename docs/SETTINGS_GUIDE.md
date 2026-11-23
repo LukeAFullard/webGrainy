@@ -239,17 +239,6 @@ models (U-Net PQ −0.01 to −0.02, Cellpose-SAM −0.03 to −0.04) and made s
 - **Increase the margin** (5–10 px) if the photo edges are blurred, vignetted or
   distorted. The margin applies the next time photos are analysed.
 
-### Advanced: Inference pipeline
-| | |
-|---|---|
-| **Options** | `Cellpose (matches ImageGrains)` · `Legacy (whole-image tiling)` |
-| **Default** | **Cellpose** |
-| **What it does** | How the photo is prepared and cut into tiles before the neural network runs. "Cellpose" reproduces the original ImageGrains/Cellpose software exactly: identical grain outlines to the original in tests. |
-
-**When to change it:** keep **Cellpose**. In tests on 7 photos it gave clearly better
-outlines and D50 than Legacy (median D50 error 3.3 % vs 8.6 % for Cellpose-SAM). Choose
-**Legacy** only to reproduce results made with the earlier whole-image tiling.
-
 ### Advanced (rarely needed): Flow steps, Seed density
 | | |
 |---|---|
@@ -508,7 +497,7 @@ a drag moves the photo when zoomed in and scrolls the page otherwise; a tap uses
 
 | Panel | Settings |
 |---|---|
-| **Left panel → Analysis settings** | Model, CP-SAM weights, Scale mode, Exclude border grains; *Fine-tuning:* Flow threshold, Cellprob threshold, Min size, Max area fraction, Border margin, CLAHE; *Advanced:* Flow steps, Inference pipeline, Seed density, CPU threads, Skip areas outside the ROI |
+| **Left panel → Analysis settings** | Model, CP-SAM weights, Scale mode, Exclude border grains; *Fine-tuning:* Flow threshold, Cellprob threshold, Min size, Max area fraction, Border margin, CLAHE; *Advanced:* Flow steps, Seed density, CPU threads, Skip areas outside the ROI |
 | **Left sidebar → photo list** | Include/exclude photo from the site; Facies weight (Facies-weighted mode only) |
 | **Toolbar (above the photo)** | *Scale:* Calibrate, Rectify · *Areas:* ROI, Exclude, Brush, Clear areas · *Edit grains* (after analysis): Split, Merge, Delete, Add · Display |
 | **Right-hand panel → Statistics settings** | Pooling mode, Size metric, Field-count cutoff, Min b-axis, Exclusion overlap, Harmonize cutoff, *Uncertainty & sampling:* Confidence level, Bootstrap repeats, Bootstrap seed, Two-stage bootstrap, Virtual Wolman points |
@@ -668,14 +657,29 @@ and download your results:
 
 ### Checking outlines quickly (grain inspector)
 
-With the **Inspect** tool on an analysed photo, the bar above the photo has **Largest** and
-**Flagged (n)**. In the inspector card, **◀ Prev** and **Next ▶** step through the grains,
-and the view pans and zooms to each one. **Next flagged** jumps to grains worth a second look:
+With the **Inspect** tool on an analysed photo, the bar above the photo has **Largest**,
+**‹ Prev flagged**, **Next flagged ›** and a **Flagged (n)** list. In the inspector card,
+**◀ Prev** and **Next ▶** step through the grains, and the view pans and zooms to each one.
+**Prev flagged** / **Next flagged** step backwards and forwards through grains worth a second look:
 - grains touching the photo edge;
 - grains outside the ROI or in an excluded area;
 - very elongated grains (b/a below 0.35), which are often two stones merged or a stone cut by a shadow.
 
-The card says why a grain was flagged.
+Open the **Flagged (n)** list to see them grouped by these reasons (a grain can be in more than
+one group); click a grain number to jump to it. The card also says why a grain was flagged.
+
+### Saving the photo as shown (Save image)
+
+**Save image** (next to *Display*, above the photo) downloads the photo with everything currently
+drawn on it (grain outlines in their colours and opacity, Wentworth size colours, ellipses,
+orientation lines, edge / too-small markers, ROI and exclusion areas, the calibration line) as a PNG:
+- **Whole photo (full resolution)**: one image pixel per photo pixel, whatever the zoom;
+- **Visible area only**: the part of the photo in the view, at full resolution.
+
+Lines and markers are drawn thicker on large images so they stay visible, as on screen. Turn the
+Display options on or off first to choose what is drawn. Very large photos are scaled down to what
+the browser can draw (the status bar says so). The PNG records the photo, the options shown and the
+app version in its text fields.
 
 ### Keyboard shortcuts
 

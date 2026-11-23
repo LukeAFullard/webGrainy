@@ -3,7 +3,7 @@ import { photoUpscaleFactor } from '../../modules/imageEnhance.js';
 import { helpButton } from '../help.js';
 import type { AppState, EditorToolMode } from '../state.js';
 import { getActivePhoto } from '../workspaceActions.js';
-import { countFlagged, navGrainsFor } from '../grainNav.js';
+import { countFlagged, flaggedByReason, navGrainsFor, type NavGrain } from '../grainNav.js';
 import { esc } from './html.js';
 
 export function renderToolbarHtml(state: AppState): { toolbar: string; subToolbar: string } {
@@ -99,12 +99,28 @@ export function renderToolbarHtml(state: AppState): { toolbar: string; subToolba
   const ov = state.overlays;
   let toolPrompt = '';
   if (state.activeTool === 'inspect' && session) {
-    const flagged = countFlagged(navGrainsFor(session));
+    const nav = navGrainsFor(session);
+    const flagged = countFlagged(nav);
+    const none = flagged === 0 ? 'disabled' : '';
+    const groups = flaggedByReason(nav).filter((g) => g.grains.length > 0);
+    const item = (g: NavGrain): string =>
+      `<button type="button" class="flag-item${state.inspectedGrainId === g.id ? ' active' : ''}" data-action="grain-nav" data-nav="goto" data-grain-id="${g.id}" title="Show grain #${g.id}">#${g.id}${g.aspectRatio !== undefined ? ` <span class="flag-meta">b/a ${g.aspectRatio.toFixed(2)}</span>` : ''}</button>`;
     toolPrompt = `
       <span class="toolbar-sep" aria-hidden="true"></span>
       <span>Check grains:</span>
       <button type="button" class="btn btn-sm" data-action="grain-nav" data-nav="largest" title="Show the largest grain">Largest</button>
-      <button type="button" class="btn btn-sm" data-action="grain-nav" data-nav="flagged" title="Grains touching the edge, outside the ROI, or very elongated" ${flagged === 0 ? 'disabled' : ''}>Flagged (${flagged})</button>
+      <button type="button" class="btn btn-sm" data-action="grain-nav" data-nav="prevFlagged" title="Previous flagged grain: touching the edge, outside the ROI, or very elongated" aria-label="Previous flagged grain" ${none}>‹ Prev flagged</button>
+      <button type="button" class="btn btn-sm" data-action="grain-nav" data-nav="flagged" title="Next flagged grain: touching the edge, outside the ROI, or very elongated" aria-label="Next flagged grain" ${none}>Next flagged ›</button>
+      ${
+        flagged > 0
+          ? `<details class="flag-list" data-keep-open="flag-list">
+              <summary>Flagged (${flagged})</summary>
+              <div class="flag-groups">${groups
+                .map((g) => `<div class="flag-group"><div class="flag-group-title">${esc(g.label)} <span class="flag-meta">(${g.grains.length})</span></div><div class="flag-items">${g.grains.map(item).join('')}</div></div>`)
+                .join('')}</div>
+            </details>`
+          : '<span class="field-hint">No flagged grains</span>'
+      }
     `;
   }
   if (state.activeTool === 'calibrate') {
@@ -175,6 +191,18 @@ export function renderToolbarHtml(state: AppState): { toolbar: string; subToolba
         <label class="checkbox-label">Outline opacity <input type="range" min="0" max="1" step="0.05" value="${ov.opacity}" data-ov="opacity" style="width:80px;" /></label>
       </div>
     </details>
+    ${
+      activePhoto
+        ? `<details class="display-menu save-view-menu" data-keep-open="save-view">
+            <summary title="Download the photo as shown, with the current Display settings, as a full-resolution PNG">Save image</summary>
+            <div class="display-options">
+              <button type="button" class="btn btn-sm" data-action="save-view" data-area="photo" ${state.savingView ? 'disabled' : ''}>Whole photo (full resolution)</button>
+              <button type="button" class="btn btn-sm" data-action="save-view" data-area="visible" ${state.savingView ? 'disabled' : ''}>Visible area only</button>
+              <div class="field-hint" style="line-height:1.4;">PNG at the photo's own pixels, with the outlines, colours, ellipses and markers as currently shown. Very large photos are scaled to what the browser can draw.</div>
+            </div>
+          </details>`
+        : ''
+    }
     ${scaleBadgeHtml}
     ${toolPrompt}
   `;

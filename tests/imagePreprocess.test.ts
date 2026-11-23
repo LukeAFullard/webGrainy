@@ -2,8 +2,6 @@ import { describe, expect, it } from 'vitest';
 import { perfBudget } from './perfBudget.js';
 import {
   applyCLAHE,
-  normalizeGray,
-  normalizeRgbJoint99,
   prepareWorkingImage,
   recommendModel,
   resizeRgbaArea,
@@ -348,70 +346,7 @@ describe('imagePreprocess', () => {
     });
   });
 
-  describe('normalizeGray and normalizeRgbJoint99', () => {
-    it('computes exact linear 1st-99th percentile normalization for grayscale', () => {
-      // 101 pixels with values 0, 1, 2, ..., 100
-      // np.percentile(0..100, [1, 99], method='linear') -> p1 = 1.0, p99 = 99.0
-      const width = 101;
-      const height = 1;
-      const rgba = new Uint8ClampedArray(width * height * 4);
-      for (let i = 0; i < width; i++) {
-        rgba[i * 4] = i;
-        rgba[i * 4 + 1] = i;
-        rgba[i * 4 + 2] = i;
-        rgba[i * 4 + 3] = 255;
-      }
-
-      const norm = normalizeGray(rgba, width, height);
-      expect(norm.length).toBe(101);
-      expect(norm[0]).toBeCloseTo(-1 / 98, 5);
-      expect(norm[1]).toBeCloseTo(0, 6);
-      expect(norm[50]).toBeCloseTo(49 / 98, 6);
-      expect(norm[99]).toBeCloseTo(1, 6);
-      expect(norm[100]).toBeCloseTo(99 / 98, 5);
-    });
-
-    it('handles constant grayscale and RGB images safely with 1e-8 denominator guard', () => {
-      const rgba = makeSolidRgba(16, 16, 77, 77, 77, 123);
-      const gray = normalizeGray(rgba, 16, 16);
-      const rgb = normalizeRgbJoint99(rgba, 16, 16);
-
-      expect(gray.length).toBe(256);
-      expect(rgb.length).toBe(256 * 3);
-      for (let i = 0; i < gray.length; i++) {
-        expect(Number.isFinite(gray[i])).toBe(true);
-        expect(gray[i]).toBe(0);
-      }
-      for (let i = 0; i < rgb.length; i++) {
-        expect(Number.isFinite(rgb[i])).toBe(true);
-        expect(rgb[i]).toBe(0);
-      }
-    });
-
-    it('computes exact joint 1st-99th percentile across RGB channels ignoring alpha', () => {
-      // 10 pixels -> 30 RGB values: 0..29 (alpha set to 255 and 0 to ensure alpha is ignored)
-      // Total 30 values: idx_1 = 0.01 * 29 = 0.29 -> 0 + 0.29*(1-0) = 0.29
-      // idx_99 = 0.99 * 29 = 28.71 -> 28 + 0.71*(29-28) = 28.71
-      const width = 10;
-      const height = 1;
-      const rgba = new Uint8ClampedArray(width * height * 4);
-      for (let i = 0; i < width; i++) {
-        rgba[i * 4] = i * 3;
-        rgba[i * 4 + 1] = i * 3 + 1;
-        rgba[i * 4 + 2] = i * 3 + 2;
-        rgba[i * 4 + 3] = i % 2 === 0 ? 0 : 255;
-      }
-
-      const norm = normalizeRgbJoint99(rgba, width, height);
-      expect(norm.length).toBe(30);
-      const p1 = 0.29;
-      const p99 = 28.71;
-      const denom = p99 - p1 + 1e-8;
-      for (let v = 0; v < 30; v++) {
-        expect(norm[v]).toBeCloseTo((v - p1) / denom, 5);
-      }
-    });
-
+  describe('input validation and model recommendation', () => {
     it('throws RangeError on 0, negative, or undersized buffers across preprocessing functions', () => {
       const smallBuf = new Uint8ClampedArray(12);
       expect(() => prepareWorkingImage(smallBuf, 0, 10)).toThrow(RangeError);
@@ -421,12 +356,6 @@ describe('imagePreprocess', () => {
       expect(() => recommendModel(smallBuf, 0, 4)).toThrow(RangeError);
       expect(() => recommendModel(smallBuf, -1, 4)).toThrow(RangeError);
       expect(() => recommendModel(smallBuf, 4, 4)).toThrow(RangeError);
-
-      expect(() => normalizeGray(smallBuf, 0, 4)).toThrow(RangeError);
-      expect(() => normalizeGray(smallBuf, 4, 4)).toThrow(RangeError);
-
-      expect(() => normalizeRgbJoint99(smallBuf, 4, 0)).toThrow(RangeError);
-      expect(() => normalizeRgbJoint99(smallBuf, 4, 4)).toThrow(RangeError);
     });
 
     it('recommends unet when WebGPU adapter lacks shader-f16 even on heterogeneous imagery', () => {

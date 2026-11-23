@@ -334,6 +334,19 @@ try {
     const tidyMsg = await page.evaluate(() => document.body.innerText.match(/(Tidied 1 photo[^\n]*|Tidy outlines: nothing to tidy[^\n]*)/)?.[0] ?? '');
     if (/^Tidied/.test(tidyMsg)) await page.click('button[data-action="undo"]'); // keep the counts below as analysed
     console.log(`ok: Tidy outlines: ${tidyMsg.slice(0, 120)}`);
+    // Save image: the photo as shown, at the photo's own resolution, with provenance text.
+    await page.click('.save-view-menu > summary');
+    const [viewDl] = await Promise.all([page.waitForEvent('download'), page.click('button[data-action="save-view"][data-area="photo"]')]);
+    const viewPng = readFileSync(await viewDl.path());
+    const photoSize = await page.evaluate(() => document.getElementById('viewport-footer')?.innerText.match(/(\d+)×(\d+)px/)?.slice(1).map(Number) ?? []);
+    const pngW = viewPng.readUInt32BE(16);
+    const pngH = viewPng.readUInt32BE(20);
+    if (pngW !== photoSize[0] || pngH !== photoSize[1] || !viewPng.includes(Buffer.from('iTXtwebGrainy'))) {
+      fail(`Save image: ${pngW}×${pngH} PNG for a ${photoSize.join('×')} photo, provenance ${viewPng.includes(Buffer.from('iTXtwebGrainy'))}`);
+    }
+    if (process.env.SMOKE_SAVE_VIEW) writeFileSync(process.env.SMOKE_SAVE_VIEW, viewPng);
+    await page.click('.save-view-menu > summary');
+    console.log(`ok: Save image (${viewDl.suggestedFilename()}, ${pngW}×${pngH} px)`);
     // GeoPackage export through the Export dialog: a valid SQLite / GeoPackage file.
     await page.locator('[data-open-modal="export"]:visible').first().click();
     await page.selectOption('select[data-export-opt="what"]', 'outlines');

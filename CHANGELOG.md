@@ -54,6 +54,17 @@ First public release.
   enclosed by one grain are filled. One undo step per photo; recorded in exports and the printable
   report. Checked on the 40 held-out test images (`validation/tidy/`), with before/after examples.
 
+### Navigation, image export and removals
+
+- **Prev flagged / Next flagged** step backwards and forwards through grains that need checking, and a
+  **Flagged** list groups them by reason (touches the photo edge; outside the ROI or in an excluded area;
+  very elongated), each entry jumping to its grain.
+- **Save image** (next to *Display*): the photo as shown on screen (outline colours and opacity,
+  ellipses, orientation lines, markers, ROI and exclusions, calibration line) as a PNG at the photo's own
+  resolution, for the whole photo or only the visible area, with provenance in the PNG text.
+- The **Legacy inference pipeline** is removed: every analysis uses the Cellpose tiling, which reproduces
+  the original ImageGrains software. Older projects and exports that recorded "legacy" still open.
+
 ### Fixed before release (pre-publication audit)
 
 - Imported `.webgrainy` files are checked field by field; a crafted file can no longer inject markup or
