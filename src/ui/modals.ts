@@ -11,82 +11,82 @@ import type { AppState } from './state.js';
 
 export const FULL_SCIENTIFIC_CITATIONS: ReadonlyArray<{ title: string; citation: string }> = [
   {
-    title: '1. ImageGrains 2.0',
+    title: 'ImageGrains 2.0',
     citation:
       'Mair, D., Witz, G., Do Prado, A., Garefalakis, P., Wild, A., Ville, F., Schuster, B., Horn, M., Österle, J., Fabbri, S. C., Litty, C., Achleitner, S., Leistner, S., Hiller, C., & Schlunegger, F. (2026). ImageGrains 2.0: Improved precision and generalization for grain segmentation. Earth Surface Dynamics, 14, 527–551. https://doi.org/10.5194/esurf-14-527-2026',
   },
   {
-    title: '2. ImageGrains 1.0',
+    title: 'ImageGrains 1.0',
     citation:
       'Mair, D., Witz, G., Do Prado, A. H., Garefalakis, P., & Schlunegger, F. (2023/2024). Automated detecting, segmenting and measuring of grains in images of fluvial sediments: The potential for large and precise data from specialist deep learning models and transfer learning. Earth Surface Processes and Landforms, 49(3), 1099–1116. https://doi.org/10.1002/esp.5755',
   },
   {
-    title: '3. Cellpose-SAM',
+    title: 'Cellpose-SAM',
     citation:
       'Pachitariu, M., Rariden, M., & Stringer, C. (2025). Cellpose-SAM: superhuman generalization for cellular segmentation. bioRxiv 2025.04.28.651001. https://doi.org/10.1101/2025.04.28.651001',
   },
   {
-    title: '4. Cellpose 1.0',
+    title: 'Cellpose 1.0',
     citation:
       'Stringer, C., Wang, T., Michaelos, M., & Pachitariu, M. (2021). Cellpose: a generalist algorithm for cellular segmentation. Nature Methods, 18, 100–106. https://doi.org/10.1038/s41592-020-01018-x',
   },
   {
-    title: '5. Photo-Sieving Uncertainty & Cluster Bootstrapping',
+    title: 'Photo-Sieving Uncertainty & Cluster Bootstrapping',
     citation:
       'Mair, D., Do Prado, A. H., Garefalakis, P., Lechmann, A., Whittaker, A., & Schlunegger, F. (2022). Grain size of fluvial gravel bars from close-range UAV imagery—uncertainty in segmentation-based data. Earth Surface Dynamics, 10, 953–973. https://doi.org/10.5194/esurf-10-953-2022',
   },
   {
-    title: '6. GSDtools (Binomial Percentile CIs)',
+    title: 'GSDtools (Binomial Percentile CIs)',
     citation:
       'Eaton, B. C., Moore, R. D., & MacKenzie, L. G. (2019). Percentile-based grain size distribution analysis tools (GSDtools) – estimating confidence limits and hypothesis tests for comparing two samples. Earth Surface Dynamics, 7, 789–806. https://doi.org/10.5194/esurf-7-789-2019',
   },
   {
-    title: '7. BASEGRAIN',
+    title: 'BASEGRAIN',
     citation:
       'Detert, M., & Weitbrecht, V. (2012). Automatic object detection to analyze the geometry of gravel grains – a free stand-alone tool. In R. M. Muños (Ed.), River Flow 2012 (pp. 595–600). Taylor & Francis Group, London. (Also Detert & Weitbrecht 2013, Advances in Science and Research, 1789–1795.)',
   },
   {
-    title: '8. PebbleCounts',
+    title: 'PebbleCounts',
     citation:
       'Purinton, B., & Bookhagen, B. (2019). Introducing PebbleCounts: a grain-sizing tool for photo surveys of dynamic gravel-bed rivers. Earth Surface Dynamics, 7, 859–877. https://doi.org/10.5194/esurf-7-859-2019',
   },
   {
-    title: '9. Segmenteverygrain',
+    title: 'Segmenteverygrain',
     citation:
       'Sylvester, Z., Stockli, D. F., Howes, N., Roberts, K., Malkowski, M., & Covault, J. (2025). Segmenteverygrain: A Python module for segmentation of grains in images. Journal of Open Source Software, 10(112), 7953. https://doi.org/10.21105/joss.07953',
   },
   {
-    title: '10. Wolman Pebble Count',
+    title: 'Wolman Pebble Count',
     citation:
       'Wolman, M. G. (1954). A method of sampling coarse river-bed material. Eos, Transactions American Geophysical Union, 35(6), 951–956. https://doi.org/10.1029/TR035i006p00951',
   },
   {
-    title: '11. Surface Sampling Equivalency',
+    title: 'Surface Sampling Equivalency',
     citation:
       'Kellerhals, R., & Bray, D. I. (1971). Sampling procedures for coarse fluvial sediments. Journal of the Hydraulics Division, ASCE, 97(HY8), 1165–1180. https://doi.org/10.1061/JYCEAJ.0003044',
   },
   {
-    title: '12. Gravel-Bed Sampling Guidelines',
+    title: 'Gravel-Bed Sampling Guidelines',
     citation:
       'Bunte, K., & Abt, S. R. (2001). Sampling surface and subsurface particle-size distributions in wadable gravel- and cobble-bed streams for analyses in sediment transport, hydraulics, and streambed monitoring. Gen. Tech. Rep. RMRS-GTR-74, USDA Forest Service. https://doi.org/10.2737/RMRS-GTR-74',
   },
   {
-    title: '13. Photo-Sieving Methodology & Accuracy',
+    title: 'Photo-Sieving Methodology & Accuracy',
     citation:
       'Graham, D. J., Reid, I., & Rice, S. P. (2005a), Mathematical Geology 37(1), 1–28; Graham, D. J., Rice, S. P., & Reid, I. (2005b), Water Resources Research 41, W07020; Graham, D. J., Rollet, A.-J., Piégay, H., & Rice, S. P. (2010), Water Resources Research 46, W02508.',
   },
   {
-    title: '14. Folk & Ward Graphic Statistics',
+    title: 'Folk & Ward Graphic Statistics',
     citation:
       'Folk, R. L., & Ward, W. C. (1957). Brazos River bar: a study in the significance of grain size parameters. Journal of Sedimentary Petrology, 27(1), 3–26.',
   },
   {
-    title: '15. Wentworth & Coarse Clast Scale',
+    title: 'Wentworth & Coarse Clast Scale',
     citation:
       'Wentworth, C. K. (1922). A scale of grade and class terms for clastic sediments. The Journal of Geology, 30(5), 377–392; Blair, T. C., & McPherson, J. G. (1999). Journal of Sedimentary Research, 69(1), 6–19.',
   },
   {
-    title: '16. Directional / Axial Fabric Statistics',
+    title: 'Directional / Axial Fabric Statistics',
     citation:
       'Curray, J. R. (1956). The analysis of two-dimensional orientation data. The Journal of Geology, 64(2), 117–131; Mardia, K. V., & Jupp, P. E. (2000). Directional Statistics. Wiley.',
   },
@@ -101,12 +101,13 @@ function esc(s: string): string {
     .replace(/'/g, '&#39;');
 }
 
+/** Decimal units (1 MB = 1,000,000 bytes), like the storage line in the Site panel. */
 export function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+  if (bytes < 1e3) return `${bytes} B`;
+  if (bytes < 1e6) return `${(bytes / 1e3).toFixed(1)} kB`;
+  if (bytes < 1e9) return `${(bytes / 1e6).toFixed(1)} MB`;
+  return `${(bytes / 1e9).toFixed(2)} GB`;
 }
 
 export function triggerBlobDownload(blob: Blob, filename: string): void {
@@ -400,7 +401,12 @@ export function renderDownloadResultsModalHtml(state: AppState): string {
   const site = state.sites.find((x) => x.siteId === state.activeSiteId) ?? null;
   const analysed = state.photos.filter((p) => state.sessions.has(p.photoId)).length;
   let photoBytes = 0;
-  for (const p of state.photos) photoBytes += p.imageBlob.size + (p.originalBackup?.imageBlob.size ?? 0);
+  for (const p of state.photos) {
+    photoBytes += p.imageBlob.size + (p.originalBackup?.imageBlob.size ?? 0);
+    // The project file also holds each analysed photo's label mask (4 bytes per working pixel).
+    const wi = state.sessions.get(p.photoId)?.workingImage;
+    if (wi) photoBytes += wi.width * wi.height * 4;
+  }
   const mb = Math.max(1, Math.round(photoBytes / 1e6));
   const include = state.downloadIncludeProject;
   return `

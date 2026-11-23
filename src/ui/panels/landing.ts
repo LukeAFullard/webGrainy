@@ -211,7 +211,7 @@ export const WORKFLOW_STEPS: ReadonlyArray<WorkflowStepSpec> = [
       {
         label: 'Stored in your browser',
         detail:
-          'Photos and settings stay in this browser on your device. Use "Back up now" in the Site panel to save a portable .webgrainy project file.',
+          'Photos and settings stay in this browser on your device. Use "Download results…" in the Site panel (tick the project file) to save a portable .webgrainy copy.',
       },
     ],
     cta: {
@@ -435,7 +435,7 @@ export const WORKFLOW_STEPS: ReadonlyArray<WorkflowStepSpec> = [
 
         <rect x="20" y="184" width="380" height="48" rx="4" fill="#17212b" stroke="#2a3642" />
         <text x="32" y="204" fill="#e8eef4" font-family="system-ui, sans-serif" font-size="10.5" font-weight="600">Every edit updates the grain-size curve and percentiles immediately</text>
-        <text x="32" y="220" fill="#9fb0c0" font-family="ui-monospace, monospace" font-size="9">Shortcuts: S (Split) · M (Merge) · D (Delete) · A (Add) · Ctrl+Z (Undo)</text>
+        <text x="32" y="220" fill="#9fb0c0" font-family="ui-monospace, monospace" font-size="9">Shortcuts: 6 (Split) · 7 (Merge) · 8 (Delete) · 9 (Add) · Ctrl+Z (Undo)</text>
       </svg>
     `,
   },
@@ -589,7 +589,8 @@ export function renderLandingHtml(state: AppState, view: LandingView): string {
   const caps = state.capabilities;
   const cachedCount = caps?.cachedModels?.length ?? 0;
   const photoCount = state.photos.length;
-  const siteCount = state.sites.length;
+  // Sites with photos: the empty site created on the first visit is not a "saved site".
+  const siteCount = state.sites.filter((s) => s.photoOrder.length > 0).length;
 
   const engineLabel = view.gpuReset
     ? 'CPU mode (GPU reset)'

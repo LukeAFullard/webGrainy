@@ -197,5 +197,9 @@ First public release.
   edge-case probe uses real sessions again, the false-positive-rate study defaults to the 400 trials
   its results report, `npm run test:perf` runs files one at a time so strict timings do not flake, and
   the GitHub Pages deploy waits for CI to pass on the same commit.
+- Polish: the About dialog's citation list is no longer numbered twice; all byte sizes use decimal units;
+  the project-file size estimate includes the label masks; opening *Export* before anything is analysed
+  no longer ticks the last getting-started step; the landing page lists the real editing shortcuts
+  (6–9) and the *Download results…* button, and does not count the empty first site as a saved site.
 
 [0.1.0]: https://github.com/LukeAFullard/webGrainy/releases/tag/v0.1.0
