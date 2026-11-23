@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { AnalysisSession } from '../src/modules/analysisSession.js';
 import { computeGrainMorphometrics } from '../src/modules/postprocessCore.js';
+import { ScaleCalibrator } from '../src/modules/interactiveEditor.js';
 import type { PhotoRecord, SiteRecord } from '../src/modules/projectStorage.js';
 import { computeWorkspaceReports } from '../src/modules/siteWorkspace.js';
 import { createInitialState, type AppState } from '../src/ui/state.js';
@@ -8,7 +9,7 @@ import { renderTopbarHtml } from '../src/ui/panels/topbar.js';
 import { renderSidebarHtml, faciesSharePct, backupLineHtml, formatBytes, retentionBannerHtml, type SidebarView } from '../src/ui/panels/sidebar.js';
 import { renderToolbarHtml } from '../src/ui/panels/toolbar.js';
 import { renderDownloadResultsModalHtml, renderExportModalHtml } from '../src/ui/modals.js';
-import { renderDashboardHtml } from '../src/ui/panels/dashboard.js';
+import { histogramBasis, renderDashboardHtml } from '../src/ui/panels/dashboard.js';
 import { renderCompareHtml } from '../src/ui/panels/compare.js';
 import {
   renderLandingHtml,
@@ -173,6 +174,30 @@ describe('panel renderers', () => {
     expect(cal.subToolbar).not.toBe(after.subToolbar);
   });
 
+  it('toolbar: Undo rectify only for a rectified photo', () => {
+    const st = analysedState();
+    expect(renderToolbarHtml(st).toolbar).not.toContain('data-action="rectify-undo"');
+    const rectified = {
+      ...st,
+      photos: st.photos.map((p) => (p.photoId === 'p1' ? { ...p, rectifyBackup: { imageBlob: new Blob(['o']), width: 120, height: 80 } } : p)),
+    };
+    expect(renderToolbarHtml(rectified).toolbar).toContain('data-action="rectify-undo"');
+  });
+
+  it('toolbar: ROI tool, and Clear areas once the photo has an ROI or exclusion', () => {
+    const st = analysedState();
+    expect(renderToolbarHtml(st).toolbar).toContain('data-tool="roiPoly"');
+    const roi = renderToolbarHtml({ ...st, activeTool: 'roiPoly' });
+    expect(roi.toolbar).toContain('data-action="finish-shape"');
+    expect(roi.toolbar).not.toContain('data-action="clear-areas"');
+    const withRoi = {
+      ...st,
+      activeTool: 'roiPoly' as const,
+      photos: st.photos.map((p) => (p.photoId === 'p1' ? { ...p, roiConfig: { roiPolygon: [{ x: 0, y: 0 }, { x: 5, y: 0 }, { x: 5, y: 5 }], exclusionPolygons: [], exclusionStrokes: [] } } : p)),
+    };
+    expect(renderToolbarHtml(withRoi).toolbar).toContain('data-action="clear-areas"');
+  });
+
   it('dashboard: every tab for this photo and the whole site registers its charts', () => {
     const st = analysedState();
     for (const scope of ['photo', 'site'] as const) {
@@ -187,6 +212,66 @@ describe('panel renderers', () => {
     }
     const empty = renderDashboardHtml({ ...emptyState(), dashboardScope: 'site' }, { lightTheme: false, charts: new Map() });
     expect(empty).toContain('Add &amp; analyze photos');
+  });
+
+  it('dashboard: a photo with no counted grains shows dashes, never NaN', () => {
+    const base = analysedState();
+    const st0 = { ...base, siteOptions: { ...base.siteOptions, minBaxisPx: 1e6 } };
+    const st = { ...st0, ...computeWorkspaceReports(st0) };
+    for (const scope of ['photo', 'site'] as const) {
+      const charts: ChartRegistry = new Map();
+      const html = renderDashboardHtml({ ...st, dashboardScope: scope, dashboardTab: 'psd' }, { lightTheme: true, charts });
+      expect(html, scope).not.toContain('NaN');
+      for (const c of charts.values()) expect(c.render(true), scope).not.toContain('NaN');
+    }
+  });
+
+  it('photo view: the detection limit shown is the cutoff applied, raised by the site cutoff (audit S1)', () => {
+    const base = emptyState();
+    const cal = (mmPerPx: number) => ScaleCalibrator.calibrate({ x: 0, y: 0 }, { x: 100, y: 0 }, 100 * mmPerPx, 'mm');
+    const s1 = session();
+    const s2 = session();
+    s1.setCalibration(cal(0.9)); // own limit 15 px x 0.9 = 13.5 mm
+    s2.setCalibration(cal(1)); // 15 mm: sets the site's common cutoff
+    const st0: AppState = {
+      ...base,
+      photos: [{ ...photo('p1', 'fine.jpg'), calibration: cal(0.9) }, { ...photo('p2', 'coarse.jpg'), calibration: cal(1) }],
+      activePhotoId: 'p1',
+      sessions: new Map([['p1', s1], ['p2', s2]]),
+      photoStatuses: new Map([['p1', 'done'], ['p2', 'done']] as const),
+    };
+    const st = { ...st0, ...computeWorkspaceReports(st0) };
+    const html = renderDashboardHtml({ ...st, dashboardScope: 'photo', dashboardTab: 'psd' }, { lightTheme: true, charts: new Map() });
+    expect(html).toMatch(/Smallest grain kept \(detection limit\): <strong>~15\.0 mm<\/strong>/);
+    expect(html).toContain('this photo alone resolves ~13.5 mm');
+    expect(html).toContain('common cutoff');
+  });
+
+  it('dashboard labels follow the data shown (audit S7)', () => {
+    const px = analysedState(); // uncalibrated: sizes in px
+    const psd = renderDashboardHtml({ ...px, dashboardScope: 'photo', dashboardTab: 'psd' }, { lightTheme: true, charts: new Map() });
+    expect(psd).not.toContain('data-psd-x="phi"'); // no φ axis without mm
+    expect(psd).toContain('pooling applies to Whole site');
+    const cal = ScaleCalibrator.calibrate({ x: 0, y: 0 }, { x: 100, y: 0 }, 100, 'mm');
+    const s1 = session();
+    const s2 = session();
+    s1.setCalibration(cal);
+    s2.setCalibration(cal);
+    const st0: AppState = {
+      ...px,
+      photos: px.photos.map((p) => ({ ...p, calibration: cal })),
+      sessions: new Map([['p1', s1], ['p2', s2]]),
+    };
+    const st = { ...st0, ...computeWorkspaceReports(st0) };
+    expect(st.siteReportError).toBeNull();
+    expect(renderDashboardHtml({ ...st, dashboardScope: 'photo', dashboardTab: 'psd' }, { lightTheme: true, charts: new Map() })).toContain('data-psd-x="phi"');
+    const shape = renderDashboardHtml({ ...st, dashboardScope: 'site', dashboardTab: 'shape' }, { lightTheme: true, charts: new Map() });
+    expect(shape).toContain(`n = ${st.siteReport!.shape.n}`);
+    const adequacy = renderDashboardHtml({ ...st, dashboardScope: 'photo', dashboardTab: 'adequacy' }, { lightTheme: true, charts: new Map() });
+    expect(adequacy).toContain('property of the whole site');
+    expect(histogramBasis('number-weighted')).toBe('% by grain count');
+    expect(histogramBasis('virtual-wolman-grid')).toBe('% of grid points');
+    expect(histogramBasis('physical-area')).toBe('area-weighted %');
   });
 
   it('compare view: loading, error and result states', () => {

@@ -1,5 +1,6 @@
 import { ellipseRotationDeg, majorAxisDirection } from '../modules/orientationGeometry.js';
 import { grainPassesSizeCutoffs } from '../modules/sedimentStats.js';
+import { firstHitAlongPolyline } from '../modules/interactiveEditor.js';
 import type { GrainMorphometrics, Point2D, SizeMetric } from '../types/index.js';
 import type { AnalysisSession } from '../modules/pipelineController.js';
 import type { PhotoRecord } from '../modules/projectStorage.js';
@@ -8,10 +9,13 @@ import type { EditorToolMode, OverlaySettings } from './state.js';
 export interface CanvasViewportCallbacks {
   onInspectGrain: (grainId: number | null) => void;
   onToggleSelectGrain: (grainId: number) => void;
-  onSplitLine: (grainId: number, points: Point2D[]) => void;
+  /** `grainId` is null when the line crosses no grain. */
+  onSplitLine: (grainId: number | null, points: Point2D[]) => void;
   onDeleteGrain: (grainId: number) => void;
   onAddPolygon: (points: Point2D[]) => void;
   onAddExclusionPolygon: (points: Point2D[]) => void;
+  /** Sets (replaces) the photo's region of interest. */
+  onSetRoiPolygon: (points: Point2D[]) => void;
   onAddExclusionStroke: (points: Point2D[], radiusPx: number) => void;
   onCalibrationPoint: (pt: Point2D) => void;
   onRectifyPoint: (pt: Point2D) => void;
@@ -208,7 +212,7 @@ export class CanvasViewport {
         }
         this.activePoints.push(pt);
         this.renderVectorOverlay();
-      } else if (this.tool === 'addPolygon' || this.tool === 'excludePoly') {
+      } else if (this.tool === 'addPolygon' || this.tool === 'excludePoly' || this.tool === 'roiPoly') {
         this.activePoints.push(pt);
         this.renderVectorOverlay();
       } else if (this.tool === 'excludeBrush') {
@@ -473,20 +477,16 @@ export class CanvasViewport {
 
   private commitActiveShape(): void {
     if (this.tool === 'split' && this.activePoints.length >= 2) {
-      let gid = this.splitTargetGrainId;
-      if (gid === null) {
-        for (const pt of this.activePoints) {
-          gid = this.hitTestGrain(pt.x, pt.y);
-          if (gid !== null) break;
-        }
-      }
-      if (gid !== null) {
-        this.callbacks.onSplitLine(gid, [...this.activePoints]);
-      }
+      // The usual cut starts and ends outside the grain: find the grain the line crosses.
+      const step = this.session ? 1 / Math.max(1e-6, this.session.workingImage.effectiveScaleFactor) : 1;
+      const gid = this.splitTargetGrainId ?? firstHitAlongPolyline(this.activePoints, (x, y) => this.hitTestGrain(x, y), step);
+      this.callbacks.onSplitLine(gid, [...this.activePoints]);
     } else if (this.tool === 'addPolygon' && this.activePoints.length >= 3) {
       this.callbacks.onAddPolygon([...this.activePoints]);
     } else if (this.tool === 'excludePoly' && this.activePoints.length >= 3) {
       this.callbacks.onAddExclusionPolygon([...this.activePoints]);
+    } else if (this.tool === 'roiPoly' && this.activePoints.length >= 3) {
+      this.callbacks.onSetRoiPolygon([...this.activePoints]);
     }
     this.activePoints = [];
     this.splitTargetGrainId = null;
@@ -737,8 +737,13 @@ export class CanvasViewport {
     const toSx = (x: number): number => x * this.zoom + this.panX;
     const toSy = (y: number): number => y * this.zoom + this.panY;
 
-    // Exclusion polygons & strokes
+    // Region of interest (green: only grains inside count), then exclusion polygons & strokes
     if (this.photo?.roiConfig) {
+      const roi = this.photo.roiConfig.roiPolygon;
+      if (roi && roi.length >= 3) {
+        const pts = roi.map((p) => `${toSx(p.x).toFixed(1)},${toSy(p.y).toFixed(1)}`).join(' ');
+        parts.push(`<polygon points="${pts}" fill="none" stroke="#2ecc71" stroke-width="2" stroke-dasharray="6,3" />`);
+      }
       for (const poly of this.photo.roiConfig.exclusionPolygons) {
         if (poly.length < 3) continue;
         const pts = poly.map((p) => `${toSx(p.x).toFixed(1)},${toSy(p.y).toFixed(1)}`).join(' ');
@@ -829,7 +834,7 @@ export class CanvasViewport {
         ? [...this.activePoints, this.mouseImgPt]
         : this.activePoints;
       const pts = allPts.map((p) => `${toSx(p.x).toFixed(1)},${toSy(p.y).toFixed(1)}`).join(' ');
-      const col = this.tool === 'excludePoly' || this.tool === 'excludeBrush' ? '#e74c3c' : '#3b9eff';
+      const col = this.tool === 'excludePoly' || this.tool === 'excludeBrush' ? '#e74c3c' : this.tool === 'roiPoly' ? '#2ecc71' : '#3b9eff';
       parts.push(`<polyline points="${pts}" fill="none" stroke="${col}" stroke-width="2" stroke-dasharray="4,2" />`);
     }
 

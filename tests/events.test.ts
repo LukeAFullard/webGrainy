@@ -65,6 +65,7 @@ function setup() {
     clearStoredSiteInputs: vi.fn(),
     refreshCapabilities: vi.fn(async () => {}),
     applyCalibrationToActive: vi.fn(async () => {}),
+    updateActiveRoi: vi.fn(),
   };
   const ui = {
     renderSidebar: vi.fn(),
@@ -316,6 +317,27 @@ describe('form changes', () => {
     expect(Number.isFinite(store.getState().siteOptions.maxExcludedFraction)).toBe(true);
   });
 
+  it('refuses cleared and out-of-range site statistics inputs (audit B15)', () => {
+    const { ctx, store, actions } = setup();
+    const before = store.getState().siteOptions;
+    const num = (key: string, value: string) =>
+      routeChange(el({ 'data-site-opt': key }, { tagName: 'INPUT', type: 'number', value }), ctx);
+    num('minBaxisPx', ''); // Number('') would be 0: the resolution floor silently off
+    num('minBaxisPx', '   ');
+    num('minBaxisPx', '-50');
+    num('maxExcludedFraction', '5');
+    num('bootstrapReplicates', '9999999');
+    num('bootstrapSeed', '1.5');
+    expect(store.getState().siteOptions).toEqual(before);
+    expect(actions.recomputeReports).not.toHaveBeenCalled();
+    expect(store.getState().statusMessage).toMatch(/Not changed/);
+    // Valid values still apply (replicates rounded like an imported project).
+    num('minBaxisPx', '20');
+    num('bootstrapReplicates', '1234.4');
+    expect(store.getState().siteOptions.minBaxisPx).toBe(20);
+    expect(store.getState().siteOptions.bootstrapReplicates).toBe(1234);
+  });
+
   it('clears pending calibration and rectify points when switching photos via keyboard shortcut', () => {
     const { ctx, store } = setup();
     store.setState({
@@ -371,5 +393,58 @@ describe('form changes', () => {
     store.setState({ pendingCalibrationPoints: [{ x: 50, y: 50 }] });
     routeChange(el({}, { tagName: 'INPUT', id: 'cal-length', type: 'number', value: '200' }), ctx);
     expect(actions.applyCalibrationToActive).not.toHaveBeenCalled();
+  });
+
+  it('does not overwrite a GeoTIFF, rectified or copied scale when the preset/length changes', () => {
+    for (const source of ['geotiff', 'rectification', 'copied'] as const) {
+      const { ctx, store, actions } = setup();
+      store.setState({
+        activeTool: 'calibrate',
+        activePhotoId: 'p1',
+        photos: [
+          {
+            photoId: 'p1',
+            siteId: 's1',
+            label: 'p1.tif',
+            width: 400,
+            height: 300,
+            addedAt: 0,
+            included: true,
+            imageBlob: new Blob(['x']),
+            calibration: {
+              pointA: { x: 0, y: 0 },
+              pointB: { x: 100, y: 0 },
+              physicalLengthMm: 200,
+              pixelDistance: 100,
+              mmPerPx: 2,
+              source,
+            },
+          },
+        ],
+      });
+      routeChange(el({}, { tagName: 'SELECT', id: 'cal-preset', value: '25|mm' }), ctx);
+      routeChange(el({}, { tagName: 'INPUT', id: 'cal-length', type: 'number', value: '35' }), ctx);
+      routeChange(el({}, { tagName: 'SELECT', id: 'cal-unit', value: 'cm' }), ctx);
+      expect(actions.applyCalibrationToActive).not.toHaveBeenCalled();
+      // The toolbar still records the chosen length for the next two-point calibration.
+      expect(store.getState().calibrationLength).toBe(35);
+      expect(store.getState().calibrationUnit).toBe('cm');
+    }
+  });
+});
+
+describe('clear-areas action', () => {
+  it('removes the ROI and every exclusion, keeping other ROI settings', () => {
+    const { ctx, actions } = setup();
+    routeClick(el({ 'data-action': 'clear-areas' }), () => undefined, ctx);
+    expect(actions.updateActiveRoi).toHaveBeenCalledTimes(1);
+    const update = actions.updateActiveRoi.mock.calls[0]![0] as (prev: unknown) => unknown;
+    const next = update({
+      roiPolygon: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }],
+      exclusionPolygons: [[{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }]],
+      exclusionStrokes: [{ points: [{ x: 0, y: 0 }], radiusPx: 3 }],
+      unresolvedFinesFraction: 0.2,
+    });
+    expect(next).toEqual({ exclusionPolygons: [], exclusionStrokes: [], unresolvedFinesFraction: 0.2 });
   });
 });

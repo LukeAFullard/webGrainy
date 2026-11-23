@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import UTIF from 'utif2';
 import { extractGeoReference, geoJsonToMap, pamAuxXml, photoGeoreference, toMap, worldFile } from '../src/modules/georef.js';
 import { encodeLabelGeoTiff, geoKeysFor } from '../src/modules/geotiffWriter.js';
+import { buildContourGeoJson, signedRingArea } from '../src/modules/exportFormats.js';
+import { computeAllGrainMorphometrics } from '../src/modules/interactiveEditor.js';
 import { sanitizePhotoMetadata } from '../src/modules/archiveSanitize.js';
 import { decodeTiffBuffer } from '../src/modules/tiffDecode.js';
 import { buildExport } from '../src/modules/exports.js';
@@ -34,6 +36,14 @@ describe('GeoTIFF georeference', () => {
   it('keeps a user-defined CRS as epsg null, and nothing without georeferencing tags', () => {
     expect(extractGeoReference({ t33922: [0, 0, 0, 1, 1, 0], t33550: [1, 1, 0], t34735: keys([[1024, 1], [3072, 32767]]) }, 4, 4)?.epsg).toBeNull();
     expect(extractGeoReference({}, 4, 4)).toBeUndefined();
+  });
+
+  it('does not take a projected raster\'s base datum (2048) as its CRS when 3072 is missing', () => {
+    const tag = { t33922: [0, 0, 0, 1600000, 5200000, 0], t33550: [1, 1, 0] };
+    const projected = extractGeoReference({ ...tag, t34735: keys([[1024, 1], [2048, 4326], [3075, 1], [3076, 9001]]) }, 4, 4)!;
+    expect(projected).toMatchObject({ epsg: null, kind: 'projected' });
+    const geographic = extractGeoReference({ t33922: [0, 0, 0, 172, -43, 0], t33550: [0.001, 0.001, 0], t34735: keys([[1024, 2], [2048, 4326]]) }, 4, 4)!;
+    expect(geographic).toMatchObject({ epsg: 4326, kind: 'geographic' });
   });
 
   it('is stored with the photo when a GeoTIFF is decoded', () => {
@@ -210,6 +220,35 @@ describe('label mask GeoTIFF (audit: a world file carries no CRS)', () => {
     expect(toMap(extractGeoReference(ifd, 6, 4)!, 2, 3)).toEqual(toMap(rot, 2, 3));
   });
 
+  it('writes south-up and mirrored rasters as ModelTransformation, never a negative pixel scale', async () => {
+    for (const transform of [
+      [1750000, 0.002, 0, 5430000, 0, 0.002], // south-up (f > 0)
+      [1750000, -0.002, 0, 5430000, 0, -0.002], // mirrored east-west (b < 0)
+    ] as PhotoGeoreference['transform'][]) {
+      const flipped: PhotoGeoreference = { ...g, transform };
+      const ifd = decode(await encodeLabelGeoTiff(masks, 6, 4, flipped));
+      expect(ifd['t33550']).toBeUndefined();
+      expect(ifd['t33922']).toBeUndefined();
+      expect(toMap(extractGeoReference(ifd, 6, 4)!, 2, 3)).toEqual(toMap(flipped, 2, 3));
+    }
+  });
+
+  it('auto-calibrates a south-up GeoTIFF from its ModelTransformation', async () => {
+    const southUp: PhotoGeoreference = { ...g, transform: [1750000, 0.002, 0, 5430000, 0, 0.002] };
+    const bytes = await encodeLabelGeoTiff(masks, 6, 4, southUp, { compress: false });
+    const dec = decodeTiffBuffer(bytes.slice().buffer);
+    expect(dec.calibration?.mmPerPx).toBeCloseTo(2, 9);
+    expect(dec.calibration?.source).toBe('geotiff');
+  });
+
+  it('records provenance in Software and ImageDescription (audit S3), ASCII-safe', async () => {
+    const ifd = decode(await encodeLabelGeoTiff(masks, 6, 4, g, { description: JSON.stringify({ appVersion: '9.9', photo: 'Ōtaki é.tif' }) }));
+    expect(String((ifd['t305'] as string[])[0])).toMatch(/^webGrainy /);
+    const desc = String((ifd['t270'] as string[])[0]);
+    expect(/^[\x20-\x7e]*$/.test(desc)).toBe(true);
+    expect(JSON.parse(desc)).toEqual({ appVersion: '9.9', photo: 'Ōtaki é.tif' });
+  });
+
   it('a 32-bit file when a grain id exceeds 65535', async () => {
     const big = masks.slice();
     big[1] = 70000;
@@ -241,5 +280,42 @@ describe('label mask GeoTIFF (audit: a world file carries no CRS)', () => {
     expect(bad({ directory: nztmKeys.directory, ascii: 'x<script>' + String.fromCharCode(0) })).toBeUndefined();
     expect(bad({ directory: [1, 1, 0, 1, 1024, 0, 1, 70000] })).toBeUndefined();
     expect(bad('nope')).toBeUndefined();
+  });
+});
+
+describe('GeoJSON ring orientation and CRS marker (audit S4)', () => {
+  // One grain with a hole (a 12x12 square ring) and one plain square.
+  const w = 40, h = 30;
+  const masks = new Int32Array(w * h);
+  for (let y = 4; y < 16; y++) for (let x = 4; x < 16; x++) masks[y * w + x] = 1;
+  for (let y = 8; y < 12; y++) for (let x = 8; x < 12; x++) masks[y * w + x] = 0;
+  for (let y = 5; y < 20; y++) for (let x = 22; x < 34; x++) masks[y * w + x] = 2;
+  const grains = computeAllGrainMorphometrics(masks, w, h);
+  const pixel = JSON.stringify(buildContourGeoJson(masks, grains, w, h));
+  type FC = { crs?: unknown; features: Array<{ geometry: { type: string; coordinates: number[][][] } }> };
+  const orientations = (json: string): Array<[number, number]> =>
+    (JSON.parse(json) as FC).features.flatMap((f) => f.geometry.coordinates.map((r, i) => [i, Math.sign(signedRingArea(r))] as [number, number]));
+  const rightHand = (json: string): void => {
+    const o = orientations(json);
+    expect(o.some(([i]) => i > 0)).toBe(true); // the hole is there
+    for (const [i, s] of o) expect(s, `ring ${i}`).toBe(i === 0 ? 1 : -1);
+  };
+
+  it('pixel GeoJSON: right-hand rule as the numbers read, and crs null', () => {
+    rightHand(pixel);
+    expect((JSON.parse(pixel) as FC).crs).toBeNull();
+  });
+
+  it('map GeoJSON keeps the right-hand rule for north-up, south-up and mirrored rasters', () => {
+    for (const transform of [
+      [1000, 0.5, 0, 2000, 0, -0.5],
+      [1000, 0.5, 0, 2000, 0, 0.5],
+      [1000, -0.5, 0, 2000, 0, -0.5],
+    ] as PhotoGeoreference['transform'][]) {
+      const g: PhotoGeoreference = { transform, epsg: 2193, kind: 'projected', width: w, height: h };
+      rightHand(geoJsonToMap(pixel, g));
+    }
+    const custom = JSON.parse(geoJsonToMap(pixel, { transform: [0, 1, 0, 0, 0, -1], epsg: null, kind: 'projected', width: w, height: h })) as FC;
+    expect(custom.crs).toBeNull();
   });
 });

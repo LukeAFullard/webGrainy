@@ -755,8 +755,10 @@ each photo's percentile (b-axis, in pixels):
 PQ (panoptic quality) scores how well individual outlines match, from 0 to 1. Important
 caveats:
 
-- These sites also contributed training photos, so the figures describe new photos of
-  familiar rivers, not new rivers.
+- These sites also contributed training photos, and more than half of the test images (at least
+  22 of 40) are tiles cut from the same source photo, orthomosaic or CT scan as training tiles
+  (`validation/heldout/heldout_manifest.csv`). The figures describe held-out tiles of familiar
+  beds, an optimistic estimate even for new photos of those rivers, and say nothing about new rivers.
 - Errors have long tails: 5% (Cellpose-SAM) and 17.5% (U-Net) of photos had D50 errors over
   50%. **Always check the outlines.**
 - The table above used an earlier percentile calculation (linear, no 15 px cutoff). Re-run with

@@ -15,18 +15,31 @@ const NASTY = [
   'e\n=1+1',
 ];
 
-/** Splits one CSV line on `delim`, honouring double quotes (as spreadsheets do). */
+/**
+ * Splits one CSV line on `delim`, honouring double quotes, strictly per RFC 4180 (like Python's
+ * csv.reader(strict=True), DuckDB or Polars): after a closing quote only the delimiter or the end
+ * of the line may follow, so `"a,b"_D50` is an error, not the field `a,b_D50`.
+ */
 function cells(line: string, delim: string): string[] {
   const out: string[] = [];
   let cur = '';
   let quoted = false;
+  let closed = false;
   for (let i = 0; i < line.length; i++) {
     const ch = line[i]!;
     if (quoted) {
-      if (ch === '"' && line[i + 1] === '"') { cur += '"'; i++; } else if (ch === '"') quoted = false; else cur += ch;
-    } else if (ch === '"' && cur === '') quoted = true;
-    else if (ch === delim) { out.push(cur); cur = ''; } else cur += ch;
+      if (ch === '"' && line[i + 1] === '"') { cur += '"'; i++; } else if (ch === '"') { quoted = false; closed = true; } else cur += ch;
+    } else if (ch === delim) { out.push(cur); cur = ''; closed = false; }
+    else if (closed) {
+      // Only the real delimiter is held to RFC 4180; re-splitting on ';' or tab (what a
+      // spreadsheet in another locale might do) is just a formula check.
+      if (delim === ',') throw new Error(`text after a closing quote in: ${line}`);
+      cur += ch;
+    }
+    else if (ch === '"' && cur === '') quoted = true;
+    else cur += ch;
   }
+  if (quoted) throw new Error(`unterminated quote in: ${line}`);
   out.push(cur);
   return out;
 }

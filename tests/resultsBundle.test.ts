@@ -53,4 +53,17 @@ describe('Download results (.zip)', () => {
     const id = await importProjectArchive(new Blob([project!.slice().buffer]), { indexedDB: target });
     expect((await listSites({ indexedDB: target })).map((s) => s.siteId)).toEqual([id]);
   });
+
+  it('never gives two photos the same folder, even when a label matches a generated folder (audit S10)', async () => {
+    // 'IMG_1_b' comes first, so the suffix generated for the second IMG_1 (photo id 'b') is taken.
+    const labels: Array<[string, string]> = [['c', 'IMG_1_b.jpg'], ['a', 'IMG_1.jpg'], ['b', 'IMG_1.png'], ['d', 'IMG_1.tif']];
+    const ph = labels.map(([id, label]) => photo(id, label));
+    const siteInputs: SitePhotoInput[] = labels.map(([id, label]) => ({ photoId: id, label, included: true, session: squareGrainSession([20, 24], { mmPerPx: 0.5 }) }));
+    const { blob } = await buildResultsBundle({ site, photos: ph, siteInputs, siteReport: null, siteOptions: {}, sizeMetric: 'bAxis', psdXAxis: 'mm', includeProject: false });
+    const files = readZip(new Uint8Array(await blob.arrayBuffer())); // a duplicate name would throw
+    const dirs = new Set([...files.keys()].filter((k) => k.endsWith('/grains.csv')));
+    expect(dirs.size).toBe(4);
+    const readme = new TextDecoder().decode(files.get('README.txt'));
+    expect(readme).toContain('%7C');
+  });
 });

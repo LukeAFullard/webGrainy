@@ -263,13 +263,13 @@ export function exportSiteSummaryCsv(
 
   for (const p of report.perPhoto) {
     lines.push(
-      `per_photo,${csvCell(p.photoId)}_D50,${numCell(p.D50)},${report.unit}`,
+      `per_photo,${csvCell(`${p.photoId}_D50`)},${numCell(p.D50)},${report.unit}`,
     );
     lines.push(
-      `per_photo,${csvCell(p.photoId)}_valid_grains,${p.validGrainCount},count`,
+      `per_photo,${csvCell(`${p.photoId}_valid_grains`)},${p.validGrainCount},count`,
     );
     lines.push(
-      `per_photo,${csvCell(p.photoId)}_weight_pct,${p.weightContributionPct},%`,
+      `per_photo,${csvCell(`${p.photoId}_weight_pct`)},${p.weightContributionPct},%`,
     );
   }
 

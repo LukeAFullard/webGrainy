@@ -40,6 +40,13 @@ export const toolbarActions: Record<string, ActionHandler> = {
   'fit-view': (_el, ctx) => ctx.ui.viewport()?.fitToScreen(),
   'finish-shape': (_el, ctx) => ctx.ui.viewport()?.finishShape(),
   'cancel-shape': (_el, ctx) => ctx.ui.viewport()?.cancelShape(),
+  'clear-areas': (_el, ctx) => {
+    ctx.actions.updateActiveRoi((prev) => {
+      const { roiPolygon: _roi, ...rest } = prev;
+      return { ...rest, exclusionPolygons: [], exclusionStrokes: [] };
+    }, 'the cleared areas');
+    ctx.store.setState({ statusMessage: 'ROI and exclusion areas removed. Re-analyse the photo if parts of it were skipped as outside the ROI.' });
+  },
   'close-inspector': (_el, ctx) => {
     ctx.store.setState({ inspectedGrainId: null });
     void ctx.ui.syncViewport(false);
@@ -130,6 +137,7 @@ export const toolbarActions: Record<string, ActionHandler> = {
   },
   'enhance-deblur': (_el, ctx) => void ctx.actions.enhanceActivePhoto('deblur'),
   'enhance-revert': (_el, ctx) => void ctx.actions.revertActivePhotoEnhancement(),
+  'rectify-undo': (_el, ctx) => void ctx.actions.undoRectificationActive(),
 };
 
 /** Tool buttons; returns true when handled. */
@@ -148,14 +156,18 @@ export function handleToolbarClick(target: ElementLike, ctx: EventContext): bool
 
 const KNOWN_CAL_PRESETS = new Set(['100|mm', '25|mm', '500|mm']);
 
-/** If the active photo already has two calibration points marked and no new calibration is mid-click,
- *  re-apply the calibration immediately with the updated physical length/unit. */
+/** If the active photo already has two calibration points marked by hand and no new calibration is
+ *  mid-click, re-apply the calibration immediately with the updated physical length/unit.
+ *  GeoTIFF, rectified and copied scales are left alone: their endpoints are not points the user
+ *  measured on this photo (GeoTIFF ones are a synthetic span), so re-using them with a new length
+ *  would silently replace a correct scale with a wrong one. */
 function reapplyCalibrationIfPresent(ctx: EventContext, lengthVal: number, unit: 'mm' | 'cm'): void {
   const st = ctx.store.getState();
   if (st.pendingCalibrationPoints.length > 0) return;
   const active = getActivePhoto(st);
   const existing = active?.calibration;
   if (!existing) return;
+  if (existing.source !== undefined && existing.source !== 'manual') return;
   void ctx.actions.applyCalibrationToActive(existing.pointA, existing.pointB, lengthVal, unit);
 }
 

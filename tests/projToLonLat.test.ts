@@ -3,7 +3,7 @@
  * (validation/geotiff/crs_reference.json; validation/geotiff/check_crs_table.mjs checks all of them).
  */
 import { describe, expect, it } from 'vitest';
-import { lonLatProjector } from '../src/modules/projToLonLat.js';
+import { lonLatProjector, projectedFromLonLat } from '../src/modules/projToLonLat.js';
 import { geoJsonToLonLat } from '../src/modules/georef.js';
 import type { PhotoGeoreference } from '../src/modules/siteTypes.js';
 import { squareGrainSession } from './helpers/squareSession.js';
@@ -45,6 +45,9 @@ describe('projected map coordinates to longitude / latitude', () => {
     expect(lonLatProjector(4167, 'geographic')!(172.5, -43.5)).toEqual([172.5, -43.5]); // NZGD2000
     expect(lonLatProjector(27200, 'projected')).toBeNull(); // NZ Map Grid (NZGD49, ~200 m datum shift)
     expect(lonLatProjector(null, 'projected')).toBeNull();
+    // A geographic code on a raster tagged projected: never read metres as degrees.
+    expect(lonLatProjector(4326, 'projected')).toBeNull();
+    expect(projectedFromLonLat(4326, 'projected')).toBeNull();
   });
 });
 
@@ -122,8 +125,14 @@ describe('Web Mercator rasters for web maps (no rotation needed in the viewer)',
   it('outside the photo is background / transparent', () => {
     const out = warpLabelsToWebMercator(labels, g, grid);
     expect(out[0]).toBe(0); // a corner of the box lies outside the rotated footprint
-    const rgba = warpRgbaToWebMercator(new Uint8Array(60 * 40 * 4).fill(200), g, grid);
+    const opaque = new Uint8Array(60 * 40 * 4).fill(200);
+    for (let i = 3; i < opaque.length; i += 4) opaque[i] = 255;
+    const rgba = warpRgbaToWebMercator(opaque, g, grid);
     expect(rgba[3]).toBe(0);
-    expect(rgba[(Math.floor(grid.height / 2) * grid.width + Math.floor(grid.width / 2)) * 4 + 3]).toBe(255);
+    const centre = (Math.floor(grid.height / 2) * grid.width + Math.floor(grid.width / 2)) * 4;
+    expect(rgba[centre + 3]).toBe(255);
+    // A transparent (no-data) source stays transparent (audit S8).
+    const clear = warpRgbaToWebMercator(new Uint8Array(60 * 40 * 4).fill(0), g, grid);
+    expect(clear[centre + 3]).toBe(0);
   });
 });

@@ -211,7 +211,7 @@ export const WORKFLOW_STEPS: ReadonlyArray<WorkflowStepSpec> = [
       {
         label: 'Stored in your browser',
         detail:
-          'Photos and settings stay in this browser on your device. Use "Back up now" in the Site panel to save a portable .webgrainy project file.',
+          'Photos and settings stay in this browser on your device. Use "Download results…" in the Site panel (tick the project file) to save a portable .webgrainy copy.',
       },
     ],
     cta: {
@@ -252,11 +252,11 @@ export const WORKFLOW_STEPS: ReadonlyArray<WorkflowStepSpec> = [
     shortTitle: 'Exclude Non-Gravel',
     headline: 'Leave out rulers, boots, water, or vegetation before analysing',
     summary:
-      'Use the Exclude Area (polygon) or Brush tools to mark anything that is not gravel so it is ignored during grain detection and left out of the size statistics.',
+      'Optionally draw the sampling area with the ROI tool, then use the Exclude (polygon) or Brush tools to mark anything that is not gravel so it is ignored during grain detection and left out of the size statistics.',
     helpTopic: 'exclusion',
     bullets: [
       {
-        label: 'Exclude Area & Brush tools',
+        label: 'ROI, Exclude & Brush tools',
         detail:
           'Draw a polygon or paint over rulers, boots, vegetation, water, or deep shadows so non-gravel objects are not counted as stones.',
       },
@@ -435,7 +435,7 @@ export const WORKFLOW_STEPS: ReadonlyArray<WorkflowStepSpec> = [
 
         <rect x="20" y="184" width="380" height="48" rx="4" fill="#17212b" stroke="#2a3642" />
         <text x="32" y="204" fill="#e8eef4" font-family="system-ui, sans-serif" font-size="10.5" font-weight="600">Every edit updates the grain-size curve and percentiles immediately</text>
-        <text x="32" y="220" fill="#9fb0c0" font-family="ui-monospace, monospace" font-size="9">Shortcuts: S (Split) · M (Merge) · D (Delete) · A (Add) · Ctrl+Z (Undo)</text>
+        <text x="32" y="220" fill="#9fb0c0" font-family="ui-monospace, monospace" font-size="9">Shortcuts: 6 (Split) · 7 (Merge) · 8 (Delete) · 9 (Add) · Ctrl+Z (Undo)</text>
       </svg>
     `,
   },
@@ -530,6 +530,7 @@ export function renderWorkflowSectionHtml(activeStep: WorkflowStepId): string {
               role="tab"
               class="workflow-tab"
               id="wf-tab-${esc(step.id)}"
+              aria-controls="wf-panel-${esc(step.id)}"
               data-action="workflow-step"
               data-step="${esc(step.id)}"
               aria-selected="${selected ? 'true' : 'false'}"
@@ -588,7 +589,8 @@ export function renderLandingHtml(state: AppState, view: LandingView): string {
   const caps = state.capabilities;
   const cachedCount = caps?.cachedModels?.length ?? 0;
   const photoCount = state.photos.length;
-  const siteCount = state.sites.length;
+  // Sites with photos: the empty site created on the first visit is not a "saved site".
+  const siteCount = state.sites.filter((s) => s.photoOrder.length > 0).length;
 
   const engineLabel = view.gpuReset
     ? 'CPU mode (GPU reset)'
@@ -659,7 +661,7 @@ export function renderLandingHtml(state: AppState, view: LandingView): string {
             </button>
           </div>
 
-          <div class="landing-drop-callout" id="landing-dropzone" data-action="add-photos" role="button" tabindex="0" aria-label="Add or drop gravel photos or a .webgrainy project archive to start">
+          <div class="landing-drop-callout" id="landing-dropzone" data-action="add-photos" role="button" tabindex="0">
             <strong>Drop gravel photos or a <code>.webgrainy</code> project file anywhere on this page</strong>
             <span>Supports JPEG, PNG, WebP, TIFF &amp; GeoTIFF · Stored only in this browser${siteCount > 0 ? ` · ${siteCount} saved site${siteCount === 1 ? '' : 's'} here` : ''}</span>
           </div>

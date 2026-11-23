@@ -16,7 +16,6 @@ import { rectifyPerspective } from '../modules/roiAndRectify.js';
 import { sizeCutoffExplanation } from '../modules/sedimentStats.js';
 import {
   buildSiteInputs,
-  effectiveRoi,
   photoCutoffs,
 } from '../modules/siteWorkspace.js';
 import { CanvasViewport } from './canvasViewport.js';
@@ -115,11 +114,37 @@ function makeId(prefix: string): string {
 // Landing overview preference (saved per browser; defaults to showing overview on first visit).
 let skipLanding = readFlag(SKIP_LANDING_KEY);
 
+// Whether this tab was in the workspace, so a reload (manual, or the one-off reload for
+// cross-origin isolation) returns there instead of to the landing page.
+const IN_WORKSPACE_KEY = 'webgrainy-in-workspace';
+function readTabFlag(key: string): boolean {
+  try {
+    return sessionStorage.getItem(key) === '1';
+  } catch {
+    return false;
+  }
+}
+function writeTabFlag(key: string, on: boolean): void {
+  try {
+    if (on) sessionStorage.setItem(key, '1');
+    else sessionStorage.removeItem(key);
+  } catch {
+    // storage unavailable: nothing to remember
+  }
+}
+
 // Analysis settings are remembered between visits (this browser only).
 const store = new AppStore({
   ...createInitialState(),
   analysisParams: loadAnalysisParams(),
-  showLanding: !skipLanding,
+  showLanding: !skipLanding && !readTabFlag(IN_WORKSPACE_KEY),
+});
+let lastShowLanding = store.getState().showLanding;
+store.subscribe((st) => {
+  if (st.showLanding !== lastShowLanding) {
+    lastShowLanding = st.showLanding;
+    writeTabFlag(IN_WORKSPACE_KEY, !st.showLanding);
+  }
 });
 let lastSavedParams = store.getState().analysisParams;
 store.subscribe((st) => {
@@ -354,7 +379,6 @@ noticeChannel?.onMessage((notice) => {
 });
 
 const {
-  savePhoto,
   recomputeReports,
   refreshCapabilities,
   loadSiteData,
@@ -511,7 +535,7 @@ function renderViewportExtras(state: AppState): void {
                  <div>Solidity: ${ext.solidity.toFixed(3)} · Ψ₂D: ${ext.sphericity2D.toFixed(3)}</div>`
               : ''
           }
-          <div>Border: ${grain.touchesBorder ? 'Yes (excluded)' : 'No'}</div>
+          <div>Border: ${grain.touchesBorder ? (session?.excludesBorderGrains === false ? 'Yes (counted: border grains are kept)' : 'Yes (excluded)') : 'No'}</div>
         </div>
         ${(() => {
           const flags = grainFlags({
@@ -837,8 +861,14 @@ function mountShell(): void {
         const photo = getActivePhoto(state);
         const session = photo ? state.sessions.get(photo.photoId) : null;
         if (!photo || !session) return;
+        if (grainId === null) {
+          store.setState({ statusMessage: 'Split: the line does not cross a grain. Draw it across the grain, from one side to the other.' });
+          return;
+        }
         const ok = session.splitGrain(grainId, points);
-        if (ok) {
+        if (!ok) {
+          store.setState({ statusMessage: 'Split: the line did not cut this grain into two pieces. Draw it right across the grain, from edge to edge.' });
+        } else {
           const patch: Partial<AppState> = {};
           if (state.inspectedGrainId === grainId) patch.inspectedGrainId = null;
           if (state.selectedGrainIds.has(grainId)) {
@@ -889,48 +919,14 @@ function mountShell(): void {
         }
       },
       onAddExclusionPolygon: (points) => {
-        const state = store.getState();
-        const photo = getActivePhoto(state);
-        if (!photo) return;
-        const prev = photo.roiConfig ?? { exclusionPolygons: [], exclusionStrokes: [] };
-        const updated: PhotoRecord = {
-          ...photo,
-          roiConfig: {
-            ...prev,
-            exclusionPolygons: [...prev.exclusionPolygons, points],
-          },
-        };
-        if (updated.roiConfig) state.sessions.get(photo.photoId)?.setRoiConfig(effectiveRoi(updated, state.siteOptions));
-        void savePhoto(updated).catch((err: unknown) => {
-          actions.reportSaveFailure(err, 'this exclusion area');
-        });
-        store.setState({
-          photos: state.photos.map((p) => (p.photoId === photo.photoId ? updated : p)),
-        });
-        recomputeReports();
-        void syncViewport(false);
+        actions.updateActiveRoi((prev) => ({ ...prev, exclusionPolygons: [...prev.exclusionPolygons, points] }), 'this exclusion area');
       },
       onAddExclusionStroke: (points, radiusPx) => {
-        const state = store.getState();
-        const photo = getActivePhoto(state);
-        if (!photo) return;
-        const prev = photo.roiConfig ?? { exclusionPolygons: [], exclusionStrokes: [] };
-        const updated: PhotoRecord = {
-          ...photo,
-          roiConfig: {
-            ...prev,
-            exclusionStrokes: [...prev.exclusionStrokes, { points, radiusPx }],
-          },
-        };
-        if (updated.roiConfig) state.sessions.get(photo.photoId)?.setRoiConfig(effectiveRoi(updated, state.siteOptions));
-        void savePhoto(updated).catch((err: unknown) => {
-          actions.reportSaveFailure(err, 'this exclusion area');
-        });
-        store.setState({
-          photos: state.photos.map((p) => (p.photoId === photo.photoId ? updated : p)),
-        });
-        recomputeReports();
-        void syncViewport(false);
+        actions.updateActiveRoi((prev) => ({ ...prev, exclusionStrokes: [...prev.exclusionStrokes, { points, radiusPx }] }), 'this exclusion area');
+      },
+      onSetRoiPolygon: (points) => {
+        // One ROI per photo: drawing a new one replaces the old.
+        actions.updateActiveRoi((prev) => ({ ...prev, roiPolygon: points }), 'this region of interest');
       },
       onCalibrationPoint: (pt) => {
         const st = store.getState();
@@ -1018,7 +1014,15 @@ function eventContext(): EventContext {
   return {
     store,
     actions,
-    storage: { saveSite, listSites },
+    storage: {
+      // Every site edit from the UI (statistics settings, name, place, survey date) changes what
+      // a download would contain: note it so the backup reminder and retention see it.
+      saveSite: (site) => {
+        markSiteChanged(site.siteId);
+        return saveSite(site);
+      },
+      listSites,
+    },
     ui: {
       renderSidebar: () => renderSidebar(store.getState()),
       syncViewport,
@@ -1124,7 +1128,11 @@ function openReport(): void {
       win.document.open();
       win.document.write(html);
       win.document.close();
-      win.document.querySelector('[data-print]')?.addEventListener('click', () => win.print());
+      const printBtn = win.document.querySelector('[data-print]');
+      if (printBtn && !printBtn.hasAttribute('data-bound')) {
+        printBtn.setAttribute('data-bound', '');
+        printBtn.addEventListener('click', () => win.print());
+      }
     } else {
       const name = (site?.name ?? 'site').replace(/[^a-zA-Z0-9_-]+/g, '_');
       triggerBlobDownload(new Blob([html], { type: 'text/html' }), `${name}_report.html`);
@@ -1377,14 +1385,35 @@ async function registerServiceWorker(): Promise<void> {
       // isolated if its own navigation response carried them. On the first visit (or
       // after an update from a version without the headers) reload once so WASM threads
       // can be used. Guarded per tab session so it can never loop.
+      // Only reload while the user is on the landing page and nothing is running: a reload in the
+      // workspace would cut off whatever they are doing (calibrating, importing, typing). Otherwise
+      // wait until they are back on the landing page; until then the CPU uses one thread.
+      const canReloadNow = (st: AppState): boolean => st.showLanding && !st.batchRunning && st.enhancing !== true;
+      let waitingToReload = false;
       const reloadForIsolation = (): void => {
         if ((self as { crossOriginIsolated?: boolean }).crossOriginIsolated === true) return;
-        if (!navigator.serviceWorker.controller || store.getState().batchRunning) return;
+        if (!navigator.serviceWorker.controller) return;
         try {
           if (sessionStorage.getItem('webgrainy-coi-reload') === '1') return;
-          sessionStorage.setItem('webgrainy-coi-reload', '1');
         } catch {
           return; // storage unavailable: don't risk a reload loop
+        }
+        if (!canReloadNow(store.getState())) {
+          if (!waitingToReload) {
+            waitingToReload = true;
+            store.subscribe((st) => {
+              if (waitingToReload && canReloadNow(st)) {
+                waitingToReload = false;
+                reloadForIsolation();
+              }
+            });
+          }
+          return;
+        }
+        try {
+          sessionStorage.setItem('webgrainy-coi-reload', '1');
+        } catch {
+          return;
         }
         location.reload();
       };

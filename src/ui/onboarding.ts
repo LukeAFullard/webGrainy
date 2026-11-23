@@ -66,7 +66,8 @@ export function guideSteps(s: GuideInput): GuideStep[] {
       id: 'review',
       title: 'Check the outlines, then export',
       text: 'Fix wrong outlines with the Edit grains tools. Results are on the right; Export saves tables and the project.',
-      done: s.exported,
+      // Opening Export before anything is analysed does not complete this step.
+      done: s.exported && s.analysedCount > 0,
       optional: false,
       ...(s.analysedCount > 0 ? { action: { attr: 'data-open-modal="export"', label: 'Export' } } : {}),
     },

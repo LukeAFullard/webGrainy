@@ -6,6 +6,7 @@ import {
   buildValidBedMask,
   filterGrainsByRoiAndExclusion,
   invert3x3,
+  isConvexQuad,
   rectifyPerspective,
   solveHomography,
 } from '../src/modules/roiAndRectify.js';
@@ -315,5 +316,44 @@ describe('roiAndRectify', () => {
 
       expect(() => solveHomography(collinear, dst)).toThrow(/Degenerate|collinear/i);
     });
+  });
+});
+
+describe('rectification input checks (audit B16)', () => {
+  const grey: ImageBufferLike = { data: new Uint8ClampedArray(100 * 100 * 4).fill(200), width: 100, height: 100 };
+
+  it('rejects corners clicked zig-zag (a crossed bowtie) or a dented shape', () => {
+    const bowtie: [Point2D, Point2D, Point2D, Point2D] = [{ x: 10, y: 10 }, { x: 90, y: 10 }, { x: 10, y: 90 }, { x: 90, y: 90 }];
+    expect(isConvexQuad(bowtie)).toBe(false);
+    expect(() => rectifyPerspective(grey, { srcCorners: bowtie, physicalWidthMm: 100, physicalHeightMm: 100 })).toThrow(/in order around/);
+    expect(isConvexQuad([{ x: 10, y: 10 }, { x: 90, y: 10 }, { x: 50, y: 30 }, { x: 10, y: 90 }])).toBe(false);
+    // Either winding of a proper quad is fine.
+    expect(isConvexQuad([{ x: 10, y: 10 }, { x: 90, y: 10 }, { x: 90, y: 90 }, { x: 10, y: 90 }])).toBe(true);
+    expect(isConvexQuad([{ x: 10, y: 10 }, { x: 10, y: 90 }, { x: 90, y: 90 }, { x: 90, y: 10 }])).toBe(true);
+  });
+
+  it('leaves output pixels beyond the horizon empty instead of an upside-down copy', () => {
+    // A strongly oblique quad: the padding above it crosses the vanishing line.
+    const res = rectifyPerspective(grey, {
+      srcCorners: [{ x: 45, y: 40 }, { x: 55, y: 40 }, { x: 99, y: 99 }, { x: 1, y: 99 }],
+      physicalWidthMm: 100,
+      physicalHeightMm: 100,
+      paddingPx: 40,
+    });
+    const inv = invert3x3(res.homography);
+    const [px, py, rw, rh] = res.roiRectInOutput;
+    const wAt = (x: number, y: number): number => (inv[6] ?? 0) * x + (inv[7] ?? 0) * y + (inv[8] ?? 1);
+    const front = Math.sign(wAt(px + rw / 2, py + rh / 2));
+    let behind = 0;
+    let filled = 0;
+    for (let y = 0; y < res.height; y++) {
+      for (let x = 0; x < res.width; x++) {
+        if ((res.data[(y * res.width + x) * 4] ?? 0) === 0) continue;
+        filled++;
+        if (Math.sign(wAt(x, y)) !== front) behind++; // was ~2,700 pixels before the fix
+      }
+    }
+    expect(filled).toBeGreaterThan(1000);
+    expect(behind).toBe(0);
   });
 });

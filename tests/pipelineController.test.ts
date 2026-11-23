@@ -771,6 +771,55 @@ describe('pipelineController (ImageGrainsEngine & AnalysisSession)', () => {
     Object.defineProperty(globalThis, 'navigator', { value: {}, configurable: true });
   });
 
+  it('does not reuse a cached session whose inference worker died (audit B12)', async () => {
+    Object.defineProperty(globalThis, 'navigator', { value: {}, configurable: true });
+    const made: Array<{ alive: boolean }> = [];
+    const engine = new ImageGrainsEngine({
+      sessionFactory: async (kind) => {
+        const s = Object.assign(createMockSession(kind, [{ cx: 32, cy: 32, rx: 14, ry: 8 }]), { alive: true });
+        made.push(s);
+        return s;
+      },
+    });
+    await engine.initialize();
+    const img = makeRgbaImage(64, 64, 'uniform');
+    const opts = { inferencePipeline: 'legacy', model: 'unet', scaleMode: '1.0x' } as const;
+    await engine.analyzeImage(img, opts);
+    await engine.analyzeImage(img, opts);
+    expect(made).toHaveLength(1); // cached while alive
+    made[0]!.alive = false; // its worker crashed
+    await engine.analyzeImage(img, opts);
+    expect(made).toHaveLength(2);
+    await engine.dispose();
+  });
+
+  it('retries Cellpose-SAM on the CPU with INT8, not FP16, after the GPU is lost (audit B18)', async () => {
+    Object.defineProperty(globalThis, 'navigator', {
+      value: { gpu: { requestAdapter: async () => ({ features: { has: (f: string) => f === 'shader-f16' } }) }, deviceMemory: 8 },
+      configurable: true,
+    });
+    const ids: string[] = [];
+    const engine = new ImageGrainsEngine({
+      sessionFactory: async (kind, modelId) => {
+        ids.push(modelId);
+        if (ids.length === 1) {
+          return {
+            async run() {
+              throw new Error('WebGPU device was lost');
+            },
+          };
+        }
+        return createMockSession(kind, [{ cx: 32, cy: 32, rx: 14, ry: 8 }]);
+      },
+    });
+    await engine.initialize();
+    const s = await engine.analyzeImage(makeRgbaImage(64, 64, 'uniform'), { inferencePipeline: 'legacy', model: 'cpsam', scaleMode: '1.0x' });
+    expect(ids).toEqual(['ig2_cpsam_fp16', 'ig2_cpsam_int8_wo_fp32scale']);
+    expect(s.getProvenance()?.modelId).toBe('ig2_cpsam_int8_wo_fp32scale');
+    await engine.dispose();
+    Object.defineProperty(globalThis, 'navigator', { value: {}, configurable: true });
+  });
+
   it('retries a device-lost analysis only once', async () => {
     Object.defineProperty(globalThis, 'navigator', {
       value: { gpu: { requestAdapter: async () => ({ features: { has: () => true } }) } },

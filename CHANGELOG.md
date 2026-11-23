@@ -90,5 +90,118 @@ First public release.
   cutoff"), instead of "below cutoff", which read as the segmentation Min Size.
 - Licence notices for the bundled `utif2` and `pako` and for the optional PULSE upscaler weights added
   to `THIRD_PARTY_NOTICES.md`; the licence and notices are copied into the built app.
+- Calibration: changing the preset, length or unit in the Calibrate toolbar no longer rewrites a GeoTIFF,
+  rectified or copied scale (it re-used placeholder endpoints, e.g. turning 2 mm/px into 0.25 mm/px);
+  only a scale measured with two clicked points is re-applied.
+- WebGPU device loss: the CPU fallback is no longer raced against the lost GPU device, which failed the
+  retry and every later CPU analysis in the tab until reload.
+- GeoTIFFs with a projected model type but no ProjectedCSTypeGeoKey are no longer read as EPSG:4326 from
+  their base-datum key (projected metres were exported as degrees); such a CRS is treated as user-defined.
+- South-up and mirrored GeoTIFFs: mask / photo GeoTIFF exports write a ModelTransformation instead of an
+  invalid negative pixel scale (which GDAL flips), and GeoTIFFs placed by a ModelTransformation without
+  skew are auto-calibrated.
+- Photos with no counted grains show `—` for D16 / D50 / D84 instead of `NaN`, keep φ class labels when
+  calibrated, and the convergence and time-series charts skip undefined values instead of drawing at `NaN`.
+- New **ROI** tool (toolbar *Areas → ROI*): draw the sampling area and only grains inside it are counted
+  (the engine, exports and ROI tile skipping already supported it, but nothing in the app could draw one).
+  *Clear areas* removes a photo's ROI and exclusions, which could not be removed before.
+- Split: a line drawn from outside one side of a grain to outside the other now splits it (before, only
+  the clicked points were tested, so this cut silently did nothing); a split that does nothing says why.
+- GPU check page: when ONNX Runtime falls back to the CPU for the "GPU" run, the check stops and says so,
+  instead of comparing CPU with CPU and reporting WebGPU as safe.
+- First visit on a host without COOP/COEP headers (GitHub Pages): the one-off reload that enables
+  multi-threaded CPU inference waits until the user is on the landing page and idle, instead of
+  interrupting work in the workspace; a tab that was in the workspace returns there after a reload.
+- Backup reminder and retention: changing a site's statistics settings, name, place or survey date now
+  marks it as changed since the last download (before, such a site could be removed automatically as
+  "downloaded").
+- The printable report's *Print / Save as PDF* button also works when `site_report.html` is opened from
+  the results `.zip` or a download.
+- After the CPU inference worker crashes or is stopped, the next analysis loads the model again instead of
+  failing on the dead worker's session until reload.
+- Library build: shared code is emitted to `dist/chunks/`, so `ImageGrainsEngine` with the default
+  `useWorker: true` finds `dist/workers/` (it resolved a worker URL outside `dist/`); the build now fails
+  if any relative worker URL in `dist/` points to a missing file.
+- Photo `grains.csv`: Feret widths are filled in for grains added, split or merged after Feret widths
+  were first computed (they were blank), and a new `area_mm2` column matches the site pooled CSV.
+- Statistics settings: a cleared or out-of-range number (e.g. an empty *Min b-axis*, which read as 0
+  and switched the resolution floor off, or 9,999,999 bootstrap replicates) is refused with a message,
+  using the same limits as imported projects; a cleared facies weight is refused too.
+- Rectify: corners clicked out of order (a crossed shape) are refused instead of scrambling the photo,
+  and output pixels beyond the horizon of a strongly oblique photo stay empty instead of showing an
+  upside-down copy. New **Undo rectify** (toolbar) restores the photo as it was before rectification
+  (image, scale, areas, metadata and any enhancement backup); the original is kept in browser storage
+  and in `.webgrainy` project files.
+- `site_summary.csv`: `per_photo` rows for a photo whose name needs quoting (comma, quote, `#`) were
+  malformed (`"a,b.jpg"_D50`) and rejected by strict CSV readers (Python `csv` strict mode, DuckDB,
+  Polars); the whole metric name is now one quoted cell.
+- Cellpose-SAM with *Auto* weights: when the GPU fails during a photo, the retry on the CPU uses the INT8
+  weights instead of the 617 MB FP16 file (about 3.8 GB of memory on the CPU).
+- *This photo*: the detection limit shown is the cutoff actually applied; when the site's common
+  cutoff (set by a coarser photo) or the field-count cutoff raises it, the note says so and gives the
+  photo's own limit.
+- Binomial percentile intervals (`psd_binomial_ci_*`): order-statistic ranks are now read at the
+  right place on the size curve (they were half a grain too fine), and the large-sample formula
+  (over 5,000 grains) no longer jumps at the switch.
+- GeoTIFF exports (`mask_map.tif`, `mask_webmercator.tif`, `photo_webmercator.tif`) record provenance
+  like the other exports: `Software` (app version and commit) and the provenance JSON in
+  `ImageDescription`.
+- GeoJSON outlines follow the right-hand rule (exterior rings counter-clockwise, holes clockwise) in
+  pixel and map coordinates, also for south-up and mirrored GeoTIFFs; pixel-coordinate GeoJSON and
+  map GeoJSON in a user-defined CRS carry `"crs": null`, so they are not taken as WGS84 degrees.
+- Site statistics on small samples: no Folk & Ward sorting for a single grain; with few photos the
+  sorting and kurtosis intervals stay positive (log scale) and skewness stays within [-1, 1]; the
+  jackknife no longer gives `NaN` when leaving a photo out leaves only zero-weight facies photos.
+- A long unbroken name in the footer or toolbar wraps instead of widening the photo column over the
+  Results panel.
+- Results panel labels match what is shown: the pooling note says pooling applies to *Whole site*;
+  the site histogram title names its basis (area-weighted, by grain count or by grid points); no
+  mm / φ axis buttons for pixel sizes; the *Shape* tab shows the whole site in *Whole site*; the
+  *Adequacy* tab says it describes the site; the comparison table names the confidence level used;
+  the grain card says a border grain is counted when border grains are kept; a photo's facies share
+  no longer changes with the photo-list filter.
+- TIFF import: CRS names with non-ASCII characters keep the GeoKeys (they were all dropped);
+  band-interleaved colour TIFFs and BigTIFFs are refused with a conversion command instead of
+  decoding black or failing vaguely; transparent no-data pixels no longer set the 16-bit black point
+  and stay transparent through 2× upscaling and Web Mercator export; a projected EPSG CRS without
+  ProjLinearUnitsGeoKey gets its unit (metre or foot) from the CRS table, so it is auto-calibrated.
+- Surveys over time: an uncalibrated survey between two calibrated ones no longer hides their
+  change, a survey with no counted grains is left out instead of giving a `NaN` ratio, and other
+  sites' photos are pooled in the site's photo order (as when the site is open), so their
+  intervals match.
+- Results `.zip`: photo folders are always unique (a crafted name could make the download fail), and
+  README.txt describes the CSV metadata, the `|` escape, the *Open* button and the GeoTIFF files
+  correctly.
+- Seed density 0 (library API or project file) is refused: it made every pixel a seed and found no grains.
+- Project import: a scale with a non-positive stored length, a georeference that is singular or has a
+  non-positive size, photo-order entries for photos not in the file, and masks that are shared between
+  results or do not match their image size are dropped or refused before any mask is decoded.
+- The cached-model list counts only the segmentation models (the optional upscaler inflated it), and
+  deleting or clearing a model makes a later copy be re-checked by SHA-256 in the same session.
+- Offline and updates: the licence and third-party notices linked from *About* are precached, and the
+  page itself is served from the same build's cache as its scripts (a newer page with older scripts
+  could mismatch); new versions are still found and offered as before.
+- Accessibility: the landing drop zone's accessible name matches its visible text; workflow tabs name
+  their panels; scrollable dialog bodies can be scrolled from the keyboard; workspace shortcuts no
+  longer act while the landing page is shown; contrast fixes for grain-card flags (light), completed
+  guide steps (dark), photo errors and remove links (dark) and the GPU check page.
+- Docs: the held-out benchmark is described as held-out tiles from the training sites (more than half
+  cut from the same source photos as training tiles, so the figures are optimistic), in the README,
+  METHODS, the settings guide and every export's accuracy note; the settings guide's accuracy table,
+  U-Net figure, CLAHE recipe and *Copy scale to photos…* name are corrected, and a test keeps its
+  table in step with the results file.
+- Help and citations: the Cellpose-SAM pipeline comparison quotes the right outline scores (0.565 vs
+  0.488); the fine-grain enlargement is described as bilinear and about 1.5–2× the time for the photos
+  it applies to; every export's citation note adds ImageGrains 2.0 and Cellpose-SAM; the printable
+  report lists Cellpose and Cellpose-SAM; Cellpose (2021) lists all four authors in the README and
+  CITATION.cff; a chart subtitle sits on its own line instead of colliding with a long title.
+- Validation and CI: the pre-processing benchmark's worker script is restored and its paths fixed, the
+  edge-case probe uses real sessions again, the false-positive-rate study defaults to the 400 trials
+  its results report, `npm run test:perf` runs files one at a time so strict timings do not flake, and
+  the GitHub Pages deploy waits for CI to pass on the same commit.
+- Polish: the About dialog's citation list is no longer numbered twice; all byte sizes use decimal units;
+  the project-file size estimate includes the label masks; opening *Export* before anything is analysed
+  no longer ticks the last getting-started step; the landing page lists the real editing shortcuts
+  (6–9) and the *Download results…* button, and does not count the empty first site as a saved site.
 
 [0.1.0]: https://github.com/LukeAFullard/webGrainy/releases/tag/v0.1.0

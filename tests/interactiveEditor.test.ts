@@ -8,6 +8,7 @@ import {
   computeAllGrainMorphometrics,
   computeGrainMorphometricsForIds,
   deleteGrain,
+  firstHitAlongPolyline,
   mergeGrains,
   splitGrainAtLine,
 } from '../src/modules/interactiveEditor.js';
@@ -425,5 +426,21 @@ describe('interactiveEditor', () => {
         ScaleCalibrator.calibrate({ x: 0, y: 0 }, { x: 10, y: 0 }, -5, 'mm'),
       ).toThrow();
     });
+  });
+});
+
+describe('firstHitAlongPolyline (audit B7: outside-to-outside split cut)', () => {
+  // A grain covering x, y in [100, 180].
+  const hit = (x: number, y: number): number | null => (x >= 100 && x <= 180 && y >= 100 && y <= 180 ? 9 : null);
+  it('finds the grain crossed between two clicks that both lie outside it', () => {
+    expect(firstHitAlongPolyline([{ x: 135, y: 80 }, { x: 135, y: 200 }], hit)).toBe(9);
+  });
+  it('returns null when the line misses every grain', () => {
+    expect(firstHitAlongPolyline([{ x: 10, y: 10 }, { x: 90, y: 300 }], hit)).toBeNull();
+    expect(firstHitAlongPolyline([], hit)).toBeNull();
+  });
+  it('does not skip a thin grain between samples', () => {
+    const thin = (_x: number, y: number): number | null => (Math.round(y) === 150 ? 4 : null);
+    expect(firstHitAlongPolyline([{ x: 0, y: 0 }, { x: 0, y: 1000 }], thin, 1)).toBe(4);
   });
 });

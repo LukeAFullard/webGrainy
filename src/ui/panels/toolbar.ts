@@ -9,6 +9,8 @@ import { esc } from './html.js';
 export function renderToolbarHtml(state: AppState): { toolbar: string; subToolbar: string } {
   const activePhoto = getActivePhoto(state);
   const session = activePhoto ? state.sessions.get(activePhoto.photoId) ?? null : null;
+  const roiCfg = activePhoto?.roiConfig;
+  const hasAreas = roiCfg !== undefined && (roiCfg.roiPolygon !== undefined || roiCfg.exclusionPolygons.length > 0 || roiCfg.exclusionStrokes.length > 0);
 
   // Tools grouped by task; grain-editing tools only appear once the photo has results.
   const groups: Array<{ label: string; tools: Array<{ id: EditorToolMode; label: string; title: string }> }> = [
@@ -21,9 +23,10 @@ export function renderToolbarHtml(state: AppState): { toolbar: string; subToolba
       ],
     },
     {
-      label: 'Exclude',
+      label: 'Areas',
       tools: [
-        { id: 'excludePoly', label: 'Area', title: 'Draw a polygon around things to leave out (rulers, boots, water)' },
+        { id: 'roiPoly', label: 'ROI', title: 'Draw the sampling area (e.g. inside a quadrat): only grains inside it are counted. Drawing again replaces it.' },
+        { id: 'excludePoly', label: 'Exclude', title: 'Draw a polygon around things to leave out (rulers, boots, water)' },
         { id: 'excludeBrush', label: 'Brush', title: 'Paint over things to leave out' },
       ],
     },
@@ -60,9 +63,14 @@ export function renderToolbarHtml(state: AppState): { toolbar: string; subToolba
         : ''
     }
     ${
-      state.activeTool === 'split' || state.activeTool === 'addPolygon' || state.activeTool === 'excludePoly'
+      state.activeTool === 'split' || state.activeTool === 'addPolygon' || state.activeTool === 'excludePoly' || state.activeTool === 'roiPoly'
         ? `<button type="button" class="btn btn-sm btn-primary" data-action="finish-shape" title="Same as double-click or Enter">Finish shape</button>
            <button type="button" class="btn btn-sm" data-action="cancel-shape" title="Same as Esc">Cancel shape</button>`
+        : ''
+    }
+    ${
+      (state.activeTool === 'roiPoly' || state.activeTool === 'excludePoly' || state.activeTool === 'excludeBrush') && hasAreas
+        ? `<button type="button" class="btn btn-sm" data-action="clear-areas" title="Remove this photo's ROI and all exclusion areas">Clear areas</button>`
         : ''
     }
     <span class="tool-group">
@@ -70,6 +78,11 @@ export function renderToolbarHtml(state: AppState): { toolbar: string; subToolba
       <button type="button" class="btn btn-sm" data-action="redo" ${session.canRedo ? '' : 'disabled'}>Redo</button>` : ''}
       <button type="button" class="btn btn-sm" data-action="fit-view" ${activePhoto ? '' : 'disabled'} title="Fit the photo to the view">Fit</button>
     </span>
+    ${
+      activePhoto?.rectifyBackup
+        ? `<button type="button" class="btn btn-sm" data-action="rectify-undo" ${state.batchRunning || state.enhancing ? 'disabled' : ''} title="Restore the photo as it was before rectification (image, scale and areas); it then needs analysing again">Undo rectify</button>`
+        : ''
+    }
     ${
       activePhoto
         ? `<span class="tool-group" role="group" aria-label="Optional image enhancement">
@@ -121,6 +134,7 @@ export function renderToolbarHtml(state: AppState): { toolbar: string; subToolba
       <span>4-Pt Rectify (${state.pendingRectifyPoints.length}/4 TL→TR→BR→BL):</span>
       <input class="input" id="rect-w" type="number" value="${rectW}" step="10" min="10" aria-label="Rectification physical width in mm" style="width:60px;padding:2px 6px;" title="Width (mm)" />×
       <input class="input" id="rect-h" type="number" value="${rectH}" step="10" min="10" aria-label="Rectification physical height in mm" style="width:60px;padding:2px 6px;" title="Height (mm)" />mm
+      <span class="field-hint" title="Rectifying replaces the photo; Undo rectify (toolbar) brings back the original, with its scale and areas.">Replaces the photo; Undo rectify restores it</span>
     `;
   }
 

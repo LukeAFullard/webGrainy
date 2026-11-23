@@ -116,22 +116,8 @@ export async function runSiteBatch(
   }
 
   const allPhotos = await listSitePhotos(opts.siteId, opts);
-  const photoMap = new Map(allPhotos.map((p) => [p.photoId, p]));
 
-  const orderedPhotos: PhotoRecord[] = [];
-  const seen = new Set<string>();
-  for (const id of site.photoOrder) {
-    const p = photoMap.get(id);
-    if (p) {
-      orderedPhotos.push(p);
-      seen.add(id);
-    }
-  }
-  for (const p of allPhotos) {
-    if (!seen.has(p.photoId)) {
-      orderedPhotos.push(p);
-    }
-  }
+  const orderedPhotos = inPhotoOrder(allPhotos, site.photoOrder);
 
   const targetIds = opts.photoIds ? new Set(opts.photoIds) : null;
   const queue: PhotoRecord[] = [];
@@ -296,3 +282,18 @@ export async function runSiteBatch(
   };
 }
 
+/** Photos in the site's `photoOrder`, then any not listed there (in their stored order). */
+export function inPhotoOrder<P extends { photoId: string }>(photos: readonly P[], photoOrder: readonly string[]): P[] {
+  const byId = new Map(photos.map((p) => [p.photoId, p]));
+  const out: P[] = [];
+  const seen = new Set<string>();
+  for (const id of photoOrder) {
+    const p = byId.get(id);
+    if (p && !seen.has(id)) {
+      out.push(p);
+      seen.add(id);
+    }
+  }
+  for (const p of photos) if (!seen.has(p.photoId)) out.push(p);
+  return out;
+}

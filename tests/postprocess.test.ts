@@ -5,6 +5,7 @@ import {
   computeGrainMorphometrics,
   evaluateGrainFlowQcV4,
   flowsToMasksBrowser,
+  isValidPostProcessValue,
   multigridJacobiHeat,
   trySplitDumbbellV4,
 } from '../src/modules/postprocessCore.js';
@@ -455,5 +456,13 @@ describe('grainPostprocess.worker.ts — Web Worker message handler', () => {
       { minSize: 30 },
     );
     expect(resSheet.grainCount).toBe(0);
+  });
+});
+
+describe('post-processing option limits (audit S11)', () => {
+  it('refuses minSeedDensity 0, which would seed every pixel and merge all grains', () => {
+    expect(isValidPostProcessValue('minSeedDensity', 0)).toBe(false);
+    expect(isValidPostProcessValue('minSeedDensity', 1)).toBe(true);
+    expect(isValidPostProcessValue('minSeedDensity', 2)).toBe(true);
   });
 });

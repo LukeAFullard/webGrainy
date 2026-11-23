@@ -237,6 +237,11 @@ export class AnalysisSession {
   }
 
   /** Reproducibility record (model hash, parameters, versions) for this analysis. */
+  /** Whether grains touching the photo edge are left out of the statistics. */
+  get excludesBorderGrains(): boolean {
+    return this.excludeBorder;
+  }
+
   getProvenance(): AnalysisProvenance | undefined {
     return this.provenance;
   }
@@ -761,10 +766,13 @@ export class AnalysisSession {
     cutoffs?: { minBaxisPx?: number; minSizeMm?: number };
   }): string {
     const sizeMetric = options?.sizeMetric ?? 'bAxis';
+    const hasFeret = sizeMetric === 'minFeret' || this.grains.some((g) => g.minFeretPx !== undefined);
+    // Grains added, split or merged after Feret widths were computed have none yet: compute
+    // them for every grain so the Feret columns are never left blank for edited grains.
+    if (hasFeret) this.ensureFeret();
     const statsIds = new Set(this.statsGrainsForSummaries(sizeMetric, options?.cutoffs).map((g) => g.id));
-    const hasFeret = this.grains.some((g) => g.minFeretPx !== undefined);
     const header =
-      'grain_id,centroid_x,centroid_y,area_px,a_axis_px,b_axis_px,d_eq_px,a_axis_mm,b_axis_mm,d_eq_mm' +
+      'grain_id,centroid_x,centroid_y,area_px,a_axis_px,b_axis_px,d_eq_px,a_axis_mm,b_axis_mm,d_eq_mm,area_mm2' +
       (hasFeret ? ',min_feret_px,max_feret_px,min_feret_mm,max_feret_mm' : '') +
       ',touches_border' +
       (this.roiConfig !== undefined ? ',in_roi' : '') +
@@ -792,6 +800,7 @@ export class AnalysisSession {
         g.aAxisMm !== undefined ? g.aAxisMm : '',
         g.bAxisMm !== undefined ? g.bAxisMm : '',
         g.dEqMm !== undefined ? g.dEqMm : '',
+        g.areaMm2 !== undefined ? g.areaMm2 : '',
         ...(hasFeret
           ? [
               g.minFeretPx !== undefined ? g.minFeretPx : '',
@@ -968,9 +977,12 @@ export class AnalysisSession {
 
   /** As `exportMaskPng`, deflate-compressed where the platform supports it (much smaller files). */
   /** Grain ids at the photo's own size (nearest-neighbour from the working image), 0 = background. */
-  labelMaskAtPhotoSize(onlyIds?: ReadonlySet<number>): { masks: Int32Array; width: number; height: number } {
-    const m = this.maskForExport(32, { resolution: 'original', ...(onlyIds ? { onlyIds } : {}) });
-    return { masks: m.masks, width: m.width, height: m.height };
+  labelMaskAtPhotoSize(
+    onlyIds?: ReadonlySet<number>,
+    photoMetadata?: Record<string, unknown>,
+  ): { masks: Int32Array; width: number; height: number; metadataJson: string } {
+    const m = this.maskForExport(32, { resolution: 'original', ...(onlyIds ? { onlyIds } : {}), ...(photoMetadata ? { photoMetadata } : {}) });
+    return { masks: m.masks, width: m.width, height: m.height, metadataJson: m.text['webgrainy'] ?? '' };
   }
 
   async exportMaskPngCompressed(

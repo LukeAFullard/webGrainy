@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import UTIF from 'utif2';
+import { extractGeoReference } from '../src/modules/georef.js';
+import { rgba8From16Bit } from '../src/modules/tiffDecode.js';
 import {
   decodeTiffBuffer,
   isSupportedImageFile,
@@ -108,5 +110,49 @@ describe('tiffDecode GeoTIFF calibration (regression: Web Mercator scale)', () =
     for (const epsg of [3395, 32662]) {
       expect(decodeTiffBuffer(geoTiff({ epsg, units: 9001, scaleM: 0.01, tieNorthing: 5e6 })).calibration).toBeUndefined();
     }
+  });
+});
+
+describe('TIFF / GeoTIFF edge cases (audit S8)', () => {
+  const types = (UTIF as unknown as { _types: { basic: { main: Record<number, number> } } })._types.basic.main;
+  types[33550] = 12;
+  types[34735] = 3;
+  types[34737] = 2;
+  const keysFor = (epsg: number) => [1, 1, 0, 2, 1024, 0, 1, 1, 3072, 0, 1, epsg];
+  const tif = (tags: Record<string, unknown>) => UTIF.encodeImage(new Uint8Array(8 * 8 * 4).fill(128), 8, 8, tags as never);
+
+  it('calibrates a projected EPSG CRS without ProjLinearUnitsGeoKey from its definition (metres or feet)', () => {
+    expect(decodeTiffBuffer(tif({ t33550: [0.01, 0.01, 0], t34735: keysFor(2154) })).calibration?.mmPerPx).toBeCloseTo(10, 9); // Lambert-93, m
+    expect(decodeTiffBuffer(tif({ t33550: [0.1, 0.1, 0], t34735: keysFor(2227) })).calibration?.mmPerPx).toBeCloseTo(30.48006096, 6); // US ft
+  });
+
+  it('refuses BigTIFF and band-interleaved colour with a conversion hint', () => {
+    const big = new Uint8Array(tif({}));
+    if (big[0] === 0x49) big[2] = 0x2b; // II+\0
+    else big[3] = 0x2b; // MM\0+
+    expect(() => decodeTiffBuffer(big.buffer)).toThrow(/BigTIFF.*BIGTIFF=NO/);
+    expect(() => decodeTiffBuffer(UTIF.encodeImage(new Uint8Array(8 * 8 * 4).fill(1), 8, 8, { t284: [2] } as never))).toThrow(/INTERLEAVE=PIXEL/);
+  });
+
+  it('keeps CRS keys when the GeoAscii text has non-ASCII characters', () => {
+    const ifd = { t33922: [0, 0, 0, 0, 0, 0], t33550: [1, 1, 0], t34735: [1, 1, 0, 2, 1024, 0, 1, 1, 3072, 0, 1, 2154], t34737: ['RGF93 v1 / Lambert-93 Réseau °|'] };
+    const g = extractGeoReference(ifd, 8, 8)!;
+    expect(g.geoKeys?.directory).toEqual(ifd.t34735);
+    expect(g.geoKeys?.ascii).toBe('RGF93 v1 / Lambert-93 R?seau ?|');
+  });
+
+  it('16-bit stretch ignores transparent no-data pixels', () => {
+    // RGBA16: two transparent black pixels, then values 1000 and 2000 (opaque).
+    const px = [[0, 0], [0, 0], [1000, 65535], [2000, 65535]];
+    const data = new Uint8Array(4 * 4 * 2);
+    px.forEach(([v, a], i) => {
+      for (let c = 0; c < 3; c++) { data[i * 8 + c * 2] = v! & 0xff; data[i * 8 + c * 2 + 1] = v! >> 8; }
+      data[i * 8 + 6] = a! & 0xff; data[i * 8 + 7] = a! >> 8;
+    });
+    const r = rgba8From16Bit({ width: 4, height: 1, data, t258: [16, 16, 16, 16], t262: [2], t277: [4], t338: [2] })!;
+    expect(r.note).toContain('1000–2000');
+    expect(r.rgba[3]).toBe(0); // still transparent
+    expect(r.rgba[8]).toBe(0); // 1000 -> black point
+    expect(r.rgba[12]).toBe(255); // 2000 -> white point
   });
 });

@@ -602,7 +602,9 @@ export async function getCachedModels(): Promise<CachedModelInfo[]> {
     'listing cached models',
   );
 
-  return (records ?? []).map((record) => ({
+  // The store also holds the optional enhancement model (PULSE upscaler, imageEnhance.ts): list
+  // only the segmentation models, which the Models dialog and counts describe.
+  return (records ?? []).filter((record) => Object.prototype.hasOwnProperty.call(MODEL_FILES, record.modelId)).map((record) => ({
     modelId: record.modelId,
     fileName: record.fileName,
     sizeBytes: record.sizeBytes,
@@ -620,6 +622,8 @@ export async function deleteCachedModel(modelId: ModelId): Promise<void> {
     (store) => store.delete(modelId) as IDBRequest<undefined>,
     `deleting cached model "${modelId}"`,
   );
+  // A copy downloaded again later must be checked again.
+  verifiedThisSession.delete(modelId);
 }
 
 /**
@@ -631,6 +635,7 @@ export async function clearModelCache(): Promise<void> {
     (store) => store.clear() as IDBRequest<undefined>,
     'clearing model cache',
   );
+  verifiedThisSession.clear();
 }
 
 /**

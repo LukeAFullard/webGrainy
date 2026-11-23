@@ -46,6 +46,14 @@ export interface ReportInput {
 
 const fmt = (v: number, digits = 2): string => (Number.isFinite(v) ? v.toFixed(digits) : '–');
 
+/**
+ * Makes the Print button work when the report is opened as a file (from the results .zip or a
+ * download). In the app's pop-up the app's CSP blocks this inline script and the app binds the
+ * button itself; `data-bound` keeps the two from both binding it.
+ */
+export const PRINT_SCRIPT =
+  "<script>(function(){var b=document.querySelector('[data-print]');if(b&&!b.hasAttribute('data-bound')){b.setAttribute('data-bound','');b.addEventListener('click',function(){window.print();});}})();</script>";
+
 /** A number cell tied to its row in the site summary CSV. */
 function num(v: number, csv: string, digits = 2): string {
   return `<span data-csv="${esc(csv)}" data-value="${Number.isFinite(v) ? String(v) : ''}">${fmt(v, digits)}</span>`;
@@ -138,6 +146,7 @@ export function buildSiteReportHtml(input: ReportInput): string {
 </head>
 <body>
 <div class="actions"><button type="button" data-print="">Print / Save as PDF</button> <span class="small">or press Ctrl+P (⌘P on a Mac)</span></div>
+${PRINT_SCRIPT}
 <h1>${esc(site.name)}</h1>
 <p class="sub">${site.place ? `${esc(site.place)} · ` : ''}${site.surveyDate ? `Survey ${esc(site.surveyDate)} · ` : ''}Grain-size report · ${esc(dateOnly)} · ${r.includedPhotoCount} photo${r.includedPhotoCount === 1 ? '' : 's'} · ${r.validGrainCount} grains · ${esc(r.statisticalBasisLabel)}</p>
 

@@ -6,6 +6,7 @@
  */
 import { photoProcessingHistory, type PhotoGeoreference, type SitePhotoMetadata } from './siteTypes.js';
 import { lonLatProjector } from './projToLonLat.js';
+import { rightHandRings } from './exportFormats.js';
 
 const num = (v: unknown): number => (typeof v === 'number' ? v : Number(v));
 
@@ -51,7 +52,10 @@ export function extractGeoReference(ifd: Record<string, unknown>, width: number,
   }
   const t: PhotoGeoreference['transform'] = [a, b, c, d, e, f];
   if (!t.every(Number.isFinite) || Math.abs(b * f - c * e) < 1e-30) return undefined;
-  const code = projected ?? geographic;
+  // A projected model's CRS is ProjectedCSTypeGeoKey (3072) only; GeographicTypeGeoKey (2048)
+  // then names just its base datum (e.g. 4326 under a user-defined projection) and must not be
+  // mistaken for the raster's CRS, which would read eastings/northings as degrees.
+  const code = modelType === 1 ? projected : modelType === 2 ? geographic : (projected ?? geographic);
   const geoKeys = rawGeoKeys(ifd);
   return {
     transform: t,
@@ -68,7 +72,13 @@ export const MAX_GEOKEY_VALUES = 1024;
 export const MAX_GEOKEY_ASCII = 4096;
 
 /** Checked copy of GeoKeys (from a TIFF or a project file), or undefined if malformed. */
-export function cleanGeoKeys(dir: unknown, doubles: unknown, ascii: unknown): PhotoGeoreference['geoKeys'] {
+export function cleanGeoKeys(
+  dir: unknown,
+  doubles: unknown,
+  ascii: unknown,
+  /** TIFF import: replace non-printable / non-ASCII text characters instead of rejecting the keys. */
+  options: { replaceNonAscii?: boolean } = {},
+): PhotoGeoreference['geoKeys'] {
   if (!Array.isArray(dir) || dir.length < 4 || dir.length > MAX_GEOKEY_VALUES) return undefined;
   const d = dir.map(num);
   if (!d.every((v) => Number.isInteger(v) && v >= 0 && v <= 65535)) return undefined;
@@ -80,8 +90,16 @@ export function cleanGeoKeys(dir: unknown, doubles: unknown, ascii: unknown): Ph
     out.doubles = p;
   }
   if (typeof ascii === 'string' && ascii.length > 0) {
-    if (ascii.length > MAX_GEOKEY_ASCII || /[^\x20-\x7e|]/.test(ascii)) return undefined;
-    out.ascii = ascii;
+    if (ascii.length > MAX_GEOKEY_ASCII) return undefined;
+    if (options.replaceNonAscii) {
+      // CRS names in real GeoTIFFs may hold non-ASCII bytes (e.g. "Réseau", "°") or line breaks.
+      // Replace each such character one-for-one, so the GeoKeys' offsets into the text stay valid,
+      // rather than dropping every CRS key of the file.
+      out.ascii = ascii.replace(/[^\x20-\x7e|]/g, '?');
+    } else {
+      if (/[^\x20-\x7e|]/.test(ascii)) return undefined;
+      out.ascii = ascii;
+    }
   }
   return out;
 }
@@ -91,7 +109,7 @@ function rawGeoKeys(ifd: Record<string, unknown>): PhotoGeoreference['geoKeys'] 
   // '|'-separated string that the key offsets index into.
   const a = ifd['t34737'];
   const ascii = Array.isArray(a) ? a.join('') : typeof a === 'string' ? a : undefined;
-  return cleanGeoKeys(ifd['t34735'], ifd['t34736'], ascii);
+  return cleanGeoKeys(ifd['t34735'], ifd['t34736'], ascii, { replaceNonAscii: true });
 }
 
 /**
@@ -149,8 +167,15 @@ function mapCoords(value: unknown, g: PhotoGeoreference): unknown {
  */
 export function geoJsonToMap(pixelGeoJson: string, g: PhotoGeoreference): string {
   const fc = JSON.parse(pixelGeoJson) as { type: string; metadata?: Record<string, unknown>; features: Array<{ geometry: { type: string; coordinates: unknown }; properties: Record<string, unknown> }> };
+  // Right-hand rule in map coordinates whatever the raster's orientation (north-up, south-up,
+  // mirrored or rotated): the pixel-to-map transform may flip the rings.
+  const polygon = (rings: number[][][]): number[][][] => rightHandRings(mapCoords(rings, g) as number[][][]);
   for (const feat of fc.features) {
-    feat.geometry.coordinates = mapCoords(feat.geometry.coordinates, g);
+    const geom = feat.geometry;
+    geom.coordinates =
+      geom.type === 'Polygon' ? polygon(geom.coordinates as number[][][])
+      : geom.type === 'MultiPolygon' ? (geom.coordinates as number[][][][]).map(polygon)
+      : mapCoords(geom.coordinates, g);
     const cx = feat.properties['centroidX'];
     const cy = feat.properties['centroidY'];
     if (typeof cx === 'number' && typeof cy === 'number') {
@@ -159,7 +184,9 @@ export function geoJsonToMap(pixelGeoJson: string, g: PhotoGeoreference): string
       feat.properties['centroidMapY'] = Y;
     }
   }
-  const crs = g.epsg !== null ? { crs: { type: 'name', properties: { name: `urn:ogc:def:crs:EPSG::${g.epsg}` } } } : {};
+  // A user-defined CRS has no name to give: `null` (GeoJSON 2008: no CRS can be assumed) rather
+  // than nothing, which readers take as WGS84.
+  const crs = { crs: g.epsg !== null ? { type: 'name', properties: { name: `urn:ogc:def:crs:EPSG::${g.epsg}` } } : null };
   return JSON.stringify({
     type: 'FeatureCollection',
     ...crs,
@@ -198,12 +225,6 @@ export function canExportLonLat(g: PhotoGeoreference): boolean {
   return lonLatProjector(g.epsg, g.kind) !== null;
 }
 
-/** Signed area of a ring (positive = counter-clockwise in x-right, y-up axes). */
-function ringArea(ring: number[][]): number {
-  let s = 0;
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) s += (ring[j]![0]! - ring[i]![0]!) * (ring[j]![1]! + ring[i]![1]!);
-  return s / 2;
-}
 
 /**
  * RFC 7946 GeoJSON (WGS84 longitude / latitude, no `crs` member) from the pixel GeoJSON export,
@@ -220,11 +241,7 @@ export function geoJsonToLonLat(pixelGeoJson: string, g: PhotoGeoreference): str
     const [lon, lat] = project(x, y);
     return [Math.round(lon * 1e9) / 1e9, Math.round(lat * 1e9) / 1e9];
   };
-  const ring = (r: number[][], outer: boolean): number[][] => {
-    const out = r.map((p) => ll(p[0]!, p[1]!));
-    return (ringArea(out) > 0) === outer ? out : out.reverse();
-  };
-  const polygon = (rings: number[][][]): number[][][] => rings.map((r, i) => ring(r, i === 0));
+  const polygon = (rings: number[][][]): number[][][] => rightHandRings(rings.map((r) => r.map((p) => ll(p[0]!, p[1]!))));
   const fc = JSON.parse(pixelGeoJson) as { metadata?: Record<string, unknown>; features: Array<{ geometry: { type: string; coordinates: unknown }; properties: Record<string, unknown> }> };
   for (const feat of fc.features) {
     const geom = feat.geometry;

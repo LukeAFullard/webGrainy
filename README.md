@@ -59,7 +59,7 @@ Measured on the held-out test split of the ImageGrains 2.0 data (`IG2_data.zip`,
 | Cellpose-SAM | webGrainy | 8.9% [4.0, 15.6] | 2.9% [2.0, 4.9] | 6.3% / 1.3% | 0.652 |
 | Cellpose-SAM | ImageGrains (PyTorch) | 14.3% [8.0, 21.8] | 4.4% [2.4, 8.3] | 8.7% / 2.0% | 0.642 |
 
-- **Within-site, not unseen sites.** All 13 sites also contributed training images, so these figures describe new photos of familiar sites, not new rivers.
+- **Within-site, not unseen sites.** All 13 sites also contributed training images, and more than half of the test images (at least 22 of 40) are tiles cut from the same source photo, orthomosaic or CT scan as training tiles. These figures therefore describe held-out tiles of familiar beds, closer to an optimistic within-photo estimate than to new photos, and say nothing about new rivers.
 - **Tails are long.** 5% of Cellpose-SAM images and 10% of U-Net images have D50 errors above 50% (17.5% of U-Net images in the earlier benchmark below). Check the outlines.
 - **Quantized weights.** INT8 and FP4 Cellpose-SAM give the same benchmark accuracy as FP16 (outline agreement with FP16: PQ 0.994 and 0.966).
 - **Field comparison (one site).** At the K1 site, with the field count's 13 mm minimum applied to the photos, the app's D50 agrees with a 251-stone pebble count within 3% and D84 within 5–6% (both models). Without that cutoff, Cellpose-SAM's D50 is 31% finer and U-Net's 22% finer, because the photos include the many grains below 13 mm the count skipped. This is a consistency check, not an independent validation: both photos overlap the ImageGrains training data. To compare with a field count, set **Field-count cutoff (mm)** to its minimum size. Details: [`validation/k1/k1_app_results.md`](validation/k1/k1_app_results.md).
@@ -163,7 +163,7 @@ If you use webGrainy in scientific work, please cite the ImageGrains and Cellpos
 - Mair, D., Witz, G., Do Prado, A., Garefalakis, P., Wild, A., Ville, F., Schuster, B., Horn, M., Österle, J., Fabbri, S. C., Litty, C., Achleitner, S., Leistner, S., Hiller, C., and Schlunegger, F. (2026): *ImageGrains 2.0: Improved precision and generalization for grain segmentation*, Earth Surf. Dyn., 14, 527–551, https://doi.org/10.5194/esurf-14-527-2026
 - Mair, D., Witz, G., Do Prado, A.H., Garefalakis, P. & Schlunegger, F. (2023): *Automated detecting, segmenting and measuring of grains in images of fluvial sediments*, Earth Surface Processes and Landforms, https://doi.org/10.1002/esp.5755
 - Pachitariu, M., Rariden, M., Stringer, C. (2025): *Cellpose-SAM: superhuman generalization for cellular segmentation*, bioRxiv, https://doi.org/10.1101/2025.04.28.651001
-- Stringer, C.A., Pachitariu, M. (2021): *Cellpose: a generalist algorithm for cellular segmentation*, Nat Methods 18, 100–106, https://doi.org/10.1038/s41592-020-01018-x
+- Stringer, C., Wang, T., Michaelos, M., Pachitariu, M. (2021): *Cellpose: a generalist algorithm for cellular segmentation*, Nat Methods 18, 100–106, https://doi.org/10.1038/s41592-020-01018-x
 
 Model weights: ImageGrains 2.0 pretrained models, https://doi.org/10.5281/zenodo.15728186, converted to ONNX at [`inYourOwnBrowser/imagegrains-2.0-onnx`](https://huggingface.co/inYourOwnBrowser/imagegrains-2.0-onnx).
 

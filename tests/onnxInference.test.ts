@@ -729,5 +729,27 @@ describe('onnxInference', () => {
         WebGpuDeviceLostError,
       );
     });
+
+    it('does not race a WASM fallback session against an already-lost WebGPU device', async () => {
+      const gray = new Float32Array(16 * 16).fill(0.5);
+      // The page's GPUDevice was lost earlier: its `lost` promise stays resolved forever.
+      const envAny = ort.env as { webgpu?: { device?: { lost?: Promise<unknown> } } };
+      envAny.webgpu = { device: { lost: Promise.resolve({ reason: 'destroyed', message: 'Adapter reset' }) } };
+      const output = new ort.Tensor('float32', new Float32Array(3 * 16 * 16), [1, 3, 16, 16]);
+      const wasmSession = {
+        run: vi.fn(async () => {
+          await new Promise((r) => setTimeout(r, 5));
+          return { output };
+        }),
+        inputNames: ['image'],
+        outputNames: ['output'],
+      } as unknown as ort.InferenceSession;
+      vi.spyOn(ort.InferenceSession, 'create').mockResolvedValueOnce(wasmSession);
+      const created = await createInferenceSession(new Uint8Array([1]), { forceWasm: true });
+      expect(created.executionProvider).toBe('wasm');
+      const caught = await runUnetInference(created.session, gray, 16, 16).catch((e) => e);
+      expect(caught).not.toBeInstanceOf(WebGpuDeviceLostError);
+      expect(wasmSession.run).toHaveBeenCalledTimes(1);
+    });
   });
 });

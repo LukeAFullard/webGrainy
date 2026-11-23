@@ -135,14 +135,16 @@ export function sanitizeCalibration(raw: unknown): CalibrationResult | undefined
   const a = point(raw['pointA']);
   const b = point(raw['pointB']);
   if (!finite(raw['mmPerPx']) || raw['mmPerPx'] <= 0 || a === null || b === null) return undefined;
+  // A stored length or pixel distance must be positive; otherwise rebuild it from the points.
+  const positive = (v: unknown): v is number => finite(v) && v > 0;
   const source = oneOf(raw['source'], ['manual', 'rectification', 'geotiff', 'copied'] as const);
   const copiedFrom = text(raw['copiedFrom'], 1024);
   return {
     mmPerPx: raw['mmPerPx'],
     pointA: a,
     pointB: b,
-    physicalLengthMm: finite(raw['physicalLengthMm']) ? raw['physicalLengthMm'] : raw['mmPerPx'] * Math.hypot(b.x - a.x, b.y - a.y),
-    pixelDistance: finite(raw['pixelDistance']) ? raw['pixelDistance'] : Math.hypot(b.x - a.x, b.y - a.y),
+    physicalLengthMm: positive(raw['physicalLengthMm']) ? raw['physicalLengthMm'] : raw['mmPerPx'] * Math.hypot(b.x - a.x, b.y - a.y),
+    pixelDistance: positive(raw['pixelDistance']) ? raw['pixelDistance'] : Math.hypot(b.x - a.x, b.y - a.y),
     ...(source !== undefined ? { source } : {}),
     ...(source === 'copied' && copiedFrom !== undefined ? { copiedFrom } : {}),
   };
@@ -211,7 +213,10 @@ function sanitizeGeoref(raw: unknown): PhotoGeoreference | undefined {
   if (!isObj(raw) || !Array.isArray(raw['transform']) || raw['transform'].length !== 6 || !raw['transform'].every(finite)) return undefined;
   const epsg = raw['epsg'];
   if (!(epsg === null || (Number.isInteger(epsg) && (epsg as number) > 0))) return undefined;
-  if (!Number.isInteger(raw['width']) || !Number.isInteger(raw['height'])) return undefined;
+  if (!Number.isInteger(raw['width']) || !Number.isInteger(raw['height']) || (raw['width'] as number) <= 0 || (raw['height'] as number) <= 0) return undefined;
+  // As at import from a TIFF: a transform that maps the photo to a line or point places nothing.
+  const [, tb, tc, , te, tf] = raw['transform'] as number[];
+  if (Math.abs(tb! * tf! - tc! * te!) < 1e-30) return undefined;
   return {
     transform: [...raw['transform']] as PhotoGeoreference['transform'],
     epsg: epsg as number | null,

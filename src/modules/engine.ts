@@ -309,7 +309,11 @@ export class ImageGrainsEngine {
       this.capabilities?.hasShaderF16 === true &&
       this.webgpuDisabledReason === null &&
       !this.wasmOnlyModels.has('ig2_cpsam_fp16');
-    const modelId = resolveModelId(selectedModel, config?.cpsamWeights ?? 'auto', fp16GpuUsable);
+    let modelId = resolveModelId(selectedModel, config?.cpsamWeights ?? 'auto', fp16GpuUsable);
+    // Weights for a retry on the CPU after a GPU failure: with Auto weights, Cellpose-SAM switches
+    // to INT8 (the 617 MB FP16 file needs ~3.8 GB on the CPU), as later photos do.
+    const cpuRetryModelId = (): ModelId =>
+      selectedModel === 'cpsam' && (config?.cpsamWeights ?? 'auto') === 'auto' ? resolveModelId('cpsam', 'auto', false) : modelId;
 
     if (selectedModel === 'cpsam' && this.capabilities?.isMobile === true) {
       emit('warning', {
@@ -439,6 +443,7 @@ export class ImageGrainsEngine {
         // (WASM) for the rest of the page and redo the image once.
         this.wasmOnlyModels.add(modelId);
         await this.evictSession(modelId);
+        modelId = cpuRetryModelId();
         emit('warning', {
           code: 'webgpu-numeric-instability',
           model: selectedModel,
@@ -457,6 +462,7 @@ export class ImageGrainsEngine {
         // The page's GPUDevice is gone for good: disable WebGPU for this page, drop every
         // GPU-backed session, and retry this image once on the WASM (CPU) backend.
         await this.disableWebGpu(err instanceof Error ? err.message : String(err));
+        modelId = cpuRetryModelId();
         emit('warning', {
           code: 'webgpu-device-lost',
           model: selectedModel,
@@ -612,7 +618,13 @@ export class ImageGrainsEngine {
     const modelKind = modelKindOf(modelId);
     const cached = this.sessionCache.get(modelId);
     if (cached !== undefined) {
-      return cached;
+      // A WASM session whose worker crashed or was stopped is gone: load the model again.
+      if ((cached as { alive?: boolean }).alive === false) {
+        this.sessionCache.delete(modelId);
+        this.sessionExecutionProviders.delete(modelId);
+      } else {
+        return cached;
+      }
     }
 
     const existingInFlight = this.inFlightSessions.get(modelId);

@@ -48,6 +48,8 @@ interface TensorLike {
 /** A worker shared by every WASM session of a page (one ORT runtime, one model at a time). */
 export class OrtWorkerHost {
   private worker: WorkerLike | null = null;
+  /** Bumped for every new worker: sessions created in an earlier worker no longer exist. */
+  private generation = 0;
   private nextId = 1;
   private nextSession = 1;
   private readonly pending = new Map<number, { resolve: (r: OrtWorkerResponse) => void; reject: (e: Error) => void }>();
@@ -57,6 +59,7 @@ export class OrtWorkerHost {
   private ensure(): WorkerLike {
     if (this.worker !== null) return this.worker;
     const w = this.factory();
+    this.generation++;
     w.addEventListener('message', (ev) => {
       const msg = (ev as MessageEvent<OrtWorkerResponse>).data;
       const p = msg ? this.pending.get(msg.id) : undefined;
@@ -119,7 +122,12 @@ export class OrtWorkerHost {
       },
       [buf as ArrayBuffer],
     );
-    return new WorkerInferenceSession(this, sessionId);
+    return new WorkerInferenceSession(this, sessionId, this.generation);
+  }
+
+  /** @internal Whether the worker that created a session (by generation) is still running. */
+  isLive(generation: number): boolean {
+    return this.worker !== null && this.generation === generation;
   }
 
   /** @internal */
@@ -156,9 +164,21 @@ export class WorkerInferenceSession {
   constructor(
     private readonly host: OrtWorkerHost,
     readonly sessionId: number,
+    private readonly generation = 0,
   ) {}
 
+  /**
+   * False once the worker that held this session crashed or was stopped: a new worker does not
+   * have it, so callers must create a new session instead of reusing this one.
+   */
+  get alive(): boolean {
+    return this.host.isLive(this.generation);
+  }
+
   run(feeds: Record<string, TensorLike>): Promise<Record<string, WireTensor>> {
+    if (!this.alive) {
+      return Promise.reject(new Error('The inference worker holding this model stopped; the model must be loaded again.'));
+    }
     return this.host.run(this.sessionId, feeds);
   }
 

@@ -46,6 +46,8 @@ export function runShortcut(cmd: ShortcutCommand, ctx: EventContext): boolean {
 /** Window keydown: ignored while typing in a field, and (except "?") while a dialog is open. */
 export function handleShortcutKey(e: KeyEventLike & { defaultPrevented?: boolean; preventDefault(): void }, ctx: EventContext): void {
   if (e.defaultPrevented || ctx.ui.isTyping()) return;
+  // Workspace shortcuts would change tools or start an analysis behind the landing page.
+  if (ctx.store.getState().showLanding) return;
   const shortcut = matchShortcut(e);
   if (!shortcut?.command) return;
   const modal = ctx.store.getState().activeModal;

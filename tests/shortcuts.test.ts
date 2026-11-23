@@ -68,6 +68,14 @@ describe('keyboard shortcuts', () => {
     expect(store.getState().activePhotoId).toBe('p2');
   });
 
+  it('does nothing while the landing page is shown (audit S16)', () => {
+    const { ctx, store } = setup();
+    store.setState({ showLanding: true });
+    expect(press('2', ctx)).toBe(false);
+    expect(press(']', ctx)).toBe(false);
+    expect(store.getState().activeTool).not.toBe('calibrate');
+  });
+
   it('number keys pick tools; editing tools only after analysis', () => {
     const { ctx, store } = setup();
     expect(press('2', ctx)).toBe(true);

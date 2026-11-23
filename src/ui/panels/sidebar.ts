@@ -143,7 +143,7 @@ export function renderSidebarHtml(state: AppState, view: SidebarView): string {
                   const isActive = ph.photoId === state.activePhotoId;
                   const errMsg = status === 'error' ? state.photoErrors.get(ph.photoId) ?? 'Analysis failed (no details reported).' : '';
                   const qualityWarnings = getPhotoQualityWarnings(ph.metadata);
-                  const faciesShare = faciesSharePct(visiblePhotos(state), ph);
+                  const faciesShare = faciesSharePct(state.photos, ph);
                   return `
                     <div class="photo-item ${isActive ? 'active' : ''} ${state.photoSelectMode && state.selectedPhotoIds.has(ph.photoId) ? 'selected' : ''}">
                       ${
@@ -299,7 +299,7 @@ export function renderSidebarHtml(state: AppState, view: SidebarView): string {
                 <option value="auto" ${view.cpuThreadPref === 'auto' ? 'selected' : ''}>Auto${auto !== undefined ? ` (${auto} of ${cores})` : ''}</option>
                 ${opts.map((n) => `<option value="${n}" ${view.cpuThreadPref === n ? 'selected' : ''}>${n}</option>`).join('')}
               </select>
-              ${view.crossOriginIsolated ? '' : '<span class="field-hint">Multi-threading is unavailable on this page (not cross-origin isolated): the CPU uses 1 thread.</span>'}
+              ${view.crossOriginIsolated ? '' : '<span class="field-hint">Multi-threading is unavailable on this page (not cross-origin isolated): the CPU uses 1 thread. Reloading the page once usually enables it.</span>'}
             </label>`;
           })()}
           ${

@@ -40,7 +40,7 @@ function fakeSession(sizesMm: number[], mmPerPx = 0.5) {
 }
 
 it('false-positive rate of survey-change D50 p-values on an unchanged bed', () => {
-  const N = Number(process.env.FPR_TRIALS ?? 150);
+  const N = Number(process.env.FPR_TRIALS ?? 400); // the count in README.md and the results file
   const rows: string[] = [];
   for (const [photos, patch] of [[1, 0.15], [2, 0.15], [3, 0.15], [5, 0.15], [10, 0.15], [20, 0.15], [3, 0.3], [5, 0.3], [10, 0.3], [20, 0.3], [6, 0]] as const) {
     const rand = mulberry32(1000 + photos * 7 + Math.round(patch * 100));

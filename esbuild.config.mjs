@@ -92,6 +92,9 @@ if (entryPoints.length > 0) {
     target: 'es2022',
     outbase: 'src',
     outdir: 'dist',
+    // Shared code goes to dist/chunks/, one level below dist/ like dist/modules/, so
+    // `new URL('../workers/…', import.meta.url)` in engine code finds dist/workers/.
+    chunkNames: 'chunks/[name]-[hash]',
     sourcemap: true,
     define,
   });
@@ -208,6 +211,30 @@ for (const [from, to] of [['LICENSE', 'LICENSE.txt'], ['THIRD_PARTY_NOTICES.md',
   console.log(`[build] Copied ${from} to dist/${to}.`);
 }
 
+// 6b. Every `new URL('<relative>', import.meta.url)` in the built code must name a file in dist/
+//     (a library user's worker would otherwise 404).
+{
+  const missing = [];
+  const walk = (dir) => {
+    for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, ent.name);
+      if (ent.isDirectory()) {
+        if (ent.name !== 'ort') walk(full);
+      } else if (ent.name.endsWith('.js') && ent.name !== 'sw.js') {
+        const code = fs.readFileSync(full, 'utf8');
+        for (const m of code.matchAll(/new URL\(\s*["'](\.{1,2}\/[^"']+)["']\s*,\s*import\.meta\.url\s*\)/g)) {
+          const target = path.resolve(path.dirname(full), m[1]);
+          if (!fs.existsSync(target)) missing.push(`${path.relative(distDir, full)} -> ${m[1]}`);
+        }
+      }
+    }
+  };
+  walk(distDir);
+  if (missing.length > 0) {
+    throw new Error(`[build] Relative URLs in the built code point to missing files:\n  ${missing.join('\n  ')}`);
+  }
+}
+
 // 7. Stamp the service worker with a content hash + generated precache lists so every
 //    release gets a fresh cache and code can never be served stale (no hand-bumping).
 const SHELL_ASSETS = [
@@ -221,6 +248,9 @@ const SHELL_ASSETS = [
   './workers/ortWasm.worker.js',
   './gpucheck.html',
   './ui/gpucheck.js',
+  // Linked from the About dialog: available offline too.
+  './LICENSE.txt',
+  './THIRD_PARTY_NOTICES.md',
 ];
 const ORT_ASSETS = ORT_RUNTIME_FILES.map((f) => `./ort/${f}`);
 const hash = crypto.createHash('sha256');

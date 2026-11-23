@@ -373,6 +373,57 @@ describe('workspace actions', () => {
     expect(saved.metadata?.processingHistory?.map((x) => x.step)).toEqual(['enhancement', 'rectification', 'enhancement']);
   });
 
+  it('Undo rectify restores the photo as it was before the first rectification, also after enhancing it', async () => {
+    const world = fakeWorld();
+    world.sites.set('a', site('a', ['p1']));
+    const origBlob = new Blob(['original']);
+    const origCal = { mmPerPx: 2, pointA: { x: 0, y: 0 }, pointB: { x: 10, y: 0 }, physicalLengthMm: 20, pixelDistance: 10, source: 'manual' as const };
+    const roi = { exclusionPolygons: [[{ x: 1, y: 1 }, { x: 5, y: 1 }, { x: 5, y: 5 }]], exclusionStrokes: [] };
+    world.photos.set('p1', { ...photo('p1', 'a'), imageBlob: origBlob, calibration: origCal, roiConfig: roi, metadata: { cameraModel: 'X' } });
+    const corners = [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 60 }, { x: 0, y: 60 }] as [
+      { x: number; y: number }, { x: number; y: number }, { x: number; y: number }, { x: number; y: number },
+    ];
+    const cal = { mmPerPx: 0.5, pointA: { x: 0, y: 0 }, pointB: { x: 100, y: 0 }, physicalLengthMm: 50, pixelDistance: 100 };
+    const deblur = { kind: 'deblur' as const, modelId: 'richardson_lucy_tv_deblur', modelName: 'RL', modelSha256: '', scaleFactor: 1, appliedAt: '2026-01-03T00:00:00Z' };
+    const { store, actions } = setup(world, {
+      rectify: async () => ({ blob: new Blob(['r']), width: 200, height: 120, calibration: cal }),
+      enhance: async () => ({ blob: new Blob(['e']), width: 200, height: 120, enhancement: deblur }),
+    });
+    await actions.createDefaultOrLoadSites();
+    const before = world.photos.get('p1')!;
+    await actions.applyRectificationToActive(corners, 100, 60);
+    await actions.applyRectificationToActive(corners, 100, 60); // a second rectification keeps the first backup
+    await actions.enhanceActivePhoto('deblur');
+    expect(world.photos.get('p1')!.rectifyBackup?.imageBlob).toBe(origBlob);
+    await actions.undoRectificationActive();
+    const restored = world.photos.get('p1')!;
+    expect(restored.imageBlob).toBe(origBlob);
+    expect([restored.width, restored.height]).toEqual([before.width, before.height]);
+    expect(restored.calibration).toEqual(origCal);
+    expect(restored.roiConfig).toEqual(roi);
+    expect(restored.metadata).toEqual({ cameraModel: 'X' });
+    expect(restored.rectifyBackup).toBeUndefined();
+    expect(restored.originalBackup).toBeUndefined();
+    expect(store.getState().photoStatuses.get('p1')).toBe('pending');
+  });
+
+  it('Undo rectify brings back an enhancement backup the photo had before rectification', async () => {
+    const world = fakeWorld();
+    world.sites.set('a', site('a', ['p1']));
+    const enhanced = { imageBlob: new Blob(['pre-enhance']), width: 100, height: 60 };
+    world.photos.set('p1', { ...photo('p1', 'a'), originalBackup: enhanced });
+    const corners = [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 60 }, { x: 0, y: 60 }] as [
+      { x: number; y: number }, { x: number; y: number }, { x: number; y: number }, { x: number; y: number },
+    ];
+    const cal = { mmPerPx: 0.5, pointA: { x: 0, y: 0 }, pointB: { x: 100, y: 0 }, physicalLengthMm: 50, pixelDistance: 100 };
+    const { actions } = setup(world, { rectify: async () => ({ blob: new Blob(['r']), width: 200, height: 120, calibration: cal }) });
+    await actions.createDefaultOrLoadSites();
+    await actions.applyRectificationToActive(corners, 100, 60);
+    expect(world.photos.get('p1')!.originalBackup).toBeUndefined(); // Revert does not apply to the rectified image
+    await actions.undoRectificationActive();
+    expect(world.photos.get('p1')!.originalBackup).toEqual(enhanced);
+  });
+
   it('re-calibrating an analysed photo multiple times updates stats every time (never stuck at first value)', async () => {
     const world = fakeWorld();
     world.sites.set('a', {

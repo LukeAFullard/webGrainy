@@ -91,7 +91,7 @@ export const HELP_TOPICS = {
     group: 'Analysis',
     what: 'Re-analyses the photo after enlarging it ×1.5, so small grains are bigger for the network. Sizes are still reported in the original photo pixels (or mm), so results stay comparable. Offered for U-Net when the median grain is under 20 px in the analysed image.',
     default: 'Offered, not automatic',
-    when: 'Accept it for fine gravel analysed with U-Net. In the pre-processing benchmark (40 test photos) enlarging fine-gravel photos ×1.5 improved outline accuracy (PQ +0.025, 95% CI +0.007 to +0.049) and recall of small grains, with no site getting worse, at about 20–50% more time per photo. The 20 px threshold was chosen after seeing the test results, so it is offered rather than automatic until confirmed on new data. Cellpose-SAM already handles fine grains and does not need it. Undo returns to the normal analysis.',
+    when: 'Accept it for fine gravel analysed with U-Net. In the pre-processing benchmark (40 test photos) enlarging fine-gravel photos ×1.5 improved outline accuracy (PQ +0.025, 95% CI +0.007 to +0.049) and recall of small grains, with no site getting worse, at about 1.5–2× the time for the photos it is applied to (about twice as many tiles). The 20 px threshold was chosen after seeing the test results, so it is offered rather than automatic until confirmed on new data. Cellpose-SAM already handles fine grains and does not need it. Undo returns to the normal analysis.',
   },
   claheClipLimit: {
     title: 'CLAHE clip',
@@ -126,7 +126,7 @@ export const HELP_TOPICS = {
     group: 'Advanced analysis',
     what: 'How the photo is prepared and cut into tiles before the neural network runs. "Cellpose" reproduces the original ImageGrains / Cellpose software exactly. "Legacy" runs U-Net on the whole image and blends overlapping tiles its own way.',
     default: 'Cellpose (matches ImageGrains)',
-    when: 'Keep "Cellpose". In tests it matched the original software exactly, and gave better outlines than Legacy (outline score 0.445 vs 0.413 for U-Net, 0.561 vs 0.485 for Cellpose-SAM on 7 test photos). Choose "Legacy" only to reproduce earlier results made with it.',
+    when: 'Keep "Cellpose". In tests it matched the original software exactly, and gave better outlines than Legacy (outline score 0.445 vs 0.413 for U-Net, 0.565 vs 0.488 for Cellpose-SAM on 7 test photos). Choose "Legacy" only to reproduce earlier results made with it.',
   },
   cpuThreads: {
     title: 'CPU threads',
@@ -287,14 +287,14 @@ export const HELP_TOPICS = {
     group: 'Tools',
     what: 'Straightens a photo taken at an angle, using four points that form a rectangle on the ground (e.g. quadrat corners).',
     default: 'Not applied',
-    when: 'Use whenever the camera was noticeably tilted. Re-analyse the photo afterwards.',
+    when: 'Use whenever the camera was noticeably tilted. Click the corners in order around the rectangle (top-left, top-right, bottom-right, bottom-left). Rectifying replaces the photo; Undo rectify (toolbar) restores the original with its scale and areas (after several rectifications, the photo as it was before the first). Re-analyse the photo afterwards.',
   },
   exclusion: {
-    title: 'Exclusion tools',
+    title: 'ROI and exclusion tools',
     group: 'Tools',
-    what: 'Draw polygons or paint areas (rulers, boots, vegetation, water, deep shadow) to leave them out. Grains with more than 10% of their area inside an excluded region are dropped from the statistics.',
-    default: 'Nothing excluded',
-    when: 'Use on any non-gravel object or area in the photo.',
+    what: 'ROI: draw the sampling area (e.g. the inside of a quadrat); only grains inside it count, and drawing again replaces it. Exclude / Brush: draw polygons or paint areas (rulers, boots, vegetation, water, deep shadow) to leave them out. Grains with more than 10% of their area outside the ROI or inside an excluded region are dropped from the statistics. Clear areas removes them all.',
+    default: 'Whole photo, nothing excluded',
+    when: 'Use the ROI when only part of the photo was sampled, and exclusions on any non-gravel object or area in the photo.',
   },
   editing: {
     title: 'Editing tools',

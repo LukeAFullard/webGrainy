@@ -8,6 +8,7 @@ import {
   getPhotoResult,
   importProjectArchive,
   listSitePhotos,
+  listSites,
   savePhoto,
   savePhotoResult,
   saveSite,
@@ -123,6 +124,76 @@ describe('project archive v2', () => {
     new DataView(len.buffer).setUint32(0, h.byteLength, true);
     const tampered = new Blob([new TextEncoder().encode(ARCHIVE_V2_MAGIC), len, h, new Uint8Array(4)]);
     await expect(importProjectArchive(tampered, { indexedDB: createProjectMockIDB() })).rejects.toThrow(/invalid byte reference/);
+  });
+});
+
+describe('rectification backup in project files', () => {
+  it('round-trips the photo before rectification, with its own enhancement backup', async () => {
+    const a = { indexedDB: createProjectMockIDB() };
+    await saveSite({ ...site, photoOrder: ['P'] }, a);
+    const cal = { mmPerPx: 2, pointA: { x: 0, y: 0 }, pointB: { x: 10, y: 0 }, physicalLengthMm: 20, pixelDistance: 10 };
+    await savePhoto({
+      photoId: 'P', siteId: 'S', label: 'q', width: 200, height: 120, addedAt: 1, included: true,
+      imageBlob: new Blob([new Uint8Array([1, 2, 3])], { type: 'image/png' }),
+      rectifyBackup: {
+        imageBlob: new Blob([new Uint8Array([4, 5, 6, 7])], { type: 'image/jpeg' }), width: 80, height: 60, calibration: cal,
+        originalBackup: { imageBlob: new Blob([new Uint8Array([8, 9])], { type: 'image/jpeg' }), width: 40, height: 30 },
+      },
+    }, a);
+    const b = { indexedDB: createProjectMockIDB() };
+    await importProjectArchive(await exportProjectArchive('S', a), b);
+    const [p] = await listSitePhotos('S', b);
+    const rb = p!.rectifyBackup!;
+    expect([rb.width, rb.height, rb.calibration?.mmPerPx]).toEqual([80, 60, 2]);
+    expect([...new Uint8Array(await rb.imageBlob.arrayBuffer())]).toEqual([4, 5, 6, 7]);
+    expect([...new Uint8Array(await rb.originalBackup!.imageBlob.arrayBuffer())]).toEqual([8, 9]);
+    expect(rb.originalBackup!.width).toBe(40);
+  });
+});
+
+describe('project import checks (audit S12)', () => {
+  /** Re-assemble a v2 archive with an edited header and the original payload. */
+  async function withHeader(blob: Blob, edit: (h: Record<string, unknown>) => void): Promise<Blob> {
+    const head = new Uint8Array(await blob.slice(0, 12).arrayBuffer());
+    const oldLen = new DataView(head.buffer).getUint32(8, true);
+    const header = await headerOf(blob);
+    edit(header);
+    const h = new TextEncoder().encode(JSON.stringify(header));
+    const len = new Uint8Array(4);
+    new DataView(len.buffer).setUint32(0, h.byteLength, true);
+    return new Blob([new TextEncoder().encode(ARCHIVE_V2_MAGIC), len, h, blob.slice(12 + oldLen)]);
+  }
+  async function twoPhotoArchive(): Promise<Blob> {
+    const a = { indexedDB: createProjectMockIDB() };
+    await saveSite({ ...site, photoOrder: ['P1', 'P2'] }, a);
+    for (const id of ['P1', 'P2']) {
+      await savePhoto({ photoId: id, siteId: 'S', label: id, width: 80, height: 60, addedAt: 1, included: true, imageBlob: new Blob([new Uint8Array(4)]) }, a);
+      await savePhotoResult({ photoId: id, status: 'done', serializedSession: session().toSerialized(), updatedAt: 1 }, a);
+    }
+    return exportProjectArchive('S', a);
+  }
+
+  it('rejects two results sharing one mask, and a mask of the wrong size, before decoding it', async () => {
+    const blob = await twoPhotoArchive();
+    type R = { serializedSession: { workingMasksRef: unknown; workingImage: { width: number } } };
+    const shared = await withHeader(blob, (h) => {
+      const rs = h['results'] as R[];
+      rs[1]!.serializedSession.workingMasksRef = rs[0]!.serializedSession.workingMasksRef;
+    });
+    await expect(importProjectArchive(shared, { indexedDB: createProjectMockIDB() })).rejects.toThrow(/shared with another result/);
+    const wrong = await withHeader(blob, (h) => {
+      (h['results'] as R[])[0]!.serializedSession.workingImage.width = 41;
+    });
+    await expect(importProjectArchive(wrong, { indexedDB: createProjectMockIDB() })).rejects.toThrow(/mask size does not match/);
+  });
+
+  it('keeps only photo ids of this file in photoOrder, each once', async () => {
+    const blob = await withHeader(await twoPhotoArchive(), (h) => {
+      (h['site'] as { photoOrder: string[] }).photoOrder = ['P2', 'ghost', 'P1', 'P2'];
+    });
+    const db = { indexedDB: createProjectMockIDB() };
+    await importProjectArchive(blob, db);
+    expect((await listSites(db))[0]!.photoOrder).toEqual(['P2', 'P1']);
   });
 });
 

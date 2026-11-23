@@ -21,7 +21,7 @@ export const UNOFFICIAL_NOTICE =
   'webGrainy is an independent, unofficial browser port of ImageGrains 2.0; it is not affiliated with or endorsed by the ImageGrains or Cellpose authors, and its post-processing differs from the official Python implementation.';
 
 export const CITATION_NOTICE =
-  'If you use these results, cite ImageGrains (Mair et al.; doi:10.1002/esp.5755; weights doi:10.5281/zenodo.15728186) and Cellpose (Stringer et al. 2021, doi:10.1038/s41592-020-01018-x).';
+  'If you use these results, cite ImageGrains 2.0 (Mair et al. 2026, doi:10.5194/esurf-14-527-2026; weights doi:10.5281/zenodo.15728186), ImageGrains (Mair et al. 2023, doi:10.1002/esp.5755), Cellpose-SAM (Pachitariu et al. 2025, doi:10.1101/2025.04.28.651001) and Cellpose (Stringer et al. 2021, doi:10.1038/s41592-020-01018-x).';
 
 /**
  * Validated accuracy and its limits, included in every export and in the printable report
@@ -29,7 +29,7 @@ export const CITATION_NOTICE =
  * keeps them in step.
  */
 export const ACCURACY_NOTICE =
-  'Accuracy: on the held-out ImageGrains 2.0 test photos (new photos of the 13 training sites, mostly analysed at full resolution), the median D50 error was 2.9% with Cellpose-SAM and 5.7% with U-Net, but 5% and 10% of photos had D50 errors above 50%. Accuracy at new sites and on large photos analysed at reduced resolution is not established; check the outlines.';
+  'Accuracy: on the held-out ImageGrains 2.0 test photos (held-out tiles from the 13 training sites, many cut from the same source photos as training tiles, mostly analysed at full resolution), the median D50 error was 2.9% with Cellpose-SAM and 5.7% with U-Net, but 5% and 10% of photos had D50 errors above 50%. Accuracy at new sites and on large photos analysed at reduced resolution is not established; check the outlines.';
 
 /** Definition of the reported "b-axis" size metric, included in every export. */
 export const SIZE_METRIC_DEFINITION =

@@ -102,15 +102,18 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Navigations: network-first so a new deployment is discovered, falling back to the
-  // precached shell offline.
+  // Navigations: the page from this build's cache, so the HTML always matches the cached
+  // scripts (a newer index.html from the network with this build's main.js could break).
+  // New deployments are still found: the browser re-checks sw.js on every navigation, and the
+  // app offers "Reload to update" once the new worker is waiting. Pages not precached go to the
+  // network, falling back to the shell offline.
   if (req.mode === 'navigate') {
     event.respondWith(
-      fetch(req)
-        .catch(() =>
-          caches
-            .match(req, { cacheName: SHELL_CACHE })
-            .then((cached) => cached || caches.match('./index.html', { cacheName: SHELL_CACHE })),
+      caches
+        .match(req, { ignoreSearch: true, cacheName: SHELL_CACHE })
+        .then((cached) =>
+          cached ||
+          fetch(req).catch(() => caches.match('./index.html', { cacheName: SHELL_CACHE })),
         )
         .then(withIsolationHeaders),
     );

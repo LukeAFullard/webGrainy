@@ -9,6 +9,7 @@
  * RasterType PixelIsArea, matching the corner-based transform of PhotoGeoreference.
  */
 import type { PhotoGeoreference } from './siteTypes.js';
+import { APP_VERSION, BUILD_COMMIT } from './provenance.js';
 
 /** GeoKey directory (+ double / ASCII parameters) for a georeference. */
 export function geoKeysFor(g: PhotoGeoreference): { directory: number[]; doubles: number[]; ascii: string } {
@@ -63,13 +64,25 @@ async function deflate(raw: Uint8Array): Promise<Uint8Array | null> {
 
 type Tag = { tag: number; type: 2 | 3 | 4 | 12; values: number[] | string };
 
+/** Options for GeoTIFF exports. */
+export interface GeoTiffWriteOptions {
+  compress?: boolean;
+  /** Provenance text (e.g. JSON) for ImageDescription (270); non-ASCII is \u-escaped. */
+  description?: string;
+}
+
+/** TIFF ASCII tags are 7-bit: escape anything else as \uXXXX (still valid inside JSON strings). */
+function asciiOnly(s: string): string {
+  return s.replace(/[^\x20-\x7e]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`);
+}
+
 /** Encodes `masks` (grain ids, photo size `width` x `height`) as a GeoTIFF placed by `g`. */
 export async function encodeLabelGeoTiff(
   masks: Int32Array,
   width: number,
   height: number,
   g: PhotoGeoreference,
-  options: { compress?: boolean } = {},
+  options: GeoTiffWriteOptions = {},
 ): Promise<Uint8Array> {
   if (masks.length !== width * height) throw new Error('Label mask size does not match the photo.');
   let max = 0;
@@ -92,7 +105,7 @@ export async function encodeLabelGeoTiff(
 export async function encodeGeoTiff(
   img: { raw: Uint8Array; width: number; height: number; bitsPerSample: 8 | 16 | 32; samples: 1 | 4; nodata?: string },
   g: PhotoGeoreference,
-  options: { compress?: boolean } = {},
+  options: GeoTiffWriteOptions = {},
 ): Promise<Uint8Array> {
   const { raw, width, height, samples } = img;
   const bps = img.bitsPerSample;
@@ -116,7 +129,13 @@ export async function encodeGeoTiff(
     { tag: 339, type: 3, values: Array(samples).fill(1) },
   ];
   if (samples === 4) tags.push({ tag: 338, type: 3, values: [2] }); // ExtraSamples: unassociated alpha
-  if (c === 0 && e === 0) {
+  // Provenance, as in the other exports: which app and build wrote the file, and how.
+  tags.push({ tag: 305, type: 2, values: asciiOnly(`webGrainy ${APP_VERSION} (${BUILD_COMMIT})`) }); // Software
+  if (options.description) tags.push({ tag: 270, type: 2, values: asciiOnly(options.description) }); // ImageDescription
+  // Tie point + pixel scale only describe north-up rasters (columns go east, rows go south): a
+  // negative ScaleX/ScaleY is invalid and GDAL silently flips it. Anything else (south-up,
+  // mirrored, rotated) is written as a full ModelTransformationTag.
+  if (c === 0 && e === 0 && b > 0 && f < 0) {
     tags.push({ tag: 33550, type: 12, values: [b, -f, 0] });
     tags.push({ tag: 33922, type: 12, values: [0, 0, 0, a, d, 0] });
   } else {

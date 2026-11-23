@@ -33,6 +33,11 @@ export interface DashboardView {
   charts: ChartRegistry;
 }
 
+/** What the site histogram's percentages are, for the pooling mode (see siteAnalysis.ts). */
+export function histogramBasis(mode: string | undefined): string {
+  return mode === 'number-weighted' ? '% by grain count' : mode === 'virtual-wolman-grid' ? '% of grid points' : 'area-weighted %';
+}
+
 export function renderDashboardHtml(state: AppState, view: DashboardView): string {
   const chartBox = chartBoxFor(view.charts);
   const report = state.siteReport;
@@ -80,7 +85,7 @@ export function renderDashboardHtml(state: AppState, view: DashboardView): strin
     }
     if (!isSite && activeSession) {
       const prov = activeSession.getProvenance();
-      return computeEffectiveDetectionLimit(
+      const own = computeEffectiveDetectionLimit(
         {
           minSizeWorkingPx: prov?.postProcess?.minSize ?? DEFAULT_POSTPROCESS_OPTIONS.minSize,
           effectiveScaleFactor: activeSession.workingImage.effectiveScaleFactor,
@@ -89,6 +94,23 @@ export function renderDashboardHtml(state: AppState, view: DashboardView): strin
         },
         psd,
       );
+      // The mm cutoff actually applied to this photo can be larger than its own detection limit:
+      // the site's common cutoff (a coarser photo's limit) or the field-count cutoff.
+      const appliedMm = photoCutoffs(state.siteOptions, report, activePhoto?.photoId).minSizeMm;
+      if (own && own.unit === 'mm' && appliedMm > own.value) {
+        const fieldMm = state.siteOptions.minSizeMm ?? 0;
+        return {
+          value: appliedMm,
+          unit: 'mm' as const,
+          nearD5: Number.isFinite(psd.D5) && psd.D5 > 0 && psd.D5 <= appliedMm * 1.25,
+          nearD16: Number.isFinite(psd.D16) && psd.D16 > 0 && psd.D16 <= appliedMm * 1.5,
+          raisedNote:
+            appliedMm > fieldMm
+              ? ` (this photo alone resolves ~${own.value.toFixed(1)} mm; raised to the site's common cutoff, set by a coarser photo, so all photos count the same size range)`
+              : ` (this photo alone resolves ~${own.value.toFixed(1)} mm; raised to the Field-count cutoff)`,
+        };
+      }
+      return own;
     }
     return null;
   })();
@@ -120,7 +142,7 @@ export function renderDashboardHtml(state: AppState, view: DashboardView): strin
         : sizeHistogramFromWentworth([], step);
     const detectionNoteHtml = detectionLimitInfo
       ? `<div class="${detectionLimitInfo.nearD16 || detectionLimitInfo.nearD5 ? 'warning-banner' : 'field-hint'}" style="margin-top:6px;">
-          Smallest grain kept (detection limit): <strong>~${detectionLimitInfo.value.toFixed(detectionLimitInfo.unit === 'mm' ? 1 : 0)} ${detectionLimitInfo.unit}</strong>${
+          Smallest grain kept (detection limit): <strong>~${detectionLimitInfo.value.toFixed(detectionLimitInfo.unit === 'mm' ? 1 : 0)} ${detectionLimitInfo.unit}</strong>${'raisedNote' in detectionLimitInfo ? esc(detectionLimitInfo.raisedNote) : ''}${
             detectionLimitInfo.nearD16
               ? ' — fine tail (D16) is close to the resolution floor; consider a closer photo or a Field-count cutoff.'
               : detectionLimitInfo.nearD5
@@ -150,9 +172,14 @@ export function renderDashboardHtml(state: AppState, view: DashboardView): strin
       ${enhBannerHtml}
       ${photoWarnHtml}
       <div class="row-between" style="margin-top:8px;">
-        <div class="row">
+        <div class="row">${
+          // φ needs sizes in mm: no axis choice for an uncalibrated (pixel) distribution.
+          unit === 'mm'
+            ? `
           <button type="button" class="btn btn-sm ${state.psdXAxis === 'mm' ? 'active' : ''}" aria-pressed="${state.psdXAxis === 'mm' ? 'true' : 'false'}" data-psd-x="mm">mm (log₁₀)</button>
-          <button type="button" class="btn btn-sm ${state.psdXAxis === 'phi' ? 'active' : ''}" aria-pressed="${state.psdXAxis === 'phi' ? 'true' : 'false'}" data-psd-x="phi">phi (φ)</button>
+          <button type="button" class="btn btn-sm ${state.psdXAxis === 'phi' ? 'active' : ''}" aria-pressed="${state.psdXAxis === 'phi' ? 'true' : 'false'}" data-psd-x="phi">phi (φ)</button>`
+            : ''
+        }
         </div>
         ${
           isSite && report
@@ -167,10 +194,10 @@ export function renderDashboardHtml(state: AppState, view: DashboardView): strin
       ${chartBox('cumulative-psd', 'Cumulative grain-size distribution', psdSvg, lightTheme)}
       ${detectionNoteHtml}
       <div class="row" style="margin-top:8px;">
-        <button type="button" class="btn btn-sm ${step === 0.5 ? 'active' : ''}" aria-pressed="${step === 0.5 ? 'true' : 'false'}" data-phi-step="0.5">Narrow classes (${sizeHist.unit === 'mm' ? '0.5 φ' : '×√2'})</button>
-        <button type="button" class="btn btn-sm ${step === 1 ? 'active' : ''}" aria-pressed="${step === 1 ? 'true' : 'false'}" data-phi-step="1.0">Wide classes (${sizeHist.unit === 'mm' ? '1 φ' : '×2'})</button>
+        <button type="button" class="btn btn-sm ${step === 0.5 ? 'active' : ''}" aria-pressed="${step === 0.5 ? 'true' : 'false'}" data-phi-step="0.5">Narrow classes (${unit === 'mm' ? '0.5 φ' : '×√2'})</button>
+        <button type="button" class="btn btn-sm ${step === 1 ? 'active' : ''}" aria-pressed="${step === 1 ? 'true' : 'false'}" data-phi-step="1.0">Wide classes (${unit === 'mm' ? '1 φ' : '×2'})</button>
       </div>
-      ${chartBox('size-distribution', 'Grain-size distribution histogram', (light) => renderSizeHistogramSvg(sizeHist, light, isSite ? 'Site Size Distribution (area-weighted %)' : 'Photo Size Distribution (area-weighted %)'), lightTheme)}
+      ${chartBox('size-distribution', 'Grain-size distribution histogram', (light) => renderSizeHistogramSvg(sizeHist, light, isSite ? `Site Size Distribution (${histogramBasis(state.siteOptions.poolingMode)})` : 'Photo Size Distribution (area-weighted %)'), lightTheme)}
       ${
         fw
           ? `<div class="stat-grid" style="margin-top:8px;">
@@ -216,6 +243,7 @@ export function renderDashboardHtml(state: AppState, view: DashboardView): strin
     const adeq = report?.adequacy;
 
     tabContent = `
+      ${!isSite ? '<p class="field-hint" style="margin-top:8px;">Sample adequacy is a property of the whole site (all included photos), so this tab shows the site.</p>' : ''}
       ${
         adeq
           ? `<div class="stat-grid" style="margin-top:8px;">
@@ -230,12 +258,14 @@ export function renderDashboardHtml(state: AppState, view: DashboardView): strin
     `;
   } else if (state.dashboardTab === 'shape') {
     const cutoffs = photoCutoffs(state.siteOptions, report, activePhoto?.photoId);
-    // Same grains as the statistics (inside the ROI, border rule and cutoffs applied), so n matches.
-    const ratios = activeSession
+    // Whole site: every pooled grain once. This photo: the same grains as its statistics (inside
+    // the ROI, border rule and cutoffs applied), so n matches.
+    const siteShape = isSite ? report?.shape ?? null : null;
+    const ratios = !isSite && activeSession
       ? activeSession.getExtendedStatsGrains(activeMetric, cutoffs).map((g) => g.aspectRatio)
       : [];
-    const arCounts = aspectRatioCounts(ratios, 10);
-    const packingInfo = activeSession ? activeSession.getRoiFilterResult() : null;
+    const arCounts = siteShape ? siteShape.aspectRatioCounts : aspectRatioCounts(ratios, 10);
+    const packingInfo = !isSite && activeSession ? activeSession.getRoiFilterResult() : null;
 
     tabContent = `
       ${
@@ -244,7 +274,7 @@ export function renderDashboardHtml(state: AppState, view: DashboardView): strin
           : ''
       }
       ${chartBox('aspect-ratio', 'Aspect ratio (b/a) distribution', (light) => renderAspectRatioHistogramSvg(arCounts, light), lightTheme)}
-      <p class="field-hint">Grain shape for this photo. The size distribution is on the PSD tab.</p>
+      <p class="field-hint">${isSite ? `Grain shape of the whole site (every counted grain once, n = ${siteShape?.n ?? 0}).` : 'Grain shape for this photo.'} The size distribution is on the PSD tab.</p>
     `;
   } else {
     const cutoffs = photoCutoffs(state.siteOptions, report, activePhoto?.photoId);
@@ -330,20 +360,20 @@ export function renderDashboardHtml(state: AppState, view: DashboardView): strin
         }
         if (!hint.suggest) return '';
         return `<div class="info-banner">
-          <strong>Fine grains detected</strong> (median about ${hint.medianWorkingBPx!.toFixed(0)} px). U-Net finds more of them with a fast temporary ×1.5 bicubic resize during inference (unlike the toolbar's AI 2× Upscale, it does not modify your photo): in testing on 40 photos this improved outlines with no site getting worse, taking ~20–50% longer. ${helpButton('fineGrainUpscale')}
+          <strong>Fine grains detected</strong> (median about ${hint.medianWorkingBPx!.toFixed(0)} px). U-Net finds more of them with a temporary ×1.5 bilinear enlargement during inference (unlike the toolbar's AI 2× Upscale, it does not modify your photo): in testing on 40 photos this improved outlines with no site getting worse, taking about 1.5–2× as long. ${helpButton('fineGrainUpscale')}
           <div style="margin-top:6px;"><button type="button" class="btn btn-sm btn-primary" data-action="fine-grain-rerun" ${state.batchRunning ? 'disabled' : ''}>Re-analyse enlarged ×1.5</button></div>
         </div>`;
       })()}
       <div class="stat-grid" style="margin-top:8px;">
-        <div class="stat-card"><div class="stat-label">D<sub>16</sub></div><div class="stat-value">${psd ? psd.D16.toFixed(1) : '—'}</div><div class="stat-sub">${unit}</div></div>
-        <div class="stat-card"><div class="stat-label">D<sub>50</sub> (median)</div><div class="stat-value">${psd ? psd.D50.toFixed(1) : '—'}</div><div class="stat-sub">${unit}</div></div>
-        <div class="stat-card"><div class="stat-label">D<sub>84</sub></div><div class="stat-value">${psd ? psd.D84.toFixed(1) : '—'}</div><div class="stat-sub">${unit}</div></div>
+        <div class="stat-card"><div class="stat-label">D<sub>16</sub></div><div class="stat-value">${psd && Number.isFinite(psd.D16) ? psd.D16.toFixed(1) : '—'}</div><div class="stat-sub">${unit}</div></div>
+        <div class="stat-card"><div class="stat-label">D<sub>50</sub> (median)</div><div class="stat-value">${psd && Number.isFinite(psd.D50) ? psd.D50.toFixed(1) : '—'}</div><div class="stat-sub">${unit}</div></div>
+        <div class="stat-card"><div class="stat-label">D<sub>84</sub></div><div class="stat-value">${psd && Number.isFinite(psd.D84) ? psd.D84.toFixed(1) : '—'}</div><div class="stat-sub">${unit}</div></div>
       </div>
       <p class="metric-note">${esc(metricNoteText)}</p>
       <details class="advanced-block stats-settings" style="margin-top:8px;" data-keep-open="stats-settings">
         <summary>Statistics settings <span class="summary-note">${({ 'physical-area': 'area-weighted', 'equal-photo': 'equal-photo', 'virtual-wolman-grid': 'Wolman grid', 'number-weighted': 'number-weighted', 'facies-weighted': 'facies-weighted' } as Record<string, string>)[state.siteOptions.poolingMode] ?? state.siteOptions.poolingMode} · ${activeMetric === 'bAxis' ? 'b-axis' : activeMetric}</span></summary>
         <div style="margin-top:6px;">
-        <div class="field-hint" style="margin-bottom:6px;">Cutoffs and pooling apply live to both This photo and Whole site without re-analysing.</div>
+        <div class="field-hint" style="margin-bottom:6px;">Cutoffs apply live to both This photo and Whole site without re-analysing; pooling applies to Whole site (one photo's statistics are always area-weighted).</div>
       <div class="grid-2">
         <label class="field-label">
           <span class="label-row">Pooling Mode ${helpButton('poolingMode')}</span>

@@ -49,6 +49,12 @@ describe('exports module', () => {
       expect(f, kind).not.toBeNull();
       expect(f!.blob.size, kind).toBeGreaterThan(0);
       expect(f!.filename, kind).toMatch(kind.startsWith('site') ? /^Rakaia_reach_3_/ : /^IMG_001_jpg_/);
+      if (f!.filename.endsWith('.tif')) {
+        // GeoTIFFs carry provenance like every other export (audit S3).
+        const text = new TextDecoder('latin1').decode(new Uint8Array(await f!.blob.arrayBuffer()));
+        expect(text, kind).toContain('webGrainy ');
+        expect(text, kind).toContain('"appVersion"');
+      }
     }
   });
 

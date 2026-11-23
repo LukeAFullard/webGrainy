@@ -79,8 +79,12 @@ export async function resultsBundleEntries(input: ResultsBundleInput): Promise<Z
   for (const photo of input.photos) {
     const session = input.siteInputs.find((i) => i.photoId === photo.photoId)?.session ?? null;
     if (!session) continue;
-    let dir = `photos/${safe(photo.label.replace(/\.[a-z0-9]+$/i, ''))}`;
-    if (used.has(dir)) dir = `${dir}_${safe(photo.photoId).slice(-6)}`;
+    const baseDir = `photos/${safe(photo.label.replace(/\.[a-z0-9]+$/i, ''))}`;
+    // Same-named photos (a.jpg, a.png) get a suffix; keep adding until the folder is unused, so
+    // even a photo literally named like a generated folder cannot collide.
+    let dir = baseDir;
+    if (used.has(dir)) dir = `${baseDir}_${safe(photo.photoId).slice(-6)}`;
+    for (let k = 2; used.has(dir); k++) dir = `${baseDir}_${k}`;
     used.add(dir);
     photoCount++;
     const res = session.getOutlineResolution();
@@ -112,7 +116,11 @@ export async function resultsBundleEntries(input: ResultsBundleInput): Promise<Z
   if (photoCount > 0) {
     listed.push(
       `photos/<photo name>/  (${photoCount} analysed photo${photoCount === 1 ? '' : 's'})\n` +
-        PHOTO_FILES.map(([, name, what]) => `    ${name}: ${what}`).join('\n'),
+        PHOTO_FILES.map(([, name, what]) => `    ${name}: ${what}`).join('\n') +
+        (georeferenced > 0
+          ? '\n    GeoTIFF photos also (see above): outlines_EPSG<code>.geojson, outlines_lonlat.geojson, mask_map.tif,\n' +
+            '    mask_webmercator.tif, mask16.pgw and mask16.png.aux.xml (each only when the CRS allows it).'
+          : ''),
     );
   }
   if (input.includeProject) {
@@ -135,8 +143,10 @@ export async function resultsBundleEntries(input: ResultsBundleInput): Promise<Z
     input.countedGrainsOnly
       ? 'Outlines and masks hold only the grains counted in the statistics (border rule, ROI and size cutoffs applied); grains.csv lists every detected grain, with included_in_stats.'
       : 'Outlines and masks hold every detected grain; grains.csv marks the ones counted in the statistics (included_in_stats).',
-    'Every CSV starts with metadata: app and model versions, model SHA-256 and all settings. Read it with',
-    "e.g. pandas.read_csv(path, comment='#'). In the '#' lines, % , ; and TAB are written as %25 %2C %3B %09.",
+    'Every CSV records the app and model versions, model SHA-256 and all settings. The per-grain tables',
+    "(grains.csv, site_pooled_grains.csv) start with '#' metadata lines: read them with e.g.",
+    "pandas.read_csv(path, comment='#'). In the '#' lines, % , ; | and TAB are written as %25 %2C %3B %7C %09.",
+    'The summary CSVs (section,metric,value,unit) hold the same metadata as rows whose first cell is "metadata".',
     '',
     georeferenced > 0
       ? 'GeoTIFF photos: outlines_lonlat.geojson has the grain outlines in WGS84 longitude/latitude for web maps and any GeoJSON reader (when the CRS can be converted; no datum shift, within about a metre). outlines_EPSG<code>.geojson has them in the map coordinates and CRS of the source GeoTIFF (exact; for QGIS and other GDAL-based tools only: web maps and ArcGIS Online read every .geojson as longitude/latitude and cannot place it). mask_map.tif is the label mask as a GeoTIFF, CRS included, background = nodata; mask_webmercator.tif is the same mask reprojected to the north-up Web Mercator grid (EPSG:3857), for web maps that draw rasters without rotating them. mask16.png is placed by mask16.pgw (world file) with its CRS in mask16.png.aux.xml. outlines.geojson, grains.csv and the other mask files are in photo pixels (x right, y down), not map coordinates.'
@@ -150,7 +160,7 @@ export async function resultsBundleEntries(input: ResultsBundleInput): Promise<Z
       : []),
     '',
     input.includeProject
-      ? 'The .webgrainy project file reopens this site in webGrainy (Open project).'
+      ? 'The .webgrainy project file reopens this site in webGrainy (Open, in the Site panel).'
       : 'No project file: this site cannot be reopened in webGrainy from these files. Keep your original photos.',
     '',
     'Files',

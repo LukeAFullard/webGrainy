@@ -17,6 +17,7 @@ import UTIF from 'utif2';
 import type { CalibrationResult } from '../types/index.js';
 import type { SitePhotoMetadata } from './siteTypes.js';
 import { extractGeoReference } from './georef.js';
+import { crsUnitMetres } from './projToLonLat.js';
 
 export interface DecodedTiffImage {
   data: Uint8ClampedArray;
@@ -141,8 +142,24 @@ function extractGeoTiffCalibration(
   height: number,
 ): CalibrationResult | undefined {
   const scaleTag = ifd['t33550'];
+  const transformTag = ifd['t34264'];
   const geoDir = ifd['t34735'];
-  if (!Array.isArray(scaleTag) || scaleTag.length < 2) return undefined;
+  // Pixel size from ModelPixelScaleTag, or from a ModelTransformationTag (south-up, mirrored or
+  // rotated rasters) when that maps pixels to the map without skew.
+  let pixelSize: [number, number] | undefined;
+  let fromTransform = false;
+  if (Array.isArray(scaleTag) && scaleTag.length >= 2) {
+    pixelSize = [Number(scaleTag[0]), Number(scaleTag[1])];
+  } else if (Array.isArray(transformTag) && transformTag.length >= 16) {
+    const [m0, m1, m4, m5] = [Number(transformTag[0]), Number(transformTag[1]), Number(transformTag[4]), Number(transformTag[5])];
+    const sx = Math.hypot(m0, m4);
+    const sy = Math.hypot(m1, m5);
+    // Columns and rows must stay perpendicular on the map (within ~3 degrees).
+    if (!(sx > 0) || !(sy > 0) || Math.abs(m0 * m1 + m4 * m5) / (sx * sy) > 0.05) return undefined;
+    pixelSize = [sx, sy];
+    fromTransform = true;
+  }
+  if (pixelSize === undefined) return undefined;
   if (!Array.isArray(geoDir) || geoDir.length < 4) return undefined;
 
   const numKeys = Number(geoDir[3]) || 0;
@@ -167,6 +184,8 @@ function extractGeoTiffCalibration(
   if (projectedCrs !== undefined && DISTORTED_SCALE_EPSG.has(projectedCrs)) return undefined;
   const isWebMercator = projectedCrs !== undefined && WEB_MERCATOR_EPSG.has(projectedCrs);
   if (isWebMercator && linearUnits !== undefined && linearUnits !== 9001) return undefined;
+  // The Web Mercator ground-scale correction assumes a north-up tie point + pixel scale.
+  if (isWebMercator && fromTransform) return undefined;
   let mmPerUnit: number | undefined;
   if (linearUnits === 9001) {
     mmPerUnit = 1000; // Meter
@@ -176,11 +195,14 @@ function extractGeoTiffCalibration(
     mmPerUnit = 1200000 / 3937; // US survey foot (304.8006096... mm)
   } else if (linearUnits === undefined && (isWebMercator || isKnownMetricProjectedCrs(projectedCrs))) {
     mmPerUnit = 1000;
+  } else if (linearUnits === undefined && projectedCrs !== undefined) {
+    // No ProjLinearUnitsGeoKey: the EPSG definition gives the unit (metres, feet, US survey feet).
+    const metres = crsUnitMetres(projectedCrs);
+    if (metres !== undefined) mmPerUnit = metres * 1000;
   }
   if (mmPerUnit === undefined) return undefined;
 
-  const sx = Number(scaleTag[0]);
-  const sy = Number(scaleTag[1]);
+  const [sx, sy] = pixelSize;
   if (!Number.isFinite(sx) || !Number.isFinite(sy) || sx <= 0 || sy <= 0) return undefined;
   // Require near-square pixels (within 5%).
   if (Math.abs(sx - sy) / Math.max(sx, sy) > 0.05) return undefined;
@@ -251,15 +273,21 @@ export function rgba8From16Bit(f: Utif16Frame): { rgba: Uint8Array; note: string
   // Range between the 0.01st and 99.99th percentile of all colour samples, not min-max: one hot
   // or saturated pixel at 65535 in 12-bit data would otherwise squeeze the image into a few grey
   // levels. Samples outside the range are clipped.
+  // Fully transparent (no-data) pixels are left out, so a no-data border does not set the black point.
   const hist = new Uint32Array(65536);
+  let total = 0;
   for (let i = 0; i < n; i++) {
     const base = i * spp * 2;
+    if (alphaAt >= 0) {
+      const a = base + alphaAt * 2;
+      if ((d[a]! | (d[a + 1]! << 8)) === 0) continue;
+    }
     for (let c = 0; c < colour; c++) {
       const o = base + c * 2;
       hist[d[o]! | (d[o + 1]! << 8)]!++;
     }
+    total += colour;
   }
-  const total = n * colour;
   const tail = Math.max(1, Math.floor(total * STRETCH_TAIL_FRACTION));
   let lo = 0;
   for (let seen = 0; lo < 65535; lo++) {
@@ -301,6 +329,12 @@ export function decodeTiffBuffer(buf: ArrayBuffer): DecodedTiffImage {
   if (!isTiffBytes(buf)) {
     throw new Error('File does not have a valid TIFF header.');
   }
+  const magic = new Uint8Array(buf, 0, 4);
+  if (magic[2] === 0x2b || magic[3] === 0x2b) {
+    throw new Error(
+      'This is a BigTIFF, which webGrainy cannot read. Save a standard TIFF copy (e.g. gdal_translate -co BIGTIFF=NO in.tif out.tif, or export a tile of the area to measure), keeping the georeferencing.',
+    );
+  }
   const ifds = UTIF.decode(buf);
   if (!ifds || ifds.length === 0) {
     throw new Error('TIFF file contains no image frames.');
@@ -336,6 +370,13 @@ export function decodeTiffBuffer(buf: ArrayBuffer): DecodedTiffImage {
     );
   }
 
+  // Band-interleaved colour (PlanarConfiguration 2) decodes to a nearly black image in UTIF.
+  const bestRaw = best as unknown as Record<string, unknown>;
+  if (tagNum(bestRaw, 't284') === 2 && tagNum(bestRaw, 't277') > 1) {
+    throw new Error(
+      'This TIFF stores each colour band separately (band-interleaved, PlanarConfiguration 2), which webGrainy cannot read. Save a pixel-interleaved copy (e.g. gdal_translate -co INTERLEAVE=PIXEL in.tif out.tif), keeping the georeferencing.',
+    );
+  }
   UTIF.decodeImage(buf, best);
   // 16-bit images: UTIF keeps only the high byte, so 12-bit data stored in 16 bits (common for
   // scientific and drone cameras) collapsed to 16 grey levels. Scale by the image's own range.
