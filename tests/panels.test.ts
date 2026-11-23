@@ -183,6 +183,14 @@ describe('panel renderers', () => {
     expect(html).toContain('No flagged grains');
   });
 
+  it('toolbar: Save image (whole photo / visible area) for the open photo, disabled while it draws', () => {
+    const html = renderToolbarHtml(analysedState()).subToolbar;
+    expect(html).toContain('data-action="save-view" data-area="photo" ');
+    expect(html).toContain('data-action="save-view" data-area="visible" ');
+    expect(renderToolbarHtml({ ...analysedState(), savingView: true }).subToolbar).toMatch(/data-area="photo" disabled/);
+    expect(renderToolbarHtml({ ...analysedState(), activePhotoId: null }).subToolbar).not.toContain('save-view');
+  });
+
   it('toolbar: Tidy outlines only once the photo is analysed', () => {
     expect(renderToolbarHtml({ ...analysedState(), sessions: new Map() }).toolbar).not.toContain('data-action="tidy-outlines"');
     const html = renderToolbarHtml(analysedState()).toolbar;
