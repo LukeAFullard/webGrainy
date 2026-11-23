@@ -33,6 +33,11 @@ export interface DashboardView {
   charts: ChartRegistry;
 }
 
+/** What the site histogram's percentages are, for the pooling mode (see siteAnalysis.ts). */
+export function histogramBasis(mode: string | undefined): string {
+  return mode === 'number-weighted' ? '% by grain count' : mode === 'virtual-wolman-grid' ? '% of grid points' : 'area-weighted %';
+}
+
 export function renderDashboardHtml(state: AppState, view: DashboardView): string {
   const chartBox = chartBoxFor(view.charts);
   const report = state.siteReport;
@@ -167,9 +172,14 @@ export function renderDashboardHtml(state: AppState, view: DashboardView): strin
       ${enhBannerHtml}
       ${photoWarnHtml}
       <div class="row-between" style="margin-top:8px;">
-        <div class="row">
+        <div class="row">${
+          // φ needs sizes in mm: no axis choice for an uncalibrated (pixel) distribution.
+          unit === 'mm'
+            ? `
           <button type="button" class="btn btn-sm ${state.psdXAxis === 'mm' ? 'active' : ''}" aria-pressed="${state.psdXAxis === 'mm' ? 'true' : 'false'}" data-psd-x="mm">mm (log₁₀)</button>
-          <button type="button" class="btn btn-sm ${state.psdXAxis === 'phi' ? 'active' : ''}" aria-pressed="${state.psdXAxis === 'phi' ? 'true' : 'false'}" data-psd-x="phi">phi (φ)</button>
+          <button type="button" class="btn btn-sm ${state.psdXAxis === 'phi' ? 'active' : ''}" aria-pressed="${state.psdXAxis === 'phi' ? 'true' : 'false'}" data-psd-x="phi">phi (φ)</button>`
+            : ''
+        }
         </div>
         ${
           isSite && report
@@ -187,7 +197,7 @@ export function renderDashboardHtml(state: AppState, view: DashboardView): strin
         <button type="button" class="btn btn-sm ${step === 0.5 ? 'active' : ''}" aria-pressed="${step === 0.5 ? 'true' : 'false'}" data-phi-step="0.5">Narrow classes (${unit === 'mm' ? '0.5 φ' : '×√2'})</button>
         <button type="button" class="btn btn-sm ${step === 1 ? 'active' : ''}" aria-pressed="${step === 1 ? 'true' : 'false'}" data-phi-step="1.0">Wide classes (${unit === 'mm' ? '1 φ' : '×2'})</button>
       </div>
-      ${chartBox('size-distribution', 'Grain-size distribution histogram', (light) => renderSizeHistogramSvg(sizeHist, light, isSite ? 'Site Size Distribution (area-weighted %)' : 'Photo Size Distribution (area-weighted %)'), lightTheme)}
+      ${chartBox('size-distribution', 'Grain-size distribution histogram', (light) => renderSizeHistogramSvg(sizeHist, light, isSite ? `Site Size Distribution (${histogramBasis(state.siteOptions.poolingMode)})` : 'Photo Size Distribution (area-weighted %)'), lightTheme)}
       ${
         fw
           ? `<div class="stat-grid" style="margin-top:8px;">
@@ -233,6 +243,7 @@ export function renderDashboardHtml(state: AppState, view: DashboardView): strin
     const adeq = report?.adequacy;
 
     tabContent = `
+      ${!isSite ? '<p class="field-hint" style="margin-top:8px;">Sample adequacy is a property of the whole site (all included photos), so this tab shows the site.</p>' : ''}
       ${
         adeq
           ? `<div class="stat-grid" style="margin-top:8px;">
@@ -247,12 +258,14 @@ export function renderDashboardHtml(state: AppState, view: DashboardView): strin
     `;
   } else if (state.dashboardTab === 'shape') {
     const cutoffs = photoCutoffs(state.siteOptions, report, activePhoto?.photoId);
-    // Same grains as the statistics (inside the ROI, border rule and cutoffs applied), so n matches.
-    const ratios = activeSession
+    // Whole site: every pooled grain once. This photo: the same grains as its statistics (inside
+    // the ROI, border rule and cutoffs applied), so n matches.
+    const siteShape = isSite ? report?.shape ?? null : null;
+    const ratios = !isSite && activeSession
       ? activeSession.getExtendedStatsGrains(activeMetric, cutoffs).map((g) => g.aspectRatio)
       : [];
-    const arCounts = aspectRatioCounts(ratios, 10);
-    const packingInfo = activeSession ? activeSession.getRoiFilterResult() : null;
+    const arCounts = siteShape ? siteShape.aspectRatioCounts : aspectRatioCounts(ratios, 10);
+    const packingInfo = !isSite && activeSession ? activeSession.getRoiFilterResult() : null;
 
     tabContent = `
       ${
@@ -261,7 +274,7 @@ export function renderDashboardHtml(state: AppState, view: DashboardView): strin
           : ''
       }
       ${chartBox('aspect-ratio', 'Aspect ratio (b/a) distribution', (light) => renderAspectRatioHistogramSvg(arCounts, light), lightTheme)}
-      <p class="field-hint">Grain shape for this photo. The size distribution is on the PSD tab.</p>
+      <p class="field-hint">${isSite ? `Grain shape of the whole site (every counted grain once, n = ${siteShape?.n ?? 0}).` : 'Grain shape for this photo.'} The size distribution is on the PSD tab.</p>
     `;
   } else {
     const cutoffs = photoCutoffs(state.siteOptions, report, activePhoto?.photoId);
@@ -360,7 +373,7 @@ export function renderDashboardHtml(state: AppState, view: DashboardView): strin
       <details class="advanced-block stats-settings" style="margin-top:8px;" data-keep-open="stats-settings">
         <summary>Statistics settings <span class="summary-note">${({ 'physical-area': 'area-weighted', 'equal-photo': 'equal-photo', 'virtual-wolman-grid': 'Wolman grid', 'number-weighted': 'number-weighted', 'facies-weighted': 'facies-weighted' } as Record<string, string>)[state.siteOptions.poolingMode] ?? state.siteOptions.poolingMode} · ${activeMetric === 'bAxis' ? 'b-axis' : activeMetric}</span></summary>
         <div style="margin-top:6px;">
-        <div class="field-hint" style="margin-bottom:6px;">Cutoffs and pooling apply live to both This photo and Whole site without re-analysing.</div>
+        <div class="field-hint" style="margin-bottom:6px;">Cutoffs apply live to both This photo and Whole site without re-analysing; pooling applies to Whole site (one photo's statistics are always area-weighted).</div>
       <div class="grid-2">
         <label class="field-label">
           <span class="label-row">Pooling Mode ${helpButton('poolingMode')}</span>

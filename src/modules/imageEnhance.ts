@@ -450,7 +450,11 @@ export async function runTiledImageEnhancement(
     result[i4] = Math.max(0, Math.min(255, Math.round((accum[i3]! / w) * 255)));
     result[i4 + 1] = Math.max(0, Math.min(255, Math.round((accum[i3 + 1]! / w) * 255)));
     result[i4 + 2] = Math.max(0, Math.min(255, Math.round((accum[i3 + 2]! / w) * 255)));
-    result[i4 + 3] = 255;
+    // The model only sees colour: keep the source alpha (nearest), so a transparent no-data
+    // border stays transparent instead of becoming opaque black "bed".
+    const sx = Math.min(width - 1, Math.floor((i % outW) * (width / outW)));
+    const sy = Math.min(height - 1, Math.floor(Math.floor(i / outW) * (height / outH)));
+    result[i4 + 3] = rgba[(sy * width + sx) * 4 + 3]!;
   }
 
   return { data: result, width: outW, height: outH, spec };

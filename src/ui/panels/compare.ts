@@ -72,9 +72,12 @@ export function renderCompareHtml(state: AppState, lightTheme: boolean, charts: 
   const v = (n: number | undefined | null, d = 1): string => (n === undefined || n === null || !Number.isFinite(n) ? '—' : n.toFixed(d));
   const nameCell = (s: ComparedSite): string =>
     `<th scope="row"><span class="swatch" style="background:${s.color}"></span>${esc(s.name)}${s.place ? `<span class="stats-note">${esc(s.place)}</span>` : ''}</th>`;
+  // Each site uses its own confidence level setting: name it when they agree.
+  const levels = new Set(withReport.map((s) => Math.round(s.report!.bootstrapCi.confidenceLevel * 100)));
+  const ciHeader = levels.size === 1 ? `${[...levels][0]}%` : 'per-site';
   const table = withReport.length
     ? `<div class="table-scroll"><table class="stats-table compare-table">
-        <thead><tr><th>Site</th><th>Survey date</th><th>Photos / grains</th><th>D16</th><th>D50 (95% CI)</th><th>D84</th><th>Dg / σg</th><th>Sauter</th><th>Sorting φ</th><th>Gravel / cobble %</th></tr></thead>
+        <thead><tr><th>Site</th><th>Survey date</th><th>Photos / grains</th><th>D16</th><th>D50 (${ciHeader} CI)</th><th>D84</th><th>Dg / σg</th><th>Sauter</th><th>Sorting φ</th><th>Gravel / cobble %</th></tr></thead>
         <tbody>${withReport
           .map((s) => {
             const r = s.report!;

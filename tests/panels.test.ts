@@ -9,7 +9,7 @@ import { renderTopbarHtml } from '../src/ui/panels/topbar.js';
 import { renderSidebarHtml, faciesSharePct, backupLineHtml, formatBytes, retentionBannerHtml, type SidebarView } from '../src/ui/panels/sidebar.js';
 import { renderToolbarHtml } from '../src/ui/panels/toolbar.js';
 import { renderDownloadResultsModalHtml, renderExportModalHtml } from '../src/ui/modals.js';
-import { renderDashboardHtml } from '../src/ui/panels/dashboard.js';
+import { histogramBasis, renderDashboardHtml } from '../src/ui/panels/dashboard.js';
 import { renderCompareHtml } from '../src/ui/panels/compare.js';
 import {
   renderLandingHtml,
@@ -235,6 +235,33 @@ describe('panel renderers', () => {
     expect(html).toMatch(/Smallest grain kept \(detection limit\): <strong>~15\.0 mm<\/strong>/);
     expect(html).toContain('this photo alone resolves ~13.5 mm');
     expect(html).toContain('common cutoff');
+  });
+
+  it('dashboard labels follow the data shown (audit S7)', () => {
+    const px = analysedState(); // uncalibrated: sizes in px
+    const psd = renderDashboardHtml({ ...px, dashboardScope: 'photo', dashboardTab: 'psd' }, { lightTheme: true, charts: new Map() });
+    expect(psd).not.toContain('data-psd-x="phi"'); // no φ axis without mm
+    expect(psd).toContain('pooling applies to Whole site');
+    const cal = ScaleCalibrator.calibrate({ x: 0, y: 0 }, { x: 100, y: 0 }, 100, 'mm');
+    const s1 = session();
+    const s2 = session();
+    s1.setCalibration(cal);
+    s2.setCalibration(cal);
+    const st0: AppState = {
+      ...px,
+      photos: px.photos.map((p) => ({ ...p, calibration: cal })),
+      sessions: new Map([['p1', s1], ['p2', s2]]),
+    };
+    const st = { ...st0, ...computeWorkspaceReports(st0) };
+    expect(st.siteReportError).toBeNull();
+    expect(renderDashboardHtml({ ...st, dashboardScope: 'photo', dashboardTab: 'psd' }, { lightTheme: true, charts: new Map() })).toContain('data-psd-x="phi"');
+    const shape = renderDashboardHtml({ ...st, dashboardScope: 'site', dashboardTab: 'shape' }, { lightTheme: true, charts: new Map() });
+    expect(shape).toContain(`n = ${st.siteReport!.shape.n}`);
+    const adequacy = renderDashboardHtml({ ...st, dashboardScope: 'photo', dashboardTab: 'adequacy' }, { lightTheme: true, charts: new Map() });
+    expect(adequacy).toContain('property of the whole site');
+    expect(histogramBasis('number-weighted')).toBe('% by grain count');
+    expect(histogramBasis('virtual-wolman-grid')).toBe('% of grid points');
+    expect(histogramBasis('physical-area')).toBe('area-weighted %');
   });
 
   it('compare view: loading, error and result states', () => {

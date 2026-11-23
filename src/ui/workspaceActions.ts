@@ -1106,7 +1106,7 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
         if (site.siteId === state.activeSiteId) {
           inputs = buildSiteInputs(store.getState());
         } else {
-          inputs = storedSiteInputsCache.get(site.siteId) ?? (await loadStored(site.siteId, state.siteOptions));
+          inputs = storedSiteInputsCache.get(site.siteId) ?? (await loadStored(site.siteId, state.siteOptions, undefined, site.photoOrder));
           storedSiteInputsCache.set(site.siteId, inputs);
         }
         // Colour by the site's position in the full list, so it does not change with the selection.

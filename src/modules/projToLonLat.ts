@@ -190,6 +190,13 @@ const wrap = ([lon, lat]: LonLat): LonLat => [((((lon + 180) % 360) + 360) % 360
 
 let index: Map<number, readonly number[]> | null = null;
 
+/** Metres per map unit of a projected CRS in the table (e.g. 0.3048 for feet), or undefined. */
+export function crsUnitMetres(epsg: number): number | undefined {
+  index ??= new Map(CRS_TABLE.map((r) => [r[0]!, r]));
+  const u = index.get(epsg)?.[3];
+  return typeof u === 'number' && Number.isFinite(u) && u > 0 ? u : undefined;
+}
+
 /**
  * The inverse of lonLatProjector: WGS84 longitude / latitude to this CRS's map coordinates, or
  * null for the same CRSs lonLatProjector does not cover.

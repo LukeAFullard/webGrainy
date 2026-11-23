@@ -96,6 +96,29 @@ describe('comparison over time and between sites', () => {
     expect(csv).toContain('site,R3 2025,place,R3,text');
   });
 
+  it('compares across an uncalibrated survey in between and skips surveys with no counted grains (audit S9)', () => {
+    const cmp = computeComparedSites(
+      [
+        entry('s1', 'Jan', [0, 1, 2].map((k) => photo(`s1p${k}`, 30 + k, { mmPerPx: 1 })), { place: 'R', surveyDate: '2026-01-01' }),
+        entry('s2', 'Feb (no scale)', [0, 1, 2].map((k) => photo(`s2p${k}`, 30 + k)), { place: 'R', surveyDate: '2026-02-01' }),
+        entry('s3', 'Mar', [0, 1, 2].map((k) => photo(`s3p${k}`, 24 + k, { mmPerPx: 1 })), { place: 'R', surveyDate: '2026-03-01' }),
+      ],
+      opts,
+    );
+    const ch = surveyChanges(cmp);
+    expect(ch.map((c) => [c.from, c.to])).toEqual([['Jan', 'Mar']]);
+    for (const k of ['D16', 'D50', 'D84'] as const) expect(Number.isFinite(ch[0]!.changes[k].ratio)).toBe(true);
+    // A survey whose grains are all below the cutoff has no D50: never a NaN ratio.
+    const tiny = computeComparedSites(
+      [
+        entry('t1', 'A', [0, 1, 2].map((k) => photo(`t1p${k}`, 30 + k, { mmPerPx: 1 })), { place: 'T', surveyDate: '2026-01-01' }),
+        entry('t2', 'B', [0, 1, 2].map((k) => photo(`t2p${k}`, 30 + k, { mmPerPx: 1 })), { place: 'T', surveyDate: '2026-02-01' }),
+      ],
+      { ...opts, minSizeMm: 1000 },
+    );
+    expect(surveyChanges(tiny)).toEqual([]);
+  });
+
   it('gives no interval or p-value for one-photo surveys, and flags surveys with few photos', () => {
     const cmp = computeComparedSites(
       [

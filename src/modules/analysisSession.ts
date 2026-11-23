@@ -237,6 +237,11 @@ export class AnalysisSession {
   }
 
   /** Reproducibility record (model hash, parameters, versions) for this analysis. */
+  /** Whether grains touching the photo edge are left out of the statistics. */
+  get excludesBorderGrains(): boolean {
+    return this.excludeBorder;
+  }
+
   getProvenance(): AnalysisProvenance | undefined {
     return this.provenance;
   }

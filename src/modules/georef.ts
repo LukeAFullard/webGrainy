@@ -72,7 +72,13 @@ export const MAX_GEOKEY_VALUES = 1024;
 export const MAX_GEOKEY_ASCII = 4096;
 
 /** Checked copy of GeoKeys (from a TIFF or a project file), or undefined if malformed. */
-export function cleanGeoKeys(dir: unknown, doubles: unknown, ascii: unknown): PhotoGeoreference['geoKeys'] {
+export function cleanGeoKeys(
+  dir: unknown,
+  doubles: unknown,
+  ascii: unknown,
+  /** TIFF import: replace non-printable / non-ASCII text characters instead of rejecting the keys. */
+  options: { replaceNonAscii?: boolean } = {},
+): PhotoGeoreference['geoKeys'] {
   if (!Array.isArray(dir) || dir.length < 4 || dir.length > MAX_GEOKEY_VALUES) return undefined;
   const d = dir.map(num);
   if (!d.every((v) => Number.isInteger(v) && v >= 0 && v <= 65535)) return undefined;
@@ -84,8 +90,16 @@ export function cleanGeoKeys(dir: unknown, doubles: unknown, ascii: unknown): Ph
     out.doubles = p;
   }
   if (typeof ascii === 'string' && ascii.length > 0) {
-    if (ascii.length > MAX_GEOKEY_ASCII || /[^\x20-\x7e|]/.test(ascii)) return undefined;
-    out.ascii = ascii;
+    if (ascii.length > MAX_GEOKEY_ASCII) return undefined;
+    if (options.replaceNonAscii) {
+      // CRS names in real GeoTIFFs may hold non-ASCII bytes (e.g. "Réseau", "°") or line breaks.
+      // Replace each such character one-for-one, so the GeoKeys' offsets into the text stay valid,
+      // rather than dropping every CRS key of the file.
+      out.ascii = ascii.replace(/[^\x20-\x7e|]/g, '?');
+    } else {
+      if (/[^\x20-\x7e|]/.test(ascii)) return undefined;
+      out.ascii = ascii;
+    }
   }
   return out;
 }
@@ -95,7 +109,7 @@ function rawGeoKeys(ifd: Record<string, unknown>): PhotoGeoreference['geoKeys'] 
   // '|'-separated string that the key offsets index into.
   const a = ifd['t34737'];
   const ascii = Array.isArray(a) ? a.join('') : typeof a === 'string' ? a : undefined;
-  return cleanGeoKeys(ifd['t34735'], ifd['t34736'], ascii);
+  return cleanGeoKeys(ifd['t34735'], ifd['t34736'], ascii, { replaceNonAscii: true });
 }
 
 /**

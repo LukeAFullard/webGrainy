@@ -19,6 +19,7 @@ import { tTwoSidedP, tTwoSidedQuantile } from './studentT.js';
 import { analyzeSite, type SiteAnalysisOptions, type SiteAnalysisReport, type SitePhotoInput } from './siteAnalysis.js';
 import { buildSiteInputs } from './siteWorkspace.js';
 import { analysisSettingsOf } from './siteProvenance.js';
+import { inPhotoOrder } from './siteBatch.js';
 
 /** Okabe–Ito colour-blind-safe palette (blue, orange, green, vermillion, purple, sky, yellow, black). */
 export const COMPARE_COLORS = ['#0072B2', '#E69F00', '#009E73', '#D55E00', '#CC79A7', '#56B4E9', '#C9A600', '#444444'] as const;
@@ -28,8 +29,10 @@ export async function loadStoredSiteInputs(
   siteId: string,
   siteOptions: Pick<SiteAnalysisOptions, 'maxExcludedFraction'>,
   storage?: ProjectStorageOptions,
+  /** The site's photo order: the bootstrap's resampling depends on it, so use the same order as the open site. */
+  photoOrder: readonly string[] = [],
 ): Promise<SitePhotoInput[]> {
-  const photos = await listSitePhotos(siteId, storage);
+  const photos = inPhotoOrder(await listSitePhotos(siteId, storage), photoOrder);
   const sessions = new Map<string, AnalysisSession>();
   for (const p of photos) {
     const res = await getPhotoResult(p.photoId, storage);
@@ -323,12 +326,21 @@ export function surveyChanges(sites: readonly ComparedSite[]): SurveyChange[] {
     byPlace.set(s.place, list);
   }
   const out: SurveyChange[] = [];
-  for (const [place, list] of [...byPlace].sort((a, b) => a[0].localeCompare(b[0]))) {
-    list.sort((a, b) => (a.date! < b.date! ? -1 : a.date! > b.date! ? 1 : a.name.localeCompare(b.name)));
-    for (let i = 1; i < list.length; i++) {
-      const A = list[i - 1]!;
-      const B = list[i]!;
-      if (A.report.unit !== B.report.unit || A.report.sizeMetric !== B.report.sizeMetric) continue;
+  for (const [place, all] of [...byPlace].sort((a, b) => a[0].localeCompare(b[0]))) {
+    all.sort((a, b) => (a.date! < b.date! ? -1 : a.date! > b.date! ? 1 : a.name.localeCompare(b.name)));
+    // Consecutive surveys measured alike (unit and size metric) and with counted grains: a survey
+    // that cannot be compared (e.g. uncalibrated) is skipped, not allowed to break the chain.
+    const groups = new Map<string, WithReport[]>();
+    for (const s of all) {
+      const r = s.report;
+      if (!(r.psd.D16 > 0 && r.psd.D50 > 0 && r.psd.D84 > 0)) continue;
+      const key = `${r.unit}|${r.sizeMetric}`;
+      groups.set(key, [...(groups.get(key) ?? []), s]);
+    }
+    const pairs: Array<[WithReport, WithReport]> = [];
+    for (const list of groups.values()) for (let i = 1; i < list.length; i++) pairs.push([list[i - 1]!, list[i]!]);
+    pairs.sort((x, y) => (x[1].date! < y[1].date! ? -1 : x[1].date! > y[1].date! ? 1 : 0));
+    for (const [A, B] of pairs) {
       out.push({
         place,
         from: A.name,

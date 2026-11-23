@@ -10,6 +10,7 @@ import { buildSiteInputs } from '../modules/siteWorkspace.js';
 import type { SiteRecord } from '../modules/projectStorage.js';
 import type { SiteAnalysisReport } from '../modules/siteAnalysis.js';
 import { renderPsdChartSvg, renderSizeHistogramSvg } from './charts.js';
+import { histogramBasis } from './panels/dashboard.js';
 import { photoThumbDataUrl } from './imageCanvas.js';
 import { buildSiteReportHtml, type ReportPhoto } from './report.js';
 import type { AppState } from './state.js';
@@ -65,7 +66,7 @@ export async function buildPrintableReport(st: AppState, site: SiteRecord, repor
       ...(detectionLimit !== undefined ? { detectionLimit } : {}),
       lightTheme: true,
     }),
-    histogramSvg: hist && hist.bins.length > 0 ? renderSizeHistogramSvg(hist, true, 'Size distribution (area-weighted %, 1 φ classes)') : null,
+    histogramSvg: hist && hist.bins.length > 0 ? renderSizeHistogramSvg(hist, true, `Size distribution (${histogramBasis(report.poolingMode)}, 1 φ classes)`) : null,
     photos,
   });
   return html;

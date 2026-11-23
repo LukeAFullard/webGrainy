@@ -143,7 +143,7 @@ export function renderSidebarHtml(state: AppState, view: SidebarView): string {
                   const isActive = ph.photoId === state.activePhotoId;
                   const errMsg = status === 'error' ? state.photoErrors.get(ph.photoId) ?? 'Analysis failed (no details reported).' : '';
                   const qualityWarnings = getPhotoQualityWarnings(ph.metadata);
-                  const faciesShare = faciesSharePct(visiblePhotos(state), ph);
+                  const faciesShare = faciesSharePct(state.photos, ph);
                   return `
                     <div class="photo-item ${isActive ? 'active' : ''} ${state.photoSelectMode && state.selectedPhotoIds.has(ph.photoId) ? 'selected' : ''}">
                       ${

@@ -152,5 +152,23 @@ First public release.
   jackknife no longer gives `NaN` when leaving a photo out leaves only zero-weight facies photos.
 - A long unbroken name in the footer or toolbar wraps instead of widening the photo column over the
   Results panel.
+- Results panel labels match what is shown: the pooling note says pooling applies to *Whole site*;
+  the site histogram title names its basis (area-weighted, by grain count or by grid points); no
+  mm / φ axis buttons for pixel sizes; the *Shape* tab shows the whole site in *Whole site*; the
+  *Adequacy* tab says it describes the site; the comparison table names the confidence level used;
+  the grain card says a border grain is counted when border grains are kept; a photo's facies share
+  no longer changes with the photo-list filter.
+- TIFF import: CRS names with non-ASCII characters keep the GeoKeys (they were all dropped);
+  band-interleaved colour TIFFs and BigTIFFs are refused with a conversion command instead of
+  decoding black or failing vaguely; transparent no-data pixels no longer set the 16-bit black point
+  and stay transparent through 2× upscaling and Web Mercator export; a projected EPSG CRS without
+  ProjLinearUnitsGeoKey gets its unit (metre or foot) from the CRS table, so it is auto-calibrated.
+- Surveys over time: an uncalibrated survey between two calibrated ones no longer hides their
+  change, a survey with no counted grains is left out instead of giving a `NaN` ratio, and other
+  sites' photos are pooled in the site's photo order (as when the site is open), so their
+  intervals match.
+- Results `.zip`: photo folders are always unique (a crafted name could make the download fail), and
+  README.txt describes the CSV metadata, the `|` escape, the *Open* button and the GeoTIFF files
+  correctly.
 
 [0.1.0]: https://github.com/LukeAFullard/webGrainy/releases/tag/v0.1.0

@@ -535,7 +535,7 @@ function renderViewportExtras(state: AppState): void {
                  <div>Solidity: ${ext.solidity.toFixed(3)} · Ψ₂D: ${ext.sphericity2D.toFixed(3)}</div>`
               : ''
           }
-          <div>Border: ${grain.touchesBorder ? 'Yes (excluded)' : 'No'}</div>
+          <div>Border: ${grain.touchesBorder ? (session?.excludesBorderGrains === false ? 'Yes (counted: border grains are kept)' : 'Yes (excluded)') : 'No'}</div>
         </div>
         ${(() => {
           const flags = grainFlags({

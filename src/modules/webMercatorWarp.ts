@@ -125,12 +125,12 @@ export function warpRgbaToWebMercator(rgba: Uint8Array | Uint8ClampedArray, g: P
     const x1 = Math.min(x0 + 1, W - 1), y1 = Math.min(y0 + 1, H - 1);
     const fx = sx - x0, fy = sy - y0;
     const o = k * 4;
-    for (let ch = 0; ch < 3; ch++) {
+    // All four channels: a transparent no-data area of the source stays transparent.
+    for (let ch = 0; ch < 4; ch++) {
       const p00 = rgba[(y0 * W + x0) * 4 + ch]!, p10 = rgba[(y0 * W + x1) * 4 + ch]!;
       const p01 = rgba[(y1 * W + x0) * 4 + ch]!, p11 = rgba[(y1 * W + x1) * 4 + ch]!;
       out[o + ch] = Math.round((p00 * (1 - fx) + p10 * fx) * (1 - fy) + (p01 * (1 - fx) + p11 * fx) * fy);
     }
-    out[o + 3] = 255;
   });
   return out;
 }
