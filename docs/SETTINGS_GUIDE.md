@@ -346,7 +346,8 @@ QGIS *Delete holes*):
 
 Each photo's tidy is one undo step, and exports and the printable report say it was applied.
 On the 40 held-out test images it changed a median 0.005% of each image's pixels and left the
-outline agreement (PQ) and the median D50 error unchanged (`validation/tidy/`). Specks pull a
+outline agreement (PQ) and the median D50 error unchanged with U-Net (and with Cellpose-SAM on
+the 32 images checked so far; METHODS, Section 15, and `validation/tidy/`). Specks pull a
 grain's measured long axis and Feret widths outward, so tidying removes that bias. On very fine
 gravel (grains of 15–30 px), where a few pixels are a large share of a grain, it can move D50 by
 a few percent, so use it consistently across the photos you compare.

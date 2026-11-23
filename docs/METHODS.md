@@ -828,6 +828,21 @@ orientation, Feret widths, tiling and rectification are checked automatically ag
 independent Python implementations (numpy, scipy, scikit-image) on every code change. The
 site-comparison test was checked by simulation (Section 13).
 
+**Optional *Tidy outlines* (Section 6).** On the same 40 test images, with each model's default
+analysis, then *Tidy outlines* on every image (`validation/tidy/`):
+
+| Model | Images with fragments or holes | Outline quality (PQ), before → after | D50 error, median, before → after | Largest change in one image's D50 error |
+|---|---|---|---|---|
+| U-Net (40 images) | 35 of 40 (248 of 3,202 grains in several pieces) | 0.540 → 0.540 | 5.7% → 5.7% | +3.7 points (fine gravel, D50 +3.4%) |
+| Cellpose-SAM INT8 (first 32 images) | 28 of 32 | 0.628 → 0.629 | 3.0% → 3.0% | +0.2 points |
+
+Tidy changed a median 0.005% of an image's pixels. It does not change accuracy against the hand
+outlines on these images; it removes visible defects and the outward bias they add to a grain's
+long axis and Feret widths. On fine gravel (grains of 15–30 px) a few pixels are a large share of
+a grain, so D50 can move by a few percent. The Cellpose-SAM run on the CPU was stopped by a time
+limit after 32 images (`tidy_results_cpsam_partial.md`). Before/after examples:
+`validation/tidy/example_unet_*.png`.
+
 ---
 
 ## 16. Limitations
