@@ -57,6 +57,25 @@ describe('OrtWorkerHost / worker inference', () => {
     expect(log).toEqual(['req:create', 'req:run', 'req:release']);
   });
 
+  it('a session from a stopped or crashed worker is not alive and is never sent to a new worker', async () => {
+    vi.spyOn(ort.InferenceSession, 'create').mockResolvedValue({
+      run: async () => ({}),
+      release: async () => undefined,
+    } as unknown as ort.InferenceSession);
+    const log: string[] = [];
+    const host = new OrtWorkerHost(() => fakeWorker(log));
+    const first = await host.createSession(new Uint8Array([1]), { wasmPaths: '/ort/', simd: true });
+    expect(first.alive).toBe(true);
+    host.terminate();
+    expect(first.alive).toBe(false);
+    log.length = 0;
+    await expect(first.run({ image: { type: 'float32', data: new Float32Array(1), dims: [1] } })).rejects.toThrow(/loaded again/);
+    expect(log).toEqual([]); // nothing posted to a fresh worker that would not know the session
+    const second = await host.createSession(new Uint8Array([1]), { wasmPaths: '/ort/', simd: true });
+    expect(second.alive).toBe(true);
+    expect(first.alive).toBe(false);
+  });
+
   it('reports worker-side errors to the caller', async () => {
     vi.spyOn(ort.InferenceSession, 'create').mockRejectedValue(new Error('bad model'));
     const host = new OrtWorkerHost(() => fakeWorker([]));

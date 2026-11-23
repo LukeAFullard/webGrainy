@@ -3,7 +3,7 @@ import { AnalysisSession } from '../src/modules/analysisSession.js';
 import { computeGrainMorphometrics } from '../src/modules/postprocessCore.js';
 import type { SiteRecord } from '../src/modules/projectStorage.js';
 import { analyzeSite, exportSiteSummaryCsv, type SitePhotoInput } from '../src/modules/siteAnalysis.js';
-import { buildSiteReportHtml } from '../src/ui/report.js';
+import { buildSiteReportHtml, PRINT_SCRIPT } from '../src/ui/report.js';
 
 const CAL = { pointA: { x: 0, y: 0 }, pointB: { x: 100, y: 0 }, knownLength: 100, unit: 'mm', mmPerPx: 1, pixelDistance: 100 } as never;
 
@@ -81,7 +81,11 @@ describe('printable site report', () => {
     expect(html).toContain(report.adequacy.rating);
     expect(html).toContain('9.9.9');
     expect(html).toContain(report.citations[0]!.slice(0, 30));
-    expect(html).not.toMatch(/onclick=|<script/i); // the app's CSP blocks inline scripts
+    // One static script, only to make Print work when the file is opened on its own (the app's
+    // CSP blocks it in the pop-up, where the app binds the button instead).
+    expect(html).not.toMatch(/onclick=/i);
+    expect(html.match(/<script/gi)).toHaveLength(1);
+    expect(html).toContain(PRINT_SCRIPT);
     expect((html.match(/data:image\/svg\+xml;base64,/g) ?? []).length).toBe(3);
   });
 });

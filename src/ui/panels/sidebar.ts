@@ -299,7 +299,7 @@ export function renderSidebarHtml(state: AppState, view: SidebarView): string {
                 <option value="auto" ${view.cpuThreadPref === 'auto' ? 'selected' : ''}>Auto${auto !== undefined ? ` (${auto} of ${cores})` : ''}</option>
                 ${opts.map((n) => `<option value="${n}" ${view.cpuThreadPref === n ? 'selected' : ''}>${n}</option>`).join('')}
               </select>
-              ${view.crossOriginIsolated ? '' : '<span class="field-hint">Multi-threading is unavailable on this page (not cross-origin isolated): the CPU uses 1 thread.</span>'}
+              ${view.crossOriginIsolated ? '' : '<span class="field-hint">Multi-threading is unavailable on this page (not cross-origin isolated): the CPU uses 1 thread. Reloading the page once usually enables it.</span>'}
             </label>`;
           })()}
           ${

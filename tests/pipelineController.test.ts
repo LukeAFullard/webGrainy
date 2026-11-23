@@ -771,6 +771,28 @@ describe('pipelineController (ImageGrainsEngine & AnalysisSession)', () => {
     Object.defineProperty(globalThis, 'navigator', { value: {}, configurable: true });
   });
 
+  it('does not reuse a cached session whose inference worker died (audit B12)', async () => {
+    Object.defineProperty(globalThis, 'navigator', { value: {}, configurable: true });
+    const made: Array<{ alive: boolean }> = [];
+    const engine = new ImageGrainsEngine({
+      sessionFactory: async (kind) => {
+        const s = Object.assign(createMockSession(kind, [{ cx: 32, cy: 32, rx: 14, ry: 8 }]), { alive: true });
+        made.push(s);
+        return s;
+      },
+    });
+    await engine.initialize();
+    const img = makeRgbaImage(64, 64, 'uniform');
+    const opts = { inferencePipeline: 'legacy', model: 'unet', scaleMode: '1.0x' } as const;
+    await engine.analyzeImage(img, opts);
+    await engine.analyzeImage(img, opts);
+    expect(made).toHaveLength(1); // cached while alive
+    made[0]!.alive = false; // its worker crashed
+    await engine.analyzeImage(img, opts);
+    expect(made).toHaveLength(2);
+    await engine.dispose();
+  });
+
   it('retries a device-lost analysis only once', async () => {
     Object.defineProperty(globalThis, 'navigator', {
       value: { gpu: { requestAdapter: async () => ({ features: { has: () => true } }) } },

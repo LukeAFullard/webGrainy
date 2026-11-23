@@ -612,7 +612,13 @@ export class ImageGrainsEngine {
     const modelKind = modelKindOf(modelId);
     const cached = this.sessionCache.get(modelId);
     if (cached !== undefined) {
-      return cached;
+      // A WASM session whose worker crashed or was stopped is gone: load the model again.
+      if ((cached as { alive?: boolean }).alive === false) {
+        this.sessionCache.delete(modelId);
+        this.sessionExecutionProviders.delete(modelId);
+      } else {
+        return cached;
+      }
     }
 
     const existingInFlight = this.inFlightSessions.get(modelId);

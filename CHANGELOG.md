@@ -109,5 +109,15 @@ First public release.
   the clicked points were tested, so this cut silently did nothing); a split that does nothing says why.
 - GPU check page: when ONNX Runtime falls back to the CPU for the "GPU" run, the check stops and says so,
   instead of comparing CPU with CPU and reporting WebGPU as safe.
+- First visit on a host without COOP/COEP headers (GitHub Pages): the one-off reload that enables
+  multi-threaded CPU inference waits until the user is on the landing page and idle, instead of
+  interrupting work in the workspace; a tab that was in the workspace returns there after a reload.
+- Backup reminder and retention: changing a site's statistics settings, name, place or survey date now
+  marks it as changed since the last download (before, such a site could be removed automatically as
+  "downloaded").
+- The printable report's *Print / Save as PDF* button also works when `site_report.html` is opened from
+  the results `.zip` or a download.
+- After the CPU inference worker crashes or is stopped, the next analysis loads the model again instead of
+  failing on the dead worker's session until reload.
 
 [0.1.0]: https://github.com/LukeAFullard/webGrainy/releases/tag/v0.1.0
