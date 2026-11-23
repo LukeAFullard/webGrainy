@@ -120,10 +120,19 @@ function watchDevice(dev: GpuDeviceLike | undefined): void {
   });
 }
 
+/**
+ * Sessions created on the WASM (CPU) backend by `createInferenceSession`. These never touch the
+ * page's GPUDevice, so they must not be raced against `ort.env.webgpu.device.lost`: after a device
+ * loss that promise stays resolved for the life of the page, and racing a CPU fallback session
+ * against it would fail every later CPU run with a spurious WebGpuDeviceLostError.
+ */
+const wasmSessions = new WeakSet<object>();
+
 async function runSessionWithDeviceGuard(
   session: ort.InferenceSession,
   feeds: Record<string, ort.Tensor>,
 ): Promise<ort.InferenceSession.OnnxValueMapType> {
+  if (wasmSessions.has(session)) return session.run(feeds);
   const webgpuEnv = (ort.env as { webgpu?: { device?: GpuDeviceLike } }).webgpu;
   watchDevice(webgpuEnv?.device);
   const errorsBefore = gpuErrorCount;
@@ -482,12 +491,14 @@ export async function createInferenceSession(
       simd: ort.env.wasm.simd ?? true,
       ...(threads !== undefined ? { numThreads: threads } : {}),
     });
+    wasmSessions.add(session);
     // Same `run` / `release` shape the inference code uses.
     return { session: session as unknown as ort.InferenceSession, executionProvider: 'wasm' };
   }
   const session = await ort.InferenceSession.create(bytes, {
     executionProviders: ['wasm'],
   });
+  wasmSessions.add(session);
   return { session, executionProvider: 'wasm' };
 }
 

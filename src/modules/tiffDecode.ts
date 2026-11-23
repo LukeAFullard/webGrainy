@@ -141,8 +141,24 @@ function extractGeoTiffCalibration(
   height: number,
 ): CalibrationResult | undefined {
   const scaleTag = ifd['t33550'];
+  const transformTag = ifd['t34264'];
   const geoDir = ifd['t34735'];
-  if (!Array.isArray(scaleTag) || scaleTag.length < 2) return undefined;
+  // Pixel size from ModelPixelScaleTag, or from a ModelTransformationTag (south-up, mirrored or
+  // rotated rasters) when that maps pixels to the map without skew.
+  let pixelSize: [number, number] | undefined;
+  let fromTransform = false;
+  if (Array.isArray(scaleTag) && scaleTag.length >= 2) {
+    pixelSize = [Number(scaleTag[0]), Number(scaleTag[1])];
+  } else if (Array.isArray(transformTag) && transformTag.length >= 16) {
+    const [m0, m1, m4, m5] = [Number(transformTag[0]), Number(transformTag[1]), Number(transformTag[4]), Number(transformTag[5])];
+    const sx = Math.hypot(m0, m4);
+    const sy = Math.hypot(m1, m5);
+    // Columns and rows must stay perpendicular on the map (within ~3 degrees).
+    if (!(sx > 0) || !(sy > 0) || Math.abs(m0 * m1 + m4 * m5) / (sx * sy) > 0.05) return undefined;
+    pixelSize = [sx, sy];
+    fromTransform = true;
+  }
+  if (pixelSize === undefined) return undefined;
   if (!Array.isArray(geoDir) || geoDir.length < 4) return undefined;
 
   const numKeys = Number(geoDir[3]) || 0;
@@ -167,6 +183,8 @@ function extractGeoTiffCalibration(
   if (projectedCrs !== undefined && DISTORTED_SCALE_EPSG.has(projectedCrs)) return undefined;
   const isWebMercator = projectedCrs !== undefined && WEB_MERCATOR_EPSG.has(projectedCrs);
   if (isWebMercator && linearUnits !== undefined && linearUnits !== 9001) return undefined;
+  // The Web Mercator ground-scale correction assumes a north-up tie point + pixel scale.
+  if (isWebMercator && fromTransform) return undefined;
   let mmPerUnit: number | undefined;
   if (linearUnits === 9001) {
     mmPerUnit = 1000; // Meter
@@ -179,8 +197,7 @@ function extractGeoTiffCalibration(
   }
   if (mmPerUnit === undefined) return undefined;
 
-  const sx = Number(scaleTag[0]);
-  const sy = Number(scaleTag[1]);
+  const [sx, sy] = pixelSize;
   if (!Number.isFinite(sx) || !Number.isFinite(sy) || sx <= 0 || sy <= 0) return undefined;
   // Require near-square pixels (within 5%).
   if (Math.abs(sx - sy) / Math.max(sx, sy) > 0.05) return undefined;

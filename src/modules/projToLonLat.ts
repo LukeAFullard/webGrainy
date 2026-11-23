@@ -196,7 +196,7 @@ let index: Map<number, readonly number[]> | null = null;
  */
 export function projectedFromLonLat(epsg: number | null, kind: 'projected' | 'geographic' | 'unknown'): ((lon: number, lat: number) => [number, number]) | null {
   if (epsg === null) return null;
-  if (NEAR_WGS84_GEOGRAPHIC.has(epsg)) return (lon, lat) => [lon, lat];
+  if (NEAR_WGS84_GEOGRAPHIC.has(epsg)) return kind === 'projected' ? null : (lon, lat) => [lon, lat];
   if (kind === 'geographic') return null;
   if (WEB_MERCATOR.has(epsg)) return webMercatorForward;
   index ??= new Map(CRS_TABLE.map((r) => [r[0]!, r]));
@@ -223,7 +223,8 @@ export function projectedFromLonLat(epsg: number | null, kind: 'projected' | 'ge
  */
 export function lonLatProjector(epsg: number | null, kind: 'projected' | 'geographic' | 'unknown'): ((x: number, y: number) => LonLat) | null {
   if (epsg === null) return null;
-  if (NEAR_WGS84_GEOGRAPHIC.has(epsg)) return (x, y) => wrap([x, y]);
+  // A geographic code on a raster tagged as projected is inconsistent: never read metres as degrees.
+  if (NEAR_WGS84_GEOGRAPHIC.has(epsg)) return kind === 'projected' ? null : (x, y) => wrap([x, y]);
   if (kind === 'geographic') return null;
   if (WEB_MERCATOR.has(epsg)) return webMercatorInverse;
   index ??= new Map(CRS_TABLE.map((r) => [r[0]!, r]));

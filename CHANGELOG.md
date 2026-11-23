@@ -90,5 +90,15 @@ First public release.
   cutoff"), instead of "below cutoff", which read as the segmentation Min Size.
 - Licence notices for the bundled `utif2` and `pako` and for the optional PULSE upscaler weights added
   to `THIRD_PARTY_NOTICES.md`; the licence and notices are copied into the built app.
+- Calibration: changing the preset, length or unit in the Calibrate toolbar no longer rewrites a GeoTIFF,
+  rectified or copied scale (it re-used placeholder endpoints, e.g. turning 2 mm/px into 0.25 mm/px);
+  only a scale measured with two clicked points is re-applied.
+- WebGPU device loss: the CPU fallback is no longer raced against the lost GPU device, which failed the
+  retry and every later CPU analysis in the tab until reload.
+- GeoTIFFs with a projected model type but no ProjectedCSTypeGeoKey are no longer read as EPSG:4326 from
+  their base-datum key (projected metres were exported as degrees); such a CRS is treated as user-defined.
+- South-up and mirrored GeoTIFFs: mask / photo GeoTIFF exports write a ModelTransformation instead of an
+  invalid negative pixel scale (which GDAL flips), and GeoTIFFs placed by a ModelTransformation without
+  skew are auto-calibrated.
 
 [0.1.0]: https://github.com/LukeAFullard/webGrainy/releases/tag/v0.1.0

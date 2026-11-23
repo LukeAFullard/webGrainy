@@ -51,7 +51,10 @@ export function extractGeoReference(ifd: Record<string, unknown>, width: number,
   }
   const t: PhotoGeoreference['transform'] = [a, b, c, d, e, f];
   if (!t.every(Number.isFinite) || Math.abs(b * f - c * e) < 1e-30) return undefined;
-  const code = projected ?? geographic;
+  // A projected model's CRS is ProjectedCSTypeGeoKey (3072) only; GeographicTypeGeoKey (2048)
+  // then names just its base datum (e.g. 4326 under a user-defined projection) and must not be
+  // mistaken for the raster's CRS, which would read eastings/northings as degrees.
+  const code = modelType === 1 ? projected : modelType === 2 ? geographic : (projected ?? geographic);
   const geoKeys = rawGeoKeys(ifd);
   return {
     transform: t,

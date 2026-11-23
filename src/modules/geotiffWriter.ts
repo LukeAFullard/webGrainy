@@ -116,7 +116,10 @@ export async function encodeGeoTiff(
     { tag: 339, type: 3, values: Array(samples).fill(1) },
   ];
   if (samples === 4) tags.push({ tag: 338, type: 3, values: [2] }); // ExtraSamples: unassociated alpha
-  if (c === 0 && e === 0) {
+  // Tie point + pixel scale only describe north-up rasters (columns go east, rows go south): a
+  // negative ScaleX/ScaleY is invalid and GDAL silently flips it. Anything else (south-up,
+  // mirrored, rotated) is written as a full ModelTransformationTag.
+  if (c === 0 && e === 0 && b > 0 && f < 0) {
     tags.push({ tag: 33550, type: 12, values: [b, -f, 0] });
     tags.push({ tag: 33922, type: 12, values: [0, 0, 0, a, d, 0] });
   } else {

@@ -36,6 +36,14 @@ describe('GeoTIFF georeference', () => {
     expect(extractGeoReference({}, 4, 4)).toBeUndefined();
   });
 
+  it('does not take a projected raster\'s base datum (2048) as its CRS when 3072 is missing', () => {
+    const tag = { t33922: [0, 0, 0, 1600000, 5200000, 0], t33550: [1, 1, 0] };
+    const projected = extractGeoReference({ ...tag, t34735: keys([[1024, 1], [2048, 4326], [3075, 1], [3076, 9001]]) }, 4, 4)!;
+    expect(projected).toMatchObject({ epsg: null, kind: 'projected' });
+    const geographic = extractGeoReference({ t33922: [0, 0, 0, 172, -43, 0], t33550: [0.001, 0.001, 0], t34735: keys([[1024, 2], [2048, 4326]]) }, 4, 4)!;
+    expect(geographic).toMatchObject({ epsg: 4326, kind: 'geographic' });
+  });
+
   it('is stored with the photo when a GeoTIFF is decoded', () => {
     const types = (UTIF as unknown as { _types: { basic: { main: Record<number, number> } } })._types.basic.main;
     types[33550] = 12;
@@ -208,6 +216,27 @@ describe('label mask GeoTIFF (audit: a world file carries no CRS)', () => {
     const ifd = decode(await encodeLabelGeoTiff(masks, 6, 4, rot));
     expect(ifd['t33550']).toBeUndefined();
     expect(toMap(extractGeoReference(ifd, 6, 4)!, 2, 3)).toEqual(toMap(rot, 2, 3));
+  });
+
+  it('writes south-up and mirrored rasters as ModelTransformation, never a negative pixel scale', async () => {
+    for (const transform of [
+      [1750000, 0.002, 0, 5430000, 0, 0.002], // south-up (f > 0)
+      [1750000, -0.002, 0, 5430000, 0, -0.002], // mirrored east-west (b < 0)
+    ] as PhotoGeoreference['transform'][]) {
+      const flipped: PhotoGeoreference = { ...g, transform };
+      const ifd = decode(await encodeLabelGeoTiff(masks, 6, 4, flipped));
+      expect(ifd['t33550']).toBeUndefined();
+      expect(ifd['t33922']).toBeUndefined();
+      expect(toMap(extractGeoReference(ifd, 6, 4)!, 2, 3)).toEqual(toMap(flipped, 2, 3));
+    }
+  });
+
+  it('auto-calibrates a south-up GeoTIFF from its ModelTransformation', async () => {
+    const southUp: PhotoGeoreference = { ...g, transform: [1750000, 0.002, 0, 5430000, 0, 0.002] };
+    const bytes = await encodeLabelGeoTiff(masks, 6, 4, southUp, { compress: false });
+    const dec = decodeTiffBuffer(bytes.slice().buffer);
+    expect(dec.calibration?.mmPerPx).toBeCloseTo(2, 9);
+    expect(dec.calibration?.source).toBe('geotiff');
   });
 
   it('a 32-bit file when a grain id exceeds 65535', async () => {

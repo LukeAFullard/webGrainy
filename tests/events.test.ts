@@ -372,4 +372,41 @@ describe('form changes', () => {
     routeChange(el({}, { tagName: 'INPUT', id: 'cal-length', type: 'number', value: '200' }), ctx);
     expect(actions.applyCalibrationToActive).not.toHaveBeenCalled();
   });
+
+  it('does not overwrite a GeoTIFF, rectified or copied scale when the preset/length changes', () => {
+    for (const source of ['geotiff', 'rectification', 'copied'] as const) {
+      const { ctx, store, actions } = setup();
+      store.setState({
+        activeTool: 'calibrate',
+        activePhotoId: 'p1',
+        photos: [
+          {
+            photoId: 'p1',
+            siteId: 's1',
+            label: 'p1.tif',
+            width: 400,
+            height: 300,
+            addedAt: 0,
+            included: true,
+            imageBlob: new Blob(['x']),
+            calibration: {
+              pointA: { x: 0, y: 0 },
+              pointB: { x: 100, y: 0 },
+              physicalLengthMm: 200,
+              pixelDistance: 100,
+              mmPerPx: 2,
+              source,
+            },
+          },
+        ],
+      });
+      routeChange(el({}, { tagName: 'SELECT', id: 'cal-preset', value: '25|mm' }), ctx);
+      routeChange(el({}, { tagName: 'INPUT', id: 'cal-length', type: 'number', value: '35' }), ctx);
+      routeChange(el({}, { tagName: 'SELECT', id: 'cal-unit', value: 'cm' }), ctx);
+      expect(actions.applyCalibrationToActive).not.toHaveBeenCalled();
+      // The toolbar still records the chosen length for the next two-point calibration.
+      expect(store.getState().calibrationLength).toBe(35);
+      expect(store.getState().calibrationUnit).toBe('cm');
+    }
+  });
 });

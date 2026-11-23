@@ -148,14 +148,18 @@ export function handleToolbarClick(target: ElementLike, ctx: EventContext): bool
 
 const KNOWN_CAL_PRESETS = new Set(['100|mm', '25|mm', '500|mm']);
 
-/** If the active photo already has two calibration points marked and no new calibration is mid-click,
- *  re-apply the calibration immediately with the updated physical length/unit. */
+/** If the active photo already has two calibration points marked by hand and no new calibration is
+ *  mid-click, re-apply the calibration immediately with the updated physical length/unit.
+ *  GeoTIFF, rectified and copied scales are left alone: their endpoints are not points the user
+ *  measured on this photo (GeoTIFF ones are a synthetic span), so re-using them with a new length
+ *  would silently replace a correct scale with a wrong one. */
 function reapplyCalibrationIfPresent(ctx: EventContext, lengthVal: number, unit: 'mm' | 'cm'): void {
   const st = ctx.store.getState();
   if (st.pendingCalibrationPoints.length > 0) return;
   const active = getActivePhoto(st);
   const existing = active?.calibration;
   if (!existing) return;
+  if (existing.source !== undefined && existing.source !== 'manual') return;
   void ctx.actions.applyCalibrationToActive(existing.pointA, existing.pointB, lengthVal, unit);
 }
 

@@ -3,7 +3,7 @@
  * (validation/geotiff/crs_reference.json; validation/geotiff/check_crs_table.mjs checks all of them).
  */
 import { describe, expect, it } from 'vitest';
-import { lonLatProjector } from '../src/modules/projToLonLat.js';
+import { lonLatProjector, projectedFromLonLat } from '../src/modules/projToLonLat.js';
 import { geoJsonToLonLat } from '../src/modules/georef.js';
 import type { PhotoGeoreference } from '../src/modules/siteTypes.js';
 import { squareGrainSession } from './helpers/squareSession.js';
@@ -45,6 +45,9 @@ describe('projected map coordinates to longitude / latitude', () => {
     expect(lonLatProjector(4167, 'geographic')!(172.5, -43.5)).toEqual([172.5, -43.5]); // NZGD2000
     expect(lonLatProjector(27200, 'projected')).toBeNull(); // NZ Map Grid (NZGD49, ~200 m datum shift)
     expect(lonLatProjector(null, 'projected')).toBeNull();
+    // A geographic code on a raster tagged projected: never read metres as degrees.
+    expect(lonLatProjector(4326, 'projected')).toBeNull();
+    expect(projectedFromLonLat(4326, 'projected')).toBeNull();
   });
 });
 
