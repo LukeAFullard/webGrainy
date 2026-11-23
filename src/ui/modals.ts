@@ -5,6 +5,8 @@ import type { SiteAnalysisOptions, SiteAnalysisReport, SitePhotoInput } from '..
 import { buildExport, isExportKind } from '../modules/exports.js';
 import { renderPrintablePsdSvg } from './charts.js';
 import { canExportLonLat, gpkgMapSrs, photoGeoreference } from '../modules/georef.js';
+import { buildSiteInputs } from '../modules/siteWorkspace.js';
+import { siteGeoPackagePlan } from '../modules/siteGeoPackage.js';
 import { canWarpToWebMercator } from '../modules/webMercatorWarp.js';
 import { decodePhotoRgba } from './imageCanvas.js';
 import type { AppState } from './state.js';
@@ -366,6 +368,22 @@ export function photoExportChoice(
   return { what, format, coords, whats, formats, coordsList, kind, hint };
 }
 
+/** "Site GeoPackage": every analysed photo's outlines and footprints in one file; the title says how. */
+function siteGpkgButtonHtml(state: AppState): string {
+  const inputs = buildSiteInputs(state);
+  if (inputs.length === 0) return '<button type="button" class="btn btn-sm" data-export="site-gpkg" disabled title="Analyse a photo first">Site GeoPackage (all photos)</button>';
+  const plan = siteGeoPackagePlan(inputs);
+  const where =
+    plan.coords === 'map'
+      ? `in the photos' map coordinates, EPSG:${plan.srs.id}`
+      : plan.coords === 'lonlat'
+        ? 'in WGS84 longitude/latitude (the photos have different coordinate systems)'
+        : 'in photo pixels (no photo is a GeoTIFF, so they overlap: filter by photo_id)';
+  const left = plan.skipped.length > 0 ? ` Left out (cannot be placed on the map): ${plan.skipped.map((s) => s.label).join(', ')}.` : '';
+  const title = `One GeoPackage for ArcGIS Pro, QGIS or any GIS: every analysed photo's grain outlines (with photo_id and included_in_stats)${plan.coords !== 'pixels' ? ' and each photo\'s footprint with its D16/D50/D84' : ''}, ${where}.${left}`;
+  return `<button type="button" class="btn btn-sm" data-export="site-gpkg" title="${esc(title)}">Site GeoPackage (${plan.placed.length} photo${plan.placed.length === 1 ? '' : 's'})</button>`;
+}
+
 /** The outlines / mask / photo export: what, format and coordinates as choices, one Download button. */
 function photoGeometryExportHtml(state: AppState, photo: PhotoRecord): string {
   const c = photoExportChoice(photo, { what: state.exportWhat, format: state.exportFormat, coords: state.exportCoords });
@@ -492,6 +510,7 @@ export function renderExportModalHtml(state: AppState): string {
             <button type="button" class="btn btn-sm" data-export="site-grains-csv" ${hasSiteReport ? '' : 'disabled'}>Pooled Grains CSV</button>
             <button type="button" class="btn btn-sm" data-export="site-psd-svg" ${hasSiteReport ? '' : 'disabled'}>Printable SVG PSD Figure</button>
             <button type="button" class="btn btn-sm" data-export="site-archive" ${activeSite ? '' : 'disabled'}>Export .webgrainy Archive</button>
+            ${siteGpkgButtonHtml(state)}
           </div>
         </div>
 

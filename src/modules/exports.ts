@@ -8,6 +8,7 @@ import { exportSiteArchive, type PhotoRecord, type SiteRecord } from './projectS
 import { photoProcessingHistory } from './siteTypes.js';
 import { geoJsonToLonLat, geoJsonToMap, gpkgMapSrs, mapGeoJsonName, pamAuxXml, photoGeoreference, worldFile } from './georef.js';
 import { geoJsonToGeoPackage, PIXEL_SRS, WGS84_SRS } from './geopackage.js';
+import { buildSiteGeoPackage } from './siteGeoPackage.js';
 import { encodeGeoTiff, encodeLabelGeoTiff } from './geotiffWriter.js';
 import { baseExportMetadata } from './provenance.js';
 import { warpLabelsToWebMercator, warpRgbaToWebMercator, webMercatorGeoref, webMercatorGrid } from './webMercatorWarp.js';
@@ -27,6 +28,7 @@ export const EXPORT_KINDS = [
   'site-summary-json',
   'site-grains-csv',
   'site-psd-svg',
+  'site-gpkg',
   'site-archive',
   'photo-grains-csv',
   'photo-summary-csv',
@@ -120,6 +122,22 @@ export async function buildExport(kind: ExportKind, ctx: ExportContext): Promise
   });
 
   switch (kind) {
+    case 'site-gpkg': {
+      // Every analysed photo's outlines (and footprints) in one GeoPackage, e.g. for ArcGIS Pro.
+      if (!site || siteInputs.length === 0) return null;
+      const built = buildSiteGeoPackage({
+        siteName: site.name,
+        inputs: siteInputs,
+        report: siteReport,
+        sizeMetric,
+        ...(ctx.siteOptions ? { siteOptions: ctx.siteOptions } : {}),
+        ...(ctx.countedGrainsOnly ? { countedOnly: true } : {}),
+        metadata: siteReport ? siteMeta(siteReport) : { siteName: site.name, ...baseExportMetadata() },
+      });
+      if (!built) return null;
+      const suffix = built.plan.coords === 'map' ? `EPSG${built.plan.srs.id}` : built.plan.coords === 'lonlat' ? 'lonlat' : 'pixels';
+      return { blob: new Blob([built.bytes.slice().buffer], { type: 'application/geopackage+sqlite3' }), filename: `${siteFile}_site_outlines_${suffix}.gpkg` };
+    }
     case 'site-summary-csv':
       return siteReport
         ? { blob: exportSiteSummaryCsv(siteReport, siteMeta(siteReport)), filename: `${siteFile}_summary.csv` }

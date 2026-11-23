@@ -68,6 +68,16 @@ export async function resultsBundleEntries(input: ResultsBundleInput): Promise<Z
     entries.push({ name, data: f.blob });
     listed.push(`${name}\n    ${what}`);
   }
+  // The whole site as one GeoPackage, when its photos can be placed on a map (GeoTIFFs).
+  const siteGpkg = await buildExport('site-gpkg', base);
+  if (siteGpkg && !siteGpkg.filename.endsWith('_pixels.gpkg')) {
+    const name = siteGpkg.filename.slice(siteGpkg.filename.indexOf('site_outlines_'));
+    entries.push({ name, data: siteGpkg.blob });
+    listed.push(
+      `${name}\n    Every GeoTIFF photo's grain outlines in one GeoPackage layer (photo_id, included_in_stats and the measurements as fields), ` +
+        'and each photo\'s footprint with its D16/D50/D84, for ArcGIS Pro, QGIS or any GIS. In the photos\' shared map CRS, or WGS84 longitude/latitude when they differ.',
+    );
+  }
   if (input.reportHtml) {
     entries.push({ name: 'site_report.html', data: input.reportHtml });
     listed.push('site_report.html\n    Printable one-page report (open in a browser, print or save as PDF).');

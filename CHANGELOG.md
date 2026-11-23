@@ -41,6 +41,10 @@ First public release.
   One polygon layer with the measurements as fields named like `grains.csv`; the results `.zip` adds
   one per GeoTIFF photo. Written by a small built-in SQLite writer (no extra download); every file is
   checked with SQLite's integrity check in the tests.
+- **Site GeoPackage**: the whole site in one file (Export → *Site GeoPackage*, and in the results `.zip`):
+  every photo's grain outlines in one layer, with `photo_id` and `included_in_stats`, and a
+  `photo_footprints` layer with each photo's D16 / D50 / D84. In the photos' shared map CRS, or
+  longitude/latitude when they differ.
 
 ### Fixed before release (pre-publication audit)
 

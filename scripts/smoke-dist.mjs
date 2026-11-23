@@ -348,6 +348,14 @@ try {
       fail(`GeoPackage export: integrity ${integrity}, application_id ${appId}, ${nGpkg} grains (GeoJSON ${nJson}, counted ${nText})`);
     }
     console.log(`ok: GeoPackage export (${gpkgDl.suggestedFilename()}, ${nGpkg} grains) opens in SQLite`);
+    // The whole site as one GeoPackage.
+    const [siteDl] = await Promise.all([page.waitForEvent('download'), page.click('button[data-export="site-gpkg"]')]);
+    const sdb = new DatabaseSync(await siteDl.path(), { readOnly: true });
+    const sIntegrity = sdb.prepare('PRAGMA integrity_check').get().integrity_check;
+    const sGrains = sdb.prepare('SELECT count(*) AS c FROM grain_outlines').get().c;
+    sdb.close();
+    if (sIntegrity !== 'ok' || sGrains !== nJson) fail(`site GeoPackage: integrity ${sIntegrity}, ${sGrains} grains (expected ${nJson})`);
+    console.log(`ok: site GeoPackage (${siteDl.suggestedFilename()}) opens in SQLite`);
     await page.click('button[data-action="close-modal"]');
     // Rectify on four corners in order, then Undo rectify brings back the original photo.
     const sizeText = () => page.evaluate(() => document.getElementById('viewport-footer')?.innerText.match(/\d+×\d+px/)?.[0] ?? '');
