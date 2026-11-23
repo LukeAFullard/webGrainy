@@ -332,6 +332,25 @@ redone, and statistics update immediately.
 | **Merge** | One stone was cut into pieces. Select the pieces, then press `Merge`. |
 | **Delete** | Something that isn't a grain was outlined (a leaf, a ruler, a shadow). |
 | **Add** | A grain was missed. Draw around it, then press *Finish shape* (or double-click / Enter). |
+| **Tidy outlines** (optional) | You see specks or small holes in the outlines: pixels of a grain that do not touch it, often in the dark gaps between stones, or a grain drawn as several pieces in a GIS. Toolbar: tidies the photo shown; photo list → *Select* → *Tidy outlines*: the selected photos. |
+
+**Tidy outlines** is off unless you choose it: the analysis never applies it. It makes every
+grain one solid piece, the way GIS clean-up tools do (GDAL's sieve filter, ArcGIS *Eliminate*,
+QGIS *Delete holes*):
+
+- Each grain's connected parts are found (pixels that meet only at a corner count as separate
+  parts, as in the outlines), and the largest part stays the grain.
+- Every other part joins the neighbouring grain it shares the longest edge with; becomes a grain
+  of its own if it has at least *Min size* pixels; or is removed if it touches no other grain.
+- Holes enclosed by one grain are filled, as Cellpose does. Gaps between two grains are kept.
+
+Each photo's tidy is one undo step, and exports and the printable report say it was applied.
+On the 40 held-out test images it changed a median 0.005% of each image's pixels and left the
+outline agreement (PQ) and the median D50 error unchanged with U-Net (and with Cellpose-SAM on
+the 32 images checked so far; METHODS, Section 15, and `validation/tidy/`). Specks pull a
+grain's measured long axis and Feret widths outward, so tidying removes that bias. On very fine
+gravel (grains of 15–30 px), where a few pixels are a large share of a grain, it can move D50 by
+a few percent, so use it consistently across the photos you compare.
 
 ---
 

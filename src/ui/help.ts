@@ -303,6 +303,13 @@ export const HELP_TOPICS = {
     default: '—',
     when: 'Always check the outlines and fix obvious mistakes before reporting results.',
   },
+  tidyOutlines: {
+    title: 'Tidy outlines (optional)',
+    group: 'Tools',
+    what: 'Makes every grain one solid piece. The analysis can give a grain a few pixels that do not touch it (specks along its edge, often in the dark gaps between stones) and leave small holes inside it. Tidy finds each grain\'s connected parts (pixels meeting only at a corner count as separate) and keeps the largest. Each other part joins the neighbouring grain it shares the longest edge with, becomes a grain of its own if it is at least Min size, or is removed if it touches no other grain. Holes enclosed by one grain are filled; gaps between grains are kept. Toolbar: the photo shown. Photo list → Select: several photos. One undo step per photo; recorded in every export.',
+    default: 'Off: only applied when you choose it',
+    when: 'When you see specks or holes in the outlines (or multi-part grains in GIS exports). On the 40 held-out test images it changed about 0.005% of the pixels and left outline agreement and the median D50 error unchanged, but on very fine gravel (grains of 15–30 px) it can move D50 by a few percent. See METHODS, section 6.',
+  },
 } as const satisfies Record<string, HelpTopic>;
 
 export type HelpKey = keyof typeof HELP_TOPICS;

@@ -15,6 +15,8 @@ import type {
   WorkingImageResult,
 } from '../types/index.js';
 import { unanalysedValidFraction } from './roiTileSkip.js';
+import { tidyLabelMask, type TidyResult } from './tidyGrains.js';
+import { DEFAULT_POSTPROCESS_OPTIONS } from './postprocessCore.js';
 import {
   addPolygonGrain as editorAddPolygonGrain,
   computeAllGrainMorphometrics,
@@ -104,6 +106,8 @@ export class AnalysisSession {
   private roiExcludedGrainCount = 0;
   /** Net manual outline edits in the masks (persisted; re-analysing discards them). */
   private manualEdits = 0;
+  /** Times "Tidy outlines" was applied and kept (undo subtracts). */
+  private tidyRuns = 0;
   private readonly history = new MaskEditHistory();
   private readonly hullCache: GrainHullCache = new Map();
   /** Derived values computed on demand; cleared whenever the results change. */
@@ -127,8 +131,10 @@ export class AnalysisSession {
     roiConfig?: RoiExclusionConfig;
     provenance?: AnalysisProvenance;
     manualEdits?: number;
+    outlinesTidied?: number;
   }) {
     this.manualEdits = Math.max(0, Math.floor(params.manualEdits ?? 0));
+    this.tidyRuns = Math.max(0, Math.floor(params.outlinesTidied ?? 0));
     // The working-image pixels are only needed while the network runs. Not keeping them
     // saves ~4 MB per photo in memory, in browser storage and in project archives.
     this.workingImage = { ...params.workingImage, data: new Uint8ClampedArray(0) };
@@ -325,6 +331,12 @@ export class AnalysisSession {
       roiApplied: this.roiConfig !== undefined,
       roiExcludedGrains: this.roiExcludedGrainCount,
       manualOutlineEdits: this.manualEdits,
+      ...(this.tidyRuns > 0
+        ? {
+            outlinesTidied:
+              'Tidy outlines applied (user choice): detached grain fragments joined the neighbouring grain, became grains of their own (at least Min size) or were removed, and holes enclosed by one grain were filled',
+          }
+        : {}),
     };
   }
 
@@ -381,6 +393,7 @@ export class AnalysisSession {
       borderMargin: this.borderMargin,
       ...(this.provenance !== undefined ? { provenance: { ...this.provenance } } : {}),
       ...(this.manualEdits > 0 ? { manualEdits: this.manualEdits } : {}),
+      ...(this.tidyRuns > 0 ? { outlinesTidied: this.tidyRuns } : {}),
     };
   }
 
@@ -433,6 +446,7 @@ export class AnalysisSession {
       borderMargin,
       ...(provenance !== undefined ? { provenance } : {}),
       ...(typeof data.manualEdits === 'number' && Number.isFinite(data.manualEdits) ? { manualEdits: data.manualEdits } : {}),
+      ...(typeof data.outlinesTidied === 'number' && Number.isFinite(data.outlinesTidied) ? { outlinesTidied: data.outlinesTidied } : {}),
     });
   }
 
@@ -694,12 +708,47 @@ export class AnalysisSession {
     return newGrainId;
   }
 
+  /** Times "Tidy outlines" was applied (and not undone). */
+  getTidyCount(): number {
+    return this.tidyRuns;
+  }
+
+  /**
+   * "Tidy outlines" (only when the user chooses it): every grain becomes one solid piece (see
+   * tidyGrains.ts). One undoable step; returns what changed, or null when nothing needed tidying.
+   */
+  tidyOutlines(): Omit<TidyResult, 'bbox' | 'affectedIds'> | null {
+    const w = this.workingImage.width;
+    const prevMasks = this.workingMasks.slice();
+    const prevGrains = this.workingGrains.map(cloneGrain);
+    const minSize = this.provenance?.postProcess?.minSize ?? DEFAULT_POSTPROCESS_OPTIONS.minSize;
+    const res = tidyLabelMask(this.workingMasks, w, this.workingImage.height, { minSize });
+    if (res.bbox === null) return null;
+    const nextGrains = computeAllGrainMorphometrics(this.workingMasks, w, this.workingImage.height, this.borderMargin);
+    this.tidyRuns++;
+    this.history.push({
+      bbox: res.bbox,
+      imageWidth: w,
+      before: MaskEditHistory.extractBboxSlice(prevMasks, w, res.bbox),
+      after: MaskEditHistory.extractBboxSlice(this.workingMasks, w, res.bbox),
+      grainsBefore: prevGrains,
+      grainsAfter: nextGrains.map(cloneGrain),
+      label: 'tidy',
+    });
+    this.hullCache.clear();
+    this.workingGrains = nextGrains;
+    this.recomputeDerivedState(true);
+    const { bbox: _b, affectedIds: _a, ...summary } = res;
+    return summary;
+  }
+
   undo(): boolean {
     const entry = this.history.undo(this.workingMasks);
     if (!entry) {
       return false;
     }
-    this.manualEdits = Math.max(0, this.manualEdits - 1);
+    if (entry.label === 'tidy') this.tidyRuns = Math.max(0, this.tidyRuns - 1);
+    else this.manualEdits = Math.max(0, this.manualEdits - 1);
     this.hullCache.clear();
     this.workingGrains = entry.grainsBefore
       ? entry.grainsBefore.map(cloneGrain)
@@ -718,7 +767,8 @@ export class AnalysisSession {
     if (!entry) {
       return false;
     }
-    this.manualEdits++;
+    if (entry.label === 'tidy') this.tidyRuns++;
+    else this.manualEdits++;
     this.hullCache.clear();
     this.workingGrains = entry.grainsAfter
       ? entry.grainsAfter.map(cloneGrain)
