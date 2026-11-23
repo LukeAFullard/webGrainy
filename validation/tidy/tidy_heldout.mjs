@@ -198,7 +198,7 @@ async function render(ex, file) {
     photo.getContext('2d').putImageData(new ImageData(rgba, w, h), 0, 0);
     const [cx0, cy0, cx1, cy1] = crop;
     const cw = cx1 - cx0 + 1, ch = cy1 - cy0 + 1;
-    const S = Math.max(2, Math.floor(420 / Math.max(cw, ch)));
+    const S = Math.max(1, Math.floor(420 / Math.max(cw, ch))); // 1x for a large crop keeps the PNG small
     const sx = w / ws, sy = h / hs; // photo px per working px
     const pane = (masks, label) => {
       const c = new OffscreenCanvas(cw * S, ch * S + 22);
@@ -231,12 +231,17 @@ async function render(ex, file) {
     };
     const pb = pane(mb, 'Before (as analysed)');
     const pa = pane(ma, 'After Tidy outlines');
-    const out = new OffscreenCanvas(pb.width * 2 + 12, pb.height + 44);
+    const [l1, l2] = title.split(' | ');
+    // Wide enough for the caption, so it is never cut off on a narrow crop.
+    const font = '12px system-ui, sans-serif';
+    const m = new OffscreenCanvas(1, 1).getContext('2d');
+    m.font = font;
+    const textW = Math.ceil(Math.max(m.measureText(l1).width, m.measureText(l2 ?? '').width)) + 12;
+    const out = new OffscreenCanvas(Math.max(pb.width * 2 + 12, textW), pb.height + 44);
     const g = out.getContext('2d');
     g.fillStyle = '#fff'; g.fillRect(0, 0, out.width, out.height);
     g.drawImage(pb, 0, 0); g.drawImage(pa, pb.width + 12, 0);
-    g.fillStyle = '#444'; g.font = '12px system-ui, sans-serif';
-    const [l1, l2] = title.split(' | ');
+    g.fillStyle = '#444'; g.font = font;
     g.fillText(l1, 6, out.height - 26);
     g.fillText(l2 ?? '', 6, out.height - 8);
     const blob = await out.convertToBlob({ type: 'image/png' });

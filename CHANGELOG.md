@@ -52,7 +52,9 @@ First public release.
   it: every grain becomes one solid piece. Detached specks of a grain join the neighbouring grain they
   share the longest edge with, become grains of their own (at least *Min size*) or are removed; holes
   enclosed by one grain are filled. One undo step per photo; recorded in exports and the printable
-  report. Checked on the 40 held-out test images (`validation/tidy/`), with before/after examples.
+  report. Checked with both models on the 40 held-out test images (`validation/tidy/`), with
+  before/after examples: outline agreement unchanged; median D50 error unchanged (U-Net) or slightly
+  lower (Cellpose-SAM, 2.9% → 2.6%).
 
 ### Navigation, image export and removals
 

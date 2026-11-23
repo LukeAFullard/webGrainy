@@ -834,14 +834,15 @@ analysis, then *Tidy outlines* on every image (`validation/tidy/`):
 | Model | Images with fragments or holes | Outline quality (PQ), before → after | D50 error, median, before → after | Largest change in one image's D50 error |
 |---|---|---|---|---|
 | U-Net (40 images) | 35 of 40 (248 of 3,202 grains in several pieces) | 0.540 → 0.540 | 5.7% → 5.7% | +3.7 points (fine gravel, D50 +3.4%) |
-| Cellpose-SAM INT8 (first 32 images) | 28 of 32 | 0.628 → 0.629 | 3.0% → 3.0% | +0.2 points |
+| Cellpose-SAM INT8 (40 images) | 36 of 40 (339 of 4,352 grains in several pieces) | 0.654 → 0.655 | 2.9% → 2.6% | −4.5 points (one image: D50 −4.2%, error 6.8% → 2.4%) |
 
-Tidy changed a median 0.005% of an image's pixels. It does not change accuracy against the hand
-outlines on these images; it removes visible defects and the outward bias they add to a grain's
+Tidy changed a median 0.005% (U-Net) and 0.003% (Cellpose-SAM) of an image's pixels. It does not
+make accuracy against the hand outlines worse on these images (with Cellpose-SAM the median D50 error
+fell slightly, 2.9% → 2.6%); it removes visible defects and the outward bias they add to a grain's
 long axis and Feret widths. On fine gravel (grains of 15–30 px) a few pixels are a large share of
-a grain, so D50 can move by a few percent. The Cellpose-SAM run on the CPU was stopped by a time
-limit after 32 images (`tidy_results_cpsam_partial.md`). Before/after examples:
-`validation/tidy/example_unet_*.png`.
+a grain, so D50 can move by a few percent. Results per model: `tidy_results_unet.md` and
+`tidy_results_cpsam.md`, with before/after examples `validation/tidy/example_unet_*.png` and
+`example_cpsam_*.png`.
 
 ---
 
