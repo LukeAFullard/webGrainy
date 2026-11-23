@@ -280,7 +280,8 @@ export function analyzeSite(
     statsWeights.set(photoId, m);
   });
   const psd = computePsdPercentiles(values, weights);
-  const folkWard = unit === 'mm' ? computeFolkWardStats(psd) : null;
+  // As for one photo: sorting, skewness and kurtosis need at least two grains.
+  const folkWard = unit === 'mm' && values.length >= 2 ? computeFolkWardStats(psd) : null;
   const extra =
     values.length > 0
       ? computeExtraGrainStats(

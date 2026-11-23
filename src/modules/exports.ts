@@ -8,6 +8,7 @@ import { exportSiteArchive, type PhotoRecord, type SiteRecord } from './projectS
 import { photoProcessingHistory } from './siteTypes.js';
 import { geoJsonToLonLat, geoJsonToMap, mapGeoJsonName, pamAuxXml, photoGeoreference, worldFile } from './georef.js';
 import { encodeGeoTiff, encodeLabelGeoTiff } from './geotiffWriter.js';
+import { baseExportMetadata } from './provenance.js';
 import { warpLabelsToWebMercator, warpRgbaToWebMercator, webMercatorGeoref, webMercatorGrid } from './webMercatorWarp.js';
 import {
   buildSiteExportMetadata,
@@ -222,9 +223,9 @@ export async function buildExport(kind: ExportKind, ctx: ExportContext): Promise
       // The label mask as a GeoTIFF in the source GeoTIFF's position and CRS (any GIS).
       const g = photo ? photoGeoreference(photo).georef : null;
       if (!session || !g) return null;
-      const m = session.labelMaskAtPhotoSize(onlyIds);
+      const m = session.labelMaskAtPhotoSize(onlyIds, photoMeta);
       if (m.width !== g.width || m.height !== g.height) return null;
-      const bytes = await encodeLabelGeoTiff(m.masks, m.width, m.height, g);
+      const bytes = await encodeLabelGeoTiff(m.masks, m.width, m.height, g, { description: m.metadataJson });
       return { blob: new Blob([bytes.slice().buffer], { type: 'image/tiff' }), filename: `${photoFile}_mask_map.tif` };
     }
     case 'photo-mask-webmercator': {
@@ -233,9 +234,10 @@ export async function buildExport(kind: ExportKind, ctx: ExportContext): Promise
       const g = photo ? photoGeoreference(photo).georef : null;
       const grid = g ? webMercatorGrid(g) : null;
       if (!session || !g || !grid) return null;
-      const m = session.labelMaskAtPhotoSize(onlyIds);
+      const m = session.labelMaskAtPhotoSize(onlyIds, photoMeta);
       if (m.width !== g.width || m.height !== g.height) return null;
-      const bytes = await encodeLabelGeoTiff(warpLabelsToWebMercator(m.masks, g, grid), grid.width, grid.height, webMercatorGeoref(grid));
+      const description = JSON.stringify({ ...JSON.parse(m.metadataJson || '{}'), reprojection: 'Web Mercator (EPSG:3857), nearest-neighbour' });
+      const bytes = await encodeLabelGeoTiff(warpLabelsToWebMercator(m.masks, g, grid), grid.width, grid.height, webMercatorGeoref(grid), { description });
       return { blob: new Blob([bytes.slice().buffer], { type: 'image/tiff' }), filename: `${photoFile}_mask_webmercator.tif` };
     }
     case 'photo-image-webmercator': {
@@ -246,7 +248,11 @@ export async function buildExport(kind: ExportKind, ctx: ExportContext): Promise
       const img = await ctx.decodePhoto(photo);
       if (!img || img.width !== g.width || img.height !== g.height) return null;
       const raw = warpRgbaToWebMercator(img.data, g, grid);
-      const bytes = await encodeGeoTiff({ raw, width: grid.width, height: grid.height, bitsPerSample: 8, samples: 4 }, webMercatorGeoref(grid));
+      const description = JSON.stringify({
+        ...(session ? session.getExportMetadata(photoMeta) : { ...baseExportMetadata(), ...(photoMeta ? { photo: photoMeta } : {}) }),
+        raster: 'the photo, reprojected to Web Mercator (EPSG:3857), transparent outside the photo',
+      });
+      const bytes = await encodeGeoTiff({ raw, width: grid.width, height: grid.height, bitsPerSample: 8, samples: 4 }, webMercatorGeoref(grid), { description });
       return { blob: new Blob([bytes.slice().buffer], { type: 'image/tiff' }), filename: `${photoFile}_photo_webmercator.tif` };
     }
     case 'photo-svg':

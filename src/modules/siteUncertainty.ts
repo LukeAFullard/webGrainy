@@ -705,11 +705,15 @@ export function calibrateSiteInterval(
       const se = ((Math.log(r[1]) - Math.log(r[0])) / (2 * z)) * inflate;
       return se > 1e-12 ? [Math.exp(Math.log(e) - t * se), Math.exp(Math.log(e) + t * se)] : [Number.NaN, Number.NaN];
     };
+    // Sorting and kurtosis are positive ratios: interval on the log scale, so it never goes
+    // below 0 with few photos (t = 12.7 for 2 photos). Skewness is bounded to [-1, 1].
+    const sk = lin(raw.folkWardCi.skewnessPhi, fw.skewnessPhi);
+    const clampSk = (v: number): number => (Number.isFinite(v) ? Math.max(-1, Math.min(1, v)) : v);
     folkWardCi = {
       meanPhi: lin(raw.folkWardCi.meanPhi, fw.meanPhi),
-      sortingPhi: lin(raw.folkWardCi.sortingPhi, fw.sortingPhi),
-      skewnessPhi: lin(raw.folkWardCi.skewnessPhi, fw.skewnessPhi),
-      kurtosisPhi: lin(raw.folkWardCi.kurtosisPhi, fw.kurtosisPhi),
+      sortingPhi: logS(raw.folkWardCi.sortingPhi, fw.sortingPhi),
+      skewnessPhi: [clampSk(sk[0]), clampSk(sk[1])],
+      kurtosisPhi: logS(raw.folkWardCi.kurtosisPhi, fw.kurtosisPhi),
       meanMm: logS(raw.folkWardCi.meanMm, fw.meanMm),
     };
   }
@@ -770,31 +774,21 @@ export function computeJackknife(
       });
     }
 
-    const n = perPhotoJack.length;
-    const mean16 =
-      perPhotoJack.reduce((s, r) => s + r.D16Without, 0) / n;
-    const mean50 =
-      perPhotoJack.reduce((s, r) => s + r.D50Without, 0) / n;
-    const mean84 =
-      perPhotoJack.reduce((s, r) => s + r.D84Without, 0) / n;
-    const factor = (n - 1) / n;
-    const seD16 = Math.sqrt(
-      factor * perPhotoJack.reduce((s, r) => s + (r.D16Without - mean16) ** 2, 0),
-    );
-    const seD50 = Math.sqrt(
-      factor * perPhotoJack.reduce((s, r) => s + (r.D50Without - mean50) ** 2, 0),
-    );
-    const seD84 = Math.sqrt(
-      factor * perPhotoJack.reduce((s, r) => s + (r.D84Without - mean84) ** 2, 0),
-    );
+    // Leave-one-out sets with nothing left to pool (e.g. only zero-weight facies photos) have no
+    // estimate: the standard errors use the other photos' replicates.
+    const jackSe = (vals: readonly number[]): number => {
+      const v = vals.filter((x) => Number.isFinite(x));
+      const k = v.length;
+      if (k < 2) return Number.NaN;
+      const m = v.reduce((a, b) => a + b, 0) / k;
+      return Math.sqrt(((k - 1) / k) * v.reduce((a, b) => a + (b - m) ** 2, 0));
+    };
+    const seD16 = jackSe(perPhotoJack.map((r) => r.D16Without));
+    const seD50 = jackSe(perPhotoJack.map((r) => r.D50Without));
+    const seD84 = jackSe(perPhotoJack.map((r) => r.D84Without));
 
     const logSe = emptyPsd();
-    for (const key of PSD_KEYS) {
-      const v = logWithout[key];
-      if (v.length !== n || !v.every((x) => Number.isFinite(x))) continue;
-      const m = v.reduce((a, b) => a + b, 0) / n;
-      logSe[key] = Math.sqrt(factor * v.reduce((a, b) => a + (b - m) ** 2, 0));
-    }
+    for (const key of PSD_KEYS) logSe[key] = jackSe(logWithout[key]);
     jackknife = { perPhoto: perPhotoJack, seD16, seD50, seD84, logSe };
   }
 

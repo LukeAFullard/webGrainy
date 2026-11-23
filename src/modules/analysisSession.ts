@@ -972,9 +972,12 @@ export class AnalysisSession {
 
   /** As `exportMaskPng`, deflate-compressed where the platform supports it (much smaller files). */
   /** Grain ids at the photo's own size (nearest-neighbour from the working image), 0 = background. */
-  labelMaskAtPhotoSize(onlyIds?: ReadonlySet<number>): { masks: Int32Array; width: number; height: number } {
-    const m = this.maskForExport(32, { resolution: 'original', ...(onlyIds ? { onlyIds } : {}) });
-    return { masks: m.masks, width: m.width, height: m.height };
+  labelMaskAtPhotoSize(
+    onlyIds?: ReadonlySet<number>,
+    photoMetadata?: Record<string, unknown>,
+  ): { masks: Int32Array; width: number; height: number; metadataJson: string } {
+    const m = this.maskForExport(32, { resolution: 'original', ...(onlyIds ? { onlyIds } : {}), ...(photoMetadata ? { photoMetadata } : {}) });
+    return { masks: m.masks, width: m.width, height: m.height, metadataJson: m.text['webgrainy'] ?? '' };
   }
 
   async exportMaskPngCompressed(

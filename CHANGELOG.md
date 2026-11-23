@@ -141,5 +141,16 @@ First public release.
 - Binomial percentile intervals (`psd_binomial_ci_*`): order-statistic ranks are now read at the
   right place on the size curve (they were half a grain too fine), and the large-sample formula
   (over 5,000 grains) no longer jumps at the switch.
+- GeoTIFF exports (`mask_map.tif`, `mask_webmercator.tif`, `photo_webmercator.tif`) record provenance
+  like the other exports: `Software` (app version and commit) and the provenance JSON in
+  `ImageDescription`.
+- GeoJSON outlines follow the right-hand rule (exterior rings counter-clockwise, holes clockwise) in
+  pixel and map coordinates, also for south-up and mirrored GeoTIFFs; pixel-coordinate GeoJSON and
+  map GeoJSON in a user-defined CRS carry `"crs": null`, so they are not taken as WGS84 degrees.
+- Site statistics on small samples: no Folk & Ward sorting for a single grain; with few photos the
+  sorting and kurtosis intervals stay positive (log scale) and skewness stays within [-1, 1]; the
+  jackknife no longer gives `NaN` when leaving a photo out leaves only zero-weight facies photos.
+- A long unbroken name in the footer or toolbar wraps instead of widening the photo column over the
+  Results panel.
 
 [0.1.0]: https://github.com/LukeAFullard/webGrainy/releases/tag/v0.1.0

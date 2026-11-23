@@ -360,7 +360,7 @@ export function renderJackknifeChartSvg(
     return `<svg viewBox="0 0 ${W} 90" xmlns="http://www.w3.org/2000/svg"><rect width="${W}" height="90" fill="${bg}"/><text x="${W / 2}" y="48" text-anchor="middle" fill="${muted}" font-size="11" font-family="system-ui, sans-serif">Requires ≥ 2 included photos for Jackknife sensitivity</text></svg>`;
   }
 
-  const maxAbs = Math.max(12, ...items.map((p) => Math.abs(p.relPctD50)));
+  const maxAbs = Math.max(12, ...items.filter((p) => Number.isFinite(p.relPctD50)).map((p) => Math.abs(p.relPctD50)));
   const zeroX = padL + plotW / 2;
 
   const parts: string[] = [];
@@ -377,6 +377,11 @@ export function renderJackknifeChartSvg(
     const shortLabel = item.label.length > 14 ? `${item.label.slice(0, 13)}…` : item.label;
 
     parts.push(`<text x="${padL - 6}" y="${y + 12}" text-anchor="end" fill="${muted}" font-size="9.5" font-family="system-ui, sans-serif">${esc(shortLabel)}</text>`);
+    if (!Number.isFinite(item.relPctD50)) {
+      // Leaving this photo out leaves nothing to pool (e.g. only zero-weight facies photos).
+      parts.push(`<text x="${W - 6}" y="${y + 12}" text-anchor="end" fill="${muted}" font-size="9" font-family="ui-monospace, monospace">n/a</text>`);
+      return;
+    }
     parts.push(`<rect x="${x.toFixed(1)}" y="${y + 3}" width="${Math.max(1.5, w).toFixed(1)}" height="11" rx="2" fill="${col}" />`);
     parts.push(`<text x="${W - 6}" y="${y + 12}" text-anchor="end" fill="${item.highInfluence ? (lightTheme ? '#b91c1c' : '#ff8577') : muted}" font-size="9" font-family="ui-monospace, monospace">${item.relPctD50 >= 0 ? '+' : ''}${item.relPctD50.toFixed(1)}%</text>`);
   });

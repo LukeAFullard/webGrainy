@@ -462,7 +462,29 @@ export interface ContourExportOptions {
   metadata?: Record<string, unknown>;
 }
 
-/** GeoJSON FeatureCollection of grain outlines (holes kept; multi-part grains as MultiPolygon). */
+/** Signed area of a ring (positive = counter-clockwise with x to the right and y up). */
+export function signedRingArea(ring: readonly (readonly number[])[]): number {
+  let s = 0;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) s += (ring[j]![0]! - ring[i]![0]!) * (ring[j]![1]! + ring[i]![1]!);
+  return s / 2;
+}
+
+/**
+ * Polygon rings in RFC 7946 order (right-hand rule): exterior ring counter-clockwise, holes
+ * clockwise, as the coordinates read with x to the right and y up (how GIS reads them). Returns
+ * new arrays; `rings[0]` is the exterior.
+ */
+export function rightHandRings<T extends readonly (readonly number[])[]>(rings: readonly T[]): T[] {
+  return rings.map((r, i) => ((signedRingArea(r) > 0) === (i === 0) ? r : ([...r].reverse() as unknown as T)));
+}
+
+/**
+ * GeoJSON FeatureCollection of grain outlines (holes kept; multi-part grains as MultiPolygon), in
+ * pixel coordinates. Rings follow the right-hand rule as the numbers read (exterior
+ * counter-clockwise with y up; image y points down, so they look clockwise on the photo), and
+ * `"crs": null` says the coordinates are in no geographic CRS (GeoJSON 2008), so tools do not
+ * take pixels for WGS84 degrees.
+ */
 export function buildContourGeoJson(
   masks: Int32Array,
   grains: readonly GrainMorphometrics[],
@@ -479,7 +501,7 @@ export function buildContourGeoJson(
     if (outers.length === 0) continue;
     let geometry: Geometry;
     if (outers.length === 1) {
-      geometry = { type: 'Polygon', coordinates: [outers[0]!, ...holes] };
+      geometry = { type: 'Polygon', coordinates: rightHandRings([outers[0]!, ...holes]) };
     } else {
       const polygons: ContourRing[][] = outers.map((outer) => [outer]);
       for (const hole of holes) {
@@ -497,13 +519,14 @@ export function buildContourGeoJson(
         }
         polygons[targetIdx]!.push(hole);
       }
-      geometry = { type: 'MultiPolygon', coordinates: polygons };
+      geometry = { type: 'MultiPolygon', coordinates: polygons.map((p) => rightHandRings(p)) };
     }
     const g = options.propertiesFor ? options.propertiesFor(wg) : wg;
     features.push({ type: 'Feature', geometry, properties: grainGeoJsonProperties(g) });
   }
   return {
     type: 'FeatureCollection',
+    crs: null,
     ...(options.metadata !== undefined ? { metadata: options.metadata } : {}),
     features,
   };
