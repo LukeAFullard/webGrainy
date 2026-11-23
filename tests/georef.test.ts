@@ -112,6 +112,8 @@ describe('map-coordinate exports', () => {
     const readme = entries.find((e) => e.name === 'README.txt')!.data as string;
     expect(readme).toContain('mask_map.tif is the label mask as a GeoTIFF, CRS included');
     expect(names).toContain('photos/ortho/outlines_lonlat.geojson');
+    expect(names).toContain('photos/ortho/outlines_EPSG2193.gpkg'); // GeoPackage for ArcGIS Pro
+    expect(readme).toContain('OGC GeoPackage');
     expect(readme).toContain('not map coordinates');
   });
 });

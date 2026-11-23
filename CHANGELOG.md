@@ -34,6 +34,14 @@ First public release.
 - Site intervals and the survey-change test were checked by simulation (`validation/comparison/`,
   `validation/interval_coverage/`), including the test's power for a 20% change.
 
+### GeoPackage export
+
+- Grain outlines as an OGC **GeoPackage** (`.gpkg`), e.g. for ArcGIS Pro: Export → Outlines → Format
+  *GeoPackage*, in the photo's map coordinates (with its EPSG CRS), longitude/latitude or photo pixels.
+  One polygon layer with the measurements as fields named like `grains.csv`; the results `.zip` adds
+  one per GeoTIFF photo. Written by a small built-in SQLite writer (no extra download); every file is
+  checked with SQLite's integrity check in the tests.
+
 ### Fixed before release (pre-publication audit)
 
 - Imported `.webgrainy` files are checked field by field; a crafted file can no longer inject markup or

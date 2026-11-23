@@ -4,7 +4,7 @@ import type { PhotoRecord, SiteRecord } from '../modules/projectStorage.js';
 import type { SiteAnalysisOptions, SiteAnalysisReport, SitePhotoInput } from '../modules/siteAnalysis.js';
 import { buildExport, isExportKind } from '../modules/exports.js';
 import { renderPrintablePsdSvg } from './charts.js';
-import { canExportLonLat, photoGeoreference } from '../modules/georef.js';
+import { canExportLonLat, gpkgMapSrs, photoGeoreference } from '../modules/georef.js';
 import { canWarpToWebMercator } from '../modules/webMercatorWarp.js';
 import { decodePhotoRgba } from './imageCanvas.js';
 import type { AppState } from './state.js';
@@ -299,13 +299,20 @@ export function photoExportChoice(
   const what = (whats.find(([w]) => w === sel.what)?.[0] ?? 'outlines') as ExportWhat;
   const formats: Array<[string, string]> =
     what === 'outlines'
-      ? [['geojson', 'GeoJSON'], ['svg', 'SVG']]
+      ? [['geojson', 'GeoJSON'], ['gpkg', 'GeoPackage (.gpkg)'], ['svg', 'SVG']]
       : what === 'mask'
         ? [['png16', 'PNG, 16-bit'], ['png32', 'PNG, 32-bit'], ...(georef ? ([['geotiff', 'GeoTIFF']] as Array<[string, string]>) : [])]
         : [['geotiff', 'GeoTIFF']];
   const format = formats.find(([f]) => f === sel.format)?.[0] ?? formats[0]![0];
+  const gpkgMap = georef ? gpkgMapSrs(georef) !== null : false;
   const coordsList: Array<[ExportCoords, string]> =
-    what === 'outlines' && format === 'geojson'
+    what === 'outlines' && format === 'gpkg'
+      ? [
+          ...(gpkgMap ? ([['map', `Map coordinates, ${crs}: ArcGIS Pro, QGIS, any GIS`]] as Array<[ExportCoords, string]>) : []),
+          ...(lonLat ? ([['lonlat', 'Longitude / latitude (WGS84)']] as Array<[ExportCoords, string]>) : []),
+          ['pixels', 'Photo pixels'],
+        ]
+      : what === 'outlines' && format === 'geojson'
       ? [
           ['pixels', 'Photo pixels'],
           ...(lonLat ? ([['lonlat', 'Longitude / latitude (WGS84): web maps, any GeoJSON reader']] as Array<[ExportCoords, string]>) : []),
@@ -320,7 +327,15 @@ export function photoExportChoice(
   let kind: string;
   let hint: string;
   if (what === 'outlines') {
-    if (format === 'svg') {
+    if (format === 'gpkg') {
+      kind = coords === 'map' ? 'photo-gpkg-map' : coords === 'lonlat' ? 'photo-gpkg-lonlat' : 'photo-gpkg';
+      hint =
+        coords === 'map'
+          ? `OGC GeoPackage with the GeoTIFF's exact ${crs} coordinates and the CRS written in the file: ArcGIS Pro (add it to a map or drag it in), QGIS and any GDAL-based GIS. One polygon layer, grain_outlines, with the measurements as fields named like grains.csv.`
+          : coords === 'lonlat'
+            ? `OGC GeoPackage in WGS84 longitude/latitude, converted from ${crs} without a datum shift (within about a metre). One polygon layer with the measurements as fields.`
+            : `OGC GeoPackage in photo pixels (x right, y down), with no map coordinate system${georef ? ': choose map coordinates to place it on a map' : ''}. One polygon layer with the measurements as fields.`;
+    } else if (format === 'svg') {
       kind = 'photo-svg';
       hint = 'One path per grain in photo pixels (x right, y down), for drawings and figures.';
     } else if (coords === 'lonlat') {

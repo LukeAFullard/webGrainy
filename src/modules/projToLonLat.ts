@@ -250,3 +250,68 @@ export function lonLatProjector(epsg: number | null, kind: 'projected' | 'geogra
   const [latF, lonF, lat1, lat2, fe, fn] = prm as [number, number, number, number, number, number];
   return (x, y) => wrap(lccInverse(x * unit, y * unit, { a, f, lat1, lat2, latOrigin: latF, lon0: lonF, k0: 1, fe, fn }));
 }
+
+const fmt = (v: number): string => (Number.isInteger(v) ? String(v) : String(Number(v.toPrecision(15))));
+
+const WGS84_GEOGCS =
+  'GEOGCS["WGS 84",DATUM["WGS_1984",SPHEROID["WGS 84",6378137,298.257223563,AUTHORITY["EPSG","7030"]],AUTHORITY["EPSG","6326"]],' +
+  'PRIMEM["Greenwich",0,AUTHORITY["EPSG","8901"]],UNIT["degree",0.0174532925199433,AUTHORITY["EPSG","9122"]]';
+
+/** OGC WKT 1 of EPSG:4326 (as in the GeoPackage specification). */
+export const WGS84_WKT = `${WGS84_GEOGCS},AXIS["Latitude",NORTH],AXIS["Longitude",EAST],AUTHORITY["EPSG","4326"]]`;
+
+const WEB_MERCATOR_WKT =
+  `PROJCS["WGS 84 / Pseudo-Mercator",${WGS84_GEOGCS},AUTHORITY["EPSG","4326"]],PROJECTION["Mercator_1SP"],` +
+  'PARAMETER["central_meridian",0],PARAMETER["scale_factor",1],PARAMETER["false_easting",0],PARAMETER["false_northing",0],' +
+  'UNIT["metre",1,AUTHORITY["EPSG","9001"]],AXIS["Easting",EAST],AXIS["Northing",NORTH],' +
+  'EXTENSION["PROJ4","+proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs"],' +
+  'AUTHORITY["EPSG","3857"]]';
+
+/**
+ * OGC WKT 1 of a projected CRS in the table (Transverse Mercator, Lambert Conformal Conic 1SP /
+ * 2SP), EPSG:3857 or EPSG:4326, with its EPSG code as AUTHORITY; null for other CRSs. Names are
+ * the GeoTIFF's citations when given (`names`), else generic. GIS read the CRS by its EPSG code;
+ * the parameters make the definition complete without it.
+ */
+export function crsWkt(epsg: number, names: { projected?: string; geographic?: string } = {}): string | null {
+  if (epsg === 4326) return WGS84_WKT;
+  if (epsg === 3857) return WEB_MERCATOR_WKT;
+  index ??= new Map(CRS_TABLE.map((r) => [r[0]!, r]));
+  const r = index.get(epsg);
+  if (!r) return null;
+  const [, method, ell, unit, ...prm] = r as [number, number, number, number, ...number[]];
+  const quote = (s: string): string => s.replace(/"/g, "'");
+  const geog =
+    ell === 1
+      ? `${WGS84_GEOGCS},AUTHORITY["EPSG","4326"]]`
+      : (() => {
+          const name = quote(names.geographic ?? 'GRS 1980 based');
+          return `GEOGCS["${name}",DATUM["${name.replace(/\W+/g, '_')}",SPHEROID["GRS 1980",6378137,298.257222101,AUTHORITY["EPSG","7019"]]],` +
+            'PRIMEM["Greenwich",0,AUTHORITY["EPSG","8901"]],UNIT["degree",0.0174532925199433,AUTHORITY["EPSG","9122"]]]';
+        })();
+  const unitWkt =
+    unit === 1
+      ? 'UNIT["metre",1,AUTHORITY["EPSG","9001"]]'
+      : Math.abs(unit - 0.3048) < 1e-12
+        ? 'UNIT["foot",0.3048,AUTHORITY["EPSG","9002"]]'
+        : Math.abs(unit - 1200 / 3937) < 1e-12
+          ? 'UNIT["US survey foot",0.304800609601219,AUTHORITY["EPSG","9003"]]'
+          : `UNIT["unknown",${fmt(unit)}]`;
+  const p = (name: string, v: number): string => `PARAMETER["${name}",${fmt(v)}]`;
+  // Table false eastings / northings are in metres; WKT gives them in the CRS's unit.
+  const fe = (v: number): number => v / unit;
+  let proj: string;
+  if (method === 0) {
+    const [lat0, lon0, k0, e, n] = prm as [number, number, number, number, number];
+    proj = `PROJECTION["Transverse_Mercator"],${p('latitude_of_origin', lat0)},${p('central_meridian', lon0)},${p('scale_factor', k0)},${p('false_easting', fe(e))},${p('false_northing', fe(n))}`;
+  } else if (method === 1) {
+    const [lat0, lon0, k0, e, n] = prm as [number, number, number, number, number];
+    proj = `PROJECTION["Lambert_Conformal_Conic_1SP"],${p('latitude_of_origin', lat0)},${p('central_meridian', lon0)},${p('scale_factor', k0)},${p('false_easting', fe(e))},${p('false_northing', fe(n))}`;
+  } else {
+    const [latF, lonF, lat1, lat2, e, n] = prm as [number, number, number, number, number, number];
+    proj = `PROJECTION["Lambert_Conformal_Conic_2SP"],${p('standard_parallel_1', lat1)},${p('standard_parallel_2', lat2)},${p('latitude_of_origin', latF)},${p('central_meridian', lonF)},${p('false_easting', fe(e))},${p('false_northing', fe(n))}`;
+  }
+  const name = quote(names.projected ?? `EPSG:${epsg}`);
+  return `PROJCS["${name}",${geog},${proj},${unitWkt},AXIS["Easting",EAST],AXIS["Northing",NORTH],AUTHORITY["EPSG","${epsg}"]]`;
+}
+

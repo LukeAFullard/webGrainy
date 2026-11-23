@@ -461,7 +461,7 @@ export const WORKFLOW_STEPS: ReadonlyArray<WorkflowStepSpec> = [
       {
         label: 'Tables, outlines, reports & backups',
         detail:
-          'Export per-grain and summary CSV/JSON files, GeoJSON and SVG outlines, 16/32-bit PNG masks, a printable HTML report, or a .webgrainy project archive.',
+          'Export per-grain and summary CSV/JSON files, GeoJSON, GeoPackage and SVG outlines, 16/32-bit PNG masks, a printable HTML report, or a .webgrainy project archive.',
       },
     ],
     cta: {
@@ -771,9 +771,9 @@ export function renderLandingHtml(state: AppState, view: LandingView): string {
           <article class="capability-card">
             <h3>Tables, Vector Outlines &amp; Project Backups</h3>
             <p>
-              Export per-grain and summary CSV/JSON tables, GeoJSON and SVG outlines, 16-bit and 32-bit PNG label masks, SVG/PNG charts, a printable one-page report, or a <code>.webgrainy</code> project archive.
+              Export per-grain and summary CSV/JSON tables, GeoJSON, GeoPackage (ArcGIS Pro, QGIS) and SVG outlines, 16-bit and 32-bit PNG label masks, SVG/PNG charts, a printable one-page report, or a <code>.webgrainy</code> project archive.
             </p>
-            <footer>CSV · JSON · GeoJSON · SVG · PNG Masks · Printable Report</footer>
+            <footer>CSV · JSON · GeoJSON · GeoPackage · SVG · PNG Masks · Printable Report</footer>
           </article>
         </div>
       </section>

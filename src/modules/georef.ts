@@ -5,7 +5,8 @@
  * raster it came from (same size, not rectified).
  */
 import { photoProcessingHistory, type PhotoGeoreference, type SitePhotoMetadata } from './siteTypes.js';
-import { lonLatProjector } from './projToLonLat.js';
+import { crsWkt, lonLatProjector } from './projToLonLat.js';
+import type { GpkgSrs } from './geopackage.js';
 import { rightHandRings } from './exportFormats.js';
 
 const num = (v: unknown): number => (typeof v === 'number' ? v : Number(v));
@@ -274,3 +275,32 @@ export function worldFile(g: PhotoGeoreference): string {
   const [x0, y0] = [a + 0.5 * b + 0.5 * c, d + 0.5 * e + 0.5 * f];
   return [b, e, c, f, x0, y0].map((v) => String(v)).join('\n') + '\n';
 }
+
+/** A GeoKey's text from GeoAsciiParams (e.g. the CRS name in a citation key), or undefined. */
+function geoKeyText(g: PhotoGeoreference, key: number): string | undefined {
+  const k = g.geoKeys;
+  if (!k?.ascii) return undefined;
+  const d = k.directory;
+  for (let i = 4; i + 3 < d.length; i += 4) {
+    if (d[i] === key && d[i + 1] === 34737) {
+      const text = k.ascii.slice(d[i + 3]!, d[i + 3]! + d[i + 2]!).replace(/\|$/, '').trim();
+      return text.length > 0 ? text : undefined;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * The photo's map coordinate system for a GeoPackage: its EPSG code and an OGC WKT definition,
+ * named from the GeoTIFF's citations. Null when the CRS has no EPSG code or no definition here
+ * (then only the longitude / latitude or photo-pixel GeoPackage).
+ */
+export function gpkgMapSrs(g: PhotoGeoreference): GpkgSrs | null {
+  if (g.epsg === null) return null;
+  const projected = geoKeyText(g, 3073) ?? geoKeyText(g, 1026);
+  const geographic = geoKeyText(g, 2049);
+  const definition = crsWkt(g.epsg, { ...(projected ? { projected } : {}), ...(geographic ? { geographic } : {}) });
+  if (definition === null) return null;
+  return { id: g.epsg, name: projected ?? `EPSG:${g.epsg}`, organization: 'EPSG', organizationId: g.epsg, definition };
+}
+

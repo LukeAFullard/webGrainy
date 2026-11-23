@@ -6,7 +6,8 @@ import type { SizeMetric } from '../types/index.js';
 import type { AnalysisSession } from './pipelineController.js';
 import { exportSiteArchive, type PhotoRecord, type SiteRecord } from './projectStorage.js';
 import { photoProcessingHistory } from './siteTypes.js';
-import { geoJsonToLonLat, geoJsonToMap, mapGeoJsonName, pamAuxXml, photoGeoreference, worldFile } from './georef.js';
+import { geoJsonToLonLat, geoJsonToMap, gpkgMapSrs, mapGeoJsonName, pamAuxXml, photoGeoreference, worldFile } from './georef.js';
+import { geoJsonToGeoPackage, PIXEL_SRS, WGS84_SRS } from './geopackage.js';
 import { encodeGeoTiff, encodeLabelGeoTiff } from './geotiffWriter.js';
 import { baseExportMetadata } from './provenance.js';
 import { warpLabelsToWebMercator, warpRgbaToWebMercator, webMercatorGeoref, webMercatorGrid } from './webMercatorWarp.js';
@@ -35,6 +36,9 @@ export const EXPORT_KINDS = [
   'photo-geojson',
   'photo-geojson-map',
   'photo-geojson-lonlat',
+  'photo-gpkg',
+  'photo-gpkg-map',
+  'photo-gpkg-lonlat',
   'photo-mask-worldfile',
   'photo-mask-geotiff',
   'photo-mask-auxxml',
@@ -206,6 +210,28 @@ export async function buildExport(kind: ExportKind, ctx: ExportContext): Promise
       const g = photo ? photoGeoreference(photo).georef : null;
       const json = session && g ? geoJsonToLonLat(session.exportGeoJson(photoMeta, onlyIds), g) : null;
       return json ? { blob: new Blob([json], { type: 'application/geo+json' }), filename: `${photoFile}_outlines_lonlat.geojson` } : null;
+    }
+    case 'photo-gpkg':
+    case 'photo-gpkg-map':
+    case 'photo-gpkg-lonlat': {
+      // GeoPackage (e.g. for ArcGIS Pro): the same outlines and properties as the GeoJSON.
+      if (!session) return null;
+      const pixels = session.exportGeoJson(photoMeta, onlyIds);
+      const layer = `${photo?.label ?? 'photo'} grain outlines`;
+      if (kind === 'photo-gpkg') {
+        return { blob: new Blob([geoJsonToGeoPackage(pixels, PIXEL_SRS, layer).slice().buffer], { type: 'application/geopackage+sqlite3' }), filename: `${photoFile}_outlines.gpkg` };
+      }
+      const g = photo ? photoGeoreference(photo).georef : null;
+      if (!g) return null;
+      if (kind === 'photo-gpkg-map') {
+        const srs = gpkgMapSrs(g);
+        if (!srs) return null;
+        const bytes = geoJsonToGeoPackage(geoJsonToMap(pixels, g), srs, layer);
+        return { blob: new Blob([bytes.slice().buffer], { type: 'application/geopackage+sqlite3' }), filename: `${photoFile}_outlines_EPSG${srs.id}.gpkg` };
+      }
+      const ll = geoJsonToLonLat(pixels, g);
+      if (!ll) return null;
+      return { blob: new Blob([geoJsonToGeoPackage(ll, WGS84_SRS, layer).slice().buffer], { type: 'application/geopackage+sqlite3' }), filename: `${photoFile}_outlines_lonlat.gpkg` };
     }
     case 'photo-mask-worldfile': {
       // World file placing the 16-bit mask PNG (same base name) on the map. It holds no CRS:
