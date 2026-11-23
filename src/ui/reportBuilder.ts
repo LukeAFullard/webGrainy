@@ -9,24 +9,103 @@ import { siteReportProvenance } from '../modules/siteProvenance.js';
 import { buildSiteInputs } from '../modules/siteWorkspace.js';
 import type { SiteRecord } from '../modules/projectStorage.js';
 import type { SiteAnalysisReport } from '../modules/siteAnalysis.js';
-import { renderPsdChartSvg, renderSizeHistogramSvg } from './charts.js';
+import { photoCutoffs } from '../modules/siteWorkspace.js';
+import { WENTWORTH_DISPLAY_CLASSES, grainSizeMm, wentworthClassIndex } from '../modules/wentworthColors.js';
+import type { GrainSvgStyle } from '../modules/exportFormats.js';
+import type { AnalysisSession } from '../modules/analysisSession.js';
+import type { GrainMorphometrics, SizeMetric } from '../types/index.js';
+import {
+  renderAspectRatioHistogramSvg,
+  renderConvergenceChartSvg,
+  renderFabricRoseSvg,
+  renderJackknifeChartSvg,
+  renderPsdChartSvg,
+  renderSizeHistogramSvg,
+} from './charts.js';
 import { histogramBasis } from './panels/dashboard.js';
 import { photoThumbDataUrl } from './imageCanvas.js';
-import { buildSiteReportHtml, type ReportPhoto } from './report.js';
+import { buildSiteReportHtml, DEFAULT_REPORT_OPTIONS, type ReportOptions, type ReportPhoto } from './report.js';
 import type { AppState } from './state.js';
 
+const rgba = (rgb: readonly number[], a: number): string => `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${a})`;
+const COUNTED_STYLE: GrainSvgStyle = { fill: 'rgba(56, 189, 248, 0.28)', stroke: '#0369a1' };
+const NOT_COUNTED_STYLE: GrainSvgStyle = { fill: 'rgba(148, 163, 184, 0.15)', stroke: '#e53e3e' };
+
+/** Legend entries of a report photo overlay (Wentworth classes present, or counted / not counted). */
+export function overlayLegend(
+  mode: ReportOptions['photoOverlay'],
+  classesPresent: ReadonlySet<number>,
+): Array<{ label: string; fill: string; stroke: string }> {
+  if (mode === 'wentworth') {
+    return WENTWORTH_DISPLAY_CLASSES.map((c, i) => ({ c, i }))
+      .filter(({ i }) => classesPresent.has(i))
+      .map(({ c }) => ({ label: c.label, fill: rgba(c.rgb, 0.5), stroke: rgba(c.rgb, 1) }));
+  }
+  if (mode === 'counted') {
+    return [
+      { label: 'Counted in the statistics', ...COUNTED_STYLE },
+      { label: 'Not counted (edge, outside the ROI or below the size cutoff)', ...NOT_COUNTED_STYLE },
+    ];
+  }
+  return [];
+}
+
+/**
+ * Overlay of one photo for the report: outlines, Wentworth size colours (the same colours as
+ * Display → Size colours) or counted vs not counted grains. Records the Wentworth classes drawn.
+ */
+export function reportOverlaySvg(
+  sess: AnalysisSession,
+  mode: ReportOptions['photoOverlay'],
+  sizeMetric: SizeMetric,
+  counted: ReadonlySet<number>,
+  classesSeen: Set<number>,
+): string {
+  if (mode === 'wentworth') {
+    // The SVG is traced from the analysis-resolution grains; their sizes in mm are on the
+    // calibrated grains of the same id.
+    if (sizeMetric === 'minFeret') sess.ensureFeret();
+    const sized = new Map(sess.getResult().grains.map((g) => [g.id, g]));
+    return sess.exportSvg(undefined, undefined, (traced: GrainMorphometrics) => {
+      const g = sized.get(traced.id) ?? traced;
+      const mm = grainSizeMm(g, sizeMetric);
+      if (mm === undefined) return { fill: 'rgba(160, 174, 192, 0.2)', stroke: '#718096' };
+      const i = wentworthClassIndex(mm);
+      classesSeen.add(i);
+      const c = WENTWORTH_DISPLAY_CLASSES[i]!.rgb;
+      // Grains not in the statistics are drawn faintly, so the colours show what was counted.
+      return counted.has(g.id) ? { fill: rgba(c, 0.5), stroke: rgba(c, 1) } : { fill: rgba(c, 0.12), stroke: rgba(c, 0.55) };
+    });
+  }
+  if (mode === 'counted') return sess.exportSvg(undefined, undefined, (g) => (counted.has(g.id) ? COUNTED_STYLE : NOT_COUNTED_STYLE));
+  return sess.exportSvg();
+}
+
 /** HTML of the printable report for `site` and its current report. */
-export async function buildPrintableReport(st: AppState, site: SiteRecord, report: SiteAnalysisReport): Promise<string> {
+export async function buildPrintableReport(
+  st: AppState,
+  site: SiteRecord,
+  report: SiteAnalysisReport,
+  options: ReportOptions = st.reportOptions ?? DEFAULT_REPORT_OPTIONS,
+): Promise<string> {
   const photos: ReportPhoto[] = [];
+  const metric = st.siteOptions.sizeMetric ?? 'bAxis';
+  // Size colours need mm; an uncalibrated site falls back to outlines.
+  const mode = options.photoOverlay === 'wentworth' && report.unit !== 'mm' ? 'outlines' : options.photoOverlay;
+  const classesSeen = new Set<number>();
   for (const p of report.perPhoto) {
     const rec = st.photos.find((x) => x.photoId === p.photoId);
-    // Large enough for a two-column A4 page at print resolution (about 88 mm wide at 300+ dpi).
-    const thumb = rec ? await photoThumbDataUrl(rec.imageBlob, 1400) : undefined;
+    // Large enough for a two-column A4 page at print resolution (about 88 mm wide at 300+ dpi);
+    // one photo per row gets twice the pixels.
+    const thumb = rec && options.includePhotos ? await photoThumbDataUrl(rec.imageBlob, options.photosPerRow === 1 ? 2400 : 1400) : undefined;
     const sess = st.sessions.get(p.photoId);
+    const counted = sess && (mode === 'wentworth' || mode === 'counted') ? sess.countedGrainIds(metric, photoCutoffs(st.siteOptions, report, p.photoId)) : new Set<number>();
+    const overlay = sess && options.includePhotos && mode !== 'none' ? reportOverlaySvg(sess, mode, metric, counted, classesSeen) : undefined;
     photos.push({
       label: p.label,
       ...(thumb ? { imageDataUrl: thumb } : {}),
-      ...(sess ? { outlineSvg: sess.exportSvg(), widthPx: sess.workingImage.originalWidth, heightPx: sess.workingImage.originalHeight } : {}),
+      ...(sess ? { widthPx: sess.workingImage.originalWidth, heightPx: sess.workingImage.originalHeight } : {}),
+      ...(overlay ? { outlineSvg: overlay } : {}),
       rawGrainCount: p.rawGrainCount,
       validGrainCount: p.validGrainCount,
       D16: p.D16,
@@ -74,6 +153,12 @@ export async function buildPrintableReport(st: AppState, site: SiteRecord, repor
     }),
     histogramSvg: hist && hist.bins.length > 0 ? renderSizeHistogramSvg(hist, true, `Size distribution (${histogramBasis(report.poolingMode)}, 1 φ classes)`) : null,
     photos,
+    options: { ...options, photoOverlay: mode },
+    overlayLegend: overlayLegend(mode, classesSeen),
+    shapeSvg: options.includeShapeFabric && report.shape.n > 0 ? renderAspectRatioHistogramSvg(report.shape.aspectRatioCounts, true) : null,
+    fabricSvg: options.includeShapeFabric && report.fabricRose.grainCount > 0 ? renderFabricRoseSvg(report.fabricRose, true) : null,
+    convergenceSvg: options.includeUncertainty && report.convergence.length > 1 ? renderConvergenceChartSvg(report.convergence, true) : null,
+    jackknifeSvg: options.includeUncertainty && report.jackknife ? renderJackknifeChartSvg(report.jackknife, true) : null,
   });
   return html;
 }

@@ -3,10 +3,10 @@
  * shape and fabric charts; D16/D50/D84 tests between sites; change over time per place; and
  * like-for-like checks (analysis settings, common size range).
  */
-import { comparePercentile, comparisonWarnings, settingsMismatches, surveyChanges, type ComparedPercentile, type D50Comparison } from '../../modules/siteComparison.js';
+import type { D50Comparison } from '../../modules/siteComparison.js';
+import { buildComparisonView, COMPARED_KEYS } from '../comparisonView.js';
 import { groupSitesByPlace } from '../../modules/sitePlaces.js';
 import { adequacyCapNote } from '../../modules/siteAdequacy.js';
-import { sizeHistogramFromWentworth } from '../../modules/histograms.js';
 import {
   renderCompareAspectRatioSvg,
   renderComparePsdSvg,
@@ -14,9 +14,7 @@ import {
   renderCompositionBarsSvg,
   renderFabricRoseSvg,
   renderTimeSeriesSvg,
-  type TimeSeriesPoint,
 } from '../charts.js';
-import { orderByDate } from '../../modules/surveyDate.js';
 import type { ComparedSite } from '../../modules/siteComparison.js';
 import { helpButton } from '../help.js';
 import type { AppState } from '../state.js';
@@ -60,21 +58,14 @@ export function renderCompareHtml(state: AppState, lightTheme: boolean, charts: 
     })
     .join('');
   const byDate = state.compareByDate;
-  const ordered = byDate ? (() => { const o = orderByDate(cmp?.sites ?? []); return [...o.dated, ...o.undated]; })() : cmp?.sites ?? [];
-  const withReport = ordered.filter((s) => s.report !== null);
+  const step: 0.5 | 1 = state.histogramStepPhi === 0.5 ? 0.5 : 1;
+  const view = buildComparisonView(cmp?.sites ?? [], byDate, step);
+  const { withReport, mixedUnits, plotted, unit, ciHeader, pairs, changes, timePoints, psdSeries, histSeries, compSeries, shapeSeries, roses } = view;
   const dateCell = (s: ComparedSite): string =>
     s.date ? `${esc(s.date)}${s.dateSource === 'photos' ? '<span class="stats-note">from photos</span>' : ''}` : '<span class="stats-note">no date</span>';
-  const units = new Set(withReport.map((s) => s.report!.unit));
-  const mixedUnits = units.size > 1;
-  const plotted = mixedUnits ? withReport.filter((s) => s.report!.unit === 'mm') : withReport;
-  const unit = (plotted[0]?.report?.unit ?? 'mm') as 'mm' | 'px';
-  const step: 0.5 | 1 = state.histogramStepPhi === 0.5 ? 0.5 : 1;
   const v = (n: number | undefined | null, d = 1): string => (n === undefined || n === null || !Number.isFinite(n) ? '—' : n.toFixed(d));
   const nameCell = (s: ComparedSite): string =>
     `<th scope="row"><span class="swatch" style="background:${s.color}"></span>${esc(s.name)}${s.place ? `<span class="stats-note">${esc(s.place)}</span>` : ''}</th>`;
-  // Each site uses its own confidence level setting: name it when they agree.
-  const levels = new Set(withReport.map((s) => Math.round(s.report!.bootstrapCi.confidenceLevel * 100)));
-  const ciHeader = levels.size === 1 ? `${[...levels][0]}%` : 'per-site';
   const table = withReport.length
     ? `<div class="table-scroll"><table class="stats-table compare-table">
         <thead><tr><th>Site</th><th>Survey date</th><th>Photos / grains</th><th>D16</th><th>D50 (${ciHeader} CI)</th><th>D84</th><th>Dg / σg</th><th>Sauter</th><th>Sorting φ</th><th>Gravel / cobble %</th></tr></thead>
@@ -114,10 +105,9 @@ export function renderCompareHtml(state: AppState, lightTheme: boolean, charts: 
         <p class="field-hint">Fabric orientations are relative to each photo's frame (0° = up–down in the photo): compare them only between surveys photographed the same way round.</p>
       </details>`
     : '';
-  // Pairwise tests for D16, D50 and D84.
-  const keys: ComparedPercentile[] = ['D16', 'D50', 'D84'];
-  const pairsByKey = keys.map((k) => ({ k, pairs: comparePercentile(plotted, k) }));
-  const nPairs = pairsByKey[1]!.pairs.length;
+  // Pairwise tests for D16, D50 and D84 (one row per pair, matched by site id).
+  const keys = COMPARED_KEYS;
+  const nPairs = pairs.length;
   const fmtP = (p: number): string => (!Number.isFinite(p) ? '—' : p < 0.001 ? '&lt; 0.001' : `= ${p.toFixed(3)}`);
   const fmtRatio = (c: D50Comparison): string =>
     c.basis === 'single-photo'
@@ -126,13 +116,13 @@ export function renderCompareHtml(state: AppState, lightTheme: boolean, charts: 
   const pairHtml = nPairs
     ? `<details class="advanced-block" data-keep-open="compare-pairs" open>
         <summary>Differences between sites <span class="summary-note">D16, D50, D84 ratios · approximate</span></summary>
-        <div class="table-scroll"><table class="stats-table"><thead><tr><th>Pair</th>${keys.map((k) => `<th>${k}</th>`).join('')}</tr></thead><tbody>${pairsByKey[1]!.pairs
-          .map((c, i) => `<tr><th scope="row">${esc(c.a)} ÷ ${esc(c.b)}</th>${pairsByKey.map(({ pairs }) => `<td>${pairs[i] ? fmtRatio(pairs[i]!) : '—'}</td>`).join('')}</tr>`)
+        <div class="table-scroll"><table class="stats-table"><thead><tr><th>Pair</th>${keys.map((k) => `<th>${k}</th>`).join('')}</tr></thead><tbody>${pairs
+          .map((row) => `<tr><th scope="row">${esc(row.a)} ÷ ${esc(row.b)}</th>${keys.map((k) => `<td>${row.byKey[k] ? fmtRatio(row.byKey[k]!) : '—'}</td>`).join('')}</tr>`)
           .join('')}</tbody></table></div>
         <p class="field-hint">Ratio with a 95% interval from each site's uncertainty on a log scale (Welch t-test, allowing for the number of photos). With several pairs the p-value is also given adjusted for the number of pairs (Holm), separately for D16, D50 and D84; * marks adjusted p &lt; 0.05, so within one column the chance of any false "significant" pair stays below 5% (a star in any of the three columns happens more often by chance). A screening check, not a formal two-sample test; not given for one-photo sites, and with fewer than 5 photos per site only large differences show. ${helpButton('compareSites')}</p>
       </details>`
     : '';
-  const problems = (cmp?.sites ?? []).filter((s) => s.report === null || (mixedUnits && s.report.unit !== 'mm'));
+  const problems = view.problems;
   const problemHtml = problems.length
     ? `<div class="warning-banner compare-problems">${problems
         .map(
@@ -144,18 +134,17 @@ export function renderCompareHtml(state: AppState, lightTheme: boolean, charts: 
         .join('')}</div>`
     : '';
   // Like-for-like checks: analysis settings and the common size range.
-  const testWarnings = comparisonWarnings(plotted);
+  const testWarnings = view.testWarnings;
   const testWarningHtml = testWarnings.length
     ? `<div class="warning-banner"><strong>How far the tests can be trusted.</strong><br/>${testWarnings.map(esc).join('<br/>')}</div>`
     : '';
-  const mismatches = settingsMismatches(plotted);
+  const mismatches = view.mismatches;
   const mismatchHtml = mismatches.length
     ? `<div class="warning-banner" role="alert"><strong>Not analysed the same way.</strong><br/>${mismatches.map(esc).join('<br/>')}</div>`
     : '';
-  const cutoffs = new Set(plotted.map((s) => s.report!.dCutoffCommonMm).filter((c): c is number => c !== null && c > 0).map((c) => c.toFixed(3)));
   const cutoffHtml =
-    unit === 'mm' && plotted.length > 1 && cutoffs.size === 1
-      ? `<div class="basis-banner">Compared over the same size range: grains of ${Number([...cutoffs][0]).toFixed(1)} mm and larger in every site (the largest detection limit of the compared photos). ${helpButton('harmonizePhysicalCutoff')}</div>`
+    view.commonCutoffMm !== null
+      ? `<div class="basis-banner">Compared over the same size range: grains of ${view.commonCutoffMm.toFixed(1)} mm and larger in every site (the largest detection limit of the compared photos). ${helpButton('harmonizePhysicalCutoff')}</div>`
       : '';
   const anyUncalibrated = (cmp?.sites ?? []).some((s) => (s.error ?? '').includes('No scale yet') || s.report?.unit === 'px');
   const pixelsToggle =
@@ -165,20 +154,7 @@ export function renderCompareHtml(state: AppState, lightTheme: boolean, charts: 
           Compare in pixels instead of mm <span class="summary-note">only meaningful if all photos were taken with the same camera at the same height</span>
         </label>`
       : '';
-  // Over time: one line per place; surveys without a place stand alone.
-  const timeOrder = orderByDate(plotted);
-  const placeColor = new Map<string, string>();
-  for (const s of timeOrder.dated) if (s.place && !placeColor.has(s.place)) placeColor.set(s.place, s.color);
-  const timePoints: TimeSeriesPoint[] = timeOrder.dated.map((s) => {
-    const r = s.report!;
-    const ci = (k: 'D16' | 'D50' | 'D84'): [number, number] => [r.bootstrapCi.lower[k], r.bootstrapCi.upper[k]];
-    return {
-      date: s.date!, name: s.name, color: s.color, D16: r.psd.D16, D50: r.psd.D50, D84: r.psd.D84,
-      ci: { D16: ci('D16'), D50: ci('D50'), D84: ci('D84') },
-      ...(s.place ? { group: s.place, groupColor: placeColor.get(s.place)! } : {}),
-    };
-  });
-  const changes = surveyChanges(plotted);
+  const timeOrder = { dated: view.dated, undated: view.undated };
   const changeHtml = changes.length
     ? `<div class="table-scroll"><table class="stats-table compare-table" style="margin-top:6px;"><caption class="field-hint" style="caption-side:top;text-align:left;">Change between consecutive surveys of each place (later ÷ earlier; above 1 = coarser)</caption>
         <thead><tr><th>Place</th><th>From → to</th>${keys.map((k) => `<th>${k}</th>`).join('')}</tr></thead>
@@ -193,22 +169,13 @@ export function renderCompareHtml(state: AppState, lightTheme: boolean, charts: 
           Order by survey date and show change over time ${helpButton('surveyDate')}
         </label>`
       : '';
-  const ungroupedDated = timeOrder.dated.filter((s) => !s.place).length;
+  const ungroupedDated = view.ungroupedDated;
   const timeHtml = byDate
     ? `${chartBox('compare-time', 'Grain size over time', (light) => renderTimeSeriesSvg(timePoints, unit, light), lightTheme)}
        ${changeHtml}
        ${ungroupedDated > 1 ? `<p class="field-hint">${ungroupedDated} dated surveys have no place, so they are shown as separate points. Give repeat surveys of one place the same place name (Site panel) to join them into a line and list their changes.</p>` : ''}
        ${timeOrder.undated.length > 0 ? `<p class="field-hint">No survey date (not plotted): ${timeOrder.undated.map((s) => esc(s.name)).join(', ')}. Set one in the Site panel, or add photos with a camera date.</p>` : ''}`
     : '';
-  const psdSeries = plotted.map((s) => ({ name: s.name, color: s.color, psd: s.report!.psd, ciLower: s.report!.bootstrapCi.lower, ciUpper: s.report!.bootstrapCi.upper }));
-  const histSeries = plotted.map((s) => ({
-    name: s.name,
-    color: s.color,
-    hist: sizeHistogramFromWentworth((step === 0.5 ? s.report!.wentworthHistogram05Phi : s.report!.wentworthHistogram10Phi) ?? [], step),
-  }));
-  const compSeries = plotted.filter((s) => s.report!.wentworth !== null).map((s) => ({ name: s.name, color: s.color, w: s.report!.wentworth! }));
-  const shapeSeries = plotted.filter((s) => s.report!.shape.n > 0).map((s) => ({ name: s.name, color: s.color, counts: s.report!.shape.aspectRatioCounts }));
-  const roses = plotted.filter((s) => s.report!.fabricRose.grainCount > 0);
   return `
     <div class="panel-section">
       <div class="row-between" style="margin-bottom:6px;">
@@ -232,7 +199,8 @@ export function renderCompareHtml(state: AppState, lightTheme: boolean, charts: 
           ? `<div class="row" style="margin-top:8px;">
               <button type="button" class="btn btn-sm ${state.psdXAxis === 'mm' ? 'active' : ''}" data-psd-x="mm">${unit} (log)</button>
               ${unit === 'mm' ? `<button type="button" class="btn btn-sm ${state.psdXAxis === 'phi' ? 'active' : ''}" data-psd-x="phi">phi (φ)</button>` : ''}
-              <button type="button" class="btn btn-sm" data-action="export-comparison" style="margin-left:auto;">Download comparison CSV</button>
+              <button type="button" class="btn btn-sm" data-action="compare-report" style="margin-left:auto;" title="All of this comparison as a page to print or save as PDF${byDate ? ', with the change over time' : ' (tick “Order by survey date” to add the change over time)'}">Printable comparison report</button>
+              <button type="button" class="btn btn-sm" data-action="export-comparison">Download comparison CSV</button>
             </div>
             ${chartBox('compare-psd', 'Cumulative grain-size distributions by site', (light) => renderComparePsdSvg(psdSeries, unit, state.psdXAxis, light), lightTheme)}
             ${unit === 'mm' ? `<div class="row" style="margin-top:8px;">

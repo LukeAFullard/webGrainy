@@ -67,6 +67,8 @@ export interface EventContext {
     download(blob: Blob, filename: string): void;
     /** Opens the printable site report in a new tab (or downloads it if pop-ups are blocked). */
     openReport(): void;
+    /** Opens the printable comparison report of the Compare sites view. */
+    openCompareReport(): void;
     /** Runs an export from the Export dialog or a "Back up now" button. */
     runExport(kind: string): void;
     /** Sets the value of a form field by id (calibration presets). */

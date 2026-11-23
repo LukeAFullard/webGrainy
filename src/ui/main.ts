@@ -50,6 +50,8 @@ import { renderShortcutsModalHtml } from './shortcuts.js';
 import { countFlagged, grainFlags, navGrainsFor } from './grainNav.js';
 import { createWorkspaceActions, getActivePhoto, getActiveSite, STALE_BUILD_MESSAGE } from './workspaceActions.js';
 import { buildPrintableReport } from './reportBuilder.js';
+import { buildCompareReportHtml, compareReportTitle, comparisonStatistics } from './compareReport.js';
+import { buildComparisonView } from './comparisonView.js';
 import { APP_SHELL_HTML } from './shellHtml.js';
 import { computeBlurScoreFromBlob, decodeTiffFileToPng, enhanceWithCanvas, rectifyWithCanvas } from './imageCanvas.js';
 import { applyEvent, newActivity, renderActivityHtml, startPhoto, type ActivityState } from './progress.js';
@@ -781,6 +783,7 @@ function renderAll(state: AppState): void {
     (state.activeModal === 'export' &&
       (prev.siteReport !== state.siteReport ||
         prev.exportCountedOnly !== state.exportCountedOnly ||
+        prev.reportOptions !== state.reportOptions ||
         prev.exportWhat !== state.exportWhat ||
         prev.exportFormat !== state.exportFormat ||
         prev.exportCoords !== state.exportCoords ||
@@ -1053,6 +1056,7 @@ function eventContext(): EventContext {
       download: triggerBlobDownload,
       runExport,
       openReport,
+      openCompareReport,
       setFieldValue: (id, value) => {
         const el = document.getElementById(id) as HTMLInputElement | HTMLSelectElement | null;
         if (el) el.value = value;
@@ -1154,6 +1158,48 @@ function openReport(): void {
       store.setState({ statusMessage: 'Pop-ups are blocked, so the report was downloaded instead: open it and print it from the browser.' });
     }
   });
+}
+
+/** Writes report HTML into a tab opened beforehand (or downloads it when pop-ups are blocked). */
+function showReportIn(win: Window | null, html: string, filename: string): void {
+  if (win && !win.closed) {
+    win.document.open();
+    win.document.write(html);
+    win.document.close();
+    const printBtn = win.document.querySelector('[data-print]');
+    if (printBtn && !printBtn.hasAttribute('data-bound')) {
+      printBtn.setAttribute('data-bound', '');
+      printBtn.addEventListener('click', () => win.print());
+    }
+  } else {
+    triggerBlobDownload(new Blob([html], { type: 'text/html' }), filename);
+    store.setState({ statusMessage: 'Pop-ups are blocked, so the report was downloaded instead: open it and print it from the browser.' });
+  }
+}
+
+/** Opens the printable comparison report (Compare sites). */
+function openCompareReport(): void {
+  const st = store.getState();
+  const cmp = st.comparison;
+  if (!cmp || cmp.loading || cmp.sites.every((s) => s.report === null)) {
+    store.setState({ statusMessage: 'Choose sites with results to compare first.' });
+    return;
+  }
+  const win = window.open('', '_blank');
+  const view = buildComparisonView(cmp.sites, st.compareByDate, st.histogramStepPhi === 0.5 ? 0.5 : 1);
+  const html = buildCompareReportHtml({
+    view,
+    byDate: st.compareByDate,
+    psdXAxis: st.psdXAxis,
+    histogramStepPhi: st.histogramStepPhi === 0.5 ? 0.5 : 1,
+    generatedAt: new Date().toISOString(),
+    statistics: comparisonStatistics(st.siteOptions, view, st.compareInPixels),
+    metadata: baseExportMetadata(),
+    includeShapeFabric: st.reportOptions.includeShapeFabric,
+  });
+  const { title } = compareReportTitle(view, st.compareByDate);
+  showReportIn(win, html, `${title.replace(/[^a-zA-Z0-9_-]+/g, '_').slice(0, 60)}_comparison.html`);
+  store.setState({ statusMessage: 'Printable comparison report ready.' });
 }
 
 async function buildReport(): Promise<string | null> {

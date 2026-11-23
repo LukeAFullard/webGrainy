@@ -159,6 +159,9 @@ export type ComparedPercentile = 'D16' | 'D50' | 'D84';
 export interface D50Comparison {
   a: string;
   b: string;
+  /** Site ids of a and b (names need not be unique). */
+  aId: string;
+  bId: string;
   /** Percentile compared (D50 unless stated). */
   key: ComparedPercentile;
   /** Value of a divided by value of b. */
@@ -226,7 +229,7 @@ function comparePair(A: WithReport, B: WithReport, key: ComparedPercentile): D50
   // Single-photo sites: their grain-only bootstrap interval cannot see patch-to-patch
   // variation (about 30% false "significant" changes in simulation): no interval or p-value.
   if (basis === 'single-photo') {
-    return { a: A.name, b: B.name, key, ratio: Math.exp(lr), ratioLo: Number.NaN, ratioHi: Number.NaN, p: Number.NaN, pAdjusted: Number.NaN, basis, df: Number.NaN };
+    return { a: A.name, b: B.name, aId: A.siteId, bId: B.siteId, key, ratio: Math.exp(lr), ratioLo: Number.NaN, ratioHi: Number.NaN, p: Number.NaN, pAdjusted: Number.NaN, basis, df: Number.NaN };
   }
   const nA = A.report.includedPhotoCount;
   const nB = B.report.includedPhotoCount;
@@ -239,6 +242,8 @@ function comparePair(A: WithReport, B: WithReport, key: ComparedPercentile): D50
   return {
     a: A.name,
     b: B.name,
+    aId: A.siteId,
+    bId: B.siteId,
     key,
     ratio: Math.exp(lr),
     ratioLo: ok ? Math.exp(lr - q * s) : Number.NaN,

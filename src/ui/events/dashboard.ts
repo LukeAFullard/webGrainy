@@ -41,6 +41,7 @@ export const dashboardActions: Record<string, ActionHandler> = {
   'toggle-compare-date': (el, ctx) => {
     ctx.store.setState({ compareByDate: (el as ControlLike).checked === true });
   },
+  'compare-report': (_el, ctx) => ctx.ui.openCompareReport(),
   'export-comparison': (_el, ctx) => {
     const state = ctx.store.getState();
     const cmp = state.comparison;

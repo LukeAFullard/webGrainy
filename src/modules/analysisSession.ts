@@ -35,7 +35,7 @@ import {
   type GrainHullCache,
 } from './morphometricsExt.js';
 import { photoSizeHistogram, type SizeHistogram } from './histograms.js';
-import { buildContourGeoJson, buildContourSvg, encodeMaskPng, encodeMaskPngCompressed, resizeLabelsNearest } from './exportFormats.js';
+import { buildContourGeoJson, buildContourSvg, encodeMaskPng, encodeMaskPngCompressed, resizeLabelsNearest, type GrainSvgStyle } from './exportFormats.js';
 import { computeSedimentStats, filterBorderGrains, grainPassesSizeCutoffs, summaryCsvRows } from './sedimentStats.js';
 import {
   type AnalysisProvenance,
@@ -1065,13 +1065,19 @@ export class AnalysisSession {
     return new Set(this.statsGrainsForSummaries(sizeMetric, cutoffs).map((g) => g.id));
   }
 
-  exportSvg(photoMetadata?: Record<string, unknown>, onlyIds?: ReadonlySet<number>): string {
+  exportSvg(
+    photoMetadata?: Record<string, unknown>,
+    onlyIds?: ReadonlySet<number>,
+    /** Per-grain fill and outline (e.g. by size class); null leaves a grain out. */
+    styleOf?: (g: GrainMorphometrics) => GrainSvgStyle | null,
+  ): string {
     const grains = onlyIds ? this.workingGrains.filter((g) => onlyIds.has(g.id)) : this.workingGrains;
     return buildContourSvg(this.workingMasks, grains, this.workingImage.width, this.workingImage.height, {
       scaleInv: this.outputScaleInv(),
       outWidth: this.workingImage.originalWidth,
       outHeight: this.workingImage.originalHeight,
       metadata: this.getExportMetadata(photoMetadata),
+      ...(styleOf ? { styleOf } : {}),
     });
   }
 

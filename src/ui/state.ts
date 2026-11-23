@@ -4,6 +4,8 @@ import { DEFAULT_SITE_OPTIONS } from '../modules/siteOptions.js';
 import type { HelpKey } from './help.js';
 import { DEFAULT_POSTPROCESS_OPTIONS } from '../modules/postprocessCore.js';
 import { DEFAULT_RETENTION_DAYS } from '../modules/retention.js';
+import { readReportOptions } from './prefs.js';
+import type { ReportOptions } from './report.js';
 import type {
   AnalysisConfig,
   EngineCapabilities,
@@ -98,6 +100,8 @@ export interface AppState {
   downloadIncludeProject: boolean;
   /** Outline / mask exports: only the grains counted in the statistics (default: every grain). */
   exportCountedOnly: boolean;
+  /** Printable report options (photo overlay, layout, optional sections); remembered in this browser. */
+  reportOptions: ReportOptions;
   /** Export dialog choices for outlines / mask / photo (see photoExportChoice). */
   exportWhat: string;
   exportFormat: string;
@@ -202,6 +206,7 @@ export function createInitialState(): AppState {
     storageFullNotice: null,
     downloadIncludeProject: false,
     exportCountedOnly: false,
+    reportOptions: readReportOptions(),
     exportWhat: 'outlines',
     exportFormat: 'geojson',
     exportCoords: 'lonlat',

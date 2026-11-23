@@ -844,6 +844,13 @@ a grain, so D50 can move by a few percent. Results per model: `tidy_results_unet
 `tidy_results_cpsam.md`, with before/after examples `validation/tidy/example_unet_*.png` and
 `example_cpsam_*.png`.
 
+No analysis setting prevents the fragments without a cost (`validation/tidy/settings_sweep_unet.md`,
+U-Net, the same 40 images, one setting changed at a time): a cell-probability threshold of +0.5
+removed 13% of them but lowered PQ to 0.526 (worse on 26 of 40 images); a flow threshold of 0.3
+removed 18% but dropped 5% of the grains and raised the median D50 error to 7.1%; seed density,
+flow steps and minimum size had no effect. Analysing at a higher resolution (enlarged ×1.5, or the
+full resolution of a photo larger than 1024 px) gives more, smaller fragments.
+
 ---
 
 ## 16. Limitations
