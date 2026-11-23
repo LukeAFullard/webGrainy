@@ -246,6 +246,11 @@ applies it. It works on the label mask, as GIS raster clean-up does (GDAL's siev
 2. Every other part with at least the minimum grain size becomes a grain of its own (a detached
    blob of that size is more likely a separate stone). A smaller part joins the neighbouring
    grain it shares the longest edge with, or becomes background if it touches no other grain.
+   It may join only a grain's main part, or a part that has already joined one: specks of
+   several grains that touch only each other (clusters in the gaps between stones) are removed,
+   not handed to one another, so afterwards every grain is one 4-connected piece. The decisions
+   are made in rounds, so a chain of specks that reaches a grain joins it link by link, whatever
+   the scan order.
 3. Background regions enclosed by one grain (not touching the image edge or another grain) are
    filled, as Cellpose's `fill_holes_and_remove_small_masks` does. Gaps between grains are kept.
 

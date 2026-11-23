@@ -38,6 +38,75 @@ describe('tidyLabelMask', () => {
     expect([...r.affectedIds].sort()).toEqual([1, 2]);
   });
 
+  it('specks of different grains touching only each other are removed, not swapped (left floating)', () => {
+    const { masks, w, h } = grid([
+      '111......222',
+      '111......222',
+      '111..12..222', // a speck of grain 1 next to a speck of grain 2, both away from their grains
+      '111......222',
+    ]);
+    const r = tidyLabelMask(masks, w, h, { minSize: 4 });
+    expect(show(masks, w)).toEqual(['111......222', '111......222', '111......222', '111......222']);
+    expect([r.fragmentsMerged, r.fragmentsRemoved]).toEqual([0, 2]);
+  });
+
+  it('a chain of specks that reaches a grain joins it, one link at a time', () => {
+    const { masks, w, h } = grid([
+      '..........',
+      '.2222.....',
+      '.22221....', // speck of grain 1 touching grain 2
+      '.....3....', // speck of grain 3 touching only grain 1's speck
+      '.....3....',
+      '........11', // grain 1's main part
+      '........11',
+      '...333....', // grain 3's main part
+      '...333....',
+    ]);
+    const r = tidyLabelMask(masks, w, h, { minSize: 5 });
+    expect(show(masks, w).slice(1, 5)).toEqual(['.2222.....', '.22222....', '.....2....', '.....2....']);
+    expect([r.fragmentsMerged, r.fragmentsRemoved]).toEqual([2, 0]);
+  });
+
+  it('afterwards every grain is one 4-connected piece, and tidying again changes nothing (random masks)', () => {
+    let seed = 12345;
+    const rnd = (): number => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    const partsPerGrain = (m: Int32Array, w: number): Map<number, number> => {
+      const seen = new Uint8Array(m.length);
+      const out = new Map<number, number>();
+      for (let s0 = 0; s0 < m.length; s0++) {
+        const l = m[s0]!;
+        if (l <= 0 || seen[s0]) continue;
+        out.set(l, (out.get(l) ?? 0) + 1);
+        const q = [s0];
+        seen[s0] = 1;
+        while (q.length) {
+          const p = q.pop()!;
+          const x = p % w;
+          for (const k of [x > 0 ? p - 1 : -1, x < w - 1 ? p + 1 : -1, p - w, p + w]) {
+            if (k >= 0 && k < m.length && !seen[k] && m[k] === l) { seen[k] = 1; q.push(k); }
+          }
+        }
+      }
+      return out;
+    };
+    for (let trial = 0; trial < 30; trial++) {
+      const w = 40, h = 30;
+      const m = new Int32Array(w * h);
+      // Blocky grains, then salt-and-pepper specks of random grains (the worst case for fragments).
+      for (let g = 1; g <= 12; g++) {
+        const x0 = Math.floor(rnd() * (w - 8)), y0 = Math.floor(rnd() * (h - 8));
+        for (let y = y0; y < y0 + 4 + Math.floor(rnd() * 5); y++) for (let x = x0; x < x0 + 4 + Math.floor(rnd() * 5); x++) m[y * w + x] = g;
+      }
+      for (let k = 0; k < 150; k++) m[Math.floor(rnd() * m.length)] = rnd() < 0.3 ? 0 : 1 + Math.floor(rnd() * 12);
+      tidyLabelMask(m, w, h, { minSize: 6 });
+      const multi = [...partsPerGrain(m, w)].filter(([, n]) => n > 1);
+      expect(multi, `trial ${trial}`).toEqual([]);
+      const again = m.slice();
+      const r2 = tidyLabelMask(again, w, h, { minSize: 6 });
+      expect(r2.changedPixels, `trial ${trial}`).toBe(0);
+    }
+  });
+
   it('a fragment of at least Min size becomes a grain of its own; the largest part stays the grain', () => {
     const { masks, w, h } = grid([
       '1111....11',

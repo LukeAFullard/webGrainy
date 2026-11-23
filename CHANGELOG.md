@@ -58,6 +58,12 @@ First public release.
 
 ### Reports and comparisons
 
+- **Fix (Tidy outlines):** specks of different grains that touched only each other, away from
+  their grains, were handed to one another and stayed detached, so a tidied grain could still be in
+  several pieces (21 grains on the Cellpose-SAM test images). A speck now joins only a grain's main
+  body, or a speck already joined to one; floating clusters are removed. The validation now checks
+  that no grain is in pieces after Tidy (0 of 3,202 U-Net and 0 of 4,352 Cellpose-SAM grains).
+
 - **Printable report options** (Export → Printable report options, remembered in the browser):
   grains on the photos drawn as outlines, **Wentworth size colours** (the Display colours, with a
   legend of the classes present), counted vs not counted, or not at all; photos two per row or one
