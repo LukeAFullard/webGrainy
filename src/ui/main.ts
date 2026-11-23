@@ -469,8 +469,20 @@ function renderToolbarAndOverlays(state: AppState): void {
   const html = renderToolbarHtml(state);
   toolbarEl.innerHTML = html.toolbar;
   const keptOpen = captureOpenDetails(subToolbarEl);
+  const listScroll = subToolbarEl.querySelector('.flag-groups')?.scrollTop ?? 0;
   subToolbarEl.innerHTML = html.subToolbar;
   restoreOpenDetails(subToolbarEl, keptOpen);
+  // Keep the flagged list where it was, and the inspected grain's entry in view.
+  const list = subToolbarEl.querySelector<HTMLElement>('.flag-groups');
+  if (list) {
+    list.scrollTop = listScroll;
+    const active = list.querySelector<HTMLElement>('.flag-item.active');
+    if (active) {
+      const top = active.offsetTop;
+      if (top < list.scrollTop) list.scrollTop = top;
+      else if (top + active.offsetHeight > list.scrollTop + list.clientHeight) list.scrollTop = top + active.offsetHeight - list.clientHeight;
+    }
+  }
 }
 
 function renderViewportExtras(state: AppState): void {
@@ -725,7 +737,10 @@ function renderAll(state: AppState): void {
     prev.siteReportError !== state.siteReportError ||
     prev.singlePhotoStats !== state.singlePhotoStats ||
     prev.batchRunning !== state.batchRunning ||
-    prev.enhancing !== state.enhancing
+    prev.enhancing !== state.enhancing ||
+    // The flagged list marks the inspected grain; Save image is disabled while it draws.
+    prev.inspectedGrainId !== state.inspectedGrainId ||
+    prev.savingView !== state.savingView
   ) {
     renderToolbarAndOverlays(state);
   }

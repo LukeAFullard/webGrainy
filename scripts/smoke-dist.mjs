@@ -324,6 +324,21 @@ try {
     await page.waitForTimeout(500);
     const roiText = await page.evaluate(() => document.body.innerText);
     if (!/\d+ excluded by ROI/.test(roiText)) fail('drawing an ROI excluded no grains');
+    // Flagged grains (outside the ROI now): the list grouped by reason, Prev / Next flagged.
+    await page.click('button[data-tool="inspect"]');
+    await page.click('details.flag-list > summary');
+    const groups = await page.locator('.flag-group-title').allInnerTexts();
+    if (!groups.some((g) => /Outside the ROI/.test(g))) fail(`Flagged list: no "Outside the ROI" group (${groups.join(' | ')})`);
+    await page.locator('.flag-item').first().click();
+    await page.click('button[data-nav="prevFlagged"]');
+    await page.waitForTimeout(300);
+    if ((await page.locator('.flag-item.active').count()) !== 1) fail(`Flagged list: the inspected grain is not marked (${await page.locator('.flag-item.active').count()} marked, list open: ${await page.locator('details.flag-list[open]').count()})`);
+    if (process.env.SMOKE_SHOTS) await page.screenshot({ path: join(process.env.SMOKE_SHOTS, 'flagged.png') });
+    console.log(`ok: Flagged list (${groups.join('; ')}), Prev flagged`);
+    await page.click('details.flag-list > summary');
+    await page.click('button[data-action="close-inspector"]');
+    await page.click('button[data-action="fit-view"]');
+    await page.click('button[data-tool="roiPoly"]');
     await page.click('button[data-action="clear-areas"]');
     await page.waitForTimeout(500);
     if (/\d+ excluded by ROI/.test(await page.evaluate(() => document.body.innerText))) fail('Clear areas did not remove the ROI');

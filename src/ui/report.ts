@@ -12,12 +12,21 @@ import { esc } from './panels/html.js';
 
 export interface ReportPhoto {
   label: string;
-  /** Small JPEG of the photo (data: URL). */
+  /** JPEG of the photo (data: URL). */
   imageDataUrl?: string;
   /** Grain outlines over the photo (an SVG document in original photo coordinates). */
   outlineSvg?: string;
+  /** Photo size in pixels (for the scale bar). */
+  widthPx?: number;
+  heightPx?: number;
+  /** Grains detected (before size cutoffs and exclusions). */
+  rawGrainCount?: number;
   validGrainCount: number;
+  D16?: number;
   D50: number;
+  D84?: number;
+  /** Share of the site statistics from this photo (%). */
+  weightPct?: number;
   mmPerPx?: number;
   outlierReasons: string[];
 }
@@ -67,13 +76,34 @@ function svgDataUrl(svg: string): string {
   return `data:image/svg+xml;base64,${btoa(bin)}`;
 }
 
+/** A "nice" scale-bar length (1, 2 or 5 x 10^k mm) of about a fifth of the photo width. */
+function scaleBarMm(photoWidthMm: number): number {
+  const target = photoWidthMm / 5;
+  const p = 10 ** Math.floor(Math.log10(target));
+  return [5, 2, 1].map((m) => m * p).find((v) => v <= target) ?? p;
+}
+
+const histogramBasisText = (mode: string): string =>
+  mode === 'number-weighted' ? '% by grain count' : mode === 'virtual-wolman-grid' ? '% of grid points' : 'area-weighted %';
+
+const fmtLen = (mm: number): string => (mm >= 1000 ? `${mm / 1000} m` : mm >= 10 ? `${mm / 10} cm` : `${mm} mm`);
+
 export function buildSiteReportHtml(input: ReportInput): string {
   const { site, report: r } = input;
   const u = r.unit;
   const ciPct = Math.round(r.bootstrapCi.confidenceLevel * 100);
-  const pctRow = (key: 'D16' | 'D50' | 'D84'): string => `
-    <tr><th>${key}</th><td>${num(r.psd[key], `psd/${key}`)} ${u}</td>
-      <td>${num(r.bootstrapCi.lower[key], `psd_bootstrap_ci_lo/${key}`)} – ${num(r.bootstrapCi.upper[key], `psd_bootstrap_ci_hi/${key}`)} ${u}</td></tr>`;
+  const ciNote =
+    r.ciStatus === 'few-photos'
+      ? 'approximate: fewer than 5 photos'
+      : r.ciStatus === 'single-photo'
+        ? 'one photo: grain resampling only'
+        : r.ciStatus === 'degenerate'
+          ? 'not estimable (identical photos?)'
+          : 'photo bootstrap';
+  const PCTS = ['D5', 'D10', 'D16', 'D25', 'D50', 'D75', 'D84', 'D90', 'D95'] as const;
+  const pctRow = (key: (typeof PCTS)[number]): string => `
+    <tr${key === 'D16' || key === 'D50' || key === 'D84' ? ' class="key"' : ''}><th>${key}</th><td class="n">${num(r.psd[key], `psd/${key}`)}</td>
+      <td class="n">${num(r.bootstrapCi.lower[key], `psd_bootstrap_ci_lo/${key}`)} – ${num(r.bootstrapCi.upper[key], `psd_bootstrap_ci_hi/${key}`)}</td></tr>`;
   const x = r.extra && r.extra.n > 0 ? r.extra : null;
   const fw = r.folkWard;
   const w = r.wentworth;
@@ -103,8 +133,10 @@ export function buildSiteReportHtml(input: ReportInput): string {
       : undefined;
   const modelName = input.metadata['modelId'] ? String(input.metadata['modelId']) : 'ImageGrains 2.0 ONNX';
   const modelHash = input.metadata['modelSha256'] ? String(input.metadata['modelSha256']).slice(0, 12) : undefined;
+  const appVersion = input.metadata['appVersion'] ? String(input.metadata['appVersion']) : '';
+  const photosWord = `${r.includedPhotoCount} photo${r.includedPhotoCount === 1 ? '' : 's'}`;
   const methodsSentence = [
-    `Surface grain sizes for ${site.name} (${r.includedPhotoCount} photo${r.includedPhotoCount === 1 ? '' : 's'}, n = ${r.validGrainCount} grains) were measured in webGrainy using ${modelName}${modelHash ? ` (SHA-256 ${modelHash}…)` : ''}.`,
+    `Surface grain sizes for ${site.name} (${photosWord}, n = ${r.validGrainCount} grains) were measured in webGrainy using ${modelName}${modelHash ? ` (SHA-256 ${modelHash}…)` : ''}.`,
     `Sizes report the 2D visible ${r.sizeMetric} (${r.statisticalBasisLabel})${resText ? ` at ${resText}` : ''}${detText ? `; grains smaller than ${detText} (the detection limit) are not counted, and grains up to a few times that size are partly missed` : ''}.`,
     editText ? `${editText}.` : '',
     tidyText ? `${tidyText}.` : '',
@@ -113,7 +145,61 @@ export function buildSiteReportHtml(input: ReportInput): string {
   ]
     .filter(Boolean)
     .join(' ');
+  const adequacyClass = r.adequacy.rating === 'Insufficient' ? 'bad' : r.adequacy.rating === 'Minimal' ? 'warnc' : 'good';
+  const tile = (label: string, value: string, sub: string, cls = ''): string =>
+    `<div class="tile ${cls}"><div class="tl">${label}</div><div class="tv">${value}</div><div class="ts">${sub}</div></div>`;
+  const ciText = (k: 'D16' | 'D50' | 'D84'): string =>
+    `${ciPct}% CI ${fmt(r.bootstrapCi.lower[k])}–${fmt(r.bootstrapCi.upper[k])} ${u}`;
 
+  // Wentworth classes as one stacked bar.
+  const wentworthBar = w
+    ? (() => {
+        const classes = [
+          { name: 'Sand', pct: w.sandPct, col: '#f6c46b', csv: 'sand_pct' },
+          { name: 'Gravel', pct: w.gravelPct, col: '#6fb3f2', csv: 'gravel_pct' },
+          { name: 'Cobble', pct: w.cobblePct, col: '#69c995', csv: 'cobble_pct' },
+          { name: 'Boulder', pct: w.boulderPct, col: '#e88a7d', csv: 'boulder_pct' },
+        ];
+        return `<div class="wbar">${classes
+          .filter((c) => Number.isFinite(c.pct) && c.pct > 0)
+          .map((c) => `<span style="width:${c.pct.toFixed(2)}%;background:${c.col}" title="${c.name}"></span>`)
+          .join('')}</div>
+  <div class="wlegend">${classes
+    .map((c) => `<span><i style="background:${c.col}"></i>${c.name} ${num(c.pct, `wentworth/${c.csv}`, 1)}%</span>`)
+    .join('')}</div>
+  <p class="cap">Wentworth classes: sand &lt;2 mm, gravel 2–64 mm, cobble 64–256 mm, boulder ≥256 mm (${esc(r.statisticalBasisLabel)}).</p>`;
+      })()
+    : '';
+
+  const photoRows = input.photos
+    .map(
+      (p, i) => `<tr><td class="n">${i + 1}</td><td class="lbl">${esc(p.label)}</td><td class="n">${p.mmPerPx !== undefined ? p.mmPerPx.toFixed(3) : '–'}</td>
+      <td class="n">${p.validGrainCount}${p.rawGrainCount !== undefined ? ` / ${p.rawGrainCount}` : ''}</td>
+      <td class="n">${p.D16 !== undefined ? fmt(p.D16) : '–'}</td><td class="n">${fmt(p.D50)}</td><td class="n">${p.D84 !== undefined ? fmt(p.D84) : '–'}</td>
+      <td class="n">${p.weightPct !== undefined && Number.isFinite(p.weightPct) ? fmt(p.weightPct, 1) : '–'}</td>
+      <td class="warn">${esc(p.outlierReasons.join('; '))}</td></tr>`,
+    )
+    .join('');
+
+  const photoFigures = input.photos
+    .map((p, i) => {
+      const bar =
+        p.mmPerPx !== undefined && p.widthPx !== undefined && p.widthPx > 0
+          ? (() => {
+              const widthMm = p.mmPerPx! * p.widthPx!;
+              const len = scaleBarMm(widthMm);
+              return `<div class="scalebar"><div class="sbar" style="width:${((len / widthMm) * 100).toFixed(2)}%"></div><div class="slabel">${fmtLen(len)}</div></div>`;
+            })()
+          : '';
+      return `<figure class="photo">
+  <div class="thumb">${p.imageDataUrl ? `<img src="${p.imageDataUrl}" alt="">` : '<div class="noimg">photo not available</div>'}${p.outlineSvg ? `<img class="outlines" src="${svgDataUrl(p.outlineSvg.replace(/stroke-width="1"/g, 'stroke-width="1" vector-effect="non-scaling-stroke"'))}" alt="">` : ''}${bar}</div>
+  <figcaption><strong>Photo ${i + 1}. ${esc(p.label)}</strong> — ${p.validGrainCount} grains counted · D50 ${fmt(p.D50)} ${u}${p.mmPerPx !== undefined ? ` · ${p.mmPerPx.toFixed(3)} mm/px` : ''}${p.outlierReasons.length > 0 ? ` · <span class="warn">${esc(p.outlierReasons.join('; '))}</span>` : ''}</figcaption>
+</figure>`;
+    })
+    .join('\n');
+
+  // Plain text for the CSS page footer (<style> is raw text: no entities, and no "<" so it cannot close the tag).
+  const siteNameCss = site.name.replace(/[\\"<>\n\r]/g, ' ').slice(0, 80);
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -121,93 +207,165 @@ export function buildSiteReportHtml(input: ReportInput): string {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(site.name)} — grain-size report</title>
 <style>
-  @page { size: A4; margin: 14mm; }
-  :root { color-scheme: light; }
-  body { font: 10.5pt/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; color: #1a202c; background: #fff; margin: 0 auto; max-width: 182mm; padding: 12px; }
-  h1 { font-size: 17pt; margin: 0 0 2px; }
-  h2 { font-size: 11.5pt; margin: 14px 0 6px; border-bottom: 1px solid #cbd5e0; padding-bottom: 2px; }
-  .sub { color: #4a5568; margin: 0 0 8px; }
-  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-items: start; }
+  @page { size: A4; margin: 16mm 14mm 18mm;
+    @bottom-left { content: "${siteNameCss} · grain-size report"; font: 7.5pt system-ui, sans-serif; color: #718096; }
+    @bottom-right { content: "Page " counter(page) " of " counter(pages); font: 7.5pt system-ui, sans-serif; color: #718096; } }
+  :root { color-scheme: light; --ink: #1a202c; --muted: #4a5568; --line: #e2e8f0; --accent: #2b6cb0; --soft: #f7fafc; }
+  * { box-sizing: border-box; }
+  body { font: 10pt/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: var(--ink); background: #fff; margin: 0 auto; max-width: 182mm; padding: 14px; }
+  header.doc { border-bottom: 3px solid var(--accent); padding-bottom: 8px; margin-bottom: 12px; }
+  .kicker { text-transform: uppercase; letter-spacing: .08em; font-size: 8pt; font-weight: 700; color: var(--accent); }
+  h1 { font-size: 20pt; line-height: 1.15; margin: 2px 0 4px; }
+  .sub { color: var(--muted); margin: 0; font-size: 9.5pt; }
+  h2 { font-size: 12pt; margin: 18px 0 8px; padding-bottom: 3px; border-bottom: 1px solid #cbd5e0; color: #1a365d; }
+  h2 .no { color: var(--accent); margin-right: 6px; }
+  .tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 10px 0 4px; }
+  .tile { border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 4px; padding: 6px 9px; background: var(--soft); }
+  .tile .tl { font-size: 7.5pt; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 600; }
+  .tile .tv { font-size: 16pt; font-weight: 700; line-height: 1.2; font-variant-numeric: tabular-nums; }
+  .tile .ts { font-size: 7.5pt; color: var(--muted); }
+  .tile.good { border-left-color: #2f855a; } .tile.warnc { border-left-color: #c05621; } .tile.bad { border-left-color: #c53030; }
+  .lede { font-size: 9pt; color: #2d3748; margin: 8px 0 0; }
+  figure { margin: 0; }
   .chart svg, .chart img { width: 100%; height: auto; display: block; }
-  table { border-collapse: collapse; width: 100%; font-size: 9.5pt; }
-  th, td { text-align: left; padding: 2px 6px; border-bottom: 1px solid #e2e8f0; vertical-align: top; }
+  .fig-table { display: grid; grid-template-columns: 11fr 8fr; gap: 14px; align-items: start; }
+  .fig-hist { max-width: 115mm; margin: 6px auto 0; }
+  .cap { font-size: 8pt; color: var(--muted); margin: 4px 0 0; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-items: start; }
+  table { border-collapse: collapse; width: 100%; font-size: 9pt; }
+  th, td { text-align: left; padding: 3px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  thead th { font-size: 7.5pt; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); border-bottom: 1.5px solid #a0aec0; white-space: normal; vertical-align: bottom; }
   th { font-weight: 600; white-space: nowrap; }
-  .photos { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
-  .kv { display: grid; grid-template-columns: auto 1fr auto 1fr; gap: 1px 10px; font-size: 8.5pt; }
-  .kv dt { font-weight: 600; } .kv dd { margin: 0; overflow-wrap: anywhere; }
-  .methods-box { margin-top: 8px; padding: 6px 8px; background: #f7fafc; border: 1px solid #e2e8f0; border-radius: 4px; font-size: 8.5pt; color: #2d3748; }
-  .cite { columns: 2; column-gap: 16px; font-size: 7.5pt; color: #4a5568; padding-left: 14px; margin: 0; }
-  .cite li { break-inside: avoid; margin-bottom: 2px; }
-  .photo { break-inside: avoid; font-size: 7.5pt; line-height: 1.3; }
-  .thumb { position: relative; background: #edf2f7; }
+  td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.key th, tr.key td { background: #ebf4ff; font-weight: 600; }
+  td.lbl { overflow-wrap: anywhere; min-width: 30mm; }
+  .perphoto { font-size: 8.5pt; }
+  .wbar { display: flex; height: 14px; border-radius: 3px; overflow: hidden; border: 1px solid var(--line); margin-top: 10px; }
+  .wbar span { display: block; height: 100%; }
+  .wlegend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 8.5pt; margin-top: 4px; }
+  .wlegend i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+  .kv { display: grid; grid-template-columns: auto 1fr auto 1fr; gap: 2px 12px; font-size: 8.5pt; margin: 0; }
+  .kv dt { font-weight: 600; color: #2d3748; } .kv dd { margin: 0; overflow-wrap: anywhere; }
+  .methods-box { margin-top: 10px; padding: 8px 10px; background: var(--soft); border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 4px; font-size: 8.5pt; color: #2d3748; }
+  .cite { font-size: 8pt; color: var(--muted); padding-left: 16px; margin: 0; }
+  .cite li { break-inside: avoid; margin-bottom: 3px; }
+  .photos { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 14px; }
+  .photos.single { grid-template-columns: 1fr; }
+  .photo { break-inside: avoid; }
+  .photo figcaption { font-size: 8pt; line-height: 1.35; margin-top: 4px; color: #2d3748; }
+  .thumb { position: relative; background: #edf2f7; border: 1px solid #cbd5e0; }
   .thumb img { width: 100%; height: auto; display: block; }
   .thumb img.outlines { position: absolute; inset: 0; height: 100%; }
+  .noimg { padding: 30px; text-align: center; color: var(--muted); font-size: 8pt; }
+  .scalebar { position: absolute; left: 3%; bottom: 4%; width: 94%; }
+  .sbar { height: 5px; background: #fff; border: 1px solid #000; box-shadow: 0 0 0 1px rgba(255,255,255,.7); }
+  .slabel { display: inline-block; margin-top: 2px; font-size: 7.5pt; font-weight: 700; color: #000; background: rgba(255,255,255,.85); padding: 0 3px; border-radius: 2px; }
+  .legend-note { font-size: 8pt; color: var(--muted); margin: 0 0 8px; }
+  .legend-note i { display: inline-block; width: 14px; height: 9px; background: rgba(56,189,248,.25); border: 1.5px solid #0284c7; vertical-align: -1px; margin-right: 4px; }
   .warn { color: #9c4221; }
-  .small { font-size: 8.5pt; color: #4a5568; }
-  .actions { margin: 0 0 10px; }
-  .actions button { font: inherit; padding: 4px 10px; }
+  .small { font-size: 8.5pt; color: var(--muted); }
+  .actions { margin: 0 0 12px; padding: 8px 10px; background: var(--soft); border: 1px solid var(--line); border-radius: 4px; }
+  .actions button { font: inherit; padding: 4px 12px; }
   section { break-inside: avoid; }
-  @media print { .actions { display: none; } body { padding: 0; } }
+  section.flow { break-inside: auto; }
+  .page-break { break-before: page; }
+  footer.doc { margin-top: 18px; padding-top: 6px; border-top: 1px solid var(--line); font-size: 7.5pt; color: var(--muted); }
+  @media print { .actions { display: none; } body { padding: 0; max-width: none; } h2 { break-after: avoid; } }
+  @media (max-width: 640px) { .tiles { grid-template-columns: 1fr 1fr; } .grid2, .photos, .fig-table { grid-template-columns: 1fr; } .kv { grid-template-columns: auto 1fr; } }
 </style>
 </head>
 <body>
-<div class="actions"><button type="button" data-print="">Print / Save as PDF</button> <span class="small">or press Ctrl+P (⌘P on a Mac)</span></div>
+<div class="actions"><button type="button" data-print="">Print / Save as PDF</button> <span class="small">or press Ctrl+P (⌘P on a Mac). Tip: turn off the browser's own headers and footers; the report numbers its pages.</span></div>
 ${PRINT_SCRIPT}
+<header class="doc">
+<div class="kicker">Surface grain-size report</div>
 <h1>${esc(site.name)}</h1>
-<p class="sub">${site.place ? `${esc(site.place)} · ` : ''}${site.surveyDate ? `Survey ${esc(site.surveyDate)} · ` : ''}Grain-size report · ${esc(dateOnly)} · ${r.includedPhotoCount} photo${r.includedPhotoCount === 1 ? '' : 's'} · ${r.validGrainCount} grains · ${esc(r.statisticalBasisLabel)}</p>
-
-<div class="grid2">
-  <div class="chart">${input.psdSvg}</div>
-  <div class="chart">${input.histogramSvg ?? '<p class="small">Size classes in mm need a calibrated scale.</p>'}</div>
-</div>
+<p class="sub">${site.place ? `${esc(site.place)} · ` : ''}${site.surveyDate ? `Survey ${esc(site.surveyDate)} · ` : ''}Report ${esc(dateOnly)} · ${photosWord} · ${r.validGrainCount} grains · ${esc(r.statisticalBasisLabel)}</p>
+</header>
 
 <section>
-<h2>Key statistics (${esc(u)}, size metric: ${esc(r.sizeMetric)})</h2>
+<div class="tiles">
+  ${tile('D50 (median)', `${fmt(r.psd.D50, 1)} ${esc(u)}`, ciText('D50'))}
+  ${tile('D16', `${fmt(r.psd.D16, 1)} ${esc(u)}`, ciText('D16'))}
+  ${tile('D84', `${fmt(r.psd.D84, 1)} ${esc(u)}`, ciText('D84'))}
+  ${tile('Grains counted', String(r.validGrainCount), `of ${r.totalGrainCount} detected · effective n ${r.adequacy.effectiveGrainCount}`)}
+  ${tile('Photos', String(r.includedPhotoCount), resText ? `scale ${esc(resText)}` : 'uncalibrated (px)')}
+  ${tile('Sample adequacy', esc(r.adequacy.rating), r.adequacy.limitedByPhotoCount ? esc(adequacyCapNote(true, r.includedPhotoCount)) : `largest grain ${fmt(r.adequacy.largestClastAreaRatio * 100, 1)}% of the grain area`, adequacyClass)}
+</div>
+<p class="lede">Size metric: <strong>${esc(r.sizeMetric)}</strong> of each grain's visible outline, in ${esc(u)}${detText ? `; grains below ${esc(detText)} are not counted` : ''}. Intervals are ${ciPct}% confidence intervals (${esc(ciNote)}).</p>
+</section>
+
+<section>
+<h2><span class="no">1</span>Grain-size distribution</h2>
+<div class="fig-table">
+  <figure class="chart">${input.psdSvg}
+    <figcaption class="cap">Figure 1. Cumulative grain-size distribution (${esc(r.statisticalBasisLabel)}). Shaded band: ${ciPct}% confidence interval; grey lines: individual photos; coloured points: D16, D50 and D84.</figcaption>
+  </figure>
+  <div>
+  <table>
+    <thead><tr><th>Percentile</th><th class="n">Size (${esc(u)})</th><th class="n">${ciPct}% CI (${esc(u)})</th></tr></thead>
+    ${PCTS.map(pctRow).join('')}
+  </table>
+  <p class="cap">${esc(ciNote === 'photo bootstrap' ? `${ciPct}% CI from resampling photos (${r.bootstrapReplicates} replicates).` : `${ciPct}% CI: ${ciNote}.`)}</p>
+  </div>
+</div>
+</section>
+
+<section>
+${input.histogramSvg ? `<figure class="chart fig-hist">${input.histogramSvg}<figcaption class="cap">Figure 2. Share of the sample in 1 φ size classes (${esc(histogramBasisText(r.poolingMode))}).</figcaption></figure>` : '<p class="small">Size classes in mm need a calibrated scale.</p>'}
+</section>
+
+<section>
+<h2><span class="no">2</span>Distribution statistics</h2>
 <div class="grid2">
   <table>
-    <tr><th></th><th>Value</th><th>${ciPct}% CI (photo bootstrap)${r.ciStatus === 'few-photos' ? ' · approximate: fewer than 5 photos' : r.ciStatus === 'single-photo' ? ' · one photo: grain resampling only' : r.ciStatus === 'degenerate' ? ' · not estimable (identical photos?)' : ''}</th></tr>
-    ${pctRow('D16')}${pctRow('D50')}${pctRow('D84')}
+    <thead><tr><th colspan="2">Folk &amp; Ward (graphic)</th></tr></thead>
+    ${fw ? `<tr><th>Mean</th><td>${num(fw.meanMm, 'folk_ward/mean_mm')} mm (${num(fw.meanPhi, 'folk_ward/mean_phi')} φ)</td></tr>
+    <tr><th>Sorting σI</th><td>${num(fw.sortingPhi, 'folk_ward/sorting_phi')} φ — ${esc(fw.sortingLabel)}</td></tr>
+    <tr><th>Skewness</th><td>${num(fw.skewnessPhi, 'folk_ward/skewness_phi')} — ${esc(fw.skewnessLabel)}</td></tr>
+    <tr><th>Kurtosis</th><td>${num(fw.kurtosisPhi, 'folk_ward/kurtosis_phi')} — ${esc(fw.kurtosisLabel)}</td></tr>` : '<tr><td colspan="2" class="small">Needs a calibrated scale (mm).</td></tr>'}
   </table>
   <table>
+    <thead><tr><th colspan="2">Moments and ratios</th></tr></thead>
     ${x ? `<tr><th>Geometric mean Dg</th><td>${num(x.geometricMean, 'distribution/geometric_mean_Dg')} ${u}</td></tr>
     <tr><th>Geometric SD σg</th><td>${num(x.geometricSd, 'distribution/geometric_sd_sigma_g')}</td></tr>
     <tr><th>Sauter mean D[3,2]</th><td>${num(x.sauterMeanD32, 'mean_diameters/sauter_mean_D32')} ${u}</td></tr>
     <tr><th>D65</th><td>${num(x.D65, 'distribution/D65')} ${u}</td></tr>
-    <tr><th>Uniformity Cu</th><td>${num(x.uniformityCu, 'ratios/uniformity_Cu')}</td></tr>` : ''}
-    ${fw ? `<tr><th>Folk &amp; Ward mean</th><td>${num(fw.meanMm, 'folk_ward/mean_mm')} mm (${num(fw.meanPhi, 'folk_ward/mean_phi')} φ)</td></tr>
-    <tr><th>Sorting σI</th><td>${num(fw.sortingPhi, 'folk_ward/sorting_phi')} φ — ${esc(fw.sortingLabel)}</td></tr>
-    <tr><th>Skewness / kurtosis</th><td>${num(fw.skewnessPhi, 'folk_ward/skewness_phi')} / ${num(fw.kurtosisPhi, 'folk_ward/kurtosis_phi')}</td></tr>` : ''}
+    <tr><th>Uniformity Cu</th><td>${num(x.uniformityCu, 'ratios/uniformity_Cu')}</td></tr>` : '<tr><td colspan="2" class="small">Not available.</td></tr>'}
   </table>
 </div>
-${w ? `<p class="small" style="margin-top:6px;">Wentworth classes: sand ${num(w.sandPct, 'wentworth/sand_pct', 1)}% · gravel ${num(w.gravelPct, 'wentworth/gravel_pct', 1)}% · cobble ${num(w.cobblePct, 'wentworth/cobble_pct', 1)}% · boulder ${num(w.boulderPct, 'wentworth/boulder_pct', 1)}%</p>` : ''}
+${wentworthBar}
 </section>
 
 <section>
-<h2>Sample adequacy</h2>
+<h2><span class="no">3</span>Sample adequacy and checks</h2>
 <p><strong>${esc(r.adequacy.rating)}</strong>${r.adequacy.limitedByPhotoCount ? ` (${esc(adequacyCapNote(true, r.includedPhotoCount))})` : ''} — effective grain count ${r.adequacy.effectiveGrainCount}; largest grain ${fmt(r.adequacy.largestClastAreaRatio * 100, 1)}% of the grain area${r.adequacy.largestClastWarning !== 'none' ? ' <span class="warn">(large: one stone has a big effect)</span>' : ''}.
 ${r.jackknife ? ` Leaving out one photo at a time changes D50 by a standard error of ${fmt(r.jackknife.seD50)} ${u}.` : ''}</p>
 ${r.adequacy.outlierPhotos.length > 0 ? `<p class="warn">Photos to check: ${r.adequacy.outlierPhotos.map((o) => `${esc(o.label)} (${esc(o.reasons.join('; '))})`).join(' · ')}</p>` : ''}
-${r.warnings.length > 0 ? `<ul class="warn small">${r.warnings.map((m) => `<li>${esc(m)}</li>`).join('')}</ul>` : ''}
+${r.warnings.length > 0 ? `<ul class="warn small">${r.warnings.map((m) => `<li>${esc(m)}</li>`).join('')}</ul>` : '<p class="small">No warnings.</p>'}
 </section>
 
-<section>
-<h2>Photos</h2>
-<div class="photos">
-${input.photos
-  .map(
-    (p) => `<div class="photo">
-  <div class="thumb">${p.imageDataUrl ? `<img src="${p.imageDataUrl}" alt="">` : ''}${p.outlineSvg ? `<img class="outlines" src="${svgDataUrl(p.outlineSvg.replace(/stroke-width="1"/g, 'stroke-width="1" vector-effect="non-scaling-stroke"'))}" alt="">` : ''}</div>
-  <div><strong>${esc(p.label)}</strong></div>
-  <div>${p.validGrainCount} grains · D50 ${fmt(p.D50)} ${u}${p.mmPerPx !== undefined ? ` · ${p.mmPerPx.toFixed(3)} mm/px` : ''}</div>
-  ${p.outlierReasons.length > 0 ? `<div class="warn">${esc(p.outlierReasons.join('; '))}</div>` : ''}
-</div>`,
-  )
-  .join('\n')}
+<section class="flow">
+<h2><span class="no">4</span>Results by photo</h2>
+<table class="perphoto">
+  <thead><tr><th class="n">#</th><th>Photo</th><th class="n">mm/px</th><th class="n">Grains${input.photos.some((p) => p.rawGrainCount !== undefined) ? ' (counted / detected)' : ''}</th><th class="n">D16</th><th class="n">D50</th><th class="n">D84</th><th class="n">Weight %</th><th>Notes</th></tr></thead>
+  <tbody>${photoRows}</tbody>
+</table>
+<p class="cap">Sizes in ${esc(u)}. Weight %: each photo's share of the site statistics (${esc(r.statisticalBasisLabel)}).</p>
+</section>
+
+<section class="flow page-break">
+<h2><span class="no">5</span>Photos</h2>
+<p class="legend-note"><i></i>Detected grain outlines${input.photos.some((p) => p.mmPerPx !== undefined && p.widthPx !== undefined) ? '; the bar in the lower left is a scale bar' : ''}. Photo numbers match the table above.</p>
+<div class="photos${input.photos.length === 1 ? ' single' : ''}">
+${photoFigures}
 </div>
 </section>
 
-<section>
-<h2>Settings and software</h2>
+<section class="page-break">
+<h2><span class="no">6</span>Methods, settings and software</h2>
+<div class="methods-box"><strong>Methods summary:</strong> ${esc(methodsSentence)} Sizes are 2D surface measurements from photos (${esc(r.sizeMetric)} of each grain's visible outline), not sieve sizes; subsurface fines are not observed.</div>
+<h3 class="small" style="margin:12px 0 4px;font-weight:700;">Settings and provenance</h3>
 <dl class="kv">
 ${[
   ...input.settings,
@@ -225,13 +383,14 @@ ${[
   .map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`)
   .join('\n')}
 </dl>
-<div class="methods-box"><strong>Methods summary:</strong> ${esc(methodsSentence)} Sizes are 2D surface measurements from photos (${esc(r.sizeMetric)} of each grain's visible outline), not sieve sizes; subsurface fines are not observed.</div>
 </section>
 
 <section>
-<h2>Please cite</h2>
-<ul class="cite">${r.citations.map((c) => `<li>${esc(c)}</li>`).join('')}</ul>
+<h2><span class="no">7</span>References (please cite)</h2>
+<ol class="cite">${r.citations.map((c) => `<li>${esc(c)}</li>`).join('')}</ol>
 </section>
+
+<footer class="doc">Made with webGrainy${appVersion ? ` ${esc(appVersion)}` : ''} on ${esc(dateOnly)}. Every number in this report is also in the site summary CSV and JSON exports.</footer>
 </body>
 </html>`;
 }

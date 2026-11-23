@@ -1133,6 +1133,7 @@ details.settings-block > summary {
   font-weight: 600;
 }
 .flag-groups {
+  position: relative; /* offsetTop of the entries is measured from the list */
   display: flex;
   flex-wrap: wrap;
   gap: 0.4rem 1rem;

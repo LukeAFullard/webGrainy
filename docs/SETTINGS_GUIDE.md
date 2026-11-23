@@ -604,13 +604,19 @@ pixel classes before calibration); the Shape tab shows the aspect-ratio distribu
 
 ### Printable report
 
-**Export → Printable report** opens a one- or two-page summary of the open site in a new tab.
-Use its button, or Ctrl+P / ⌘P, to print it or save it as a PDF. It contains:
-- the cumulative curve and the size distribution;
-- D16/D50/D84 with bootstrap intervals, Dg, σg, Sauter mean, D65, Cu, Folk & Ward, and Wentworth %;
-- sample adequacy and photos to check;
-- a thumbnail of each photo with its outlines;
-- the settings, software and model versions, warnings and citations.
+**Export → Printable report** opens an A4 report of the open site in a new tab (usually three
+to five pages, numbered, with the site name in the footer). Use its button, or Ctrl+P / ⌘P, to
+print it or save it as a PDF (turn off the browser's own headers and footers). It contains:
+- a summary: D16, D50 and D84 with their confidence intervals, grains counted, photos, scale and
+  the sample-adequacy rating;
+- 1, the cumulative curve (with a legend for every line and point), every percentile D5–D95 with
+  its interval, and the size-class histogram;
+- 2, Folk & Ward, Dg, σg, Sauter mean, D65, Cu and the Wentworth classes as a bar;
+- 3, sample adequacy, photos to check and warnings;
+- 4, a table of results by photo: scale, grains counted / detected, D16 / D50 / D84 and each
+  photo's share of the site statistics;
+- 5, each photo, two to a row, with its outlines and a scale bar when calibrated;
+- 6, the methods summary, settings, software and model versions, and 7, the references to cite.
 
 Its numbers are the same as in the Site Summary CSV. If pop-ups are blocked, the report is
 downloaded as an HTML file instead: open it and print it from the browser.

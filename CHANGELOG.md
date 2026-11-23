@@ -62,6 +62,11 @@ First public release.
 - **Save image** (next to *Display*): the photo as shown on screen (outline colours and opacity,
   ellipses, orientation lines, markers, ROI and exclusions, calibration line) as a PNG at the photo's own
   resolution, for the whole photo or only the visible area, with provenance in the PNG text.
+- **Printable report** redesigned: a summary of key figures, numbered sections and figures, every
+  percentile D5–D95 with its interval, a table of results by photo, larger photos (two to a row) with
+  scale bars, and page numbers.
+- The grain-size curve has a **legend** naming the D16 / D50 / D84 points (with their values), the
+  confidence band, the photo curves and the detection limit, and a y-axis label.
 - The **Legacy inference pipeline** is removed: every analysis uses the Cellpose tiling, which reproduces
   the original ImageGrains software. Older projects and exports that recorded "legacy" still open.
 
