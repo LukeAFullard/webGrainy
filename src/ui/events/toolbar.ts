@@ -40,6 +40,13 @@ export const toolbarActions: Record<string, ActionHandler> = {
   'fit-view': (_el, ctx) => ctx.ui.viewport()?.fitToScreen(),
   'finish-shape': (_el, ctx) => ctx.ui.viewport()?.finishShape(),
   'cancel-shape': (_el, ctx) => ctx.ui.viewport()?.cancelShape(),
+  'clear-areas': (_el, ctx) => {
+    ctx.actions.updateActiveRoi((prev) => {
+      const { roiPolygon: _roi, ...rest } = prev;
+      return { ...rest, exclusionPolygons: [], exclusionStrokes: [] };
+    }, 'the cleared areas');
+    ctx.store.setState({ statusMessage: 'ROI and exclusion areas removed. Re-analyse the photo if parts of it were skipped as outside the ROI.' });
+  },
   'close-inspector': (_el, ctx) => {
     ctx.store.setState({ inspectedGrainId: null });
     void ctx.ui.syncViewport(false);

@@ -9,6 +9,8 @@ import { esc } from './html.js';
 export function renderToolbarHtml(state: AppState): { toolbar: string; subToolbar: string } {
   const activePhoto = getActivePhoto(state);
   const session = activePhoto ? state.sessions.get(activePhoto.photoId) ?? null : null;
+  const roiCfg = activePhoto?.roiConfig;
+  const hasAreas = roiCfg !== undefined && (roiCfg.roiPolygon !== undefined || roiCfg.exclusionPolygons.length > 0 || roiCfg.exclusionStrokes.length > 0);
 
   // Tools grouped by task; grain-editing tools only appear once the photo has results.
   const groups: Array<{ label: string; tools: Array<{ id: EditorToolMode; label: string; title: string }> }> = [
@@ -21,9 +23,10 @@ export function renderToolbarHtml(state: AppState): { toolbar: string; subToolba
       ],
     },
     {
-      label: 'Exclude',
+      label: 'Areas',
       tools: [
-        { id: 'excludePoly', label: 'Area', title: 'Draw a polygon around things to leave out (rulers, boots, water)' },
+        { id: 'roiPoly', label: 'ROI', title: 'Draw the sampling area (e.g. inside a quadrat): only grains inside it are counted. Drawing again replaces it.' },
+        { id: 'excludePoly', label: 'Exclude', title: 'Draw a polygon around things to leave out (rulers, boots, water)' },
         { id: 'excludeBrush', label: 'Brush', title: 'Paint over things to leave out' },
       ],
     },
@@ -60,9 +63,14 @@ export function renderToolbarHtml(state: AppState): { toolbar: string; subToolba
         : ''
     }
     ${
-      state.activeTool === 'split' || state.activeTool === 'addPolygon' || state.activeTool === 'excludePoly'
+      state.activeTool === 'split' || state.activeTool === 'addPolygon' || state.activeTool === 'excludePoly' || state.activeTool === 'roiPoly'
         ? `<button type="button" class="btn btn-sm btn-primary" data-action="finish-shape" title="Same as double-click or Enter">Finish shape</button>
            <button type="button" class="btn btn-sm" data-action="cancel-shape" title="Same as Esc">Cancel shape</button>`
+        : ''
+    }
+    ${
+      (state.activeTool === 'roiPoly' || state.activeTool === 'excludePoly' || state.activeTool === 'excludeBrush') && hasAreas
+        ? `<button type="button" class="btn btn-sm" data-action="clear-areas" title="Remove this photo's ROI and all exclusion areas">Clear areas</button>`
         : ''
     }
     <span class="tool-group">

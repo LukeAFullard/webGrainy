@@ -16,7 +16,6 @@ import { rectifyPerspective } from '../modules/roiAndRectify.js';
 import { sizeCutoffExplanation } from '../modules/sedimentStats.js';
 import {
   buildSiteInputs,
-  effectiveRoi,
   photoCutoffs,
 } from '../modules/siteWorkspace.js';
 import { CanvasViewport } from './canvasViewport.js';
@@ -354,7 +353,6 @@ noticeChannel?.onMessage((notice) => {
 });
 
 const {
-  savePhoto,
   recomputeReports,
   refreshCapabilities,
   loadSiteData,
@@ -837,8 +835,14 @@ function mountShell(): void {
         const photo = getActivePhoto(state);
         const session = photo ? state.sessions.get(photo.photoId) : null;
         if (!photo || !session) return;
+        if (grainId === null) {
+          store.setState({ statusMessage: 'Split: the line does not cross a grain. Draw it across the grain, from one side to the other.' });
+          return;
+        }
         const ok = session.splitGrain(grainId, points);
-        if (ok) {
+        if (!ok) {
+          store.setState({ statusMessage: 'Split: the line did not cut this grain into two pieces. Draw it right across the grain, from edge to edge.' });
+        } else {
           const patch: Partial<AppState> = {};
           if (state.inspectedGrainId === grainId) patch.inspectedGrainId = null;
           if (state.selectedGrainIds.has(grainId)) {
@@ -889,48 +893,14 @@ function mountShell(): void {
         }
       },
       onAddExclusionPolygon: (points) => {
-        const state = store.getState();
-        const photo = getActivePhoto(state);
-        if (!photo) return;
-        const prev = photo.roiConfig ?? { exclusionPolygons: [], exclusionStrokes: [] };
-        const updated: PhotoRecord = {
-          ...photo,
-          roiConfig: {
-            ...prev,
-            exclusionPolygons: [...prev.exclusionPolygons, points],
-          },
-        };
-        if (updated.roiConfig) state.sessions.get(photo.photoId)?.setRoiConfig(effectiveRoi(updated, state.siteOptions));
-        void savePhoto(updated).catch((err: unknown) => {
-          actions.reportSaveFailure(err, 'this exclusion area');
-        });
-        store.setState({
-          photos: state.photos.map((p) => (p.photoId === photo.photoId ? updated : p)),
-        });
-        recomputeReports();
-        void syncViewport(false);
+        actions.updateActiveRoi((prev) => ({ ...prev, exclusionPolygons: [...prev.exclusionPolygons, points] }), 'this exclusion area');
       },
       onAddExclusionStroke: (points, radiusPx) => {
-        const state = store.getState();
-        const photo = getActivePhoto(state);
-        if (!photo) return;
-        const prev = photo.roiConfig ?? { exclusionPolygons: [], exclusionStrokes: [] };
-        const updated: PhotoRecord = {
-          ...photo,
-          roiConfig: {
-            ...prev,
-            exclusionStrokes: [...prev.exclusionStrokes, { points, radiusPx }],
-          },
-        };
-        if (updated.roiConfig) state.sessions.get(photo.photoId)?.setRoiConfig(effectiveRoi(updated, state.siteOptions));
-        void savePhoto(updated).catch((err: unknown) => {
-          actions.reportSaveFailure(err, 'this exclusion area');
-        });
-        store.setState({
-          photos: state.photos.map((p) => (p.photoId === photo.photoId ? updated : p)),
-        });
-        recomputeReports();
-        void syncViewport(false);
+        actions.updateActiveRoi((prev) => ({ ...prev, exclusionStrokes: [...prev.exclusionStrokes, { points, radiusPx }] }), 'this exclusion area');
+      },
+      onSetRoiPolygon: (points) => {
+        // One ROI per photo: drawing a new one replaces the old.
+        actions.updateActiveRoi((prev) => ({ ...prev, roiPolygon: points }), 'this region of interest');
       },
       onCalibrationPoint: (pt) => {
         const st = store.getState();

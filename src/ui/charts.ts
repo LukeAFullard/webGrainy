@@ -279,6 +279,9 @@ export function renderConvergenceChartSvg(
   }
 
   const allY = points.flatMap((p) => [p.D16, p.D50, p.D84, p.ciLoD50, p.ciHiD50]).filter((v) => Number.isFinite(v) && v > 0);
+  if (allY.length === 0) {
+    return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg"><rect width="${W}" height="${H}" fill="${bg}"/><text x="${W / 2}" y="${H / 2}" text-anchor="middle" fill="${muted}" font-size="11" font-family="system-ui, sans-serif">No counted grains yet: convergence not available</text></svg>`;
+  }
   const yMin = Math.max(0, Math.min(...allY) * 0.85);
   const yMax = Math.max(...allY, yMin + 1) * 1.1;
 
@@ -300,9 +303,19 @@ export function renderConvergenceChartSvg(
     parts.push(`<polygon points="${[...hiPts, ...loPts].join(' ')}" fill="rgba(245, 166, 35, 0.18)" />`);
   }
 
+  // Photo counts with no value (e.g. no counted grains yet) break the line instead of emitting NaN.
   const line = (getter: (p: ConvergencePoint) => number, col: string, w: number): void => {
-    const pts = points.map((p, i) => `${xPx(i).toFixed(1)},${yPx(getter(p)).toFixed(1)}`).join(' ');
-    parts.push(`<polyline points="${pts}" fill="none" stroke="${col}" stroke-width="${w}" />`);
+    let run: string[] = [];
+    const flush = (): void => {
+      if (run.length > 1) parts.push(`<polyline points="${run.join(' ')}" fill="none" stroke="${col}" stroke-width="${w}" />`);
+      run = [];
+    };
+    points.forEach((p, i) => {
+      const v = getter(p);
+      if (Number.isFinite(v)) run.push(`${xPx(i).toFixed(1)},${yPx(v).toFixed(1)}`);
+      else flush();
+    });
+    flush();
   };
   line((p) => p.D84, '#d93829', 1.4);
   line((p) => p.D50, '#d98300', 2.2);
@@ -312,7 +325,7 @@ export function renderConvergenceChartSvg(
     const p = points[i];
     if (!p) continue;
     const x = xPx(i);
-    parts.push(`<circle cx="${x.toFixed(1)}" cy="${yPx(p.D50).toFixed(1)}" r="${points.length > 30 ? 1.8 : 3}" fill="#d98300" />`);
+    if (Number.isFinite(p.D50)) parts.push(`<circle cx="${x.toFixed(1)}" cy="${yPx(p.D50).toFixed(1)}" r="${points.length > 30 ? 1.8 : 3}" fill="#d98300" />`);
     const labelEvery = Math.max(1, Math.ceil(points.length / 15));
     if (i % labelEvery === 0 || i === points.length - 1) {
       parts.push(`<text x="${x.toFixed(1)}" y="${padT + plotH + 12}" text-anchor="middle" fill="${muted}" font-size="9" font-family="ui-monospace, monospace">${p.photoCount}</text>`);
@@ -750,6 +763,11 @@ export function renderTimeSeriesSvg(points: readonly TimeSeriesPoint[], unit: 'm
   for (const p of points) {
     for (const v of [p.D16, p.D50, p.D84, ...(p.ci ? [...p.ci.D16, ...p.ci.D84] : [])]) if (v > 0 && Number.isFinite(v)) vals.push(Math.log10(v));
   }
+  if (vals.length === 0) {
+    return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg"><rect width="${W}" height="${H}" fill="${bg}"/><text x="${W / 2}" y="${H / 2}" text-anchor="middle" fill="${muted}" font-size="12" ${font}>No counted grains in the dated surveys</text></svg>`;
+  }
+  // Surveys without a value (no counted grains) are not plotted rather than drawn at NaN.
+  const has = (v: number): boolean => Number.isFinite(v) && v > 0;
   let yMin = Math.min(...vals);
   let yMax = Math.max(...vals);
   if (yMax - yMin < 0.1) {
@@ -809,7 +827,8 @@ export function renderTimeSeriesSvg(points: readonly TimeSeriesPoint[], unit: 'm
   for (const s of series) {
     for (const idx of groups.values()) {
       if (idx.length < 2) continue;
-      const ordered = [...idx].sort((a, b) => t[a]! - t[b]!);
+      const ordered = [...idx].filter((i) => has(points[i]![s.key])).sort((a, b) => t[a]! - t[b]!);
+      if (ordered.length < 2) continue;
       const pts = ordered.map((i) => `${X(t[i]!).toFixed(1)},${Y(points[i]![s.key]).toFixed(1)}`).join(' ');
       const stroke = multiGroup ? (points[ordered[0]!]!.groupColor ?? s.color) : s.color;
       const dash = multiGroup ? (s.key === 'D50' ? '' : s.key === 'D16' ? '4 3' : '1 3') : s.dash;
@@ -821,6 +840,7 @@ export function renderTimeSeriesSvg(points: readonly TimeSeriesPoint[], unit: 'm
       if (ci && ci[0] > 0 && ci[1] > 0) {
         parts.push(`<line x1="${x.toFixed(1)}" x2="${x.toFixed(1)}" y1="${Y(ci[0]).toFixed(1)}" y2="${Y(ci[1]).toFixed(1)}" stroke="${multiGroup ? (p.groupColor ?? muted) : s.color}" stroke-width="1.2"/>`);
       }
+      if (!has(p[s.key])) return;
       const mark = multiGroup ? (p.groupColor ?? muted) : s.color;
       parts.push(`<circle cx="${x.toFixed(1)}" cy="${Y(p[s.key]).toFixed(1)}" r="${s.key === 'D50' ? 3.5 : 2.5}" fill="${p.color}" stroke="${mark}" stroke-width="1.2"><title>${esc(p.name)} (${p.date}): ${s.key} ${p[s.key].toFixed(1)} ${unit}</title></circle>`);
     });

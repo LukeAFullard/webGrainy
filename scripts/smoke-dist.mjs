@@ -313,6 +313,22 @@ try {
     await page.waitForTimeout(500);
     const nText = await page.evaluate(() => document.body.innerText.match(/n = (\d+)/)?.[1] ?? '0');
     if (Number(nText) <= 0) fail('no grains reported after analysis');
+    // ROI tool: a small triangle in one corner leaves most grains outside it.
+    await page.click('button[data-tool="roiPoly"]');
+    const stage = await page.locator('#canvas-stage').boundingBox();
+    if (!stage) fail('no photo canvas');
+    for (const [fx, fy] of [[0.3, 0.3], [0.45, 0.3], [0.3, 0.45]]) {
+      await page.mouse.click(stage.x + stage.width * fx, stage.y + stage.height * fy);
+    }
+    await page.click('button[data-action="finish-shape"]');
+    await page.waitForTimeout(500);
+    const roiText = await page.evaluate(() => document.body.innerText);
+    if (!/\d+ excluded by ROI/.test(roiText)) fail('drawing an ROI excluded no grains');
+    await page.click('button[data-action="clear-areas"]');
+    await page.waitForTimeout(500);
+    if (/\d+ excluded by ROI/.test(await page.evaluate(() => document.body.innerText))) fail('Clear areas did not remove the ROI');
+    console.log('ok: ROI tool excludes grains outside it; Clear areas removes it');
+    await page.click('button[data-tool="inspect"]');
     if (process.env.SMOKE_SCREENSHOT) {
       // Optional visual check: grain ellipses and orientation vectors over the photo.
       await page.click('details.display-menu > summary');

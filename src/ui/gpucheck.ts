@@ -208,10 +208,19 @@ async function runAll(kind: Kind): Promise<void> {
         ...(cpuThreads !== undefined ? { numThreads: cpuThreads } : {}),
         ...(backend === 'wasm' ? { forceWasm: true } : {}),
       });
-      if (backend === 'webgpu' && created.executionProvider !== 'webgpu') {
-        log('Could not create a WebGPU session for this model; the GPU column below is not a GPU result.');
-      }
       report[`${backend}Provider`] = created.executionProvider;
+      if (backend === 'webgpu' && created.executionProvider !== 'webgpu') {
+        // createInferenceSession fell back to the CPU: comparing CPU with CPU would "match" and
+        // wrongly report the GPU as safe, so stop here.
+        await created.session.release?.().catch(() => undefined);
+        const msg =
+          'ONNX Runtime could not create a WebGPU session for this model on this device (it fell back to the CPU), ' +
+          'so there is no GPU result to compare. The app will run this model on the CPU here.';
+        log(msg);
+        report['verdict'] = msg;
+        setStatus(msg);
+        return;
+      }
       for (let i = 0; i < images.length; i++) {
         const [c, img] = images[i]!;
         const rec = results[i]!;

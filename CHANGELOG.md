@@ -100,5 +100,14 @@ First public release.
 - South-up and mirrored GeoTIFFs: mask / photo GeoTIFF exports write a ModelTransformation instead of an
   invalid negative pixel scale (which GDAL flips), and GeoTIFFs placed by a ModelTransformation without
   skew are auto-calibrated.
+- Photos with no counted grains show `—` for D16 / D50 / D84 instead of `NaN`, keep φ class labels when
+  calibrated, and the convergence and time-series charts skip undefined values instead of drawing at `NaN`.
+- New **ROI** tool (toolbar *Areas → ROI*): draw the sampling area and only grains inside it are counted
+  (the engine, exports and ROI tile skipping already supported it, but nothing in the app could draw one).
+  *Clear areas* removes a photo's ROI and exclusions, which could not be removed before.
+- Split: a line drawn from outside one side of a grain to outside the other now splits it (before, only
+  the clicked points were tested, so this cut silently did nothing); a split that does nothing says why.
+- GPU check page: when ONNX Runtime falls back to the CPU for the "GPU" run, the check stops and says so,
+  instead of comparing CPU with CPU and reporting WebGPU as safe.
 
 [0.1.0]: https://github.com/LukeAFullard/webGrainy/releases/tag/v0.1.0

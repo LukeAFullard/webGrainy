@@ -5,6 +5,7 @@
  */
 import { sanitizeSiteOptions } from '../modules/siteOptions.js';
 import type { CalibrationResult, Point2D, StorageQuotaInfo } from '../types/index.js';
+import type { RoiExclusionConfig } from '../modules/roiAndRectify.js';
 import { siteRetention } from '../modules/retention.js';
 import { backupStatus, forgetSite, formatAgo, markSiteUsed, readBackupRecords } from './backup.js';
 import { holdSiteLock, ifSiteNotOpen } from './siteLocks.js';
@@ -747,6 +748,23 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
    * A save to browser storage failed: say so plainly (the change is shown but not stored),
    * and when storage is full, show the storage-full notice with what to do.
    */
+  /**
+   * Replaces the active photo's ROI / exclusion areas with `update(previous)`, applies them to its
+   * results, saves the photo and refreshes the statistics and viewport.
+   */
+  function updateActiveRoi(update: (prev: RoiExclusionConfig) => RoiExclusionConfig, what: string): void {
+    const state = store.getState();
+    const photo = getActivePhoto(state);
+    if (!photo) return;
+    const prev = photo.roiConfig ?? { exclusionPolygons: [], exclusionStrokes: [] };
+    const updated: PhotoRecord = { ...photo, roiConfig: update(prev) };
+    state.sessions.get(photo.photoId)?.setRoiConfig(effectiveRoi(updated, state.siteOptions));
+    void savePhoto(updated).catch((err: unknown) => reportSaveFailure(err, what));
+    store.setState({ photos: state.photos.map((p) => (p.photoId === photo.photoId ? updated : p)) });
+    recomputeReports();
+    void deps.syncViewport(false);
+  }
+
   function reportSaveFailure(err: unknown, what: string): void {
     const full = isStorageFullError(err);
     const message = full
@@ -1126,6 +1144,7 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
     removeHeldSite,
     removeSites,
     reportSaveFailure,
+    updateActiveRoi,
     createDefaultOrLoadSites,
     handleFilesAdded,
     runBatch,

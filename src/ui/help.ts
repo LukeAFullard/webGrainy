@@ -290,11 +290,11 @@ export const HELP_TOPICS = {
     when: 'Use whenever the camera was noticeably tilted. Re-analyse the photo afterwards.',
   },
   exclusion: {
-    title: 'Exclusion tools',
+    title: 'ROI and exclusion tools',
     group: 'Tools',
-    what: 'Draw polygons or paint areas (rulers, boots, vegetation, water, deep shadow) to leave them out. Grains with more than 10% of their area inside an excluded region are dropped from the statistics.',
-    default: 'Nothing excluded',
-    when: 'Use on any non-gravel object or area in the photo.',
+    what: 'ROI: draw the sampling area (e.g. the inside of a quadrat); only grains inside it count, and drawing again replaces it. Exclude / Brush: draw polygons or paint areas (rulers, boots, vegetation, water, deep shadow) to leave them out. Grains with more than 10% of their area outside the ROI or inside an excluded region are dropped from the statistics. Clear areas removes them all.',
+    default: 'Whole photo, nothing excluded',
+    when: 'Use the ROI when only part of the photo was sampled, and exclusions on any non-gravel object or area in the photo.',
   },
   editing: {
     title: 'Editing tools',

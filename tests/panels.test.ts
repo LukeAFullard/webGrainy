@@ -173,6 +173,20 @@ describe('panel renderers', () => {
     expect(cal.subToolbar).not.toBe(after.subToolbar);
   });
 
+  it('toolbar: ROI tool, and Clear areas once the photo has an ROI or exclusion', () => {
+    const st = analysedState();
+    expect(renderToolbarHtml(st).toolbar).toContain('data-tool="roiPoly"');
+    const roi = renderToolbarHtml({ ...st, activeTool: 'roiPoly' });
+    expect(roi.toolbar).toContain('data-action="finish-shape"');
+    expect(roi.toolbar).not.toContain('data-action="clear-areas"');
+    const withRoi = {
+      ...st,
+      activeTool: 'roiPoly' as const,
+      photos: st.photos.map((p) => (p.photoId === 'p1' ? { ...p, roiConfig: { roiPolygon: [{ x: 0, y: 0 }, { x: 5, y: 0 }, { x: 5, y: 5 }], exclusionPolygons: [], exclusionStrokes: [] } } : p)),
+    };
+    expect(renderToolbarHtml(withRoi).toolbar).toContain('data-action="clear-areas"');
+  });
+
   it('dashboard: every tab for this photo and the whole site registers its charts', () => {
     const st = analysedState();
     for (const scope of ['photo', 'site'] as const) {
@@ -187,6 +201,18 @@ describe('panel renderers', () => {
     }
     const empty = renderDashboardHtml({ ...emptyState(), dashboardScope: 'site' }, { lightTheme: false, charts: new Map() });
     expect(empty).toContain('Add &amp; analyze photos');
+  });
+
+  it('dashboard: a photo with no counted grains shows dashes, never NaN', () => {
+    const base = analysedState();
+    const st0 = { ...base, siteOptions: { ...base.siteOptions, minBaxisPx: 1e6 } };
+    const st = { ...st0, ...computeWorkspaceReports(st0) };
+    for (const scope of ['photo', 'site'] as const) {
+      const charts: ChartRegistry = new Map();
+      const html = renderDashboardHtml({ ...st, dashboardScope: scope, dashboardTab: 'psd' }, { lightTheme: true, charts });
+      expect(html, scope).not.toContain('NaN');
+      for (const c of charts.values()) expect(c.render(true), scope).not.toContain('NaN');
+    }
   });
 
   it('compare view: loading, error and result states', () => {

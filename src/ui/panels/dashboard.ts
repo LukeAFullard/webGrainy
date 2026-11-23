@@ -167,8 +167,8 @@ export function renderDashboardHtml(state: AppState, view: DashboardView): strin
       ${chartBox('cumulative-psd', 'Cumulative grain-size distribution', psdSvg, lightTheme)}
       ${detectionNoteHtml}
       <div class="row" style="margin-top:8px;">
-        <button type="button" class="btn btn-sm ${step === 0.5 ? 'active' : ''}" aria-pressed="${step === 0.5 ? 'true' : 'false'}" data-phi-step="0.5">Narrow classes (${sizeHist.unit === 'mm' ? '0.5 φ' : '×√2'})</button>
-        <button type="button" class="btn btn-sm ${step === 1 ? 'active' : ''}" aria-pressed="${step === 1 ? 'true' : 'false'}" data-phi-step="1.0">Wide classes (${sizeHist.unit === 'mm' ? '1 φ' : '×2'})</button>
+        <button type="button" class="btn btn-sm ${step === 0.5 ? 'active' : ''}" aria-pressed="${step === 0.5 ? 'true' : 'false'}" data-phi-step="0.5">Narrow classes (${unit === 'mm' ? '0.5 φ' : '×√2'})</button>
+        <button type="button" class="btn btn-sm ${step === 1 ? 'active' : ''}" aria-pressed="${step === 1 ? 'true' : 'false'}" data-phi-step="1.0">Wide classes (${unit === 'mm' ? '1 φ' : '×2'})</button>
       </div>
       ${chartBox('size-distribution', 'Grain-size distribution histogram', (light) => renderSizeHistogramSvg(sizeHist, light, isSite ? 'Site Size Distribution (area-weighted %)' : 'Photo Size Distribution (area-weighted %)'), lightTheme)}
       ${
@@ -335,9 +335,9 @@ export function renderDashboardHtml(state: AppState, view: DashboardView): strin
         </div>`;
       })()}
       <div class="stat-grid" style="margin-top:8px;">
-        <div class="stat-card"><div class="stat-label">D<sub>16</sub></div><div class="stat-value">${psd ? psd.D16.toFixed(1) : '—'}</div><div class="stat-sub">${unit}</div></div>
-        <div class="stat-card"><div class="stat-label">D<sub>50</sub> (median)</div><div class="stat-value">${psd ? psd.D50.toFixed(1) : '—'}</div><div class="stat-sub">${unit}</div></div>
-        <div class="stat-card"><div class="stat-label">D<sub>84</sub></div><div class="stat-value">${psd ? psd.D84.toFixed(1) : '—'}</div><div class="stat-sub">${unit}</div></div>
+        <div class="stat-card"><div class="stat-label">D<sub>16</sub></div><div class="stat-value">${psd && Number.isFinite(psd.D16) ? psd.D16.toFixed(1) : '—'}</div><div class="stat-sub">${unit}</div></div>
+        <div class="stat-card"><div class="stat-label">D<sub>50</sub> (median)</div><div class="stat-value">${psd && Number.isFinite(psd.D50) ? psd.D50.toFixed(1) : '—'}</div><div class="stat-sub">${unit}</div></div>
+        <div class="stat-card"><div class="stat-label">D<sub>84</sub></div><div class="stat-value">${psd && Number.isFinite(psd.D84) ? psd.D84.toFixed(1) : '—'}</div><div class="stat-sub">${unit}</div></div>
       </div>
       <p class="metric-note">${esc(metricNoteText)}</p>
       <details class="advanced-block stats-settings" style="margin-top:8px;" data-keep-open="stats-settings">

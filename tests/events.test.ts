@@ -65,6 +65,7 @@ function setup() {
     clearStoredSiteInputs: vi.fn(),
     refreshCapabilities: vi.fn(async () => {}),
     applyCalibrationToActive: vi.fn(async () => {}),
+    updateActiveRoi: vi.fn(),
   };
   const ui = {
     renderSidebar: vi.fn(),
@@ -408,5 +409,21 @@ describe('form changes', () => {
       expect(store.getState().calibrationLength).toBe(35);
       expect(store.getState().calibrationUnit).toBe('cm');
     }
+  });
+});
+
+describe('clear-areas action', () => {
+  it('removes the ROI and every exclusion, keeping other ROI settings', () => {
+    const { ctx, actions } = setup();
+    routeClick(el({ 'data-action': 'clear-areas' }), () => undefined, ctx);
+    expect(actions.updateActiveRoi).toHaveBeenCalledTimes(1);
+    const update = actions.updateActiveRoi.mock.calls[0]![0] as (prev: unknown) => unknown;
+    const next = update({
+      roiPolygon: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }],
+      exclusionPolygons: [[{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }]],
+      exclusionStrokes: [{ points: [{ x: 0, y: 0 }], radiusPx: 3 }],
+      unresolvedFinesFraction: 0.2,
+    });
+    expect(next).toEqual({ exclusionPolygons: [], exclusionStrokes: [], unresolvedFinesFraction: 0.2 });
   });
 });

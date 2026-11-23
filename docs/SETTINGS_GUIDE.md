@@ -38,8 +38,9 @@ and ticks them off as you go. Hide it with *Hide*; bring it back from *Help*.
 1. **Create a site** (`+ New`) and **add photos** (`Add photos`, or drag them onto the photo list).
 2. **Calibrate each photo** (`Scale → Calibrate`). Without this, all sizes are in pixels.
 3. **Rectify oblique photos** (`Scale → Rectify`) if the camera was not pointing straight down.
-4. **Exclude non-gravel areas** (`Exclude → Area` or `Brush`): boots, rulers, vegetation,
-   water. Doing this before analysing is faster (areas far from the counted area are skipped).
+4. **Mark the sampling area** (`Areas → ROI`, optional) and **exclude non-gravel areas**
+   (`Areas → Exclude` or `Brush`): boots, rulers, vegetation, water. Doing this before analysing
+   is faster (areas far from the counted area are skipped).
 5. **Run the analysis** (`Analyse` in the photo list). A bar at the bottom of the screen shows
    the current step, the tiles done and the time left, with a Cancel button.
 6. **Check the outlines.** The `Edit grains` tools (Split, Merge, Delete, Add) appear once a
@@ -335,8 +336,11 @@ redone, and statistics update immediately.
 
 | Tool | Use it when… |
 |---|---|
-| **Exclude → Area** | You want to remove a region: a ruler, boot, quadrat frame, vegetation, water or deep shadow. Draw around it. |
-| **Exclude → Brush** | You want to paint over smaller or irregular areas to remove them. |
+| **Areas → ROI** | You sampled only part of the photo (e.g. the inside of a quadrat). Draw around it: only grains inside count. Drawing again replaces the ROI. |
+| **Areas → Exclude** | You want to remove a region: a ruler, boot, quadrat frame, vegetation, water or deep shadow. Draw around it. |
+| **Areas → Brush** | You want to paint over smaller or irregular areas to remove them. |
+
+**Clear areas** (shown while one of these tools is active) removes the photo's ROI and all its exclusions.
 
 Grains with more than 10% of their area inside an excluded region are left out of the statistics (exports flag them). The 10% can be changed with **Exclusion overlap** in the dashboard. The
 dashboard shows how many were excluded. Excluding is better than deleting for objects
@@ -484,7 +488,7 @@ a drag moves the photo when zoomed in and scrolls the page otherwise; a tap uses
 |---|---|
 | **Left panel → Analysis settings** | Model, CP-SAM weights, Scale mode, Exclude border grains; *Fine-tuning:* Flow threshold, Cellprob threshold, Min size, Max area fraction, Border margin, CLAHE; *Advanced:* Flow steps, Inference pipeline, Seed density, CPU threads, Skip areas outside the ROI |
 | **Left sidebar → photo list** | Include/exclude photo from the site; Facies weight (Facies-weighted mode only) |
-| **Toolbar (above the photo)** | *Scale:* Calibrate, Rectify · *Exclude:* Area, Brush · *Edit grains* (after analysis): Split, Merge, Delete, Add · Display |
+| **Toolbar (above the photo)** | *Scale:* Calibrate, Rectify · *Areas:* ROI, Exclude, Brush, Clear areas · *Edit grains* (after analysis): Split, Merge, Delete, Add · Display |
 | **Right-hand panel → Statistics settings** | Pooling mode, Size metric, Field-count cutoff, Min b-axis, Exclusion overlap, Harmonize cutoff, *Uncertainty & sampling:* Confidence level, Bootstrap repeats, Bootstrap seed, Two-stage bootstrap, Virtual Wolman points |
 
 All settings are recorded in every export.

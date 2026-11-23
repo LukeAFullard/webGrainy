@@ -426,6 +426,32 @@ function rasterize4ConnectedPolyline(
  * Splits a single grain along a user-drawn polyline using 4-connected rasterization
  * and 8-connected BFS component labeling.
  */
+/**
+ * First non-null `hit` along a polyline, sampled every `stepPx` along each segment (vertices
+ * included). Used to find the grain a split line crosses when its clicks lie outside the grain.
+ */
+export function firstHitAlongPolyline(
+  points: readonly Point2D[],
+  hit: (x: number, y: number) => number | null,
+  stepPx = 1,
+): number | null {
+  if (points.length === 0) return null;
+  const step = stepPx > 0 && Number.isFinite(stepPx) ? stepPx : 1;
+  const first = hit(points[0]!.x, points[0]!.y);
+  if (first !== null) return first;
+  for (let i = 1; i < points.length; i++) {
+    const a = points[i - 1]!;
+    const b = points[i]!;
+    const n = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / step));
+    for (let k = 1; k <= n; k++) {
+      const t = k / n;
+      const id = hit(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t);
+      if (id !== null) return id;
+    }
+  }
+  return null;
+}
+
 export function splitGrainAtLine(
   masks: Int32Array,
   grainId: number,

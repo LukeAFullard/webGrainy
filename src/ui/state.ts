@@ -31,6 +31,7 @@ export type EditorToolMode =
   | 'merge'
   | 'delete'
   | 'addPolygon'
+  | 'roiPoly'
   | 'excludePoly'
   | 'excludeBrush'
   | 'calibrate'

@@ -252,11 +252,11 @@ export const WORKFLOW_STEPS: ReadonlyArray<WorkflowStepSpec> = [
     shortTitle: 'Exclude Non-Gravel',
     headline: 'Leave out rulers, boots, water, or vegetation before analysing',
     summary:
-      'Use the Exclude Area (polygon) or Brush tools to mark anything that is not gravel so it is ignored during grain detection and left out of the size statistics.',
+      'Optionally draw the sampling area with the ROI tool, then use the Exclude (polygon) or Brush tools to mark anything that is not gravel so it is ignored during grain detection and left out of the size statistics.',
     helpTopic: 'exclusion',
     bullets: [
       {
-        label: 'Exclude Area & Brush tools',
+        label: 'ROI, Exclude & Brush tools',
         detail:
           'Draw a polygon or paint over rulers, boots, vegetation, water, or deep shadows so non-gravel objects are not counted as stones.',
       },
