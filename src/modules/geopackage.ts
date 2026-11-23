@@ -44,7 +44,7 @@ const GPKG_USER_VERSION = 10400; // GeoPackage 1.4
 const TABLE = 'grain_outlines';
 
 /** Columns stored as INTEGER; other numbers are DOUBLE, booleans BOOLEAN, anything else TEXT. */
-const INTEGER_PROPERTIES = new Set(['grainId', 'areaPx']);
+const INTEGER_PROPERTIES = new Set(['grainId', 'areaPx', 'widthPx', 'heightPx', 'grainsDetected', 'grainsCounted']);
 
 /** grainId -> grain_id, aAxisMm -> a_axis_mm (the grains.csv column names). */
 export function snakeCase(key: string): string {
@@ -56,7 +56,7 @@ export function snakeCase(key: string): string {
 }
 
 type Ring = number[][];
-type Feature = { geometry: { type: string; coordinates: unknown }; properties?: Record<string, unknown> };
+export type GpkgFeature = { geometry: { type: string; coordinates: unknown }; properties?: Record<string, unknown> };
 
 /** GeoPackage geometry blob: header (magic, flags, srs_id, XY envelope) + little-endian WKB MultiPolygon. */
 export function gpkgMultiPolygonBlob(polygons: readonly Ring[][], srsId: number): Uint8Array {
@@ -95,18 +95,40 @@ export function gpkgMultiPolygonBlob(polygons: readonly Ring[][], srsId: number)
   return out;
 }
 
+/** One feature table (polygon layer) of a GeoPackage. */
+export interface GpkgLayer {
+  /** SQL table name (letters, digits, underscores). */
+  table: string;
+  /** Layer name shown in GIS. */
+  identifier: string;
+  /** Layer description (e.g. provenance JSON). */
+  description: string;
+  /** GeoJSON features (Polygon / MultiPolygon) with flat properties. */
+  features: GpkgFeature[];
+}
+
 /**
  * A GeoPackage of the features of a GeoJSON FeatureCollection (polygons / multipolygons, as the
  * app's outline exports) in coordinate system `srs`. `identifier` names the layer in GIS;
  * the collection's `metadata` member (provenance) becomes the layer description.
  */
 export function geoJsonToGeoPackage(geoJson: string, srs: GpkgSrs, identifier: string, now = new Date()): Uint8Array {
-  const fc = JSON.parse(geoJson) as { metadata?: unknown; features: Feature[] };
+  const fc = JSON.parse(geoJson) as { metadata?: unknown; features: GpkgFeature[] };
+  return buildGeoPackage(
+    [{ table: TABLE, identifier, description: fc.metadata !== undefined ? JSON.stringify(fc.metadata) : '', features: fc.features }],
+    srs,
+    now,
+  );
+}
+
+/** A feature table's columns and rows (geometry blob + properties). */
+function layerTable(layer: GpkgLayer, srs: GpkgSrs): { spec: SqlTableSpec; bbox: SqlValue[] } {
+  const features = layer.features;
   // Columns: every property key, in first-seen order.
   const keys: string[] = [];
-  for (const f of fc.features) for (const k of Object.keys(f.properties ?? {})) if (!keys.includes(k)) keys.push(k);
+  for (const f of features) for (const k of Object.keys(f.properties ?? {})) if (!keys.includes(k)) keys.push(k);
   const typeOf = (k: string): string => {
-    const vals = fc.features.map((f) => f.properties?.[k]).filter((v) => v !== undefined && v !== null);
+    const vals = features.map((f) => f.properties?.[k]).filter((v) => v !== undefined && v !== null);
     if (vals.length > 0 && vals.every((v) => typeof v === 'boolean')) return 'BOOLEAN';
     if (vals.every((v) => typeof v === 'number')) return INTEGER_PROPERTIES.has(k) && vals.every((v) => Number.isSafeInteger(v)) ? 'INTEGER' : 'DOUBLE';
     return 'TEXT';
@@ -127,9 +149,8 @@ export function geoJsonToGeoPackage(geoJson: string, srs: GpkgSrs, identifier: s
     if (type === 'DOUBLE') return Number.isFinite(v) ? { real: v as number } : null;
     return typeof v === 'string' ? v : JSON.stringify(v);
   };
-
   let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-  const rows = fc.features.map((f, i) => {
+  const rows = features.map((f, i) => {
     const g = f.geometry;
     const polys = (g.type === 'Polygon' ? [g.coordinates] : g.type === 'MultiPolygon' ? g.coordinates : []) as Ring[][];
     for (const poly of polys) for (const ring of poly) for (const [x, y] of ring) {
@@ -141,15 +162,29 @@ export function geoJsonToGeoPackage(geoJson: string, srs: GpkgSrs, identifier: s
       values: [null, gpkgMultiPolygonBlob(polys, srs.id), ...cols.map((c) => cell(c.type, f.properties?.[c.key]))] as SqlValue[],
     };
   });
-  const bbox = Number.isFinite(minX) ? [minX, minY, maxX, maxY].map((v) => ({ real: v })) : [null, null, null, null];
   const q = (s: string): string => `"${s.replace(/"/g, '""')}"`;
+  return {
+    spec: {
+      name: layer.table,
+      sql: `CREATE TABLE ${q(layer.table)} (fid INTEGER PRIMARY KEY, geom MULTIPOLYGON${cols.map((c) => `, ${q(c.name)} ${c.type}`).join('')})`,
+      rows,
+    },
+    bbox: Number.isFinite(minX) ? [minX, minY, maxX, maxY].map((v) => ({ real: v })) : [null, null, null, null],
+  };
+}
 
+/** A GeoPackage with one MULTIPOLYGON feature table per layer, all in coordinate system `srs`. */
+export function buildGeoPackage(layers: readonly GpkgLayer[], srs: GpkgSrs, now = new Date()): Uint8Array {
+  if (new Set(layers.map((l) => l.table)).size !== layers.length || new Set(layers.map((l) => l.identifier)).size !== layers.length) {
+    throw new Error('GeoPackage layer tables and names must be unique.');
+  }
   const srsRows: GpkgSrs[] = [
     PIXEL_SRS,
     { id: 0, name: 'Undefined geographic SRS', organization: 'NONE', organizationId: 0, definition: 'undefined', description: 'undefined geographic coordinate reference system' },
     WGS84_SRS,
   ];
   if (!srsRows.some((s) => s.id === srs.id)) srsRows.push(srs);
+  const built = layers.map((l) => ({ layer: l, ...layerTable(l, srs) }));
 
   const tables: SqlTableSpec[] = [
     {
@@ -165,12 +200,10 @@ export function geoJsonToGeoPackage(geoJson: string, srs: GpkgSrs, identifier: s
         "CREATE TABLE gpkg_contents (table_name TEXT NOT NULL PRIMARY KEY, data_type TEXT NOT NULL, identifier TEXT UNIQUE, description TEXT DEFAULT '', " +
         "last_change DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')), min_x DOUBLE, min_y DOUBLE, max_x DOUBLE, max_y DOUBLE, srs_id INTEGER, " +
         'CONSTRAINT fk_gc_r_srs_id FOREIGN KEY (srs_id) REFERENCES gpkg_spatial_ref_sys(srs_id))',
-      rows: [
-        {
-          rowid: 1,
-          values: [TABLE, 'features', identifier, fc.metadata !== undefined ? JSON.stringify(fc.metadata) : '', now.toISOString(), ...bbox, srs.id],
-        },
-      ],
+      rows: built.map((b, i) => ({
+        rowid: i + 1,
+        values: [b.layer.table, 'features', b.layer.identifier, b.layer.description, now.toISOString(), ...b.bbox, srs.id],
+      })),
       indexes: [
         { name: 'sqlite_autoindex_gpkg_contents_1', columns: [0], sql: null },
         { name: 'sqlite_autoindex_gpkg_contents_2', columns: [2], sql: null },
@@ -183,17 +216,13 @@ export function geoJsonToGeoPackage(geoJson: string, srs: GpkgSrs, identifier: s
         'srs_id INTEGER NOT NULL, z TINYINT NOT NULL, m TINYINT NOT NULL, CONSTRAINT pk_geom_cols PRIMARY KEY (table_name, column_name), ' +
         'CONSTRAINT uk_gc_table_name UNIQUE (table_name), CONSTRAINT fk_gc_tn FOREIGN KEY (table_name) REFERENCES gpkg_contents(table_name), ' +
         'CONSTRAINT fk_gc_srs FOREIGN KEY (srs_id) REFERENCES gpkg_spatial_ref_sys (srs_id))',
-      rows: [{ rowid: 1, values: [TABLE, 'geom', 'MULTIPOLYGON', srs.id, 0, 0] }],
+      rows: built.map((b, i) => ({ rowid: i + 1, values: [b.layer.table, 'geom', 'MULTIPOLYGON', srs.id, 0, 0] })),
       indexes: [
         { name: 'sqlite_autoindex_gpkg_geometry_columns_1', columns: [0, 1], sql: null },
         { name: 'sqlite_autoindex_gpkg_geometry_columns_2', columns: [0], sql: null },
       ],
     },
-    {
-      name: TABLE,
-      sql: `CREATE TABLE ${q(TABLE)} (fid INTEGER PRIMARY KEY, geom MULTIPOLYGON${cols.map((c) => `, ${q(c.name)} ${c.type}`).join('')})`,
-      rows,
-    },
+    ...built.map((b) => b.spec),
   ];
   return buildSqliteDatabase(tables, { applicationId: GPKG_APPLICATION_ID, userVersion: GPKG_USER_VERSION });
 }
