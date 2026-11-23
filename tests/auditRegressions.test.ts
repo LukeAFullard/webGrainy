@@ -14,6 +14,7 @@ import {
 } from '../src/modules/siteAnalysis.js';
 import { computeExtendedMorphometrics, computeFeretDiameters } from '../src/modules/morphometricsExt.js';
 import { csvCell, metadataCommentLines } from '../src/modules/provenance.js';
+import { computeBinomialCi } from '../src/modules/siteUncertainty.js';
 import { AnalysisSession } from '../src/modules/pipelineController.js';
 import { ScaleCalibrator } from '../src/modules/interactiveEditor.js';
 import {
@@ -62,6 +63,30 @@ describe('F-19 binomial CI ranks (Eaton et al. 2019) vs independent scipy comput
     const r = binomialConfidenceRanks(n, p, alpha);
     expect(r.le).toBeCloseTo(le, 3);
     expect(r.ue).toBeCloseTo(ue, 3);
+  });
+});
+
+describe('binomial CI: ranks to sizes (audit S2)', () => {
+  it('centres the D50 interval on the sample median (0-based ranks on the midpoint CDF)', () => {
+    // Sizes 2^1..2^10: log2 interpolation is linear in the exponent, so log2(size) = 1 + 0-based rank.
+    const values = Array.from({ length: 10 }, (_, i) => 2 ** (i + 1));
+    const ci = computeBinomialCi(values, values.map(() => 1), 'number-weighted', 0.95);
+    const { le, ue } = binomialConfidenceRanks(10, 0.5, 0.05);
+    expect(Math.log2(ci.lower.D50)).toBeCloseTo(1 + le, 9);
+    expect(Math.log2(ci.upper.D50)).toBeCloseTo(1 + ue, 9);
+    expect((Math.log2(ci.lower.D50) + Math.log2(ci.upper.D50)) / 2).toBeCloseTo(5.5, 9); // sample median 2^5.5
+  });
+
+  it('has no jump between the exact (n <= 5000) and normal (n > 5000) rank formulas', () => {
+    for (const p of [0.05, 0.16, 0.5, 0.84, 0.95]) {
+      for (const alpha of [0.05, 0.1]) {
+        const a = binomialConfidenceRanks(5000, p, alpha);
+        const b = binomialConfidenceRanks(5001, p, alpha);
+        // One more grain moves the ranks by about p; the old formula jumped by up to a rank.
+        expect(Math.abs(b.le - a.le - p)).toBeLessThan(0.05);
+        expect(Math.abs(b.ue - a.ue - p)).toBeLessThan(0.05);
+      }
+    }
   });
 });
 

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { AnalysisSession } from '../src/modules/analysisSession.js';
 import { computeGrainMorphometrics } from '../src/modules/postprocessCore.js';
+import { ScaleCalibrator } from '../src/modules/interactiveEditor.js';
 import type { PhotoRecord, SiteRecord } from '../src/modules/projectStorage.js';
 import { computeWorkspaceReports } from '../src/modules/siteWorkspace.js';
 import { createInitialState, type AppState } from '../src/ui/state.js';
@@ -213,6 +214,27 @@ describe('panel renderers', () => {
       expect(html, scope).not.toContain('NaN');
       for (const c of charts.values()) expect(c.render(true), scope).not.toContain('NaN');
     }
+  });
+
+  it('photo view: the detection limit shown is the cutoff applied, raised by the site cutoff (audit S1)', () => {
+    const base = emptyState();
+    const cal = (mmPerPx: number) => ScaleCalibrator.calibrate({ x: 0, y: 0 }, { x: 100, y: 0 }, 100 * mmPerPx, 'mm');
+    const s1 = session();
+    const s2 = session();
+    s1.setCalibration(cal(0.9)); // own limit 15 px x 0.9 = 13.5 mm
+    s2.setCalibration(cal(1)); // 15 mm: sets the site's common cutoff
+    const st0: AppState = {
+      ...base,
+      photos: [{ ...photo('p1', 'fine.jpg'), calibration: cal(0.9) }, { ...photo('p2', 'coarse.jpg'), calibration: cal(1) }],
+      activePhotoId: 'p1',
+      sessions: new Map([['p1', s1], ['p2', s2]]),
+      photoStatuses: new Map([['p1', 'done'], ['p2', 'done']] as const),
+    };
+    const st = { ...st0, ...computeWorkspaceReports(st0) };
+    const html = renderDashboardHtml({ ...st, dashboardScope: 'photo', dashboardTab: 'psd' }, { lightTheme: true, charts: new Map() });
+    expect(html).toMatch(/Smallest grain kept \(detection limit\): <strong>~15\.0 mm<\/strong>/);
+    expect(html).toContain('this photo alone resolves ~13.5 mm');
+    expect(html).toContain('common cutoff');
   });
 
   it('compare view: loading, error and result states', () => {

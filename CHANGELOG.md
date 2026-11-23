@@ -130,5 +130,16 @@ First public release.
 - Rectify: corners clicked out of order (a crossed shape) are refused instead of scrambling the photo,
   output pixels beyond the horizon of a strongly oblique photo stay empty instead of showing an
   upside-down copy, and the toolbar and help say that rectifying replaces the photo.
+- `site_summary.csv`: `per_photo` rows for a photo whose name needs quoting (comma, quote, `#`) were
+  malformed (`"a,b.jpg"_D50`) and rejected by strict CSV readers (Python `csv` strict mode, DuckDB,
+  Polars); the whole metric name is now one quoted cell.
+- Cellpose-SAM with *Auto* weights: when the GPU fails during a photo, the retry on the CPU uses the INT8
+  weights instead of the 617 MB FP16 file (about 3.8 GB of memory on the CPU).
+- *This photo*: the detection limit shown is the cutoff actually applied; when the site's common
+  cutoff (set by a coarser photo) or the field-count cutoff raises it, the note says so and gives the
+  photo's own limit.
+- Binomial percentile intervals (`psd_binomial_ci_*`): order-statistic ranks are now read at the
+  right place on the size curve (they were half a grain too fine), and the large-sample formula
+  (over 5,000 grains) no longer jumps at the switch.
 
 [0.1.0]: https://github.com/LukeAFullard/webGrainy/releases/tag/v0.1.0

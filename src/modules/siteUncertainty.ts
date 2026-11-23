@@ -33,10 +33,14 @@ export function binomialConfidenceRanks(
     return { le: 0, ue: 0 };
   }
   if (n > 5000) {
+    // Normal approximation on the same scale as the exact branch below (0-based, interpolated
+    // order-statistic positions, continuity-corrected to n*p - 0.5), with the Cornish-Fisher
+    // skewness term so it meets the exact ranks at n = 5000 (within 0.01 rank) instead of jumping.
     const z = alpha <= 0.055 ? 1.959963984540054 : 1.6448536269514722;
     const sd = Math.sqrt(n * p * (1 - p));
-    const le = Math.max(0, Math.floor(n * p - z * sd));
-    const ue = Math.min(n, Math.ceil(n * p + z * sd));
+    const skew = sd > 0 ? ((z * z - 1) * (1 - 2 * p)) / (6 * sd) : 0;
+    const le = Math.max(0, n * p - 0.5 + sd * (-z + skew));
+    const ue = Math.min(n, n * p - 0.5 + sd * (z + skew));
     return { le, ue };
   }
 
@@ -121,8 +125,10 @@ export function computeBinomialCi(
     const key = PSD_KEYS[i];
     if (pNum === undefined || key === undefined) continue;
     const { le, ue } = binomialConfidenceRanks(nUsed, pNum / 100, alpha);
-    lower[key] = sizeAtCumulative(curve, le / nUsed);
-    upper[key] = sizeAtCumulative(curve, ue / nUsed);
+    // `le` / `ue` are 0-based order-statistic positions; on the midpoint CDF the grain at
+    // position i sits at cumulative fraction (i + 0.5) / n.
+    lower[key] = sizeAtCumulative(curve, (le + 0.5) / nUsed);
+    upper[key] = sizeAtCumulative(curve, (ue + 0.5) / nUsed);
   }
 
   return {

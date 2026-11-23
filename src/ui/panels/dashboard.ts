@@ -80,7 +80,7 @@ export function renderDashboardHtml(state: AppState, view: DashboardView): strin
     }
     if (!isSite && activeSession) {
       const prov = activeSession.getProvenance();
-      return computeEffectiveDetectionLimit(
+      const own = computeEffectiveDetectionLimit(
         {
           minSizeWorkingPx: prov?.postProcess?.minSize ?? DEFAULT_POSTPROCESS_OPTIONS.minSize,
           effectiveScaleFactor: activeSession.workingImage.effectiveScaleFactor,
@@ -89,6 +89,23 @@ export function renderDashboardHtml(state: AppState, view: DashboardView): strin
         },
         psd,
       );
+      // The mm cutoff actually applied to this photo can be larger than its own detection limit:
+      // the site's common cutoff (a coarser photo's limit) or the field-count cutoff.
+      const appliedMm = photoCutoffs(state.siteOptions, report, activePhoto?.photoId).minSizeMm;
+      if (own && own.unit === 'mm' && appliedMm > own.value) {
+        const fieldMm = state.siteOptions.minSizeMm ?? 0;
+        return {
+          value: appliedMm,
+          unit: 'mm' as const,
+          nearD5: Number.isFinite(psd.D5) && psd.D5 > 0 && psd.D5 <= appliedMm * 1.25,
+          nearD16: Number.isFinite(psd.D16) && psd.D16 > 0 && psd.D16 <= appliedMm * 1.5,
+          raisedNote:
+            appliedMm > fieldMm
+              ? ` (this photo alone resolves ~${own.value.toFixed(1)} mm; raised to the site's common cutoff, set by a coarser photo, so all photos count the same size range)`
+              : ` (this photo alone resolves ~${own.value.toFixed(1)} mm; raised to the Field-count cutoff)`,
+        };
+      }
+      return own;
     }
     return null;
   })();
@@ -120,7 +137,7 @@ export function renderDashboardHtml(state: AppState, view: DashboardView): strin
         : sizeHistogramFromWentworth([], step);
     const detectionNoteHtml = detectionLimitInfo
       ? `<div class="${detectionLimitInfo.nearD16 || detectionLimitInfo.nearD5 ? 'warning-banner' : 'field-hint'}" style="margin-top:6px;">
-          Smallest grain kept (detection limit): <strong>~${detectionLimitInfo.value.toFixed(detectionLimitInfo.unit === 'mm' ? 1 : 0)} ${detectionLimitInfo.unit}</strong>${
+          Smallest grain kept (detection limit): <strong>~${detectionLimitInfo.value.toFixed(detectionLimitInfo.unit === 'mm' ? 1 : 0)} ${detectionLimitInfo.unit}</strong>${'raisedNote' in detectionLimitInfo ? esc(detectionLimitInfo.raisedNote) : ''}${
             detectionLimitInfo.nearD16
               ? ' — fine tail (D16) is close to the resolution floor; consider a closer photo or a Field-count cutoff.'
               : detectionLimitInfo.nearD5
