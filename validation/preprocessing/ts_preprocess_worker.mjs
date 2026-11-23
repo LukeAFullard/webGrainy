@@ -241,17 +241,19 @@ async function runSelfTest(repoDir) {
     rgba[i * 4 + 3] = 255;
   }
 
+  // Auto image scale: photos over 1,024 px get a 1,024 px working image (since 0.1.0; the
+  // benchmark in README.md was run with the earlier rule, which halved this photo to 640x480).
   const work = prepareWorkingImage(rgba, origW, origH, 'auto');
-  if (work.width !== 640 || work.height !== 480) {
-    throw new Error(`Expected 640x480 working image, got ${work.width}x${work.height}`);
+  if (work.width !== 1024 || work.height !== 768) {
+    throw new Error(`Expected 1024x768 working image, got ${work.width}x${work.height}`);
   }
   for (const v of ['A', 'B', 'C', 'D', 'E', 'G_gamma07', 'G_gamma14', 'G_bright_p20', 'G_bright_m20', 'H_median3']) {
     const res = applyPreprocessVariant(work, v, applyCLAHE);
-    if (v === 'D' && (res.img.width !== 960 || res.img.height !== 720)) {
-      throw new Error(`Expected 960x720 for D, got ${res.img.width}x${res.img.height}`);
+    if (v === 'D' && (res.img.width !== 1536 || res.img.height !== 1152)) {
+      throw new Error(`Expected 1536x1152 for D, got ${res.img.width}x${res.img.height}`);
     }
-    if (v === 'E' && (res.img.width !== 1280 || res.img.height !== 960)) {
-      throw new Error(`Expected 1280x960 for E, got ${res.img.width}x${res.img.height}`);
+    if (v === 'E' && (res.img.width !== 2048 || res.img.height !== 1536)) {
+      throw new Error(`Expected 2048x1536 for E, got ${res.img.width}x${res.img.height}`);
     }
   }
 

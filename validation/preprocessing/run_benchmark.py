@@ -60,8 +60,8 @@ from scipy.stats import pearsonr, spearmanr
 from skimage.measure import regionprops
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-MANIFEST_PATH = REPO_ROOT / "audit" / "followup" / "heldout_manifest.csv"
-WORKER_MJS = REPO_ROOT / "audit" / "preprocessing" / "ts_preprocess_worker.mjs"
+MANIFEST_PATH = REPO_ROOT / "validation" / "heldout" / "heldout_manifest.csv"
+WORKER_MJS = REPO_ROOT / "validation" / "preprocessing" / "ts_preprocess_worker.mjs"
 
 HF_REPO = "inYourOwnBrowser/imagegrains-2.0-onnx"
 HF_REVISION = "98e76b1374dc22cfff8193aca71c308f2b4dd3b3"

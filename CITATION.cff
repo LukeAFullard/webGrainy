@@ -118,6 +118,10 @@ references:
     authors:
       - family-names: Stringer
         given-names: Carsen
+      - family-names: Wang
+        given-names: Tim
+      - family-names: Michaelos
+        given-names: Michalis
       - family-names: Pachitariu
         given-names: Marius
     journal: "Nature Methods"

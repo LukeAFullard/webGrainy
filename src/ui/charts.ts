@@ -48,7 +48,8 @@ export function renderPsdChartSvg(input: PsdChartInput): string {
   const H = 240;
   const padL = 44;
   const padR = 14;
-  const padT = 26;
+  // A subtitle gets its own line under the title (side by side, long names overlapped).
+  const padT = input.subtitle ? 36 : 26;
   const padB = 34;
   const plotW = W - padL - padR;
   const plotH = H - padT - padB;
@@ -247,7 +248,7 @@ export function renderPsdChartSvg(input: PsdChartInput): string {
   );
   if (input.subtitle) {
     parts.push(
-      `<text x="${W - padR}" y="15" text-anchor="end" fill="${muted}" font-size="9" font-family="system-ui, sans-serif">${esc(input.subtitle)}</text>`,
+      `<text x="${padL}" y="27" fill="${muted}" font-size="9" font-family="system-ui, sans-serif">${esc(input.subtitle)}</text>`,
     );
   }
   parts.push(

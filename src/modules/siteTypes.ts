@@ -310,6 +310,8 @@ export interface SiteAnalysisReport {
 export const SITE_BIBLIOGRAPHIC_CITATIONS: readonly string[] = [
   'Mair, D., Witz, G., Do Prado, A., et al. (2026). ImageGrains 2.0: Improved precision and generalization for grain segmentation. Earth Surface Dynamics, 14, 527-551. https://doi.org/10.5194/esurf-14-527-2026',
   'Mair, D., Do Prado, A. H., Garefalakis, P., Lechmann, A., Whittaker, A., & Schlunegger, F. (2022). Grain size of fluvial gravel bars from close-range UAV imagery - uncertainty in segmentation-based data. Earth Surface Dynamics, 10, 953-973. https://doi.org/10.5194/esurf-10-953-2022',
+  'Pachitariu, M., Rariden, M., & Stringer, C. (2025). Cellpose-SAM: superhuman generalization for cellular segmentation. bioRxiv. https://doi.org/10.1101/2025.04.28.651001',
+  'Stringer, C., Wang, T., Michaelos, M., & Pachitariu, M. (2021). Cellpose: a generalist algorithm for cellular segmentation. Nature Methods, 18, 100-106. https://doi.org/10.1038/s41592-020-01018-x',
   'Eaton, B. C., Moore, R. D., & MacKenzie, L. G. (2019). Percentile-based grain size distribution analysis tools (GSDtools) - estimating confidence limits and hypothesis tests for comparing two samples. Earth Surface Dynamics, 7, 789-806. https://doi.org/10.5194/esurf-7-789-2019',
   'Kellerhals, R., & Bray, D. I. (1971). Sampling procedures for coarse fluvial sediments. Journal of the Hydraulics Division, ASCE, 97(HY8), 1165-1180.',
   'Graham, D. J., Rollet, A.-J., Piegay, H., & Rice, S. P. (2010). Maximizing the accuracy of image-based surface sediment sampling techniques. Water Resources Research, 46, W02508.',

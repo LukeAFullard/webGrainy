@@ -188,5 +188,14 @@ First public release.
   METHODS, the settings guide and every export's accuracy note; the settings guide's accuracy table,
   U-Net figure, CLAHE recipe and *Copy scale to photos…* name are corrected, and a test keeps its
   table in step with the results file.
+- Help and citations: the Cellpose-SAM pipeline comparison quotes the right outline scores (0.565 vs
+  0.488); the fine-grain enlargement is described as bilinear and about 1.5–2× the time for the photos
+  it applies to; every export's citation note adds ImageGrains 2.0 and Cellpose-SAM; the printable
+  report lists Cellpose and Cellpose-SAM; Cellpose (2021) lists all four authors in the README and
+  CITATION.cff; a chart subtitle sits on its own line instead of colliding with a long title.
+- Validation and CI: the pre-processing benchmark's worker script is restored and its paths fixed, the
+  edge-case probe uses real sessions again, the false-positive-rate study defaults to the 400 trials
+  its results report, `npm run test:perf` runs files one at a time so strict timings do not flake, and
+  the GitHub Pages deploy waits for CI to pass on the same commit.
 
 [0.1.0]: https://github.com/LukeAFullard/webGrainy/releases/tag/v0.1.0

@@ -5,8 +5,12 @@ name: Deploy app to GitHub Pages
 # "GitHub Actions". The app is then served at https://<owner>.github.io/<repo>/
 # (the GPU check page at .../gpucheck.html).
 
+# Deploys only after the CI workflow (dependency audit, oracle, CRS check, browser and
+# service-worker smoke tests) has passed on main, and deploys exactly the commit CI tested.
 on:
-  push:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
     branches: [main]
   workflow_dispatch:
 
@@ -21,10 +25,13 @@ concurrency:
 
 jobs:
   build:
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: 22

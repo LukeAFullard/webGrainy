@@ -91,7 +91,7 @@ export const HELP_TOPICS = {
     group: 'Analysis',
     what: 'Re-analyses the photo after enlarging it ×1.5, so small grains are bigger for the network. Sizes are still reported in the original photo pixels (or mm), so results stay comparable. Offered for U-Net when the median grain is under 20 px in the analysed image.',
     default: 'Offered, not automatic',
-    when: 'Accept it for fine gravel analysed with U-Net. In the pre-processing benchmark (40 test photos) enlarging fine-gravel photos ×1.5 improved outline accuracy (PQ +0.025, 95% CI +0.007 to +0.049) and recall of small grains, with no site getting worse, at about 20–50% more time per photo. The 20 px threshold was chosen after seeing the test results, so it is offered rather than automatic until confirmed on new data. Cellpose-SAM already handles fine grains and does not need it. Undo returns to the normal analysis.',
+    when: 'Accept it for fine gravel analysed with U-Net. In the pre-processing benchmark (40 test photos) enlarging fine-gravel photos ×1.5 improved outline accuracy (PQ +0.025, 95% CI +0.007 to +0.049) and recall of small grains, with no site getting worse, at about 1.5–2× the time for the photos it is applied to (about twice as many tiles). The 20 px threshold was chosen after seeing the test results, so it is offered rather than automatic until confirmed on new data. Cellpose-SAM already handles fine grains and does not need it. Undo returns to the normal analysis.',
   },
   claheClipLimit: {
     title: 'CLAHE clip',
@@ -126,7 +126,7 @@ export const HELP_TOPICS = {
     group: 'Advanced analysis',
     what: 'How the photo is prepared and cut into tiles before the neural network runs. "Cellpose" reproduces the original ImageGrains / Cellpose software exactly. "Legacy" runs U-Net on the whole image and blends overlapping tiles its own way.',
     default: 'Cellpose (matches ImageGrains)',
-    when: 'Keep "Cellpose". In tests it matched the original software exactly, and gave better outlines than Legacy (outline score 0.445 vs 0.413 for U-Net, 0.561 vs 0.485 for Cellpose-SAM on 7 test photos). Choose "Legacy" only to reproduce earlier results made with it.',
+    when: 'Keep "Cellpose". In tests it matched the original software exactly, and gave better outlines than Legacy (outline score 0.445 vs 0.413 for U-Net, 0.565 vs 0.488 for Cellpose-SAM on 7 test photos). Choose "Legacy" only to reproduce earlier results made with it.',
   },
   cpuThreads: {
     title: 'CPU threads',

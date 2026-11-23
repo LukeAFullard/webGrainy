@@ -360,7 +360,7 @@ export function renderDashboardHtml(state: AppState, view: DashboardView): strin
         }
         if (!hint.suggest) return '';
         return `<div class="info-banner">
-          <strong>Fine grains detected</strong> (median about ${hint.medianWorkingBPx!.toFixed(0)} px). U-Net finds more of them with a fast temporary ×1.5 bicubic resize during inference (unlike the toolbar's AI 2× Upscale, it does not modify your photo): in testing on 40 photos this improved outlines with no site getting worse, taking ~20–50% longer. ${helpButton('fineGrainUpscale')}
+          <strong>Fine grains detected</strong> (median about ${hint.medianWorkingBPx!.toFixed(0)} px). U-Net finds more of them with a temporary ×1.5 bilinear enlargement during inference (unlike the toolbar's AI 2× Upscale, it does not modify your photo): in testing on 40 photos this improved outlines with no site getting worse, taking about 1.5–2× as long. ${helpButton('fineGrainUpscale')}
           <div style="margin-top:6px;"><button type="button" class="btn btn-sm btn-primary" data-action="fine-grain-rerun" ${state.batchRunning ? 'disabled' : ''}>Re-analyse enlarged ×1.5</button></div>
         </div>`;
       })()}

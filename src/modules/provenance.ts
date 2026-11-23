@@ -21,7 +21,7 @@ export const UNOFFICIAL_NOTICE =
   'webGrainy is an independent, unofficial browser port of ImageGrains 2.0; it is not affiliated with or endorsed by the ImageGrains or Cellpose authors, and its post-processing differs from the official Python implementation.';
 
 export const CITATION_NOTICE =
-  'If you use these results, cite ImageGrains (Mair et al.; doi:10.1002/esp.5755; weights doi:10.5281/zenodo.15728186) and Cellpose (Stringer et al. 2021, doi:10.1038/s41592-020-01018-x).';
+  'If you use these results, cite ImageGrains 2.0 (Mair et al. 2026, doi:10.5194/esurf-14-527-2026; weights doi:10.5281/zenodo.15728186), ImageGrains (Mair et al. 2023, doi:10.1002/esp.5755), Cellpose-SAM (Pachitariu et al. 2025, doi:10.1101/2025.04.28.651001) and Cellpose (Stringer et al. 2021, doi:10.1038/s41592-020-01018-x).';
 
 /**
  * Validated accuracy and its limits, included in every export and in the printable report
