@@ -154,17 +154,21 @@ export function analyzeSite(
     let clastPackingPct: number;
     let exposedMatrixPct: number;
 
+    // Clast packing is the share of the sampled bed covered by detected grains of any size,
+    // including those touching the photo edge (they cover bed too), as in the Photo view
+    // (AnalysisSession.getRoiFilterResult). The statistics use the border-filtered grains.
     if (input.roiConfig !== undefined) {
       const roiRes = filterGrainsByRoiAndExclusion(
         res.masks,
-        borderFiltered,
+        res.grains,
         res.width,
         res.height,
         sWork,
         withExclusionTolerance(input.roiConfig, options.maxExcludedFraction),
         mmPerPx,
       );
-      preCutoffGrains = roiRes.includedGrains;
+      const kept = new Set(borderFiltered.map((g) => g.id));
+      preCutoffGrains = roiRes.includedGrains.filter((g) => kept.has(g.id));
       validBedMask = roiRes.validBedMask;
       sampledBedAreaPx = roiRes.sampledBedAreaPx;
       sampledBedAreaMm2 = roiRes.sampledBedAreaMm2;
@@ -182,7 +186,7 @@ export function analyzeSite(
       sampledBedAreaMm2 =
         mmPerPx !== undefined ? sampledBedAreaPx * mmPerPx * mmPerPx : undefined;
       let areaSum = 0;
-      for (const g of preCutoffGrains) areaSum += g.areaPx;
+      for (const g of res.grains) areaSum += g.areaPx;
       clastPackingPct =
         sampledBedAreaPx > 0
           ? Math.min(100, (areaSum / sampledBedAreaPx) * 100)

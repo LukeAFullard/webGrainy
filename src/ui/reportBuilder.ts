@@ -146,6 +146,7 @@ export async function buildPrintableReport(
       xAxis: st.psdXAxis,
       title: 'Cumulative grain-size distribution',
       subtitle: `${report.includedPhotoCount} photos, n=${report.validGrainCount}`,
+      ciLevel: report.bootstrapCi.confidenceLevel,
       ciLower: report.bootstrapCi.lower,
       ciUpper: report.bootstrapCi.upper,
       perPhotoCurves: report.perPhoto,
@@ -159,7 +160,7 @@ export async function buildPrintableReport(
     overlayLegend: overlayLegend(mode, classesSeen),
     shapeSvg: options.includeShapeFabric && report.shape.n > 0 ? renderAspectRatioHistogramSvg(report.shape.aspectRatioCounts, true) : null,
     fabricSvg: options.includeShapeFabric && report.fabricRose.grainCount > 0 ? renderFabricRoseSvg(report.fabricRose, true) : null,
-    convergenceSvg: options.includeUncertainty && report.convergence.length > 1 ? renderConvergenceChartSvg(report.convergence, true) : null,
+    convergenceSvg: options.includeUncertainty && report.convergence.length > 1 ? renderConvergenceChartSvg(report.convergence, true, report.bootstrapCi.confidenceLevel) : null,
     jackknifeSvg: options.includeUncertainty && report.jackknife ? renderJackknifeChartSvg(report.jackknife, true) : null,
   });
   return html;

@@ -179,8 +179,9 @@ function rasterizeStroke(
     for (let y = yStart; y <= yEnd; y++) {
       const rowOffset = y * width;
       for (let x = xStart; x <= xEnd; x++) {
-        const dx = x - p.x;
-        const dy = y - p.y;
+        // Distance from the pixel centre (pixel x spans [x, x + 1), as for the polygon raster).
+        const dx = x + 0.5 - p.x;
+        const dy = y + 0.5 - p.y;
         if (dx * dx + dy * dy <= rSq) {
           mask[rowOffset + x] = 0;
         }
@@ -202,7 +203,7 @@ function rasterizeStroke(
     for (let y = yStart; y <= yEnd; y++) {
       const rowOffset = y * width;
       for (let x = xStart; x <= xEnd; x++) {
-        if (distSqPointToSegment(x, y, a.x, a.y, b.x, b.y) <= rSq) {
+        if (distSqPointToSegment(x + 0.5, y + 0.5, a.x, a.y, b.x, b.y) <= rSq) {
           mask[rowOffset + x] = 0;
         }
       }

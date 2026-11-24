@@ -129,6 +129,7 @@ export function renderDashboardHtml(state: AppState, view: DashboardView): strin
           xAxis: state.psdXAxis,
           title: isSite ? 'Pooled Site Cumulative PSD' : 'Active Photo Cumulative PSD',
           subtitle: isSite && report ? `${report.includedPhotoCount} photos, n=${report.validGrainCount}` : undefined,
+          ...(isSite && report ? { ciLevel: report.bootstrapCi.confidenceLevel } : {}),
           ciLower: isSite ? report?.bootstrapCi.lower : undefined,
           ciUpper: isSite ? report?.bootstrapCi.upper : undefined,
           perPhotoCurves: isSite ? report?.perPhoto : undefined,
@@ -256,7 +257,7 @@ export function renderDashboardHtml(state: AppState, view: DashboardView): strin
             </div>`
           : ''
       }
-      ${chartBox('convergence', 'D50 convergence with number of photos', (light) => renderConvergenceChartSvg(report?.convergence ?? [], light), lightTheme)}
+      ${chartBox('convergence', 'D50 convergence with number of photos', (light) => renderConvergenceChartSvg(report?.convergence ?? [], light, report?.bootstrapCi.confidenceLevel), lightTheme)}
       ${chartBox('jackknife', 'Leave-one-photo-out influence on D50', (light) => renderJackknifeChartSvg(report?.jackknife ?? null, light), lightTheme)}
     `;
   } else if (state.dashboardTab === 'shape') {

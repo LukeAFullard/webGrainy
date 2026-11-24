@@ -385,10 +385,12 @@ function rasterize4ConnectedPolyline(
       continue;
     }
 
-    let x0 = Math.round(p0.x);
-    let y0 = Math.round(p0.y);
-    const x1 = Math.round(p1.x);
-    const y1 = Math.round(p1.y);
+    // Continuous coordinates (pixel i spans [i, i + 1), as for drawing, polygons and the ROI):
+    // a point lies in pixel floor(x).
+    let x0 = Math.floor(p0.x);
+    let y0 = Math.floor(p0.y);
+    const x1 = Math.floor(p1.x);
+    const y1 = Math.floor(p1.y);
 
     const dx = Math.abs(x1 - x0);
     const dy = Math.abs(y1 - y0);

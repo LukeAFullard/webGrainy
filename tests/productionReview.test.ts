@@ -4,13 +4,14 @@
 import { describe, expect, it } from 'vitest';
 import { computeFabricRoseStats } from '../src/modules/morphometricsExt.js';
 import { majorAxisDirection, orientationFromMoments } from '../src/modules/orientationGeometry.js';
-import { renderCompositionBarsSvg, renderFabricRoseSvg } from '../src/ui/charts.js';
+import { renderCompositionBarsSvg, renderConvergenceChartSvg, renderFabricRoseSvg, renderPrintablePsdSvg } from '../src/ui/charts.js';
 import type { GrainMorphometrics } from '../src/types/index.js';
 import { validateSiteCalibration } from '../src/modules/siteCalibration.js';
 import type { SitePhotoInput } from '../src/modules/siteTypes.js';
 import { comparisonStatistics } from '../src/ui/compareReport.js';
 import type { ComparisonView } from '../src/ui/comparisonView.js';
 import { createHash } from 'node:crypto';
+import { buildValidBedMask } from '../src/modules/roiAndRectify.js';
 import { analyzeSite } from '../src/modules/siteAnalysis.js';
 import { siteReportProvenance } from '../src/modules/siteProvenance.js';
 import { buildSiteReportHtml } from '../src/ui/report.js';
@@ -301,5 +302,68 @@ describe('F-20: reports state the size cutoff actually applied', () => {
     });
     expect(html).toContain('grains below ~16.0 mm are not counted');
     expect(html).toContain('grains smaller than ~16.0 mm (the lower size cutoff)');
+  });
+});
+
+describe('F-21: clast packing is the same in the Photo view and the Site breakdown', () => {
+  it('counts every detected grain inside the ROI, including grains at the photo edge and below the cutoffs', async () => {
+    const { AnalysisSession } = await import('../src/modules/analysisSession.js');
+    const { computeGrainMorphometrics } = await import('../src/modules/postprocessCore.js');
+    const w = 200, h = 200;
+    const masks = new Int32Array(w * h);
+    const square = (id: number, x0: number, y0: number, side: number): void => {
+      for (let y = y0; y < y0 + side; y++) for (let x = x0; x < x0 + side; x++) masks[y * w + x] = id;
+    };
+    square(1, 20, 20, 40);
+    square(2, 80, 80, 50);
+    square(3, 150, 100, 8); // below the size cutoff
+    square(4, 0, 170, 30); // touches the photo edge
+    const session = new AnalysisSession({
+      workingImage: { data: new Uint8ClampedArray(0), width: w, height: h, originalWidth: w, originalHeight: h, effectiveScaleFactor: 1, scaleModeApplied: 'full' } as never,
+      recommendation: { model: 'unet', confidence: 1, reason: 't', metrics: {} } as never,
+      masks,
+      workingGrains: computeGrainMorphometrics(masks, w, h, 2),
+    });
+    const roi = { exclusionPolygons: [[{ x: 150, y: 0 }, { x: 200, y: 0 }, { x: 200, y: 50 }, { x: 150, y: 50 }]], exclusionStrokes: [] };
+    session.setRoiConfig(roi);
+    const photoView = session.getRoiFilterResult()!.clastPackingPct;
+    const report = analyzeSite([{ photoId: 'a', label: 'a', included: true, session, roiConfig: roi }] as SitePhotoInput[], {
+      poolingMode: 'number-weighted', unit: 'px', minBaxisPx: 20, bootstrapReplicates: 20,
+    });
+    expect(report.perPhoto[0]!.clastPackingPct).toBeCloseTo(photoView, 9);
+    // 40² + 50² + 8² + 30² px over the 200² photo minus the 50² excluded corner.
+    expect(photoView).toBeCloseTo(((1600 + 2500 + 64 + 900) / (40000 - 2500)) * 100, 1);
+  });
+});
+
+describe('F-22: chart CI labels follow the chosen confidence level', () => {
+  it('90% sites are labelled 90% on the PSD and convergence charts', () => {
+    const inputs = [
+      { photoId: 'a', label: 'a', included: true, session: squareGrainSession([20, 30, 40, 60], { mmPerPx: 0.5 }) },
+      { photoId: 'b', label: 'b', included: true, session: squareGrainSession([24, 34, 44, 64], { mmPerPx: 0.5 }) },
+    ] as SitePhotoInput[];
+    const report = analyzeSite(inputs, { poolingMode: 'physical-area', minBaxisPx: 10, bootstrapReplicates: 20, confidenceLevel: 0.9 });
+    const psd = renderPrintablePsdSvg(report, 'S', 'mm');
+    expect(psd).toContain('90% CI (bootstrap)');
+    expect(psd).not.toContain('95% CI');
+    const conv = renderConvergenceChartSvg(report.convergence, true, report.bootstrapCi.confidenceLevel);
+    expect(conv).toContain('± 90% CI');
+  });
+});
+
+describe('F-23: brush exclusions are centred where they are drawn', () => {
+  it('a brush dot at a pixel centre excludes a symmetric plus around that pixel', () => {
+    const m = buildValidBedMask(21, 21, 1, { exclusionPolygons: [], exclusionStrokes: [{ points: [{ x: 10.5, y: 10.5 }], radiusPx: 1 }] });
+    const excluded: string[] = [];
+    for (let y = 0; y < 21; y++) for (let x = 0; x < 21; x++) if (m.valid[y * 21 + x] === 0) excluded.push(`${x},${y}`);
+    expect(excluded.sort()).toEqual(['10,10', '10,11', '10,9', '11,10', '9,10'].sort());
+  });
+
+  it('a stroke segment and a polygon over the same strip exclude the same pixels', () => {
+    const stroke = buildValidBedMask(30, 30, 1, { exclusionPolygons: [], exclusionStrokes: [{ points: [{ x: 5, y: 15 }, { x: 25, y: 15 }], radiusPx: 2 }] });
+    // Pixel rows 13..16 have centres within 2 px of y = 15 (13.5, 14.5, 15.5, 16.5).
+    const rows = new Set<number>();
+    for (let y = 0; y < 30; y++) if (stroke.valid[y * 30 + 15] === 0) rows.add(y);
+    expect([...rows].sort((a, b) => a - b)).toEqual([13, 14, 15, 16]);
   });
 });

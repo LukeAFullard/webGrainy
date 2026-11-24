@@ -616,8 +616,9 @@ export class CanvasViewport {
     if (!this.session) return null;
     const wi = this.session.workingImage;
     const s = wi.effectiveScaleFactor;
-    const wx = Math.round(origX * s);
-    const wy = Math.round(origY * s);
+    // Image coordinates are continuous (pixel i spans [i, i + 1)): the pixel under a point is floor().
+    const wx = Math.floor(origX * s);
+    const wy = Math.floor(origY * s);
     if (wx < 0 || wy < 0 || wx >= wi.width || wy >= wi.height) return null;
     const id = this.session.getWorkingMasks()[wy * wi.width + wx] ?? 0;
     return id > 0 ? id : null;

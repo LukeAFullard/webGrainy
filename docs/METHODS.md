@@ -502,8 +502,9 @@ one distribution. *How* photos are combined is the **pooling mode**:
 | **Facies-weighted** | as equal-photo, × the photo's facies weight ÷ the total weight | Stratified sampling. The weight is per photo, so a facies' share is the sum over its photos: for 70% riffle (4 photos) and 30% pool (1 photo), give 0.175 per riffle photo and 0.3 to the pool photo. |
 | **Number-weighted** | 1 | Each grain once. Not comparable with pebble counts. |
 
-The per-photo breakdown shows each photo's grains, D16/D50/D84, packing (% of bed area
-covered by counted grains), detection limit and share of the pooled weight.
+The per-photo breakdown shows each photo's grains, D16/D50/D84, packing (% of the sampled bed
+area covered by detected grains, whatever their size and including those touching the photo
+edge; the same figure as the photo's Shape tab), detection limit and share of the pooled weight.
 
 **Photos analysed differently.** If the photos of one site were analysed with different model
 weights or settings (for example *Auto* chose U-Net for some photos and Cellpose-SAM for others,

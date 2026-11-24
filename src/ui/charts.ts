@@ -35,6 +35,8 @@ export interface PsdChartInput {
   xAxis: 'mm' | 'phi';
   title: string;
   subtitle?: string;
+  /** Confidence level of `ciLower` / `ciUpper` (default 0.95), for the legend. */
+  ciLevel?: number;
   ciLower?: PsdPercentiles;
   ciUpper?: PsdPercentiles;
   perPhotoCurves?: Array<{ label: string; D16: number; D50: number; D84: number }>;
@@ -193,7 +195,7 @@ export function renderPsdChartSvg(input: PsdChartInput): string {
     }
   }
 
-  // 95% Bootstrap CI ribbon
+  // Bootstrap CI ribbon
   let drewCi = false;
   if (input.ciLower && input.ciUpper) {
     const loPts: string[] = [];
@@ -286,7 +288,7 @@ export function renderPsdChartSvg(input: PsdChartInput): string {
     },
   ];
   if (drewCi) {
-    lineItems.push({ sym: (x, y) => `<rect x="${x}" y="${y - 7}" width="12" height="8" fill="rgba(59, 158, 255, 0.22)" />`, text: '95% CI (bootstrap)' });
+    lineItems.push({ sym: (x, y) => `<rect x="${x}" y="${y - 7}" width="12" height="8" fill="rgba(59, 158, 255, 0.22)" />`, text: `${Math.round((input.ciLevel ?? 0.95) * 100)}% CI (bootstrap)` });
   }
   if (drawPhotoCurves) {
     lineItems.push({ sym: (x, y) => `<line x1="${x}" y1="${y - 3}" x2="${x + 12}" y2="${y - 3}" stroke="rgba(159, 176, 192, 0.7)" stroke-width="1" />`, text: 'Each photo (D16–D50–D84)' });
@@ -332,6 +334,7 @@ export function renderPsdChartSvg(input: PsdChartInput): string {
 export function renderConvergenceChartSvg(
   points: readonly ConvergencePoint[],
   lightTheme = false,
+  confidenceLevel = 0.95,
 ): string {
   const W = 400;
   const H = 180;
@@ -364,7 +367,7 @@ export function renderConvergenceChartSvg(
   const parts: string[] = [];
   parts.push(`<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`);
   parts.push(`<rect width="${W}" height="${H}" fill="${bg}" />`);
-  parts.push(`<text x="${padL}" y="14" fill="${fg}" font-size="10.5" font-weight="700" font-family="system-ui, sans-serif">Cumulative Convergence (1..N Photos): D16 / D50 ± 95% CI / D84</text>`);
+  parts.push(`<text x="${padL}" y="14" fill="${fg}" font-size="10.5" font-weight="700" font-family="system-ui, sans-serif">Cumulative Convergence (1..N Photos): D16 / D50 ± ${Math.round(confidenceLevel * 100)}% CI / D84</text>`);
 
   // CI ribbon for D50 (through the photo counts that have a CI; large sites compute it at checkpoints)
   const ciIdx = points.map((p, i) => (Number.isFinite(p.ciLoD50) && Number.isFinite(p.ciHiD50) ? i : -1)).filter((i) => i >= 0);
@@ -629,6 +632,7 @@ export function renderPrintablePsdSvg(
     xAxis,
     title: `${siteName} — Cumulative PSD (${report.poolingMode})`,
     subtitle: `${report.includedPhotoCount} photos, n=${report.validGrainCount}, metric=${report.sizeMetric}, ${report.statisticalBasisLabel}`,
+    ciLevel: report.bootstrapCi.confidenceLevel,
     ciLower: report.bootstrapCi.lower,
     ciUpper: report.bootstrapCi.upper,
     perPhotoCurves,
