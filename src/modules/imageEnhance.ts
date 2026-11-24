@@ -242,6 +242,11 @@ export async function getEnhanceModelBytes(
       const { done, value } = await reader.read();
       if (done) break;
       if (value) {
+        // Never buffer more than the pinned size (checked by SHA-256 afterwards).
+        if (received + value.byteLength > spec.sizeBytes) {
+          await reader.cancel().catch(() => undefined);
+          throw new Error(`Download of ${spec.modelName} is larger than the pinned model (${spec.sizeBytes} bytes): wrong file or a broken proxy.`);
+        }
         chunks.push(value);
         received += value.byteLength;
         onProgress?.({

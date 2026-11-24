@@ -971,7 +971,7 @@ export class AnalysisSession {
    */
   private maskForExport(
     bitDepth: 16 | 32,
-    options?: { resolution?: 'original' | 'working'; photoMetadata?: Record<string, unknown>; onlyIds?: ReadonlySet<number> },
+    options?: { resolution?: 'original' | 'working'; photoMetadata?: Record<string, unknown>; onlyIds?: ReadonlySet<number>; idEncoding?: string },
   ): { masks: Int32Array; width: number; height: number; text: Record<string, string> } {
     const wi = this.workingImage;
     const resolution = options?.resolution ?? 'original';
@@ -1001,7 +1001,7 @@ export class AnalysisSession {
         workingHeight: wi.height,
         effectiveScaleFactor: wi.effectiveScaleFactor,
         resampling: resolution === 'original' && (width !== wi.width || height !== wi.height) ? 'nearest-neighbour from working-image labels' : 'none',
-        idEncoding: bitDepth === 16 ? '16-bit grayscale grain_id (clamped to 65535)' : '32-bit grain_id, big-endian in RGBA bytes',
+        idEncoding: options?.idEncoding ?? (bitDepth === 16 ? '16-bit grayscale grain_id (clamped to 65535)' : '32-bit grain_id, big-endian in RGBA bytes'),
         background: 0,
         grains: only ? 'only the grains counted in the statistics (border rule, ROI and size cutoffs applied)' : 'all detected grains',
       },
@@ -1031,7 +1031,13 @@ export class AnalysisSession {
     onlyIds?: ReadonlySet<number>,
     photoMetadata?: Record<string, unknown>,
   ): { masks: Int32Array; width: number; height: number; metadataJson: string } {
-    const m = this.maskForExport(32, { resolution: 'original', ...(onlyIds ? { onlyIds } : {}), ...(photoMetadata ? { photoMetadata } : {}) });
+    // For the label GeoTIFFs (geotiffWriter.encodeLabelGeoTiff), not the PNG32 RGBA layout.
+    const m = this.maskForExport(32, {
+      resolution: 'original',
+      ...(onlyIds ? { onlyIds } : {}),
+      ...(photoMetadata ? { photoMetadata } : {}),
+      idEncoding: 'one band of unsigned integers = grain_id (16-bit, or 32-bit when an id exceeds 65535), little-endian; 0 = background (nodata)',
+    });
     return { masks: m.masks, width: m.width, height: m.height, metadataJson: m.text['webgrainy'] ?? '' };
   }
 
@@ -1076,7 +1082,7 @@ export class AnalysisSession {
       scaleInv: this.outputScaleInv(),
       outWidth: this.workingImage.originalWidth,
       outHeight: this.workingImage.originalHeight,
-      metadata: this.getExportMetadata(photoMetadata),
+      metadata: { ...this.getExportMetadata(photoMetadata), grains: onlyIds ? 'only the grains counted in the statistics (border rule, ROI and size cutoffs applied)' : 'all detected grains' },
       ...(styleOf ? { styleOf } : {}),
     });
   }

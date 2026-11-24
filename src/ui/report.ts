@@ -299,7 +299,8 @@ export function buildSiteReportHtml(input: ReportInput): string {
       ? `Optional AI pre-processing enhancement applied to ${input.enhancedPhotosCount} photo${input.enhancedPhotosCount === 1 ? '' : 's'} prior to segmentation`
       : undefined;
   const modelName = input.metadata['modelId'] ? String(input.metadata['modelId']) : 'ImageGrains 2.0 ONNX';
-  const modelHash = input.metadata['modelSha256'] ? String(input.metadata['modelSha256']).slice(0, 12) : undefined;
+  // One model: its fingerprint in the methods sentence (several are listed in the settings table).
+  const modelHash = /^[0-9a-f]{64}$/.test(String(input.metadata['modelSha256'] ?? '')) ? String(input.metadata['modelSha256']).slice(0, 12) : undefined;
   const appVersion = input.metadata['appVersion'] ? String(input.metadata['appVersion']) : '';
   const photosWord = `${r.includedPhotoCount} photo${r.includedPhotoCount === 1 ? '' : 's'}`;
   const methodsSentence = [

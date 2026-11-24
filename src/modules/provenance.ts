@@ -139,14 +139,15 @@ export function escapeCommentText(text: string): string {
 
 /**
  * A spreadsheet told to split on spaces would start a cell at every word: prefix `'` to a word
- * that would start a formula (`=` or `@`, or `+` / `-` followed by something other than a digit,
- * a dot or a space, as in `-2+3+cmd|...`). Ordinary text such as "IMG 1 - copy" or "-5" is kept.
+ * that would start a formula: `=` or `@`, or `+` / `-` followed by anything (`-2+3+cmd|...`,
+ * `+$A$1`, `+=1+1`, `--1+1`) unless the word is a plain number or an arrow. A lone "-" or "+"
+ * (as in "IMG 1 - copy"), arrows ("->") and numbers such as "-5" are kept.
  */
 function guardInnerFormulaStarts(text: string): string {
   return text.replace(/(?<=\S)( +)(\S+)/g, (m, spaces: string, word: string) => {
     const formula =
       /^[=@]/.test(word) ||
-      (/^[+-][\w(]/.test(word) && !/^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(word));
+      (/^[+-][^\s<>]/.test(word) && !/^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?%?$/.test(word));
     return formula ? `${spaces}'${word}` : m;
   });
 }
@@ -174,7 +175,8 @@ export function csvCell(val: string | number | boolean): string {
     if (/^\s*[=+\-@\t\r]/.test(str) && !/^\s*[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?\s*$/.test(str)) {
       str = `'${str}`;
     }
-    str = str.replace(/([,;|\t\r\n])([ ]*)([=+\-@])/g, "$1$2'$3");
+    // Any whitespace after the delimiter (a trimming import also drops no-break spaces).
+    str = str.replace(/([,;|\t\r\n])(\s*)([=+\-@])/g, "$1$2'$3");
   }
   // Quote on `;` and TAB too: spreadsheets in many locales split CSV files on them. Quote `#`:
   // the documented readers (pandas `comment="#"`, R `comment.char="#"`) cut an unquoted line there.

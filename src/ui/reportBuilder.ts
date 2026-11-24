@@ -131,7 +131,13 @@ export async function buildPrintableReport(
     metadata: {
       ...baseExportMetadata(),
       modelId: prov.models.map((m) => m.modelId).join(' + '),
-      ...(singleModel?.modelSha256 ? { modelSha256: singleModel.modelSha256 } : {}),
+      // Every model's fingerprint and revision, also when photos were analysed with several.
+      ...(prov.models.some((m) => m.modelSha256)
+        ? { modelSha256: singleModel ? singleModel.modelSha256 ?? 'unknown' : prov.models.map((m) => `${m.modelId}: ${m.modelSha256 ?? 'unknown'}`).join('; ') }
+        : {}),
+      ...(prov.models.some((m) => m.modelRevision)
+        ? { modelRevision: [...new Set(prov.models.map((m) => m.modelRevision ?? 'unknown'))].join('; ') }
+        : {}),
     },
     settings: prov.settings,
     ...(detectionLimit !== undefined ? { detectionLimit } : {}),

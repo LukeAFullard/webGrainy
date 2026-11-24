@@ -27,6 +27,8 @@ export function analysisSettingsOf(inputs: readonly SitePhotoInput[]): Record<st
     add('post-processing', prov?.postProcess ?? 'unknown');
     const steps = photoProcessingHistory(p.metadata).map((x) => (x.step === 'enhancement' ? x.modelId : 'rectification'));
     add('image enhancement / rectification', steps.length > 0 ? steps.join(' + ') : 'none');
+    // Tidying joins fragments and fills holes, so it changes grain sizes a little.
+    add('Tidy outlines', p.session.getTidyCount() > 0 ? 'applied' : 'not applied');
   }
   const out: Record<string, string> = {};
   for (const [k, set] of values) out[k] = [...set].sort().join(' | ');
@@ -42,7 +44,7 @@ export function withinSiteSettingDifferences(inputs: readonly SitePhotoInput[]):
 
 export interface SiteReportProvenance {
   /** Model weights of the photos in the site statistics, with photo counts. */
-  models: Array<{ modelId: string; modelSha256: string | null; photos: number }>;
+  models: Array<{ modelId: string; modelSha256: string | null; modelRevision: string | null; photos: number }>;
   /** Settings table rows (label, value), from the photos' own records. */
   settings: Array<[string, string]>;
   /** Photos whose outlines were edited by hand (persisted edits, not only this page's undo history). */
@@ -69,11 +71,11 @@ export function siteReportProvenance(
 ): SiteReportProvenance {
   const ids = new Set(report.perPhoto.map((p) => p.photoId));
   const used = inputs.filter((i) => i.included && ids.has(i.photoId));
-  const byModel = new Map<string, { modelSha256: string | null; photos: number }>();
+  const byModel = new Map<string, { modelSha256: string | null; modelRevision: string | null; photos: number }>();
   for (const i of used) {
     const prov = i.session.getProvenance();
     const id = prov?.modelId ?? 'unknown (analysed before provenance tracking)';
-    const e = byModel.get(id) ?? { modelSha256: prov?.modelSha256 ?? null, photos: 0 };
+    const e = byModel.get(id) ?? { modelSha256: prov?.modelSha256 ?? null, modelRevision: prov?.modelRevision ?? null, photos: 0 };
     e.photos++;
     byModel.set(id, e);
   }
@@ -88,6 +90,7 @@ export function siteReportProvenance(
     ['Size metric', report.sizeMetric],
     ['Smallest grain counted', cutoff.join(' and ')],
     ['Flow threshold / cell probability', `${fmtPost('flowThreshold')} / ${fmtPost('cellprobThreshold')}`],
+    ['Run on', distinct(used.map((i) => i.session.getProvenance()?.executionProvider ?? 'unknown'))],
     ['Grains touching the photo edge', distinct(used.map((i) => (i.session.getExcludeBorder() ? 'left out' : 'counted')))],
     ['Image scale', distinct(used.map((i) => i.session.getProvenance()?.scaleMode ?? 'unknown'))],
   ];

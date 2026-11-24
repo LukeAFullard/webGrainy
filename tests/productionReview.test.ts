@@ -11,12 +11,14 @@ import type { SitePhotoInput } from '../src/modules/siteTypes.js';
 import { comparisonStatistics } from '../src/ui/compareReport.js';
 import type { ComparisonView } from '../src/ui/comparisonView.js';
 import { createHash } from 'node:crypto';
+import { downloadModel, MODEL_INTEGRITY, setModelIntegrityEnforcement } from '../src/modules/modelCache.js';
 import { analysisWorkingScale, MAX_DECODE_PIXELS } from '../src/modules/siteBatch.js';
 import { buildValidBedMask } from '../src/modules/roiAndRectify.js';
 import { markSiteUsed, readBackupRecords } from '../src/ui/backup.js';
 import { calibrateSiteInterval } from '../src/modules/siteUncertainty.js';
 import { analyzeSite } from '../src/modules/siteAnalysis.js';
-import { siteReportProvenance } from '../src/modules/siteProvenance.js';
+import { siteReportProvenance, withinSiteSettingDifferences } from '../src/modules/siteProvenance.js';
+import { buildSiteExportMetadata } from '../src/modules/siteExportFormats.js';
 import { buildSiteReportHtml } from '../src/ui/report.js';
 import { squareGrainSession } from './helpers/squareSession.js';
 import { readFileSync } from 'node:fs';
@@ -411,5 +413,64 @@ describe('F-28: site ids that are prototype names', () => {
     expect(r['__proto__']?.usedAt).toBe(123);
     expect(r['constructor']?.usedAt).toBe(456);
     expect(({} as Record<string, unknown>)['usedAt']).toBeUndefined();
+  });
+});
+
+describe('F-30: model downloads never buffer more than the pinned size', () => {
+  const pinned = MODEL_INTEGRITY.ig2_unet_fp32.sizeBytes;
+  const saved = globalThis.fetch;
+  const withFetch = async (resp: () => Response, run: () => Promise<unknown>): Promise<unknown> => {
+    globalThis.fetch = (async () => resp()) as typeof fetch;
+    setModelIntegrityEnforcement(true);
+    try {
+      return await run();
+    } finally {
+      globalThis.fetch = saved;
+    }
+  };
+
+  it('refuses a Content-Length above the pinned size before reading the body', async () => {
+    let pulled = 0;
+    const body = new ReadableStream<Uint8Array>({ pull(c) { pulled++; c.enqueue(new Uint8Array(1024)); } });
+    await expect(
+      withFetch(() => new Response(body, { headers: { 'Content-Length': String(pinned * 4) } }), () => downloadModel('ig2_unet_fp32')),
+    ).rejects.toThrow(/larger than the pinned model/);
+    expect(pulled).toBeLessThanOrEqual(1);
+  });
+
+  it('stops an endless stream without a length as soon as it passes the pinned size', async () => {
+    let sent = 0;
+    const chunk = new Uint8Array(4 * 1024 * 1024);
+    const body = new ReadableStream<Uint8Array>({ pull(c) { sent += chunk.byteLength; c.enqueue(chunk); } });
+    await expect(withFetch(() => new Response(body), () => downloadModel('ig2_unet_fp32'))).rejects.toThrow(/larger than the pinned model/);
+    expect(sent).toBeLessThan(pinned + 3 * chunk.byteLength);
+  });
+});
+
+describe('F-26: provenance in site exports and label GeoTIFFs', () => {
+  it('site export metadata records the calibration method, edits, tidy and edge rule per photo', () => {
+    const session = squareGrainSession([20, 30, 40], { mmPerPx: 0.5 });
+    const meta = buildSiteExportMetadata([{ photoId: 'a', label: 'a', included: true, session, faciesWeight: 2 }] as SitePhotoInput[]);
+    const p = (meta['photos'] as Array<Record<string, unknown>>)[0]!;
+    expect(p).toMatchObject({ manualOutlineEdits: 0, outlinesTidied: false, excludeBorder: session.getExcludeBorder(), faciesWeight: 2 });
+    expect(p['calibrationMethod']).not.toBeNull();
+  });
+
+  it('the label mask for GeoTIFF export describes the GeoTIFF encoding, not the PNG32 one', () => {
+    const session = squareGrainSession([20, 30]);
+    const m = session.labelMaskAtPhotoSize();
+    const enc = (JSON.parse(m.metadataJson) as { mask: { idEncoding: string } }).mask.idEncoding;
+    expect(enc).toMatch(/little-endian/);
+    expect(enc).not.toMatch(/RGBA/);
+  });
+
+  it('photos tidied and not tidied are flagged as analysed differently', () => {
+    const tidied = squareGrainSession([20, 30]);
+    (tidied as unknown as { getTidyCount: () => number }).getTidyCount = () => 1;
+    const diffs = withinSiteSettingDifferences([
+      { photoId: 'a', label: 'a', included: true, session: tidied },
+      { photoId: 'b', label: 'b', included: true, session: squareGrainSession([20, 30]) },
+    ] as SitePhotoInput[]);
+    expect(diffs.map((d) => d.setting)).toContain('Tidy outlines');
   });
 });

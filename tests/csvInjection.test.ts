@@ -129,6 +129,13 @@ describe('csvCell: spaces before a formula character (LibreOffice "Trim spaces" 
     expect(csvCell('IMG 1 - copy')).toBe('IMG 1 - copy');
     expect(csvCell('R3: 2024-05-01 -> 2025-05-01')).toBe('R3: 2024-05-01 -> 2025-05-01');
     expect(csvCell('depth -5 m')).toBe('depth -5 m');
+    // F-29: formula words that do not start with a letter or digit after the sign.
+    expect(csvCell('foo +=1+1')).toBe("foo '+=1+1");
+    expect(csvCell('foo +$A$1')).toBe("foo '+$A$1");
+    expect(csvCell('foo --1+1')).toBe("foo '--1+1");
+    expect(csvCell('foo +@SUM(1 1)')).toBe("foo '+@SUM(1 1)");
+    // F-29: any whitespace (e.g. a no-break space) between a delimiter and a formula character.
+    expect(csvCell('a|\u00a0=1+1')).toBe("a|\u00a0'=1+1");
     // Comment lines: pipe escaped, formula words guarded.
     expect(escapeCommentText('label: a|b =1+1')).toBe("label: a%7Cb '=1+1");
   });
