@@ -73,15 +73,22 @@ describe('site comparison', () => {
       p.session.setCalibration({ mmPerPx: 0.5, pointA: { x: 0, y: 0 }, pointB: { x: 100, y: 0 }, physicalLengthMm: 50, pixelDistance: 100 });
       return p;
     };
-    // "Compare in pixels": fully calibrated sites still report in mm, the uncalibrated one in px.
-    const sites = computeComparedSites(
-      [
-        { siteId: 'm1', name: 'Mm one', inputs: [calibrated('m1a', 30), calibrated('m1b', 32)] },
-        { siteId: 'm2', name: 'Mm two', inputs: [calibrated('m2a', 30), calibrated('m2b', 32)] },
-        { siteId: 'p', name: 'Px site', inputs: [photo('pa', 30), photo('pb', 32)] },
-      ],
-      options,
-    );
+    const groups = [
+      { siteId: 'm1', name: 'Mm one', inputs: [calibrated('m1a', 30), calibrated('m1b', 32)] },
+      { siteId: 'm2', name: 'Mm two', inputs: [calibrated('m2a', 30), calibrated('m2b', 32)] },
+      { siteId: 'p', name: 'Px site', inputs: [photo('pa', 30), photo('pb', 32)] },
+    ];
+    // "Compare in pixels": every site, calibrated or not, is pooled in px and all are compared.
+    const inPx = computeComparedSites(groups, options);
+    expect(inPx.map((s) => s.report?.unit)).toEqual(['px', 'px', 'px']);
+    expect(compareD50(inPx)).toHaveLength(3);
+    // Equal-photo fallback: calibrated sites report in mm, the uncalibrated one in px.
+    const sites = computeComparedSites(groups, {
+      poolingMode: 'equal-photo',
+      allowEqualPhotoFallback: true,
+      bootstrapReplicates: 100,
+      bootstrapSeed: 1,
+    });
     expect(sites.map((s) => s.report?.unit)).toEqual(['mm', 'mm', 'px']);
     const pairs = compareD50(sites);
     expect(pairs.map((c) => `${c.a}|${c.b}`)).toEqual(['Mm one|Mm two']);

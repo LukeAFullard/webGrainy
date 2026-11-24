@@ -50,7 +50,7 @@ export function comparisonStatistics(
     ['Same size range for every site', o.harmonizePhysicalCutoff === false ? 'off' : 'on (largest detection limit of the compared photos)'],
     ['Confidence level', `${Math.round((o.confidenceLevel ?? 0.95) * 100)}%`],
     ['Bootstrap', `${o.bootstrapReplicates ?? 500} replicates, seed ${o.bootstrapSeed ?? 42}${o.bootstrapTwoStage ? ', two-stage' : ''}`],
-    ['Compared in', inPixels ? 'pixels (same camera and height assumed)' : view.unit],
+    ['Compared in', view.unit === 'px' ? `pixels${inPixels ? ' (same camera and height assumed)' : ''}` : view.unit],
   ];
   return out;
 }

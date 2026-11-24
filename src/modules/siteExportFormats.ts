@@ -217,7 +217,7 @@ export function exportSiteSummaryCsv(
   sh.aspectRatioCounts.forEach((c, i, all) => lines.push(`shape_bin,${(i / all.length).toFixed(1)}-${((i + 1) / all.length).toFixed(1)},${c},count`));
   const fr = report.fabricRose;
   lines.push(`fabric,grain_count,${fr.grainCount},count`);
-  lines.push(`fabric,mean_axial_orientation_deg,${numCell(fr.meanAxialDeg)},deg (0 = image vertical)`);
+  lines.push(`fabric,mean_axial_orientation_deg,${numCell(fr.meanAxialDeg)},deg (0 = image vertical; counter-clockwise)`);
   lines.push(`fabric,resultant_length_R,${numCell(fr.resultantLength)},ratio`);
   lines.push(`fabric,circular_variance,${numCell(fr.circularVariance)},ratio`);
   lines.push(`fabric,rayleigh_z,${numCell(fr.rayleighZ)},stat`);

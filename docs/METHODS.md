@@ -305,7 +305,7 @@ states which one it uses.
 | **Solidity** | area ÷ area of the convex hull (1 = no concave parts) |
 | **2D sphericity** | d_eq ÷ a-axis |
 | **Perimeter** | Crofton estimate from boundary crossings in 4 directions (less biased than counting edge pixels) |
-| **Orientation** | Angle of the a-axis, from the vertical of the photo (0° = up–down in the image) |
+| **Orientation** | Angle of the a-axis, from the vertical of the photo (0° = up–down in the image), counter-clockwise as seen on screen (45° = `\`, 90° = left–right, −45° = `/`; the scikit-image `regionprops` convention) |
 
 **Known biases of the shape measures.** They are computed on pixel outlines, so:
 
@@ -479,7 +479,8 @@ With fewer than about 30 grains these classes are not meaningful (the app warns)
   - the strength of alignment *R* (0 = random, 1 = all parallel) and the circular variance (1 − R);
   - a **Rayleigh test** of whether there is any preferred orientation, with its p-value, given
     when there are at least 10 grains (effective);
-  - a rose diagram in 15° bins.
+  - a rose diagram in 15° bins, drawn the way round the photo is (0° at the top, 90° on the
+    left), with the mean orientation in [0°, 180°) counter-clockwise from the vertical.
 
   Orientations are relative to the photo frame, so compare them only between photos taken
   the same way round.

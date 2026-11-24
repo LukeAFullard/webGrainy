@@ -590,4 +590,14 @@ describe('browser storage full', () => {
     expect([...world.sites.keys()]).toEqual(['a']);
     expect(store.getState().retentionNotice).toMatch(/^Removed to free space: Site b \(results never downloaded\); Site c/);
   });
+  it('F-03: loads the active site in its photo order, not storage key order', async () => {
+    const world = fakeWorld();
+    // Stored (key) order z, a, m; the site's order is m, z, a.
+    for (const id of ['z', 'a', 'm']) world.photos.set(id, photo(id, 's'));
+    world.sites.set('s', site('s', ['m', 'z', 'a']));
+    const { store, actions } = setup(world);
+    store.setState({ sites: [...world.sites.values()] });
+    await actions.loadSiteData('s');
+    expect(store.getState().photos.map((p) => p.photoId)).toEqual(['m', 'z', 'a']);
+  });
 });

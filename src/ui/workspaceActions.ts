@@ -15,6 +15,7 @@ import type { ImageGrainsEngine } from '../modules/engine.js';
 import * as projectStorage from '../modules/projectStorage.js';
 import { isStorageFullError, type PhotoRecord, type PhotoRectifyBackup, type SiteRecord } from '../modules/projectStorage.js';
 import { buildSiteInputs, computeWorkspaceReports, effectiveRoi } from '../modules/siteWorkspace.js';
+import { inPhotoOrder } from '../modules/siteBatch.js';
 import type { SiteAnalysisOptions, SitePhotoInput } from '../modules/siteAnalysis.js';
 import {
   COMPARE_COLORS,
@@ -222,7 +223,9 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
       return;
     }
     const siteOptions = sanitizeSiteOptions(site.options);
-    const photos = await storage.listSitePhotos(siteId);
+    // In the site's photo order, as everywhere else (bootstrap resampling and convergence
+    // depend on photo order, so the active site must match Compare Sites and batch runs).
+    const photos = inPhotoOrder(await storage.listSitePhotos(siteId), site.photoOrder);
     const changed = new Set(notice.photoIds);
     const sessions = new Map(st.sessions);
     const photoStatuses = new Map(st.photoStatuses);
@@ -331,13 +334,14 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
 
     // The previously active site may have new results: reload sites for comparison when needed.
     storedSiteInputsCache.clear();
-    const photos = await storage.listSitePhotos(siteId);
+    const site = state.sites.find((s) => s.siteId === siteId);
+    // In the site's photo order (see refreshFromStorage).
+    const photos = inPhotoOrder(await storage.listSitePhotos(siteId), site?.photoOrder ?? []);
     const sessions = new Map<string, AnalysisSession>();
     const photoStatuses = new Map<string, 'pending' | 'running' | 'done' | 'error'>();
     const photoErrors = new Map<string, string>();
     const thumbUrls = new Map<string, string>();
 
-    const site = state.sites.find((s) => s.siteId === siteId);
     const nextSiteOptions = site ? sanitizeSiteOptions(site.options) : state.siteOptions;
 
     for (const p of photos) {

@@ -430,7 +430,7 @@ export function comparisonCsv(sites: readonly ComparedSite[], metadata: Record<s
       ['folk_ward_kurtosis', r.folkWard?.kurtosisPhi, 'phi'],
       ['effective_grain_count', r.adequacy.effectiveGrainCount, 'count'],
       ['median_aspect_ratio_b_over_a', r.shape.medianAspectRatio, 'ratio'],
-      ['fabric_mean_orientation', r.fabricRose.meanAxialDeg, 'deg (0 = image vertical)'],
+      ['fabric_mean_orientation', r.fabricRose.meanAxialDeg, 'deg (0 = image vertical; counter-clockwise)'],
       ['fabric_resultant_length_R', r.fabricRose.resultantLength, 'ratio'],
       ['fabric_rayleigh_p', r.fabricRose.rayleighP ?? undefined, 'p'],
       ['sand_pct', r.wentworth?.sandPct, '%'],

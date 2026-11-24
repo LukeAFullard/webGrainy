@@ -11,7 +11,7 @@ import {
   type PhotoRecord,
   type SiteRecord,
 } from '../modules/projectStorage.js';
-import { broadcastNoticeChannel, createSyncedRecords } from '../modules/recordSync.js';
+import { broadcastNoticeChannel, createSyncedRecords, threeWayMerge } from '../modules/recordSync.js';
 import { rectifyPerspective } from '../modules/roiAndRectify.js';
 import { sizeCutoffExplanation } from '../modules/sedimentStats.js';
 import {
@@ -277,14 +277,20 @@ const syncedRecords = createSyncedRecords(
     tabId: TAB_ID,
     channel: noticeChannel,
     hooks: {
-      onMerged: (kind, rec) => {
+      // Keep edits made here after this save started (their own saves are still pending):
+      // apply what changed in memory since `saved` on top of the merged record.
+      onMerged: (kind, rec, saved) => {
         const st = store.getState();
         if (kind === 'photo') {
           const p = rec as PhotoRecord;
-          store.setState({ photos: st.photos.map((x) => (x.photoId === p.photoId ? p : x)) });
+          store.setState({
+            photos: st.photos.map((x) => (x.photoId === p.photoId ? (x === saved ? p : threeWayMerge(saved as PhotoRecord, x, p)) : x)),
+          });
         } else {
           const site = rec as SiteRecord;
-          store.setState({ sites: st.sites.map((x) => (x.siteId === site.siteId ? site : x)) });
+          store.setState({
+            sites: st.sites.map((x) => (x.siteId === site.siteId ? (x === saved ? site : threeWayMerge(saved as SiteRecord, x, site)) : x)),
+          });
         }
       },
     },

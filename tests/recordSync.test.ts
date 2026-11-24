@@ -82,3 +82,48 @@ describe('two tabs on one project', () => {
     expect(await s.getSite('S')).toMatchObject({ surveyDate: '2025-03-01', name: 'Reach renamed' });
   });
 });
+
+describe('F-04: real IndexedDB clones Blobs on every read', () => {
+  function cloningStorage() {
+    const sites = new Map<string, storage.SiteRecord>();
+    const photos = new Map<string, storage.PhotoRecord>();
+    // Each read returns a new Blob instance with the same bytes, like structured clone.
+    const clone = (p: storage.PhotoRecord): storage.PhotoRecord => ({ ...p, imageBlob: p.imageBlob.slice(0, p.imageBlob.size, p.imageBlob.type) });
+    return {
+      listSites: async () => [...sites.values()],
+      getSite: async (id: string) => sites.get(id),
+      saveSite: async (x: storage.SiteRecord) => void sites.set(x.siteId, x),
+      listSitePhotos: async (id: string) => [...photos.values()].filter((p) => p.siteId === id).map(clone),
+      getPhoto: async (id: string) => { const p = photos.get(id); return p ? clone(p) : undefined; },
+      savePhoto: async (x: storage.PhotoRecord) => void photos.set(x.photoId, x),
+      deletePhoto: async (id: string) => void photos.delete(id),
+      raw: photos,
+    };
+  }
+
+  it('a plain save in a single tab does not report a merge', async () => {
+    const s = cloningStorage();
+    s.raw.set('p', { photoId: 'p', siteId: 'S', label: 'p', imageBlob: new Blob([new Uint8Array(4)]), width: 10, height: 10, addedAt: 0, included: true });
+    const merged: unknown[] = [];
+    const tab = createSyncedRecords(s, { tabId: 'A', channel: null, hooks: { onMerged: (_k, r) => merged.push(r) } });
+    const [p] = await tab.listSitePhotos('S');
+    await tab.savePhoto({ ...p!, included: false });
+    await tab.savePhoto({ ...p!, included: false, label: 'renamed' });
+    expect(merged).toHaveLength(0);
+    expect(s.raw.get('p')?.label).toBe('renamed');
+  });
+
+  it('a real change from another tab is still merged and reported', async () => {
+    const s = cloningStorage();
+    s.raw.set('p', { photoId: 'p', siteId: 'S', label: 'p', imageBlob: new Blob([new Uint8Array(4)]), width: 10, height: 10, addedAt: 0, included: true });
+    const merged: storage.PhotoRecord[] = [];
+    const tabA = createSyncedRecords(s, { tabId: 'A', channel: null });
+    const tabB = createSyncedRecords(s, { tabId: 'B', channel: null, hooks: { onMerged: (_k, r) => merged.push(r as storage.PhotoRecord) } });
+    const [a] = await tabA.listSitePhotos('S');
+    const [b] = await tabB.listSitePhotos('S');
+    await tabA.savePhoto({ ...a!, label: 'from A' });
+    await tabB.savePhoto({ ...b!, included: false });
+    expect(merged).toHaveLength(1);
+    expect(merged[0]).toMatchObject({ label: 'from A', included: false });
+  });
+});

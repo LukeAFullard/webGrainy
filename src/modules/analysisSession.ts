@@ -952,7 +952,7 @@ export class AnalysisSession {
     }
     const f = this.getFabricRose(sizeMetric, cutoffs);
     out.push(`fabric,grain_count,${f.grainCount},count`);
-    out.push(`fabric,mean_axial_orientation_deg,${f.meanAxialDeg},deg (0 = image vertical)`);
+    out.push(`fabric,mean_axial_orientation_deg,${f.meanAxialDeg},deg (0 = image vertical; counter-clockwise)`);
     out.push(`fabric,resultant_length_R,${f.resultantLength},ratio`);
     out.push(`fabric,circular_variance,${f.circularVariance},ratio`);
     out.push(`fabric,rayleigh_z,${f.rayleighZ},stat`);

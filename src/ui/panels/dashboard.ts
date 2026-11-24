@@ -289,7 +289,7 @@ export function renderDashboardHtml(state: AppState, view: DashboardView): strin
       ${
         rose.grainCount > 0
           ? `<div class="stat-grid" style="margin-top:8px;">
-              <div class="stat-card"><div class="stat-label">Mean orientation</div><div class="stat-value">${rose.meanAxialDeg.toFixed(0)}°</div><div class="stat-sub">0° = up–down in the photo</div></div>
+              <div class="stat-card"><div class="stat-label">Mean orientation</div><div class="stat-value">${rose.meanAxialDeg.toFixed(0)}°</div><div class="stat-sub">0° = up–down in the photo, counter-clockwise</div></div>
               <div class="stat-card"><div class="stat-label">Alignment (R)</div><div class="stat-value">${rose.resultantLength.toFixed(2)}</div><div class="stat-sub">0 = random, 1 = all parallel</div></div>
               <div class="stat-card"><div class="stat-label">Rayleigh p</div><div class="stat-value">${rose.rayleighP === null ? '—' : rose.rayleighP < 0.001 ? '&lt;0.001' : rose.rayleighP.toFixed(3)}</div><div class="stat-sub">${rose.rayleighP !== null && rose.rayleighP < 0.05 ? 'preferred direction' : 'no clear direction'} · n = ${rose.grainCount}</div></div>
             </div>`

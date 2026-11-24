@@ -568,32 +568,36 @@ export function renderFabricRoseSvg(rose: FabricRoseStats, lightTheme = false): 
   parts.push(`<line x1="${cx - R - 6}" y1="${cy}" x2="${cx + R + 6}" y2="${cy}" stroke="${gridCol}" />`);
   parts.push(`<line x1="${cx}" y1="${cy - R - 6}" x2="${cx}" y2="${cy + R + 6}" stroke="${gridCol}" />`);
   parts.push(`<text x="${cx}" y="${cy - R - 9}" text-anchor="middle" fill="${muted}" font-size="8.5" font-family="ui-monospace, monospace">0° (Vert)</text>`);
-  parts.push(`<text x="${cx + R + 10}" y="${cy + 3}" text-anchor="start" fill="${muted}" font-size="8.5" font-family="ui-monospace, monospace">90°</text>`);
+  // Angles run counter-clockwise from the photo's vertical (the same convention as each
+  // grain's `orientationRad`), so 90° sits on the left and the rose reads like the photo.
+  parts.push(`<text x="${cx - R - 10}" y="${cy + 3}" text-anchor="end" fill="${muted}" font-size="8.5" font-family="ui-monospace, monospace">90°</text>`);
 
   const maxPct = Math.max(5, ...rose.bins.map((b) => b.proportionPct));
   for (const bin of rose.bins) {
     if (bin.proportionPct <= 0) continue;
     const rad = (bin.proportionPct / maxPct) * R;
-    // Draw both bin and +180° symmetric mirror; 0° = top (image vertical y-axis)
+    // Draw both bin and +180° symmetric mirror; 0° = top (image vertical y-axis), angles
+    // increasing counter-clockwise on screen: angle d points along (-sin d, -cos d).
     for (const offsetDeg of [0, 180]) {
-      const a0 = ((bin.startDeg + offsetDeg - 90) * Math.PI) / 180;
-      const a1 = ((bin.endDeg + offsetDeg - 90) * Math.PI) / 180;
-      const x1 = cx + rad * Math.cos(a0);
-      const y1 = cy + rad * Math.sin(a0);
-      const x2 = cx + rad * Math.cos(a1);
-      const y2 = cy + rad * Math.sin(a1);
+      const a0 = ((bin.startDeg + offsetDeg) * Math.PI) / 180;
+      const a1 = ((bin.endDeg + offsetDeg) * Math.PI) / 180;
+      const x1 = cx - rad * Math.sin(a0);
+      const y1 = cy - rad * Math.cos(a0);
+      const x2 = cx - rad * Math.sin(a1);
+      const y2 = cy - rad * Math.cos(a1);
+      // sweep-flag 0: counter-clockwise on screen, matching increasing angle.
       parts.push(
-        `<path d="M ${cx} ${cy} L ${x1.toFixed(1)} ${y1.toFixed(1)} A ${rad.toFixed(1)} ${rad.toFixed(1)} 0 0 1 ${x2.toFixed(1)} ${y2.toFixed(1)} Z" fill="rgba(59, 158, 255, 0.55)" stroke="#3b9eff" stroke-width="0.8" />`,
+        `<path d="M ${cx} ${cy} L ${x1.toFixed(1)} ${y1.toFixed(1)} A ${rad.toFixed(1)} ${rad.toFixed(1)} 0 0 0 ${x2.toFixed(1)} ${y2.toFixed(1)} Z" fill="rgba(59, 158, 255, 0.55)" stroke="#3b9eff" stroke-width="0.8" />`,
       );
     }
   }
 
   // Mean resultant vector
   if (rose.grainCount > 0 && rose.resultantLength > 0) {
-    const meanRad = ((rose.meanAxialDeg - 90) * Math.PI) / 180;
+    const meanRad = (rose.meanAxialDeg * Math.PI) / 180;
     const len = Math.max(12, rose.resultantLength * R);
-    const dx = len * Math.cos(meanRad);
-    const dy = len * Math.sin(meanRad);
+    const dx = -len * Math.sin(meanRad);
+    const dy = -len * Math.cos(meanRad);
     parts.push(
       `<line x1="${(cx - dx).toFixed(1)}" y1="${(cy - dy).toFixed(1)}" x2="${(cx + dx).toFixed(1)}" y2="${(cy + dy).toFixed(1)}" stroke="#d98300" stroke-width="2.2" />`,
     );
