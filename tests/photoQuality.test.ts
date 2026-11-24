@@ -178,7 +178,7 @@ describe('photoQuality', () => {
     });
 
     expect(html).toContain('Methods summary');
-    expect(html).toContain('Detection limit (smallest grain kept)');
+    expect(html).toContain('Detection limit (smallest grain resolved)');
     expect(html).toContain('~2.5 mm');
     expect(html).toContain('0.480–0.520 mm/px');
     expect(html).toContain('Manual outline edits applied (1 photo)');
