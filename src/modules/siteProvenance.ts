@@ -53,6 +53,8 @@ export interface SiteReportProvenance {
   enhancedPhotosCount: number;
   /** Largest detection limit of the photos (report unit), as used for the common cutoff. */
   detectionLimit?: number;
+  /** Smallest grain counted (report unit): the detection limit, or the common / Field-count cutoff when larger. */
+  sizeCutoff?: number;
   /** Min/max mm per pixel of the calibrated photos. */
   resolutionRangeMmPerPx?: [number, number];
 }
@@ -100,6 +102,14 @@ export function siteReportProvenance(
     tidiedPhotosCount: used.filter((i) => i.session.getTidyCount() > 0).length,
     enhancedPhotosCount: used.filter((i) => photoProcessingHistory(i.metadata).some((s) => s.step === 'enhancement')).length,
     ...(limits.length > 0 ? { detectionLimit: Math.max(...limits) } : {}),
+    ...(() => {
+      // The cutoff actually applied: the detection limit, or the site's common mm cutoff when
+      // larger (it includes the Field-count cutoff, minSizeMm).
+      const det = limits.length > 0 ? Math.max(...limits) : 0;
+      const common = report.unit === 'mm' && report.dCutoffCommonMm !== null && Number.isFinite(report.dCutoffCommonMm) ? report.dCutoffCommonMm : 0;
+      const c = Math.max(det, common);
+      return c > 0 ? { sizeCutoff: c } : {};
+    })(),
     ...(scales.length > 0 ? { resolutionRangeMmPerPx: [Math.min(...scales), Math.max(...scales)] as [number, number] } : {}),
   };
 }

@@ -121,7 +121,7 @@ export async function buildPrintableReport(
   const so = st.siteOptions;
   const hist = report.unit === 'mm' ? sizeHistogramFromWentworth(report.wentworthHistogram10Phi, 1) : null;
   const prov = siteReportProvenance(buildSiteInputs(st), report, so);
-  const { detectionLimit, resolutionRangeMmPerPx } = prov;
+  const { detectionLimit, sizeCutoff, resolutionRangeMmPerPx } = prov;
   const singleModel = prov.models.length === 1 ? prov.models[0]! : null;
 
   const html = buildSiteReportHtml({
@@ -135,6 +135,7 @@ export async function buildPrintableReport(
     },
     settings: prov.settings,
     ...(detectionLimit !== undefined ? { detectionLimit } : {}),
+    ...(sizeCutoff !== undefined ? { sizeCutoff } : {}),
     manualEditsCount: prov.manualEditsCount,
     tidiedPhotosCount: prov.tidiedPhotosCount,
     ...(prov.enhancedPhotosCount > 0 ? { enhancedPhotosCount: prov.enhancedPhotosCount } : {}),
@@ -148,7 +149,8 @@ export async function buildPrintableReport(
       ciLower: report.bootstrapCi.lower,
       ciUpper: report.bootstrapCi.upper,
       perPhotoCurves: report.perPhoto,
-      ...(detectionLimit !== undefined ? { detectionLimit } : {}),
+      // The line marks the smallest grain counted (the Field-count cutoff when it is larger).
+      ...(sizeCutoff !== undefined ? { detectionLimit: sizeCutoff } : {}),
       lightTheme: true,
     }),
     histogramSvg: hist && hist.bins.length > 0 ? renderSizeHistogramSvg(hist, true, `Size distribution (${histogramBasis(report.poolingMode)}, 1 φ classes)`) : null,

@@ -282,16 +282,27 @@ export function analyzeSite(
   const psd = computePsdPercentiles(values, weights);
   // As for one photo: sorting, skewness and kurtosis need at least two grains.
   const folkWard = unit === 'mm' && values.length >= 2 ? computeFolkWardStats(psd) : null;
-  const extra =
-    values.length > 0
-      ? computeExtraGrainStats(
-          values,
-          weights,
-          psd,
-          unit,
-          options.poolingMode === 'virtual-wolman-grid' ? { multiplicity: weights } : undefined,
-        )
-      : null;
+  // Mean diameters D[p,q] use every counted grain once (number basis, as documented). The pooled
+  // arrays of the Virtual Wolman Grid hold only the grains a grid point hit (an area-biased
+  // sample), so that mode passes every valid grain, with its grid hits (0 if none) as the weight
+  // of the PSD-based statistics.
+  const extraInput =
+    options.poolingMode === 'virtual-wolman-grid'
+      ? (() => {
+          const sizes: number[] = [];
+          const hits: number[] = [];
+          for (const p of preparedPhotos) {
+            for (const g of p.validGrains) {
+              if (Number.isFinite(g.sizeVal) && g.sizeVal > 0) {
+                sizes.push(g.sizeVal);
+                hits.push(g.gridHits);
+              }
+            }
+          }
+          return { sizes, weights: hits };
+        })()
+      : { sizes: values, weights };
+  const extra = values.length > 0 ? computeExtraGrainStats(extraInput.sizes, extraInput.weights, psd, unit) : null;
   const wentworth =
     unit === 'mm'
       ? computeSiteWentworth(preparedPhotos, options.poolingMode, sizeMetric)

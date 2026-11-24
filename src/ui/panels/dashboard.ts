@@ -75,12 +75,15 @@ export function renderDashboardHtml(state: AppState, view: DashboardView): strin
         const v = unit === 'mm' ? (p.mmPerPx !== undefined ? p.detectionLimitPx * p.mmPerPx : 0) : p.detectionLimitPx;
         if (v > maxVal) maxVal = v;
       }
-      if (maxVal <= 0) return null;
+      // The site's common mm cutoff includes the Field-count cutoff: show the larger one.
+      const applied = unit === 'mm' && report.dCutoffCommonMm !== null && report.dCutoffCommonMm > maxVal ? report.dCutoffCommonMm : maxVal;
+      if (applied <= 0) return null;
       return {
-        value: maxVal,
+        value: applied,
         unit,
-        nearD5: Number.isFinite(psd.D5) && psd.D5 > 0 && psd.D5 <= maxVal * 1.25,
-        nearD16: Number.isFinite(psd.D16) && psd.D16 > 0 && psd.D16 <= maxVal * 1.5,
+        nearD5: Number.isFinite(psd.D5) && psd.D5 > 0 && psd.D5 <= applied * 1.25,
+        nearD16: Number.isFinite(psd.D16) && psd.D16 > 0 && psd.D16 <= applied * 1.5,
+        raisedNote: applied > maxVal && maxVal > 0 ? ` (the photos resolve ~${maxVal.toFixed(1)} mm; raised to the lower size cutoff)` : '',
       };
     }
     if (!isSite && activeSession) {

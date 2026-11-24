@@ -3,6 +3,8 @@ import { baseExportMetadata } from '../../modules/provenance.js';
 import { effectiveRoi } from '../../modules/siteWorkspace.js';
 import { sanitizeSiteOptions, SITE_OPTION_LIMITS } from '../../modules/siteOptions.js';
 import { comparisonCsv } from '../../modules/siteComparison.js';
+import { comparisonStatistics } from '../compareReport.js';
+import { buildComparisonView } from '../comparisonView.js';
 import { placeName } from '../../modules/sitePlaces.js';
 import type { DashboardTab } from '../state.js';
 import { getActivePhoto, getActiveSite } from '../workspaceActions.js';
@@ -50,6 +52,8 @@ export const dashboardActions: Record<string, ActionHandler> = {
       ...baseExportMetadata(),
       poolingMode: state.siteOptions.poolingMode,
       sizeMetric: state.siteOptions.sizeMetric ?? 'bAxis',
+      // The comparison settings, as in the printable comparison report.
+      comparisonSettings: Object.fromEntries(comparisonStatistics(state.siteOptions, buildComparisonView(cmp.sites, state.compareByDate, 1), state.compareInPixels)),
       sites: cmp.sites.map((s) => s.name).join('; '),
     });
     ctx.ui.download(new Blob([csv], { type: 'text/csv' }), 'site_comparison.csv');

@@ -82,6 +82,8 @@ export interface ReportInput {
   settings: Array<[string, string]>;
   /** Effective minimum resolvable grain diameter (same unit as `report.unit`). */
   detectionLimit?: number;
+  /** Smallest grain counted: the detection limit, or the common / Field-count cutoff when larger. */
+  sizeCutoff?: number;
   /** Number of included photos with manual outline edits in this session. */
   manualEditsCount?: number;
   tidiedPhotosCount?: number;
@@ -274,10 +276,12 @@ export function buildSiteReportHtml(input: ReportInput): string {
       ? `${input.resolutionRangeMmPerPx[0].toFixed(3)} mm/px`
       : `${input.resolutionRangeMmPerPx[0].toFixed(3)}–${input.resolutionRangeMmPerPx[1].toFixed(3)} mm/px`
     : undefined;
-  const detText =
-    input.detectionLimit !== undefined && Number.isFinite(input.detectionLimit) && input.detectionLimit > 0
-      ? `~${input.detectionLimit.toFixed(u === 'mm' ? 1 : 0)} ${u}`
-      : undefined;
+  const lenText = (v: number | undefined): string | undefined =>
+    v !== undefined && Number.isFinite(v) && v > 0 ? `~${v.toFixed(u === 'mm' ? 1 : 0)} ${u}` : undefined;
+  const detText = lenText(input.detectionLimit);
+  // The cutoff actually applied (raised above the detection limit by the Field-count cutoff).
+  const cutText = lenText(input.sizeCutoff ?? input.detectionLimit);
+  const cutRaised = cutText !== undefined && detText !== undefined && cutText !== detText;
   const editText =
     input.manualEditsCount !== undefined
       ? input.manualEditsCount > 0
@@ -298,7 +302,7 @@ export function buildSiteReportHtml(input: ReportInput): string {
   const photosWord = `${r.includedPhotoCount} photo${r.includedPhotoCount === 1 ? '' : 's'}`;
   const methodsSentence = [
     `Surface grain sizes for ${site.name} (${photosWord}, n = ${r.validGrainCount} grains) were measured in webGrainy using ${modelName}${modelHash ? ` (SHA-256 ${modelHash}…)` : ''}.`,
-    `Sizes report the 2D visible ${r.sizeMetric} (${r.statisticalBasisLabel})${resText ? ` at ${resText}` : ''}${detText ? `; grains smaller than ${detText} (the detection limit) are not counted, and grains up to a few times that size are partly missed` : ''}.`,
+    `Sizes report the 2D visible ${r.sizeMetric} (${r.statisticalBasisLabel})${resText ? ` at ${resText}` : ''}${cutRaised ? `; grains smaller than ${cutText} (the lower size cutoff) are not counted` : detText ? `; grains smaller than ${detText} (the detection limit) are not counted, and grains up to a few times that size are partly missed` : ''}.`,
     editText ? `${editText}.` : '',
     tidyText ? `${tidyText}.` : '',
     enhText ? `${enhText}.` : '',
@@ -413,7 +417,7 @@ ${h2('Grain shape and fabric')}
   ${tile('Photos', String(r.includedPhotoCount), resText ? `scale ${esc(resText)}` : 'uncalibrated (px)')}
   ${tile('Sample adequacy', esc(r.adequacy.rating), r.adequacy.limitedByPhotoCount ? esc(adequacyCapNote(true, r.includedPhotoCount)) : `largest grain ${fmt(r.adequacy.largestClastAreaRatio * 100, 1)}% of the grain area`, adequacyClass)}
 </div>
-<p class="lede">Size metric: <strong>${esc(r.sizeMetric)}</strong> of each grain's visible outline, in ${esc(u)}${detText ? `; grains below ${esc(detText)} are not counted` : ''}. Intervals are ${ciPct}% confidence intervals (${esc(ciNote)}).</p>
+<p class="lede">Size metric: <strong>${esc(r.sizeMetric)}</strong> of each grain's visible outline, in ${esc(u)}${cutText ? `; grains below ${esc(cutText)} are not counted` : ''}. Intervals are ${ciPct}% confidence intervals (${esc(ciNote)}).</p>
 </section>
 
 <section>
@@ -497,7 +501,8 @@ ${h2('Methods, settings and software')}
 ${[
   ...input.settings,
   ...(resText ? ([['Pixel resolution', resText]] as Array<[string, string]>) : []),
-  ...(detText ? ([['Detection limit (smallest grain kept)', detText]] as Array<[string, string]>) : []),
+  ...(detText ? ([['Detection limit (smallest grain resolved)', detText]] as Array<[string, string]>) : []),
+  ...(cutRaised ? ([['Smallest grain counted (size cutoff)', cutText]] as Array<[string, string]>) : []),
   ...(editText ? ([['Outline review', editText]] as Array<[string, string]>) : []),
   ...(tidyText ? ([['Outline tidy', tidyText]] as Array<[string, string]>) : []),
   ...(enhText ? ([['Pre-processing enhancement', enhText]] as Array<[string, string]>) : []),

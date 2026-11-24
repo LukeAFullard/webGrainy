@@ -11,6 +11,10 @@ import type { SitePhotoInput } from '../src/modules/siteTypes.js';
 import { comparisonStatistics } from '../src/ui/compareReport.js';
 import type { ComparisonView } from '../src/ui/comparisonView.js';
 import { createHash } from 'node:crypto';
+import { analyzeSite } from '../src/modules/siteAnalysis.js';
+import { siteReportProvenance } from '../src/modules/siteProvenance.js';
+import { buildSiteReportHtml } from '../src/ui/report.js';
+import { squareGrainSession } from './helpers/squareSession.js';
 import { readFileSync } from 'node:fs';
 import pako from 'pako';
 import { decodeTiffBuffer, validateTiffStructure } from '../src/modules/tiffDecode.js';
@@ -261,5 +265,41 @@ describe('F-12: switching photos quickly never shows or leaks a stale decode', (
     } finally {
       g.createImageBitmap = saved;
     }
+  });
+});
+
+describe('F-18: Virtual Wolman Grid mean diameters use every grain once', () => {
+  it('D[1,0], D[3,2] and D[4,3] match the number-weighted mode on the same photos', () => {
+    const inputs = [
+      { photoId: 'a', label: 'a', included: true, session: squareGrainSession([20, 24, 30, 40, 60, 90], { mmPerPx: 0.5 }) },
+      { photoId: 'b', label: 'b', included: true, session: squareGrainSession([22, 26, 34, 50, 70, 110], { mmPerPx: 0.5 }) },
+    ] as SitePhotoInput[];
+    const base = { minBaxisPx: 10, bootstrapReplicates: 20 };
+    const grid = analyzeSite(inputs, { ...base, poolingMode: 'virtual-wolman-grid' }).extra!;
+    const num = analyzeSite(inputs, { ...base, poolingMode: 'number-weighted' }).extra!;
+    expect(grid.arithmeticMeanD10).toBeCloseTo(num.arithmeticMeanD10, 9);
+    expect(grid.sauterMeanD32).toBeCloseTo(num.sauterMeanD32, 9);
+    expect(grid.deBrouckereMeanD43).toBeCloseTo(num.deBrouckereMeanD43, 9);
+    expect(grid.n).toBe(num.n);
+  });
+});
+
+describe('F-20: reports state the size cutoff actually applied', () => {
+  it('a Field-count cutoff above the detection limit is the "not counted" size', () => {
+    const inputs = [
+      { photoId: 'a', label: 'a', included: true, session: squareGrainSession([20, 30, 40, 60, 80, 100], { mmPerPx: 0.5 }) },
+    ] as SitePhotoInput[];
+    const opts = { poolingMode: 'physical-area' as const, minBaxisPx: 10, minSizeMm: 16, bootstrapReplicates: 20 };
+    const report = analyzeSite(inputs, opts);
+    const prov = siteReportProvenance(inputs, report, opts);
+    expect(prov.detectionLimit!).toBeLessThan(16);
+    expect(prov.sizeCutoff).toBeCloseTo(16, 9);
+    const html = buildSiteReportHtml({
+      site: { siteId: 's', name: 'S', createdAt: 0, updatedAt: 0, options: opts, photoOrder: ['a'] },
+      report, generatedAt: '2026-01-01T00:00:00Z', metadata: {}, settings: [], psdSvg: '', histogramSvg: '', photos: [],
+      detectionLimit: prov.detectionLimit!, sizeCutoff: prov.sizeCutoff!,
+    });
+    expect(html).toContain('grains below ~16.0 mm are not counted');
+    expect(html).toContain('grains smaller than ~16.0 mm (the lower size cutoff)');
   });
 });
