@@ -232,6 +232,13 @@ describe('project import checks (audit S12)', () => {
     await expect(importProjectArchive(many, { indexedDB: createProjectMockIDB() })).rejects.toThrow(/radius/);
   });
 
+  it('F-28: refuses a site id that is a prototype name', async () => {
+    const blob = await withHeader(await twoPhotoArchive(), (h) => {
+      (h['site'] as { siteId: string }).siteId = 'constructor';
+    });
+    await expect(importProjectArchive(blob, { indexedDB: createProjectMockIDB() })).rejects.toThrow(/siteId/);
+  });
+
   it('keeps only photo ids of this file in photoOrder, each once', async () => {
     const blob = await withHeader(await twoPhotoArchive(), (h) => {
       (h['site'] as { photoOrder: string[] }).photoOrder = ['P2', 'ghost', 'P1', 'P2'];

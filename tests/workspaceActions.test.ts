@@ -612,4 +612,24 @@ describe('browser storage full', () => {
     expect(store.getState().storageOpenError).toBeNull();
     expect(store.getState().sites).toHaveLength(1);
   });
+  it('F-24: rectifying gives the photo a fresh sharpness score and clears its old grain selection and error', async () => {
+    const world = fakeWorld();
+    world.sites.set('a', site('a', ['p1']));
+    world.photos.set('p1', { ...photo('p1', 'a'), metadata: { blurScore: 999 } });
+    const cal = { mmPerPx: 0.5, pointA: { x: 0, y: 0 }, pointB: { x: 100, y: 0 }, physicalLengthMm: 50, pixelDistance: 100 };
+    const { store, actions } = setup(world, {
+      rectify: async () => ({ blob: new Blob(['r']), width: 200, height: 120, calibration: cal, blurScore: 12 }),
+    });
+    await actions.createDefaultOrLoadSites();
+    store.setState({ activePhotoId: 'p1', selectedGrainIds: new Set([3, 4]), inspectedGrainId: 3, photoErrors: new Map([['p1', 'boom']]) });
+    const corners = [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 60 }, { x: 0, y: 60 }] as [
+      { x: number; y: number }, { x: number; y: number }, { x: number; y: number }, { x: number; y: number },
+    ];
+    await actions.applyRectificationToActive(corners, 100, 60);
+    expect(world.photos.get('p1')!.metadata?.blurScore).toBe(12);
+    const st = store.getState();
+    expect(st.selectedGrainIds.size).toBe(0);
+    expect(st.inspectedGrainId).toBeNull();
+    expect(st.photoErrors.has('p1')).toBe(false);
+  });
 });

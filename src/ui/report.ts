@@ -262,7 +262,9 @@ export function buildSiteReportHtml(input: ReportInput): string {
         ? 'one photo: grain resampling only'
         : r.ciStatus === 'degenerate'
           ? 'not estimable (identical photos?)'
-          : 'photo bootstrap';
+          : r.ciStatus === 'no-grains'
+            ? 'not estimable (no grains counted)'
+            : 'photo bootstrap';
   const PCTS = ['D5', 'D10', 'D16', 'D25', 'D50', 'D75', 'D84', 'D90', 'D95'] as const;
   const pctRow = (key: (typeof PCTS)[number]): string => `
     <tr${key === 'D16' || key === 'D50' || key === 'D84' ? ' class="key"' : ''}><th>${key}</th><td class="n">${num(r.psd[key], `psd/${key}`)}</td>

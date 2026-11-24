@@ -469,5 +469,23 @@ describe('Tidy outlines actions', () => {
     routeClick(el({ 'data-action': 'photo-bulk', 'data-bulk': 'tidy' }), () => undefined, ctx);
     expect(actions.tidyOutlines).toHaveBeenLastCalledWith(['p2', 'p3']);
   });
+  it('F-24: undoing a rectification or an enhancement asks first when the outlines were edited by hand', () => {
+    const { ctx, store } = setup();
+    const undo = vi.fn(async () => {});
+    const revert = vi.fn(async () => {});
+    Object.assign((ctx as unknown as { actions: Record<string, unknown> }).actions, { undoRectificationActive: undo, revertActivePhotoEnhancement: revert });
+    const confirm = vi.fn(() => false);
+    Object.assign((ctx as unknown as { ui: Record<string, unknown> }).ui, { confirm });
+    store.setState({ activePhotoId: 'p1', sessions: new Map([['p1', { getManualEditCount: () => 2 } as never]]) });
+    click(el({ 'data-action': 'rectify-undo' }), ctx);
+    click(el({ 'data-action': 'enhance-revert' }), ctx);
+    expect(confirm).toHaveBeenCalledTimes(2);
+    expect(String((confirm.mock.calls[0] as unknown[])[0])).toMatch(/^Undoing the rectification replaces the grain outlines/);
+    expect(undo).not.toHaveBeenCalled();
+    expect(revert).not.toHaveBeenCalled();
+    confirm.mockReturnValue(true);
+    click(el({ 'data-action': 'rectify-undo' }), ctx);
+    expect(undo).toHaveBeenCalledTimes(1);
+  });
 });
 

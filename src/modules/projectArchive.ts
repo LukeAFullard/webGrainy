@@ -384,8 +384,10 @@ const isObj = (v: unknown): v is Record<string, unknown> =>
 const isFiniteNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 const isDim = (v: unknown): v is number =>
   typeof v === 'number' && Number.isInteger(v) && v > 0 && v <= MAX_ARCHIVE_DIMENSION;
+// Ids are also used as keys of plain objects (backup and retention records): never a name that
+// would reach the object's prototype.
 const isId = (v: unknown): v is string =>
-  typeof v === 'string' && v.length > 0 && v.length <= 256;
+  typeof v === 'string' && v.length > 0 && v.length <= 256 && !DANGEROUS_KEYS.has(v);
 
 function validatePoint(p: unknown, ctx: string): void {
   if (!isObj(p) || !isFiniteNum(p['x']) || !isFiniteNum(p['y'])) {

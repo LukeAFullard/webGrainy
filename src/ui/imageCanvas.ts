@@ -141,7 +141,7 @@ export async function rectifyWithCanvas(
   physWidthMm: number,
   physHeightMm: number,
   rectifyPerspective: typeof import('../modules/roiAndRectify.js').rectifyPerspective,
-): Promise<{ blob: Blob; width: number; height: number; calibration: CalibrationResult } | null> {
+): Promise<{ blob: Blob; width: number; height: number; calibration: CalibrationResult; blurScore?: number } | null> {
   const bmp = await createImageBitmap(image);
   const off = document.createElement('canvas');
   off.width = bmp.width;
@@ -181,7 +181,9 @@ export async function rectifyWithCanvas(
   });
 
   const calibration = rectificationCalibration(rectified, physWidthMm);
-  return { blob, width: rectified.width, height: rectified.height, calibration };
+  // The sharpness of the rectified raster (resampling changes it), not the original's.
+  const blurScore = await computeBlurScoreFromBlob(blob);
+  return { blob, width: rectified.width, height: rectified.height, calibration, ...(blurScore !== undefined ? { blurScore } : {}) };
 }
 
 /** RGBA pixels of a stored photo at its own size (for reprojected photo exports). */

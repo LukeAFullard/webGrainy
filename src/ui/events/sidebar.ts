@@ -383,7 +383,7 @@ export function handleSidebarChange(target: ControlLike, ctx: EventContext): boo
     const activePhoto = getActivePhoto(st);
     const mmPerPx = activePhoto?.calibration?.mmPerPx;
     if (activePhoto && mmPerPx && Number.isFinite(mmPerPx) && mmPerPx > 0 && Number.isFinite(mm2) && mm2 > 0) {
-      const wScale = workingScaleFactorFor(activePhoto.width, activePhoto.height, st.analysisParams.scaleMode);
+      const wScale = workingScaleFactorFor(activePhoto.width, activePhoto.height, st.analysisParams.scaleMode, activePhoto.analysisConfig?.fineGrainUpscale);
       const mmPerWorkPx = mmPerPx / wScale;
       const px2 = Math.max(4, Math.min(500, Math.round(mm2 / (mmPerWorkPx * mmPerWorkPx))));
       ctx.store.setState({ analysisParams: { ...st.analysisParams, minSize: px2 } });

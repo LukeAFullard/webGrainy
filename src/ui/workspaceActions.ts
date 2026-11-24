@@ -80,7 +80,7 @@ export interface ImageIo {
     corners: [Point2D, Point2D, Point2D, Point2D],
     physWidthMm: number,
     physHeightMm: number,
-  ): Promise<{ blob: Blob; width: number; height: number; calibration: CalibrationResult } | null>;
+  ): Promise<{ blob: Blob; width: number; height: number; calibration: CalibrationResult; blurScore?: number } | null>;
   /** Optional memory-isolated AI enhancement (2x upscale or deblur). */
   enhance?(
     image: Blob,
@@ -126,6 +126,19 @@ export interface WorkspaceDeps {
 
 export function getActiveSite(state: AppState): SiteRecord | null {
   return state.sites.find((s) => s.siteId === state.activeSiteId) ?? null;
+}
+
+/**
+ * State that refers to a photo's old grains, cleared when its image is replaced (rectify, enhance
+ * and their undo): grain ids of the old outlines would point at other grains after re-analysis.
+ */
+function clearedPhotoSelection(state: AppState, photoId: string): Pick<AppState, 'photoErrors'> & Partial<Pick<AppState, 'selectedGrainIds' | 'inspectedGrainId'>> {
+  const photoErrors = new Map(state.photoErrors);
+  photoErrors.delete(photoId);
+  return {
+    photoErrors,
+    ...(state.activePhotoId === photoId ? { selectedGrainIds: new Set<number>(), inspectedGrainId: null } : {}),
+  };
 }
 
 export function getActivePhoto(state: AppState): PhotoRecord | null {
@@ -941,9 +954,10 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
       };
       // The new image is a different raster: drop the current-enhancement record (its scale
       // factor no longer applies), but keep every step in the provenance history.
-      const { enhancement: _dropEnh, ...restMeta } = oldMeta ?? {};
+      const { enhancement: _dropEnh, blurScore: _oldBlur, ...restMeta } = oldMeta ?? {};
       const nextMeta: SitePhotoMetadata = {
         ...restMeta,
+        ...(rectified.blurScore !== undefined ? { blurScore: rectified.blurScore } : {}),
         processingHistory: [
           ...photoProcessingHistory(oldMeta),
           {
@@ -990,6 +1004,7 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
         thumbUrls: nextThumbs,
         sessions: nextSessions,
         photoStatuses: nextStatuses,
+        ...clearedPhotoSelection(latestState, latestPhoto.photoId),
         pendingRectifyPoints: [],
         activeTool: 'inspect',
         statusMessage: `Rectified ${latestPhoto.label} (${rectified.width}×${rectified.height}px, ${cal.mmPerPx.toFixed(4)} mm/px). Ready to re-analyse. Undo rectify restores the original.`,
@@ -1049,6 +1064,7 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
         thumbUrls: nextThumbs,
         sessions: nextSessions,
         photoStatuses: nextStatuses,
+        ...clearedPhotoSelection(latestState, photo.photoId),
         pendingRectifyPoints: [],
         statusMessage: `Undid the rectification of ${photo.label}: back to the original ${backup.width}×${backup.height}px photo${backup.calibration ? ' and its scale' : ''}. Ready to analyse.`,
       });
@@ -1153,6 +1169,7 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
         thumbUrls: nextThumbs,
         sessions: nextSessions,
         photoStatuses: nextStatuses,
+        ...clearedPhotoSelection(latestState, latestPhoto.photoId),
         activeTool: 'inspect',
         statusMessage: `Enhanced ${latestPhoto.label} (${enhanced.enhancement.modelName}, ${enhanced.width}×${enhanced.height}px). Ready to analyse.`,
       });
@@ -1212,6 +1229,7 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
         thumbUrls: nextThumbs,
         sessions: nextSessions,
         photoStatuses: nextStatuses,
+        ...clearedPhotoSelection(latestState, photo.photoId),
         statusMessage: `Reverted ${photo.label} to original (${orig.width}×${orig.height}px). Ready to analyse.`,
       });
       recomputeReports();

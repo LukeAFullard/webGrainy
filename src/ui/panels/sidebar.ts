@@ -1,5 +1,5 @@
 /** Left panel: getting-started guide, site, photo list and analysis settings. */
-import { workingScaleFor } from '../../modules/imagePreprocess.js';
+import { analysisWorkingScale } from '../../modules/siteBatch.js';
 import { logicalCores, wasmThreadsFor } from '../../modules/onnxInference.js';
 import { backupStatus, readBackupRecords } from '../backup.js';
 import { RETENTION_CHOICES, siteExpiry, siteLastUsed, siteRetention } from '../../modules/retention.js';
@@ -15,10 +15,13 @@ import { getPhotoQualityWarnings } from '../../modules/photoQuality.js';
 import { photoSummary, visiblePhotos } from '../photoList.js';
 import { esc } from './html.js';
 
-/** Effective working-resolution scale factor for a photo under the selected Scale Mode. */
-export function workingScaleFactorFor(width: number, height: number, scaleMode: ScaleMode): number {
-  // The analysis's own rule (imagePreprocess.workingScaleFor).
-  return workingScaleFor(width, height, scaleMode);
+/**
+ * Effective working-resolution scale factor for a photo under the selected Scale Mode: the
+ * analysis's own rule, including the decode limit for very large photos and the photo's
+ * fine-grain upscale (siteBatch.analysisWorkingScale).
+ */
+export function workingScaleFactorFor(width: number, height: number, scaleMode: ScaleMode, fineGrainUpscale?: number): number {
+  return analysisWorkingScale(width, height, scaleMode, fineGrainUpscale);
 }
 
 export interface StorageInfo {
@@ -247,7 +250,7 @@ export function renderSidebarHtml(state: AppState, view: SidebarView): string {
             const activePhoto = getActivePhoto(state);
             const cal = activePhoto?.calibration;
             if (!activePhoto || !cal || !Number.isFinite(cal.mmPerPx) || cal.mmPerPx <= 0) return '';
-            const wScale = workingScaleFactorFor(activePhoto.width, activePhoto.height, p.scaleMode);
+            const wScale = workingScaleFactorFor(activePhoto.width, activePhoto.height, p.scaleMode, activePhoto.analysisConfig?.fineGrainUpscale);
             const mmPerWorkPx = cal.mmPerPx / wScale;
             const minSizeMm2 = p.minSize * mmPerWorkPx * mmPerWorkPx;
             const eqDiamMm = 2 * Math.sqrt(minSizeMm2 / Math.PI);

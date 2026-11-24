@@ -41,7 +41,7 @@ import { renderToolbarHtml } from './panels/toolbar.js';
 import { renderDashboardHtml } from './panels/dashboard.js';
 import { renderCompareHtml } from './panels/compare.js';
 import { esc, type ChartRegistry } from './panels/html.js';
-import type { ControlLike, ElementLike, EventContext } from './events/context.js';
+import { confirmDiscardEdits, type ControlLike, type ElementLike, type EventContext } from './events/context.js';
 import { routeChange, routeClick } from './events/router.js';
 import { handleDashboardKey } from './events/dashboard.js';
 import { handleLandingKey } from './events/sidebar.js';
@@ -1004,6 +1004,13 @@ function mountShell(): void {
           rectifyHeightMm: ph,
         });
         if (next.length === 4) {
+          // Rectifying replaces the image, so the photo's outlines (and any manual edits) go.
+          const id = st.activePhotoId;
+          if (id && !confirmDiscardEdits({ store, ui: { confirm: (m) => window.confirm(m) } }, [id], { doing: 'Rectifying the photo', ask: 'Continue anyway?' })) {
+            store.setState({ pendingRectifyPoints: [], statusMessage: 'Rectification cancelled.' });
+            void syncViewport(false);
+            return;
+          }
           void applyRectificationToActive(
             [next[0]!, next[1]!, next[2]!, next[3]!],
             pw,

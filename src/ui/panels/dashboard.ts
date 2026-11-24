@@ -12,6 +12,7 @@ import {
 } from '../charts.js';
 import { helpButton } from '../help.js';
 import type { AppState, DashboardTab } from '../state.js';
+import type { SiteAnalysisReport } from '../../modules/siteTypes.js';
 import { getActivePhoto } from '../workspaceActions.js';
 import { scopeButtonsHtml } from './compare.js';
 import { chartBoxFor, esc, type ChartRegistry } from './html.js';
@@ -20,11 +21,12 @@ import { adequacyCapNote } from '../../modules/siteAdequacy.js';
 import { DEFAULT_POSTPROCESS_OPTIONS } from '../../modules/postprocessCore.js';
 
 /** Shown after the site interval, so an approximate or missing interval is never read as precise. */
-const CI_STATUS_NOTE: Record<'ok' | 'few-photos' | 'single-photo' | 'degenerate', string> = {
+const CI_STATUS_NOTE: Record<SiteAnalysisReport['ciStatus'], string> = {
   ok: '',
   'few-photos': ' · approximate (fewer than 5 photos)',
   'single-photo': ' · one photo: counting only',
   degenerate: ' · photos identical?',
+  'no-grains': ' · no grains counted',
 };
 
 export interface DashboardView {

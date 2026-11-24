@@ -2,8 +2,8 @@
  * Analysing the pending photos of a site one after another (decode within the pixel limit,
  * run the engine, save each result), with cancellation and storage-full handling.
  */
-import type { AnalysisConfig } from '../types/index.js';
-import type { ImageBufferLike } from './imagePreprocess.js';
+import type { AnalysisConfig, ScaleMode } from '../types/index.js';
+import { workingScaleFor, type ImageBufferLike } from './imagePreprocess.js';
 import type { AnalysisSession, ImageGrainsEngine } from './pipelineController.js';
 import { getPhotoResult, getSite, listSitePhotos, savePhotoResult, type PhotoRecord, type ProjectStorageOptions } from './projectDb.js';
 
@@ -59,6 +59,21 @@ function isAbortError(err: unknown): boolean {
  * 1024 px either way).
  */
 export const MAX_DECODE_PIXELS = 16_777_216;
+
+/**
+ * Working-image pixels per photo pixel that the next analysis of a `width` × `height` photo will
+ * use: the decode limit (MAX_DECODE_PIXELS, as in decodeWithinPixelLimit), then the scale mode
+ * (workingScaleFor, applied to the decoded size), then the fine-grain upscale. For converting
+ * settings given in working pixels (Min size) to and from mm before analysing.
+ */
+export function analysisWorkingScale(width: number, height: number, scaleMode: ScaleMode, fineGrainUpscale?: number): number {
+  const px = width * height;
+  const k = px > MAX_DECODE_PIXELS ? Math.sqrt(MAX_DECODE_PIXELS / px) : 1;
+  const dw = Math.max(1, Math.floor(width * k));
+  const dh = Math.max(1, Math.floor(height * k));
+  const up = fineGrainUpscale !== undefined && Number.isFinite(fineGrainUpscale) && fineGrainUpscale > 1 ? fineGrainUpscale : 1;
+  return (dw / width) * workingScaleFor(dw, dh, scaleMode) * up;
+}
 
 /** Decodes `blob`, shrinking it (aspect kept) when it exceeds MAX_DECODE_PIXELS. */
 export async function decodeWithinPixelLimit(

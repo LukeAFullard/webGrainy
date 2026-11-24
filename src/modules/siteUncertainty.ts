@@ -641,7 +641,8 @@ export function runBootstrapReference(
 export const MIN_PHOTOS_FOR_RELIABLE_CI = 5;
 
 /** How far a site interval can be trusted (see `calibrateSiteInterval`). */
-export type SiteCiStatus = 'ok' | 'few-photos' | 'single-photo' | 'degenerate';
+/** 'no-grains': no grain is counted, so there is nothing to estimate. */
+export type SiteCiStatus = 'ok' | 'few-photos' | 'single-photo' | 'degenerate' | 'no-grains';
 
 /**
  * Turns a cluster-bootstrap percentile interval into the reported site interval.
@@ -676,6 +677,8 @@ export function calibrateSiteInterval(
   const lower = emptyPsd();
   const upper = emptyPsd();
   const logSe = emptyPsd();
+  // Only D16 / D50 / D84 decide the status: a degenerate extreme tail (D5, D95) is shown as not
+  // available but must not hide the few-photos warning on the main percentiles.
   let degenerate = false;
   for (const key of PSD_KEYS) {
     const lo = raw.psdCi.lower[key];
@@ -686,7 +689,7 @@ export function calibrateSiteInterval(
     const seJack = jackknifeLogSe?.[key];
     const se = Number.isFinite(seJack) ? Math.max(seBoot, seJack!) : seBoot;
     if (!(se > 1e-12)) {
-      degenerate = true;
+      if (key === 'D16' || key === 'D50' || key === 'D84') degenerate = true;
       continue; // stays NaN: not estimable
     }
     logSe[key] = se;
@@ -717,7 +720,13 @@ export function calibrateSiteInterval(
       meanMm: logS(raw.folkWardCi.meanMm, fw.meanMm),
     };
   }
-  const status: SiteCiStatus = degenerate ? 'degenerate' : nPhotos < MIN_PHOTOS_FOR_RELIABLE_CI ? 'few-photos' : 'ok';
+  const status: SiteCiStatus = !(estimate.psd.D50 > 0)
+    ? 'no-grains'
+    : degenerate
+      ? 'degenerate'
+      : nPhotos < MIN_PHOTOS_FOR_RELIABLE_CI
+        ? 'few-photos'
+        : 'ok';
   return { psdCi: { confidenceLevel, lower, upper }, folkWardCi, status, logSe };
 }
 

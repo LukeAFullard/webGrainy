@@ -11,7 +11,10 @@ import type { SitePhotoInput } from '../src/modules/siteTypes.js';
 import { comparisonStatistics } from '../src/ui/compareReport.js';
 import type { ComparisonView } from '../src/ui/comparisonView.js';
 import { createHash } from 'node:crypto';
+import { analysisWorkingScale, MAX_DECODE_PIXELS } from '../src/modules/siteBatch.js';
 import { buildValidBedMask } from '../src/modules/roiAndRectify.js';
+import { markSiteUsed, readBackupRecords } from '../src/ui/backup.js';
+import { calibrateSiteInterval } from '../src/modules/siteUncertainty.js';
 import { analyzeSite } from '../src/modules/siteAnalysis.js';
 import { siteReportProvenance } from '../src/modules/siteProvenance.js';
 import { buildSiteReportHtml } from '../src/ui/report.js';
@@ -365,5 +368,48 @@ describe('F-23: brush exclusions are centred where they are drawn', () => {
     const rows = new Set<number>();
     for (let y = 0; y < 30; y++) if (stroke.valid[y * 30 + 15] === 0) rows.add(y);
     expect([...rows].sort((a, b) => a - b)).toEqual([13, 14, 15, 16]);
+  });
+});
+
+describe('F-25: the Min size (mm²) conversion uses the scale the analysis will use', () => {
+  it('includes the decode limit of large photos and the fine-grain upscale', () => {
+    // 48 MP at 1.0x: decoded at 16.7 MP, so about 0.59 working px per photo px.
+    const s48 = analysisWorkingScale(8000, 6000, '1.0x');
+    expect(s48).toBeCloseTo(Math.sqrt(MAX_DECODE_PIXELS / 48e6), 3);
+    // Auto mode: 1024 px on the long side either way.
+    expect(analysisWorkingScale(8000, 6000, 'auto')).toBeCloseTo(1024 / 8000, 3);
+    // Enlarged ×1.5 for fine grain.
+    expect(analysisWorkingScale(1000, 800, '1.0x', 1.5)).toBeCloseTo(1.5, 9);
+    expect(analysisWorkingScale(1000, 800, '1.0x')).toBe(1);
+  });
+});
+
+describe('F-27: the site interval status', () => {
+  const psd = (v: number) => ({ D5: v, D10: v, D16: v, D25: v, D50: v, D75: v, D84: v, D90: v, D95: v });
+  it('is no-grains when nothing is counted, never ok', () => {
+    const nan = psd(Number.NaN);
+    const r = calibrateSiteInterval({ psdCi: { confidenceLevel: 0.95, lower: nan, upper: nan }, folkWardCi: null }, { psd: nan, folkWard: null }, 6, 0.95);
+    expect(r.status).toBe('no-grains');
+  });
+  it('a degenerate extreme tail does not hide the few-photos status of D50', () => {
+    const lower = { ...psd(8), D5: 2 };
+    const upper = { ...psd(12), D5: 2 }; // D5 interval has zero width
+    const r = calibrateSiteInterval({ psdCi: { confidenceLevel: 0.95, lower, upper }, folkWardCi: null }, { psd: { ...psd(10), D5: 2 }, folkWard: null }, 3, 0.95);
+    expect(r.status).toBe('few-photos');
+    expect(Number.isNaN(r.psdCi.lower.D5)).toBe(true);
+  });
+});
+
+describe('F-28: site ids that are prototype names', () => {
+  it('backup records keep a "__proto__" or "constructor" site as an ordinary entry', () => {
+    const mem = new Map<string, string>();
+    const store = { getItem: (k: string) => mem.get(k) ?? null, setItem: (k: string, v: string) => void mem.set(k, v), removeItem: (k: string) => void mem.delete(k) };
+    markSiteUsed('__proto__', 123, store);
+    markSiteUsed('constructor', 456, store);
+    const r = readBackupRecords(store);
+    expect(Object.keys(r).sort()).toEqual(['__proto__', 'constructor']);
+    expect(r['__proto__']?.usedAt).toBe(123);
+    expect(r['constructor']?.usedAt).toBe(456);
+    expect(({} as Record<string, unknown>)['usedAt']).toBeUndefined();
   });
 });

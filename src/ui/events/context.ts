@@ -107,7 +107,11 @@ export type ActionHandler = (el: ElementLike, ctx: EventContext) => void;
  * Before re-analysing photos: if any have manual outline edits (split, merge, delete, add),
  * ask first, because a new analysis replaces the outlines. Returns true to go ahead.
  */
-export function confirmDiscardEdits(ctx: EventContext, photoIds: readonly string[]): boolean {
+export function confirmDiscardEdits(
+  ctx: Pick<EventContext, 'store'> & { ui: Pick<EventContext['ui'], 'confirm'> },
+  photoIds: readonly string[],
+  action: { doing: string; ask: string } = { doing: 'Re-analysing', ask: 'Re-analyse anyway?' },
+): boolean {
   const st = ctx.store.getState();
   const edited = photoIds
     .map((id) => ({ id, n: st.sessions.get(id)?.getManualEditCount() ?? 0 }))
@@ -119,6 +123,6 @@ export function confirmDiscardEdits(ctx: EventContext, photoIds: readonly string
     .join(', ');
   const more = edited.length > 5 ? ` and ${edited.length - 5} more` : '';
   return ctx.ui.confirm(
-    `Re-analysing replaces the grain outlines, so your manual edits will be lost: ${labels}${more}.\n\nExport or back up first if you want to keep them. Re-analyse anyway?`,
+    `${action.doing} replaces the grain outlines, so your manual edits will be lost: ${labels}${more}.\n\nExport or back up first if you want to keep them. ${action.ask}`,
   );
 }
