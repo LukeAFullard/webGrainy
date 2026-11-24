@@ -146,7 +146,7 @@ export function renderCompareHtml(state: AppState, lightTheme: boolean, charts: 
     view.commonCutoffMm !== null
       ? `<div class="basis-banner">Compared over the same size range: grains of ${view.commonCutoffMm.toFixed(1)} mm and larger in every site (the largest detection limit of the compared photos). ${helpButton('harmonizePhysicalCutoff')}</div>`
       : '';
-  const anyUncalibrated = (cmp?.sites ?? []).some((s) => (s.error ?? '').includes('No scale yet') || s.report?.unit === 'px');
+  const anyUncalibrated = (cmp?.sites ?? []).some((s) => /No scale yet|Mixed calibration/.test(s.error ?? '') || s.report?.unit === 'px');
   const pixelsToggle =
     anyUncalibrated || state.compareInPixels
       ? `<label class="checkbox-label" style="margin-top:6px;">

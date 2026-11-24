@@ -113,7 +113,8 @@ export function computeBinomialCi(
   const isKish =
     poolingMode !== 'number-weighted' && poolingMode !== 'virtual-wolman-grid';
   const rawN = isKish
-    ? (sumW * sumW) / Math.max(1e-12, sumW2)
+    ? // No floor on sumW2: scale-free, so tiny normalised weights (equal-photo / facies) keep their n_eff.
+      sumW2 > 0 ? (sumW * sumW) / sumW2 : 0
     : sumW;
   const nUsed = Math.max(1, Math.round(rawN));
 
@@ -586,11 +587,12 @@ export function runBootstrapReference(
     if (unit === 'mm') {
       const fw = computeFolkWardStats(psd);
       if (fw !== null) {
-        fwMeanPhi.push(fw.meanPhi);
-        fwSortingPhi.push(fw.sortingPhi);
-        fwSkewnessPhi.push(fw.skewnessPhi);
-        fwKurtosisPhi.push(fw.kurtosisPhi);
-        fwMeanMm.push(fw.meanMm);
+        // Only finite values: a NaN would corrupt the sorted percentile of its measure.
+        if (Number.isFinite(fw.meanPhi)) fwMeanPhi.push(fw.meanPhi);
+        if (Number.isFinite(fw.sortingPhi)) fwSortingPhi.push(fw.sortingPhi);
+        if (Number.isFinite(fw.skewnessPhi)) fwSkewnessPhi.push(fw.skewnessPhi);
+        if (Number.isFinite(fw.kurtosisPhi)) fwKurtosisPhi.push(fw.kurtosisPhi);
+        if (Number.isFinite(fw.meanMm)) fwMeanMm.push(fw.meanMm);
       }
     }
   }
@@ -641,7 +643,8 @@ export function runBootstrapReference(
 export const MIN_PHOTOS_FOR_RELIABLE_CI = 5;
 
 /** How far a site interval can be trusted (see `calibrateSiteInterval`). */
-export type SiteCiStatus = 'ok' | 'few-photos' | 'single-photo' | 'degenerate';
+/** 'no-grains': no grain is counted, so there is nothing to estimate. */
+export type SiteCiStatus = 'ok' | 'few-photos' | 'single-photo' | 'degenerate' | 'no-grains';
 
 /**
  * Turns a cluster-bootstrap percentile interval into the reported site interval.
@@ -676,6 +679,8 @@ export function calibrateSiteInterval(
   const lower = emptyPsd();
   const upper = emptyPsd();
   const logSe = emptyPsd();
+  // Only D16 / D50 / D84 decide the status: a degenerate extreme tail (D5, D95) is shown as not
+  // available but must not hide the few-photos warning on the main percentiles.
   let degenerate = false;
   for (const key of PSD_KEYS) {
     const lo = raw.psdCi.lower[key];
@@ -686,7 +691,7 @@ export function calibrateSiteInterval(
     const seJack = jackknifeLogSe?.[key];
     const se = Number.isFinite(seJack) ? Math.max(seBoot, seJack!) : seBoot;
     if (!(se > 1e-12)) {
-      degenerate = true;
+      if (key === 'D16' || key === 'D50' || key === 'D84') degenerate = true;
       continue; // stays NaN: not estimable
     }
     logSe[key] = se;
@@ -717,7 +722,13 @@ export function calibrateSiteInterval(
       meanMm: logS(raw.folkWardCi.meanMm, fw.meanMm),
     };
   }
-  const status: SiteCiStatus = degenerate ? 'degenerate' : nPhotos < MIN_PHOTOS_FOR_RELIABLE_CI ? 'few-photos' : 'ok';
+  const status: SiteCiStatus = !(estimate.psd.D50 > 0)
+    ? 'no-grains'
+    : degenerate
+      ? 'degenerate'
+      : nPhotos < MIN_PHOTOS_FOR_RELIABLE_CI
+        ? 'few-photos'
+        : 'ok';
   return { psdCi: { confidenceLevel, lower, upper }, folkWardCi, status, logSe };
 }
 

@@ -110,8 +110,8 @@ describe('S3: photos analysed differently, and report provenance', () => {
     const r = analyzeSite(inputs, siteOptions);
     const prov = siteReportProvenance(inputs, r, siteOptions);
     expect(prov.models).toEqual([
-      { modelId: 'ig2_unet_fp32', modelSha256: 'sha-ig2_unet_fp32', photos: 1 },
-      { modelId: 'ig2_cpsam_fp16', modelSha256: 'sha-ig2_cpsam_fp16', photos: 2 },
+      { modelId: 'ig2_unet_fp32', modelSha256: 'sha-ig2_unet_fp32', modelRevision: 'r', photos: 1 },
+      { modelId: 'ig2_cpsam_fp16', modelSha256: 'sha-ig2_cpsam_fp16', modelRevision: 'r', photos: 2 },
     ]);
     expect(prov.manualEditsCount).toBe(1);
     expect(prov.settings.find(([k]) => k === 'Model')![1]).toContain('ig2_unet_fp32 (1 photo) + ig2_cpsam_fp16 (2 photos)');

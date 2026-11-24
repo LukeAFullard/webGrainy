@@ -143,4 +143,15 @@ describe('site GeoPackage', () => {
     expect(entries.map((e) => e.name)).toContain('site_outlines_EPSG2193.gpkg');
     expect(entries.find((e) => e.name === 'README.txt')!.data as string).toContain('site_outlines_EPSG2193.gpkg');
   });
+  it('F-05: grains of a photo left out of the site are never marked as counted', async () => {
+    const inputs = [photo('a', nztm(1793110, 5495817)), { ...photo('b', nztm(1793114, 5495817)), included: false }];
+    const all = await open((await buildExport('site-gpkg', ctxFor(inputs)))!.blob);
+    expect(all.prepare("SELECT max(included_in_stats) m, count(*) n FROM grain_outlines WHERE photo_id = 'b'").get()).toEqual({ m: 0, n: 4 });
+    expect(all.prepare("SELECT grains_counted FROM photo_footprints WHERE photo_id = 'b'").get()).toEqual({ grains_counted: 0 });
+    all.close();
+    const counted = await open((await buildExport('site-gpkg', { ...ctxFor(inputs), countedGrainsOnly: true }))!.blob);
+    expect(counted.prepare("SELECT count(*) n FROM grain_outlines WHERE photo_id = 'b'").get()).toEqual({ n: 0 });
+    expect(counted.prepare("SELECT count(*) n FROM grain_outlines WHERE photo_id = 'a'").get()).toEqual({ n: 3 });
+    counted.close();
+  });
 });

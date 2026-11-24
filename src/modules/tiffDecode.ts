@@ -14,6 +14,7 @@
  * other Mercator / equirectangular projections get no automatic calibration.
  */
 import UTIF from 'utif2';
+import pako from 'pako';
 import type { CalibrationResult } from '../types/index.js';
 import type { SitePhotoMetadata } from './siteTypes.js';
 import { extractGeoReference } from './georef.js';
@@ -37,7 +38,10 @@ export function isTiffFile(file: { name?: string; type?: string }): boolean {
 
 /** Returns true if a file is a supported photo format (standard browser image/* or TIFF). */
 export function isSupportedImageFile(file: { name?: string; type?: string }): boolean {
-  return (file.type ?? '').toLowerCase().startsWith('image/') || isTiffFile(file);
+  const t = (file.type ?? '').toLowerCase();
+  // SVG is a vector document, not a photo (and can carry scripts): never imported as one.
+  if (t === 'image/svg+xml' || /\.svgz?$/i.test(file.name ?? '')) return false;
+  return t.startsWith('image/') || isTiffFile(file);
 }
 
 /** Checks standard TIFF (`II*\0`, `MM\0*`) or BigTIFF (`II+\0`, `MM\0+`) magic headers. */
@@ -148,7 +152,12 @@ function extractGeoTiffCalibration(
   // rotated rasters) when that maps pixels to the map without skew.
   let pixelSize: [number, number] | undefined;
   let fromTransform = false;
-  if (Array.isArray(scaleTag) && scaleTag.length >= 2) {
+  // A pixel scale of zero (or garbage) next to a valid transformation falls back to the
+  // transformation, as georef.ts (which prefers ModelTransformationTag) places the photo.
+  const scaleOk =
+    Array.isArray(scaleTag) && scaleTag.length >= 2 && Number(scaleTag[0]) > 0 && Number(scaleTag[1]) > 0 &&
+    Number.isFinite(Number(scaleTag[0])) && Number.isFinite(Number(scaleTag[1]));
+  if (scaleOk) {
     pixelSize = [Number(scaleTag[0]), Number(scaleTag[1])];
   } else if (Array.isArray(transformTag) && transformTag.length >= 16) {
     const [m0, m1, m4, m5] = [Number(transformTag[0]), Number(transformTag[1]), Number(transformTag[4]), Number(transformTag[5])];
@@ -325,6 +334,122 @@ export function rgba8From16Bit(f: Utif16Frame): { rgba: Uint8Array; note: string
 /** Largest TIFF frame (pixels) the import decodes; larger files must be tiled or downsampled first. */
 export const MAX_TIFF_PIXELS = 100_000_000;
 
+/** Most bytes one decoded frame may take before conversion to RGBA8 (100 MP at 16-bit RGBA). */
+export const MAX_TIFF_FRAME_BYTES = MAX_TIFF_PIXELS * 8;
+
+const MAX_TIFF_IFDS = 1024;
+const MAX_TIFF_IFD_ENTRIES = 4096;
+const MAX_TIFF_IFD_DEPTH = 8;
+/** Byte size of each TIFF field type (1 BYTE ... 13 IFD). */
+const TIFF_TYPE_BYTES: Readonly<Record<number, number>> = { 1: 1, 2: 1, 3: 2, 4: 4, 5: 8, 6: 1, 7: 1, 8: 2, 9: 4, 10: 8, 11: 4, 12: 8, 13: 4 };
+/** Tags whose values are offsets of further IFDs that UTIF reads (SubIFDs, EXIF, GPS, Fuji). */
+const SUB_IFD_TAGS: ReadonlySet<number> = new Set([330, 34665, 34853, 61440]);
+
+const malformedTiff = (why: string): Error => new Error(`This TIFF file is damaged or not a valid TIFF (${why}), so it was not opened.`);
+
+/**
+ * Walks the IFD structure before UTIF reads it, which UTIF does without any checks: a chain that
+ * loops back on itself made it loop forever, sub-IFD lists that point to one IFD many times grew
+ * exponentially, and a tag claiming billions of values made it loop billions of times. Throws
+ * for an IFD visited twice, too many IFDs or entries, an IFD or tag value outside the file, or
+ * nesting deeper than UTIF needs.
+ */
+export function validateTiffStructure(buf: ArrayBuffer): void {
+  const dv = new DataView(buf);
+  const size = buf.byteLength;
+  if (size < 8) throw malformedTiff('too short');
+  const le = dv.getUint8(0) === 0x49;
+  const u16 = (o: number): number => dv.getUint16(o, le);
+  const u32 = (o: number): number => dv.getUint32(o, le);
+  const visited = new Set<number>();
+
+  const readIfd = (offset: number, depth: number): number => {
+    if (depth > MAX_TIFF_IFD_DEPTH) throw malformedTiff('IFDs nested too deeply');
+    if (offset < 8 || offset + 2 > size) throw malformedTiff('an IFD lies outside the file');
+    if (visited.has(offset)) throw malformedTiff('an IFD is referenced twice');
+    visited.add(offset);
+    if (visited.size > MAX_TIFF_IFDS) throw malformedTiff('too many IFDs');
+    const count = u16(offset);
+    if (count > MAX_TIFF_IFD_ENTRIES) throw malformedTiff('too many tags in an IFD');
+    const end = offset + 2 + count * 12;
+    if (end + 4 > size && !(depth > 0 && end <= size)) throw malformedTiff('an IFD runs past the end of the file');
+    for (let i = 0; i < count; i++) {
+      const e = offset + 2 + i * 12;
+      const tag = u16(e);
+      const type = u16(e + 2);
+      const num = u32(e + 4);
+      const unit = TIFF_TYPE_BYTES[type];
+      if (unit === undefined) continue; // UTIF skips unknown types
+      const bytes = num * unit;
+      const valueAt = bytes <= 4 ? e + 8 : u32(e + 8);
+      if (bytes > 4 && valueAt + bytes > size) throw malformedTiff(`tag ${tag} points past the end of the file`);
+      if (SUB_IFD_TAGS.has(tag) && (type === 4 || type === 13)) {
+        for (let j = 0; j < num; j++) readIfd(u32(valueAt + 4 * j), depth + 1);
+      }
+    }
+    return end;
+  };
+
+  let next = u32(4);
+  while (next !== 0) {
+    const end = readIfd(next, 0);
+    next = end + 4 <= size ? u32(end) : 0;
+  }
+}
+
+/** Throws when the chosen frame's layout would make UTIF loop forever or allocate too much. */
+function checkFrameLayout(raw: Record<string, unknown>, width: number, height: number): number {
+  const first = (tag: string): number | undefined => {
+    const v = raw[tag];
+    const n = Array.isArray(v) || ArrayBuffer.isView(v) ? Number((v as ArrayLike<unknown>)[0]) : undefined;
+    return n !== undefined && Number.isFinite(n) ? n : undefined;
+  };
+  const spp = first('t277') ?? 1;
+  const bps = first('t258') ?? 1;
+  if (!Number.isInteger(spp) || spp < 1 || spp > 16) throw malformedTiff(`${spp} samples per pixel`);
+  if (!Number.isInteger(bps) || bps < 1 || bps > 32) throw malformedTiff(`${bps} bits per sample`);
+  const rowBytes = Math.ceil((width * bps * spp) / 8);
+  const frameBytes = rowBytes * height;
+  if (raw['t322'] !== undefined) {
+    const tw = first('t322') ?? 0;
+    const th = first('t323') ?? 0;
+    if (!(tw >= 1 && th >= 1 && tw <= 65536 && th <= 65536)) throw malformedTiff('invalid tile size');
+    if (Math.ceil((tw * th * bps * spp) / 8) > MAX_TIFF_FRAME_BYTES) throw malformedTiff('tiles too large');
+  }
+  if (frameBytes > MAX_TIFF_FRAME_BYTES) {
+    throw new Error(`This TIFF frame needs ${Math.round(frameBytes / 1e6)} MB to decode (${spp} samples of ${bps} bits per pixel); webGrainy decodes up to ${MAX_TIFF_FRAME_BYTES / 1e6} MB. Save an 8- or 16-bit RGB copy or a smaller tile.`);
+  }
+  return frameBytes;
+}
+
+/**
+ * pako.inflateRaw that refuses to produce more than `limit` bytes. UTIF inflates each DEFLATE
+ * strip or tile without a bound, so a small "zip bomb" strip could exhaust memory; UTIF only
+ * keeps output that fits the frame anyway.
+ */
+function boundedInflateRaw(limit: number): (src: Uint8Array) => Uint8Array {
+  return (src) => {
+    const inf = new pako.Inflate({ raw: true });
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    inf.onData = (c) => {
+      total += c.length;
+      if (total > limit) throw malformedTiff('a compressed strip expands far beyond the image size');
+      chunks.push(c);
+    };
+    inf.onEnd = () => {};
+    inf.push(src, true);
+    if (inf.err) throw malformedTiff(`DEFLATE data: ${inf.msg}`);
+    const out = new Uint8Array(total);
+    let o = 0;
+    for (const c of chunks) {
+      out.set(c, o);
+      o += c.length;
+    }
+    return out;
+  };
+}
+
 export function decodeTiffBuffer(buf: ArrayBuffer): DecodedTiffImage {
   if (!isTiffBytes(buf)) {
     throw new Error('File does not have a valid TIFF header.');
@@ -335,7 +460,10 @@ export function decodeTiffBuffer(buf: ArrayBuffer): DecodedTiffImage {
       'This is a BigTIFF, which webGrainy cannot read. Save a standard TIFF copy (e.g. gdal_translate -co BIGTIFF=NO in.tif out.tif, or export a tile of the area to measure), keeping the georeferencing.',
     );
   }
-  const ifds = UTIF.decode(buf);
+  validateTiffStructure(buf);
+  // MakerNotes (camera-private data) are not needed and are parsed without checks.
+  const decode = UTIF.decode as (b: ArrayBuffer, prm: { parseMN: boolean; debug: boolean }) => ReturnType<typeof UTIF.decode>;
+  const ifds = decode(buf, { parseMN: false, debug: false });
   if (!ifds || ifds.length === 0) {
     throw new Error('TIFF file contains no image frames.');
   }
@@ -377,7 +505,15 @@ export function decodeTiffBuffer(buf: ArrayBuffer): DecodedTiffImage {
       'This TIFF stores each colour band separately (band-interleaved, PlanarConfiguration 2), which webGrainy cannot read. Save a pixel-interleaved copy (e.g. gdal_translate -co INTERLEAVE=PIXEL in.tif out.tif), keeping the georeferencing.',
     );
   }
-  UTIF.decodeImage(buf, best);
+  const frameBytes = checkFrameLayout(bestRaw, tagNum(bestRaw, 't256'), tagNum(bestRaw, 't257'));
+  // UTIF calls pako.inflateRaw on the shared pako module: bound it while this frame decodes.
+  const inflateRaw = pako.inflateRaw;
+  pako.inflateRaw = boundedInflateRaw(frameBytes + 65536);
+  try {
+    UTIF.decodeImage(buf, best);
+  } finally {
+    pako.inflateRaw = inflateRaw;
+  }
   // 16-bit images: UTIF keeps only the high byte, so 12-bit data stored in 16 bits (common for
   // scientific and drone cameras) collapsed to 16 grey levels. Scale by the image's own range.
   const sixteen = rgba8From16Bit(best as unknown as Utif16Frame);

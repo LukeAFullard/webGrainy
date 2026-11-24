@@ -100,7 +100,7 @@ export function renderShortcutsModalHtml(): string {
         <h2 id="dialog-title" class="modal-title">Keyboard shortcuts</h2>
         <button type="button" class="btn btn-sm" data-action="close-modal" autofocus>Close</button>
       </div>
-      <div class="modal-body">
+      <div class="modal-body" tabindex="0">
         <p class="help-intro">Shortcuts work when you are not typing in a field. On a Mac, use ⌘ instead of Ctrl.</p>
         ${groups.map((g) => `<h3 class="help-group">${esc(g)}</h3><table class="shortcut-table">${rows(g)}</table>`).join('')}
       </div>

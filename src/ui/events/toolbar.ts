@@ -7,7 +7,13 @@ import type { PhotoRecord } from '../../modules/projectStorage.js';
 import type { EditorToolMode } from '../state.js';
 import { navGrainsFor, navigateGrains, type GrainNavMode } from '../grainNav.js';
 import { getActivePhoto } from '../workspaceActions.js';
-import { isInput, type ActionHandler, type ControlLike, type ElementLike, type EventContext } from './context.js';
+import { confirmDiscardEdits, isInput, type ActionHandler, type ControlLike, type ElementLike, type EventContext } from './context.js';
+
+/** Replacing the active photo's image discards its outlines: ask first if they were edited by hand. */
+function confirmImageChange(ctx: EventContext, doing: string): boolean {
+  const id = ctx.store.getState().activePhotoId;
+  return !id || confirmDiscardEdits(ctx, [id], { doing, ask: 'Continue anyway?' });
+}
 
 /** Undo or redo the last grain edit on the open photo; returns whether anything changed. */
 export function undoRedo(ctx: EventContext, which: 'undo' | 'redo'): boolean {
@@ -189,11 +195,18 @@ export const toolbarActions: Record<string, ActionHandler> = {
       });
       return;
     }
+    if (!confirmImageChange(ctx, 'Enhancing the photo')) return;
     void ctx.actions.enhanceActivePhoto('upscale-2x');
   },
-  'enhance-deblur': (_el, ctx) => void ctx.actions.enhanceActivePhoto('deblur'),
-  'enhance-revert': (_el, ctx) => void ctx.actions.revertActivePhotoEnhancement(),
-  'rectify-undo': (_el, ctx) => void ctx.actions.undoRectificationActive(),
+  'enhance-deblur': (_el, ctx) => {
+    if (confirmImageChange(ctx, 'Enhancing the photo')) void ctx.actions.enhanceActivePhoto('deblur');
+  },
+  'enhance-revert': (_el, ctx) => {
+    if (confirmImageChange(ctx, 'Reverting the enhancement')) void ctx.actions.revertActivePhotoEnhancement();
+  },
+  'rectify-undo': (_el, ctx) => {
+    if (confirmImageChange(ctx, 'Undoing the rectification')) void ctx.actions.undoRectificationActive();
+  },
   'tidy-outlines': (_el, ctx) => {
     const id = ctx.store.getState().activePhotoId;
     if (id) void ctx.actions.tidyOutlines([id]);

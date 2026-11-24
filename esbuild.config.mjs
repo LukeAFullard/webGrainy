@@ -103,12 +103,17 @@ if (entryPoints.length > 0) {
   console.log('[build] Notice: No module entry points found to bundle.');
 }
 
+// Browser bundles (page, workers, styles) are minified: about half the download. Names are kept
+// (keepNames) so error classes and stack traces stay readable; source maps map back to src/.
+const browserMinify = { minify: true, keepNames: true, banner: { js: `/*! webGrainy ${pkg.version} build ${commit} */` } };
+
 // 3. Bundle Web Worker if present
 const workerFile = path.join(srcDir, 'workers', 'grainPostprocess.worker.ts');
 if (fs.existsSync(workerFile)) {
   await build({
     entryPoints: [workerFile],
     outfile: path.join(distDir, 'workers', 'grainPostprocess.worker.js'),
+    ...browserMinify,
     format: 'esm',
     platform: 'browser',
     target: 'es2022',
@@ -125,6 +130,7 @@ if (fs.existsSync(workerFile)) {
 await build({
   entryPoints: [path.join(srcDir, 'workers', 'ortWasm.worker.ts')],
   outfile: path.join(distDir, 'workers', 'ortWasm.worker.js'),
+  ...browserMinify,
   format: 'esm',
   platform: 'browser',
   target: 'es2022',
@@ -160,6 +166,7 @@ if (fs.existsSync(uiEntry)) {
   await build({
     entryPoints: [uiEntry],
     outfile: path.join(uiDistDir, 'main.js'),
+    ...browserMinify,
     format: 'esm',
     platform: 'browser',
     target: 'es2022',
@@ -176,6 +183,7 @@ if (fs.existsSync(gpuCheckEntry)) {
   await build({
     entryPoints: [gpuCheckEntry],
     outfile: path.join(uiDistDir, 'gpucheck.js'),
+    ...browserMinify,
     format: 'esm',
     platform: 'browser',
     target: 'es2022',
@@ -191,13 +199,14 @@ if (fs.existsSync(uiCssEntry)) {
     entryPoints: [uiCssEntry],
     outfile: path.join(uiDistDir, 'main.css'),
     bundle: true,
+    minify: true,
     sourcemap: true,
   });
   console.log('[build] Bundled src/ui/main.css to dist/ui/main.css.');
 }
 
 // 6. Copy src/index.html, src/sw.js, src/manifest.webmanifest, and src/icon.svg -> dist/
-for (const staticAsset of ['index.html', 'gpucheck.html', 'sw.js', 'manifest.webmanifest', 'icon.svg']) {
+for (const staticAsset of ['index.html', 'gpucheck.html', 'sw.js', 'manifest.webmanifest', 'icon.svg', 'icon-192.png', 'icon-512.png']) {
   const assetSrc = path.join(srcDir, staticAsset);
   if (fs.existsSync(assetSrc)) {
     fs.copyFileSync(assetSrc, path.join(distDir, staticAsset));
@@ -242,6 +251,8 @@ const SHELL_ASSETS = [
   './index.html',
   './manifest.webmanifest',
   './icon.svg',
+  './icon-192.png',
+  './icon-512.png',
   './ui/main.js',
   './ui/main.css',
   './workers/grainPostprocess.worker.js',

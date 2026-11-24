@@ -154,17 +154,21 @@ export function analyzeSite(
     let clastPackingPct: number;
     let exposedMatrixPct: number;
 
+    // Clast packing is the share of the sampled bed covered by detected grains of any size,
+    // including those touching the photo edge (they cover bed too), as in the Photo view
+    // (AnalysisSession.getRoiFilterResult). The statistics use the border-filtered grains.
     if (input.roiConfig !== undefined) {
       const roiRes = filterGrainsByRoiAndExclusion(
         res.masks,
-        borderFiltered,
+        res.grains,
         res.width,
         res.height,
         sWork,
         withExclusionTolerance(input.roiConfig, options.maxExcludedFraction),
         mmPerPx,
       );
-      preCutoffGrains = roiRes.includedGrains;
+      const kept = new Set(borderFiltered.map((g) => g.id));
+      preCutoffGrains = roiRes.includedGrains.filter((g) => kept.has(g.id));
       validBedMask = roiRes.validBedMask;
       sampledBedAreaPx = roiRes.sampledBedAreaPx;
       sampledBedAreaMm2 = roiRes.sampledBedAreaMm2;
@@ -182,7 +186,7 @@ export function analyzeSite(
       sampledBedAreaMm2 =
         mmPerPx !== undefined ? sampledBedAreaPx * mmPerPx * mmPerPx : undefined;
       let areaSum = 0;
-      for (const g of preCutoffGrains) areaSum += g.areaPx;
+      for (const g of res.grains) areaSum += g.areaPx;
       clastPackingPct =
         sampledBedAreaPx > 0
           ? Math.min(100, (areaSum / sampledBedAreaPx) * 100)
@@ -282,16 +286,27 @@ export function analyzeSite(
   const psd = computePsdPercentiles(values, weights);
   // As for one photo: sorting, skewness and kurtosis need at least two grains.
   const folkWard = unit === 'mm' && values.length >= 2 ? computeFolkWardStats(psd) : null;
-  const extra =
-    values.length > 0
-      ? computeExtraGrainStats(
-          values,
-          weights,
-          psd,
-          unit,
-          options.poolingMode === 'virtual-wolman-grid' ? { multiplicity: weights } : undefined,
-        )
-      : null;
+  // Mean diameters D[p,q] use every counted grain once (number basis, as documented). The pooled
+  // arrays of the Virtual Wolman Grid hold only the grains a grid point hit (an area-biased
+  // sample), so that mode passes every valid grain, with its grid hits (0 if none) as the weight
+  // of the PSD-based statistics.
+  const extraInput =
+    options.poolingMode === 'virtual-wolman-grid'
+      ? (() => {
+          const sizes: number[] = [];
+          const hits: number[] = [];
+          for (const p of preparedPhotos) {
+            for (const g of p.validGrains) {
+              if (Number.isFinite(g.sizeVal) && g.sizeVal > 0) {
+                sizes.push(g.sizeVal);
+                hits.push(g.gridHits);
+              }
+            }
+          }
+          return { sizes, weights: hits };
+        })()
+      : { sizes: values, weights };
+  const extra = values.length > 0 ? computeExtraGrainStats(extraInput.sizes, extraInput.weights, psd, unit) : null;
   const wentworth =
     unit === 'mm'
       ? computeSiteWentworth(preparedPhotos, options.poolingMode, sizeMetric)

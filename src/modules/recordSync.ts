@@ -53,6 +53,29 @@ export function threeWayMerge<T extends object>(base: T | undefined, mine: T, th
   return out as T;
 }
 
+/**
+ * Real IndexedDB returns a fresh structured clone of every Blob on each read, so a Blob that
+ * nobody changed never has the identity this tab last saw. Where the stored record (`theirs`)
+ * holds a Blob of the same size and type as the one in `base` (what this tab last read or
+ * wrote), treat it as that same Blob and use `base`'s instance, so an unchanged image does
+ * not look like a change made by another tab.
+ */
+export function adoptKnownBlobs<T extends object>(base: T | undefined, theirs: T | undefined): T | undefined {
+  if (base === undefined || theirs === undefined || typeof Blob === 'undefined') return theirs;
+  const b = base as Record<string, unknown>;
+  const t = theirs as Record<string, unknown>;
+  let out: Record<string, unknown> | null = null;
+  for (const k of Object.keys(t)) {
+    const tv = t[k];
+    const bv = b[k];
+    if (tv !== bv && tv instanceof Blob && bv instanceof Blob && tv.size === bv.size && tv.type === bv.type) {
+      out ??= { ...t };
+      out[k] = bv;
+    }
+  }
+  return (out ?? theirs) as T;
+}
+
 /** A change notice between tabs. */
 export interface RecordChangeNotice {
   type: 'webgrainy-records-changed';
@@ -93,8 +116,12 @@ interface BaseStorage {
 }
 
 export interface SyncedStorageHooks {
-  /** A save was merged with changes from another tab: replace this tab's copy with `merged`. */
-  onMerged?(kind: 'photo' | 'site', merged: PhotoRecord | SiteRecord): void;
+  /**
+   * A save was merged with changes from another tab: replace this tab's copy with `merged`.
+   * `saved` is the record this tab asked to save; if this tab's copy has changed again since
+   * (a later edit whose save is still pending), keep those later changes (see `threeWayMerge`).
+   */
+  onMerged?(kind: 'photo' | 'site', merged: PhotoRecord | SiteRecord, saved: PhotoRecord | SiteRecord): void;
 }
 
 /**
@@ -123,17 +150,19 @@ export function createSyncedRecords<S extends BaseStorage>(
       return list;
     },
     async saveSite(site: SiteRecord): Promise<void> {
-      const merged = threeWayMerge(sites.get(site.siteId), site, await storage.getSite(site.siteId));
+      const base = sites.get(site.siteId);
+      const merged = threeWayMerge(base, site, adoptKnownBlobs(base, await storage.getSite(site.siteId)));
       await storage.saveSite(merged);
       sites.set(merged.siteId, merged);
-      if (merged !== site && !sameValue(merged, site)) opts.hooks?.onMerged?.('site', merged);
+      if (merged !== site && !sameValue(merged, site)) opts.hooks?.onMerged?.('site', merged, site);
       notify([merged.siteId], []);
     },
     async savePhoto(photo: PhotoRecord): Promise<void> {
-      const merged = threeWayMerge(photos.get(photo.photoId), photo, await storage.getPhoto(photo.photoId));
+      const base = photos.get(photo.photoId);
+      const merged = threeWayMerge(base, photo, adoptKnownBlobs(base, await storage.getPhoto(photo.photoId)));
       await storage.savePhoto(merged);
       photos.set(merged.photoId, merged);
-      if (merged !== photo && !sameValue(merged, photo)) opts.hooks?.onMerged?.('photo', merged);
+      if (merged !== photo && !sameValue(merged, photo)) opts.hooks?.onMerged?.('photo', merged, photo);
       notify([merged.siteId], [merged.photoId]);
     },
     async deletePhoto(photoId: string): Promise<void> {

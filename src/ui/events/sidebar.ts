@@ -153,6 +153,7 @@ export const sidebarActions: Record<string, ActionHandler> = {
     void ctx.actions.removeHeldSite(site.siteId);
   },
   'dismiss-storage-full': (_el, ctx) => ctx.store.setState({ storageFullNotice: null }),
+  'retry-storage': (_el, ctx) => void ctx.actions.createDefaultOrLoadSites(),
   'free-space': (_el, ctx) => {
     const st = ctx.store.getState();
     if (st.batchRunning) return;
@@ -172,6 +173,11 @@ export const sidebarActions: Record<string, ActionHandler> = {
   'dismiss-retention-explained': (_el, ctx) => {
     writeFlag(RETENTION_EXPLAINED_KEY, true);
     ctx.ui.renderSidebar();
+  },
+  'reload-isolation': (_el, ctx) => {
+    const st = ctx.store.getState();
+    if (st.batchRunning || st.enhancing === true) return;
+    ctx.ui.reloadForIsolation?.();
   },
   'reload-stale': (_el, ctx) => {
     if (ctx.store.getState().batchRunning) return;
@@ -377,7 +383,7 @@ export function handleSidebarChange(target: ControlLike, ctx: EventContext): boo
     const activePhoto = getActivePhoto(st);
     const mmPerPx = activePhoto?.calibration?.mmPerPx;
     if (activePhoto && mmPerPx && Number.isFinite(mmPerPx) && mmPerPx > 0 && Number.isFinite(mm2) && mm2 > 0) {
-      const wScale = workingScaleFactorFor(activePhoto.width, activePhoto.height, st.analysisParams.scaleMode);
+      const wScale = workingScaleFactorFor(activePhoto.width, activePhoto.height, st.analysisParams.scaleMode, activePhoto.analysisConfig?.fineGrainUpscale);
       const mmPerWorkPx = mmPerPx / wScale;
       const px2 = Math.max(4, Math.min(500, Math.round(mm2 / (mmPerWorkPx * mmPerWorkPx))));
       ctx.store.setState({ analysisParams: { ...st.analysisParams, minSize: px2 } });

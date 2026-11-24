@@ -533,6 +533,7 @@ export class ImageGrainsEngine {
     }
     this.ownedSessions.clear();
     this.sessionCache.clear();
+    this.sessionExecutionProviders.clear();
     this.inFlightSessions.clear();
   }
 

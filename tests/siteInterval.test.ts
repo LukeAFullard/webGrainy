@@ -29,6 +29,7 @@ function fakeSession(sizesMm: number[], mmPerPx = 0.5) {
     getCalibration: () => ({ mmPerPx, pointA: { x: 0, y: 0 }, pointB: { x: 1, y: 0 }, physicalLengthMm: mmPerPx, pixelDistance: 1 }),
     getExcludeBorder: () => true,
     getProvenance: () => ({ postProcess: { minSize: 1 }, modelId: 'x' }),
+    getTidyCount: () => 0,
     ensureFeret: () => {},
     workingImage: { effectiveScaleFactor: 1, width: 4, height: 4, originalWidth: 4000, originalHeight: 3000 },
   };

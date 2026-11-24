@@ -12,6 +12,7 @@ import {
 } from '../charts.js';
 import { helpButton } from '../help.js';
 import type { AppState, DashboardTab } from '../state.js';
+import type { SiteAnalysisReport } from '../../modules/siteTypes.js';
 import { getActivePhoto } from '../workspaceActions.js';
 import { scopeButtonsHtml } from './compare.js';
 import { chartBoxFor, esc, type ChartRegistry } from './html.js';
@@ -20,11 +21,12 @@ import { adequacyCapNote } from '../../modules/siteAdequacy.js';
 import { DEFAULT_POSTPROCESS_OPTIONS } from '../../modules/postprocessCore.js';
 
 /** Shown after the site interval, so an approximate or missing interval is never read as precise. */
-const CI_STATUS_NOTE: Record<'ok' | 'few-photos' | 'single-photo' | 'degenerate', string> = {
+const CI_STATUS_NOTE: Record<SiteAnalysisReport['ciStatus'], string> = {
   ok: '',
   'few-photos': ' · approximate (fewer than 5 photos)',
   'single-photo': ' · one photo: counting only',
   degenerate: ' · photos identical?',
+  'no-grains': ' · no grains counted',
 };
 
 export interface DashboardView {
@@ -75,12 +77,15 @@ export function renderDashboardHtml(state: AppState, view: DashboardView): strin
         const v = unit === 'mm' ? (p.mmPerPx !== undefined ? p.detectionLimitPx * p.mmPerPx : 0) : p.detectionLimitPx;
         if (v > maxVal) maxVal = v;
       }
-      if (maxVal <= 0) return null;
+      // The site's common mm cutoff includes the Field-count cutoff: show the larger one.
+      const applied = unit === 'mm' && report.dCutoffCommonMm !== null && report.dCutoffCommonMm > maxVal ? report.dCutoffCommonMm : maxVal;
+      if (applied <= 0) return null;
       return {
-        value: maxVal,
+        value: applied,
         unit,
-        nearD5: Number.isFinite(psd.D5) && psd.D5 > 0 && psd.D5 <= maxVal * 1.25,
-        nearD16: Number.isFinite(psd.D16) && psd.D16 > 0 && psd.D16 <= maxVal * 1.5,
+        nearD5: Number.isFinite(psd.D5) && psd.D5 > 0 && psd.D5 <= applied * 1.25,
+        nearD16: Number.isFinite(psd.D16) && psd.D16 > 0 && psd.D16 <= applied * 1.5,
+        raisedNote: applied > maxVal && maxVal > 0 ? ` (the photos resolve ~${maxVal.toFixed(1)} mm; raised to the lower size cutoff)` : '',
       };
     }
     if (!isSite && activeSession) {
@@ -126,6 +131,7 @@ export function renderDashboardHtml(state: AppState, view: DashboardView): strin
           xAxis: state.psdXAxis,
           title: isSite ? 'Pooled Site Cumulative PSD' : 'Active Photo Cumulative PSD',
           subtitle: isSite && report ? `${report.includedPhotoCount} photos, n=${report.validGrainCount}` : undefined,
+          ...(isSite && report ? { ciLevel: report.bootstrapCi.confidenceLevel } : {}),
           ciLower: isSite ? report?.bootstrapCi.lower : undefined,
           ciUpper: isSite ? report?.bootstrapCi.upper : undefined,
           perPhotoCurves: isSite ? report?.perPhoto : undefined,
@@ -253,7 +259,7 @@ export function renderDashboardHtml(state: AppState, view: DashboardView): strin
             </div>`
           : ''
       }
-      ${chartBox('convergence', 'D50 convergence with number of photos', (light) => renderConvergenceChartSvg(report?.convergence ?? [], light), lightTheme)}
+      ${chartBox('convergence', 'D50 convergence with number of photos', (light) => renderConvergenceChartSvg(report?.convergence ?? [], light, report?.bootstrapCi.confidenceLevel), lightTheme)}
       ${chartBox('jackknife', 'Leave-one-photo-out influence on D50', (light) => renderJackknifeChartSvg(report?.jackknife ?? null, light), lightTheme)}
     `;
   } else if (state.dashboardTab === 'shape') {
@@ -289,9 +295,9 @@ export function renderDashboardHtml(state: AppState, view: DashboardView): strin
       ${
         rose.grainCount > 0
           ? `<div class="stat-grid" style="margin-top:8px;">
-              <div class="stat-card"><div class="stat-label">Mean orientation</div><div class="stat-value">${rose.meanAxialDeg.toFixed(0)}°</div><div class="stat-sub">0° = up–down in the photo</div></div>
+              <div class="stat-card"><div class="stat-label">Mean orientation</div><div class="stat-value">${rose.meanAxialDeg.toFixed(0)}°</div><div class="stat-sub">0° = up–down in the photo, counter-clockwise</div></div>
               <div class="stat-card"><div class="stat-label">Alignment (R)</div><div class="stat-value">${rose.resultantLength.toFixed(2)}</div><div class="stat-sub">0 = random, 1 = all parallel</div></div>
-              <div class="stat-card"><div class="stat-label">Rayleigh p</div><div class="stat-value">${rose.rayleighP === null ? '—' : rose.rayleighP < 0.001 ? '&lt;0.001' : rose.rayleighP.toFixed(3)}</div><div class="stat-sub">${rose.rayleighP !== null && rose.rayleighP < 0.05 ? 'preferred direction' : 'no clear direction'} · n = ${rose.grainCount}</div></div>
+              <div class="stat-card"><div class="stat-label">Rayleigh p</div><div class="stat-value">${rose.rayleighP === null ? '—' : rose.rayleighP < 0.001 ? '&lt;0.001' : rose.rayleighP.toFixed(3)}</div><div class="stat-sub">${rose.rayleighP === null ? 'too few grains to test' : rose.rayleighP < 0.05 ? 'preferred direction' : 'no clear direction'} · n = ${rose.grainCount}</div></div>
             </div>`
           : ''
       }

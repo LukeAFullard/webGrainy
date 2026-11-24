@@ -140,8 +140,8 @@ export function renderModelsModalHtml(
     {
       id: 'ig2_unet_fp32',
       title: 'U-Net (Fast) — ig2_unet_fp32.onnx',
-      sizeLabel: '25.3 MB (FP32)',
-      desc: 'Recommended for mobile, CPU WASM, or quick field previews. 16-px reflection padding.',
+      sizeLabel: '26.5 MB (FP32)',
+      desc: 'Recommended for mobile, CPU WASM, or quick field previews.',
     },
     {
       id: 'ig2_cpsam_fp16',
@@ -500,7 +500,7 @@ export function renderDownloadResultsModalHtml(state: AppState): string {
             : 'Without the project file, this site cannot be reopened in webGrainy once it is removed from this browser: only the result files are kept. Keep your original photos in your own folders.'
         }</div>
         <div class="row" style="margin-top:10px;justify-content:flex-end;gap:6px;">
-          <button type="button" class="btn btn-sm btn-primary" data-action="download-results" ${analysed === 0 || state.downloadingResults ? 'disabled' : ''} autofocus>${state.downloadingResults ? 'Preparing…' : 'Download .zip'}</button>
+          <button type="button" class="btn btn-sm btn-primary" data-action="download-results" ${analysed === 0 || state.downloadingResults ? 'disabled' : 'autofocus'}>${state.downloadingResults ? 'Preparing…' : 'Download .zip'}</button>
         </div>
       </div>
     </div>
@@ -537,12 +537,12 @@ export function renderExportModalHtml(state: AppState): string {
           <div style="font-weight:700;margin-bottom:6px;">Site-Level Exports (${activeSite ? esc(activeSite.name) : 'No Site'})</div>
           ${siteDisabledReason ? `<div class="warning-banner" style="margin-bottom:8px;">${esc(siteDisabledReason)}</div>` : ''}
           <div class="row" style="flex-wrap:wrap;">
-            <button type="button" class="btn btn-sm btn-primary" data-action="printable-report" ${hasSiteReport ? '' : 'disabled'} title="One-page summary to print or save as PDF">Printable report</button>
+            <button type="button" class="btn btn-sm btn-primary" data-action="printable-report" ${hasSiteReport ? '' : 'disabled'} title="Printable site report (several pages) to print or save as PDF">Printable report</button>
             <button type="button" class="btn btn-sm btn-primary" data-export="site-summary-csv" ${hasSiteReport ? '' : 'disabled'}>Site Summary CSV</button>
             <button type="button" class="btn btn-sm" data-export="site-summary-json" ${hasSiteReport ? '' : 'disabled'}>Site Summary JSON</button>
             <button type="button" class="btn btn-sm" data-export="site-grains-csv" ${hasSiteReport ? '' : 'disabled'}>Pooled Grains CSV</button>
             <button type="button" class="btn btn-sm" data-export="site-psd-svg" ${hasSiteReport ? '' : 'disabled'}>Printable SVG PSD Figure</button>
-            <button type="button" class="btn btn-sm" data-export="site-archive" ${activeSite ? '' : 'disabled'}>Export .webgrainy Archive</button>
+            <button type="button" class="btn btn-sm" data-export="site-archive" ${activeSite ? '' : 'disabled'} title="The project file contains the photos, which can include GPS locations and camera details: take care when sharing it.">Export .webgrainy Archive</button>
             ${siteGpkgButtonHtml(state)}
           </div>
           ${reportOptionsHtml(state, hasSiteReport)}
@@ -556,7 +556,7 @@ export function renderExportModalHtml(state: AppState): string {
             <button type="button" class="btn btn-sm" data-export="photo-summary-json" ${activeSession ? '' : 'disabled'}>Photo Summary JSON</button>
           </div>
           ${activeSession && activePhoto ? photoGeometryExportHtml(state, activePhoto) : ''}
-          ${activeSession ? countedOnlyCheckbox('export-counted-only', state.exportCountedOnly) : ''}
+          ${activeSession || hasSiteReport ? countedOnlyCheckbox('export-counted-only', state.exportCountedOnly) : ''}
           ${outlineResolutionWarningHtml(activeSession)}
         </div>
       </div>
@@ -586,9 +586,10 @@ export function renderAboutModalHtml(): string {
         </div>
         <div class="stat-card" style="padding:10px;line-height:1.5;font-size:0.85rem;color:var(--text-secondary);">
           <strong style="color:var(--text-primary);">License &amp; No Warranty (BSD 3-Clause):</strong> webGrainy is free, open-source software provided <strong>"as is"</strong>, without warranty of any kind. Always inspect grain outlines and verify measurements before relying on them for engineering, regulatory, or published work.
+          <a href="./LICENSE.txt" target="_blank" rel="noopener">Licence</a> · <a href="./THIRD_PARTY_NOTICES.md" target="_blank" rel="noopener">Third-party notices</a>
         </div>
         <div>
-          <div style="font-weight:700;margin-bottom:6px;">Scientific Citations (16 References)</div>
+          <div style="font-weight:700;margin-bottom:6px;">Scientific Citations (${FULL_SCIENTIFIC_CITATIONS.length} References)</div>
           <ol class="citations-list">
             ${FULL_SCIENTIFIC_CITATIONS.map(
               (c) => `<li><strong>${esc(c.title)}:</strong> ${esc(c.citation)}</li>`,

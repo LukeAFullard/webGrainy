@@ -1,5 +1,5 @@
 /**
- * One-page printable site report (Export → Printable report): an HTML page laid out for
+ * Printable site report (Export → Printable report): an HTML document laid out for
  * printing or "Save as PDF". Every number carries its exact value and the matching row of the
  * site summary CSV (`data-csv="section/metric"`, `data-value`), so a test can check that the
  * report and the CSV agree.
@@ -82,10 +82,12 @@ export interface ReportInput {
   settings: Array<[string, string]>;
   /** Effective minimum resolvable grain diameter (same unit as `report.unit`). */
   detectionLimit?: number;
+  /** Smallest grain counted: the detection limit, or the common / Field-count cutoff when larger. */
+  sizeCutoff?: number;
   /** Number of included photos with manual outline edits in this session. */
   manualEditsCount?: number;
   tidiedPhotosCount?: number;
-  /** Number of included photos where optional AI pre-processing enhancement was applied. */
+  /** Number of included photos with an image enhancement (2× AI upscaling or Richardson–Lucy deblurring). */
   enhancedPhotosCount?: number;
   /** Min/max calibration scale across included photos (mm/px), when calibrated. */
   resolutionRangeMmPerPx?: [number, number];
@@ -110,8 +112,18 @@ const fmt = (v: number, digits = 2): string => (Number.isFinite(v) ? v.toFixed(d
  * download). In the app's pop-up the app's CSP blocks this inline script and the app binds the
  * button itself; `data-bound` keeps the two from both binding it.
  */
-export const PRINT_SCRIPT =
-  "<script>(function(){var b=document.querySelector('[data-print]');if(b&&!b.hasAttribute('data-bound')){b.setAttribute('data-bound','');b.addEventListener('click',function(){window.print();});}})();</script>";
+export const PRINT_SCRIPT_SOURCE =
+  "(function(){var b=document.querySelector('[data-print]');if(b&&!b.hasAttribute('data-bound')){b.setAttribute('data-bound','');b.addEventListener('click',function(){window.print();});}})();";
+export const PRINT_SCRIPT = `<script>${PRINT_SCRIPT_SOURCE}</script>`;
+/** CSP hash of PRINT_SCRIPT_SOURCE (checked by a test), the only script the report may run. */
+export const PRINT_SCRIPT_SHA256 = 'UQ9mwXc+eDEpUBj4UsroUwQ64OVmwr+EOGFiiXlQLiU=';
+
+/**
+ * The report's own Content-Security-Policy, so a report opened as a file (from the results .zip
+ * or a download) can load nothing from the network and run nothing but the Print button script,
+ * whatever text an imported project put into it.
+ */
+export const REPORT_CSP = `default-src 'none'; style-src 'unsafe-inline'; img-src data:; script-src 'sha256-${PRINT_SCRIPT_SHA256}'; base-uri 'none'; form-action 'none'`;
 
 /** A number cell tied to its row in the site summary CSV. */
 function num(v: number, csv: string, digits = 2): string {
@@ -142,12 +154,15 @@ const fmtLen = (mm: number): string => (mm >= 1000 ? `${mm / 1000} m` : mm >= 10
  * and page numbers, the shared styles, and the Print button.
  */
 export function reportDocument(title: string, footerText: string, body: string): string {
-  // Plain text for the CSS page footer (<style> is raw text: no entities, and no "<" so it cannot close the tag).
-  const footerCss = footerText.replace(/[\\"<>\n\r]/g, ' ').slice(0, 100);
+  // Plain text for the CSS page footer (<style> is raw text: no entities, and no "<" so it cannot
+  // close the tag). Every control character goes: CSS turns a form feed into a newline, which
+  // would end the string and let the rest of the text be read as CSS rules.
+  const footerCss = footerText.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029\\"'<>]/g, ' ').slice(0, 100);
   return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="${REPORT_CSP}">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(title)}</title>
 <style>
@@ -247,7 +262,9 @@ export function buildSiteReportHtml(input: ReportInput): string {
         ? 'one photo: grain resampling only'
         : r.ciStatus === 'degenerate'
           ? 'not estimable (identical photos?)'
-          : 'photo bootstrap';
+          : r.ciStatus === 'no-grains'
+            ? 'not estimable (no grains counted)'
+            : 'photo bootstrap';
   const PCTS = ['D5', 'D10', 'D16', 'D25', 'D50', 'D75', 'D84', 'D90', 'D95'] as const;
   const pctRow = (key: (typeof PCTS)[number]): string => `
     <tr${key === 'D16' || key === 'D50' || key === 'D84' ? ' class="key"' : ''}><th>${key}</th><td class="n">${num(r.psd[key], `psd/${key}`)}</td>
@@ -261,10 +278,12 @@ export function buildSiteReportHtml(input: ReportInput): string {
       ? `${input.resolutionRangeMmPerPx[0].toFixed(3)} mm/px`
       : `${input.resolutionRangeMmPerPx[0].toFixed(3)}–${input.resolutionRangeMmPerPx[1].toFixed(3)} mm/px`
     : undefined;
-  const detText =
-    input.detectionLimit !== undefined && Number.isFinite(input.detectionLimit) && input.detectionLimit > 0
-      ? `~${input.detectionLimit.toFixed(u === 'mm' ? 1 : 0)} ${u}`
-      : undefined;
+  const lenText = (v: number | undefined): string | undefined =>
+    v !== undefined && Number.isFinite(v) && v > 0 ? `~${v.toFixed(u === 'mm' ? 1 : 0)} ${u}` : undefined;
+  const detText = lenText(input.detectionLimit);
+  // The cutoff actually applied (raised above the detection limit by the Field-count cutoff).
+  const cutText = lenText(input.sizeCutoff ?? input.detectionLimit);
+  const cutRaised = cutText !== undefined && detText !== undefined && cutText !== detText;
   const editText =
     input.manualEditsCount !== undefined
       ? input.manualEditsCount > 0
@@ -277,15 +296,16 @@ export function buildSiteReportHtml(input: ReportInput): string {
       : undefined;
   const enhText =
     input.enhancedPhotosCount !== undefined && input.enhancedPhotosCount > 0
-      ? `Optional AI pre-processing enhancement applied to ${input.enhancedPhotosCount} photo${input.enhancedPhotosCount === 1 ? '' : 's'} prior to segmentation`
+      ? `Optional image enhancement (2× AI upscaling or Richardson–Lucy deblurring) applied to ${input.enhancedPhotosCount} photo${input.enhancedPhotosCount === 1 ? '' : 's'} before segmentation`
       : undefined;
   const modelName = input.metadata['modelId'] ? String(input.metadata['modelId']) : 'ImageGrains 2.0 ONNX';
-  const modelHash = input.metadata['modelSha256'] ? String(input.metadata['modelSha256']).slice(0, 12) : undefined;
+  // One model: its fingerprint in the methods sentence (several are listed in the settings table).
+  const modelHash = /^[0-9a-f]{64}$/.test(String(input.metadata['modelSha256'] ?? '')) ? String(input.metadata['modelSha256']).slice(0, 12) : undefined;
   const appVersion = input.metadata['appVersion'] ? String(input.metadata['appVersion']) : '';
   const photosWord = `${r.includedPhotoCount} photo${r.includedPhotoCount === 1 ? '' : 's'}`;
   const methodsSentence = [
     `Surface grain sizes for ${site.name} (${photosWord}, n = ${r.validGrainCount} grains) were measured in webGrainy using ${modelName}${modelHash ? ` (SHA-256 ${modelHash}…)` : ''}.`,
-    `Sizes report the 2D visible ${r.sizeMetric} (${r.statisticalBasisLabel})${resText ? ` at ${resText}` : ''}${detText ? `; grains smaller than ${detText} (the detection limit) are not counted, and grains up to a few times that size are partly missed` : ''}.`,
+    `Sizes report the 2D visible ${r.sizeMetric} (${r.statisticalBasisLabel})${resText ? ` at ${resText}` : ''}${cutRaised ? `; grains smaller than ${cutText} (the lower size cutoff) are not counted` : detText ? `; grains smaller than ${detText} (the detection limit) are not counted, and grains up to a few times that size are partly missed` : ''}.`,
     editText ? `${editText}.` : '',
     tidyText ? `${tidyText}.` : '',
     enhText ? `${enhText}.` : '',
@@ -369,7 +389,7 @@ ${h2('Grain shape and fabric')}
 <table class="compact">
   <tr><th>Median b/a</th><td class="n">${num(r.shape.medianAspectRatio, 'shape/median_aspect_ratio_b_over_a')}</td><th>Grains</th><td class="n">${r.shape.n}</td></tr>
   ${fr.grainCount > 0 ? `<tr><th>Mean orientation</th><td class="n">${num(fr.meanAxialDeg, 'fabric/mean_axial_orientation_deg', 0)}°</td><th>Alignment R</th><td class="n">${num(fr.resultantLength, 'fabric/resultant_length_R')}</td></tr>
-  <tr><th>Rayleigh p</th><td class="n">${fr.rayleighP !== null && fr.rayleighP >= 0.001 ? num(fr.rayleighP, 'fabric/rayleigh_p', 3) : fmtP(fr.rayleighP)}</td><th></th><td class="small">${fr.rayleighP !== null && fr.rayleighP < 0.05 ? 'a preferred direction' : 'no clear preferred direction'} (n = ${fr.grainCount})</td></tr>` : ''}
+  <tr><th>Rayleigh p</th><td class="n">${fr.rayleighP !== null && fr.rayleighP >= 0.001 ? num(fr.rayleighP, 'fabric/rayleigh_p', 3) : fmtP(fr.rayleighP)}</td><th></th><td class="small">${fr.rayleighP === null ? 'too few grains to test' : fr.rayleighP < 0.05 ? 'a preferred direction' : 'no clear preferred direction'} (n = ${fr.grainCount})</td></tr>` : ''}
 </table>
 <p class="cap">R: 0 = orientations random, 1 = all parallel (axial statistics, Curray 1956; Mardia &amp; Jupp 2000). Orientations are relative to each photo's frame, so they combine meaningfully only when the photos were taken the same way round (e.g. top of the photo upstream).</p>
 </section>`
@@ -400,7 +420,7 @@ ${h2('Grain shape and fabric')}
   ${tile('Photos', String(r.includedPhotoCount), resText ? `scale ${esc(resText)}` : 'uncalibrated (px)')}
   ${tile('Sample adequacy', esc(r.adequacy.rating), r.adequacy.limitedByPhotoCount ? esc(adequacyCapNote(true, r.includedPhotoCount)) : `largest grain ${fmt(r.adequacy.largestClastAreaRatio * 100, 1)}% of the grain area`, adequacyClass)}
 </div>
-<p class="lede">Size metric: <strong>${esc(r.sizeMetric)}</strong> of each grain's visible outline, in ${esc(u)}${detText ? `; grains below ${esc(detText)} are not counted` : ''}. Intervals are ${ciPct}% confidence intervals (${esc(ciNote)}).</p>
+<p class="lede">Size metric: <strong>${esc(r.sizeMetric)}</strong> of each grain's visible outline, in ${esc(u)}${cutText ? `; grains below ${esc(cutText)} are not counted` : ''}. Intervals are ${ciPct}% confidence intervals (${esc(ciNote)}).</p>
 </section>
 
 <section>
@@ -484,7 +504,8 @@ ${h2('Methods, settings and software')}
 ${[
   ...input.settings,
   ...(resText ? ([['Pixel resolution', resText]] as Array<[string, string]>) : []),
-  ...(detText ? ([['Detection limit (smallest grain kept)', detText]] as Array<[string, string]>) : []),
+  ...(detText ? ([['Detection limit (smallest grain resolved)', detText]] as Array<[string, string]>) : []),
+  ...(cutRaised ? ([['Smallest grain counted (size cutoff)', cutText]] as Array<[string, string]>) : []),
   ...(editText ? ([['Outline review', editText]] as Array<[string, string]>) : []),
   ...(tidyText ? ([['Outline tidy', tidyText]] as Array<[string, string]>) : []),
   ...(enhText ? ([['Pre-processing enhancement', enhText]] as Array<[string, string]>) : []),

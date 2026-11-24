@@ -1,12 +1,13 @@
 import type { SitePhotoMetadata } from '../modules/siteAnalysis.js';
 
+/** ASCII text of a tag: at most 256 characters, control characters dropped (camera tags are untrusted). */
 function readAscii(view: DataView, offset: number, length: number): string {
   let out = '';
-  const end = Math.min(view.byteLength, offset + length);
+  const end = Math.min(view.byteLength, offset + Math.min(length, 256));
   for (let i = offset; i < end; i++) {
     const code = view.getUint8(i);
     if (code === 0) break;
-    out += String.fromCharCode(code);
+    if (code >= 0x20 && code !== 0x7f) out += String.fromCharCode(code);
   }
   return out;
 }
@@ -150,7 +151,7 @@ export async function parseJpegExifMetadata(
           if (latOff !== null && lonOff !== null) {
             const lat = parseGpsCoordinate(view, latOff, littleEndian, latRef);
             const lon = parseGpsCoordinate(view, lonOff, littleEndian, lonRef);
-            if (lat !== null && lon !== null) {
+            if (lat !== null && lon !== null && Math.abs(lat) <= 90 && Math.abs(lon) <= 180) {
               meta.gps = { lat, lon };
             }
           }

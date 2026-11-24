@@ -12,7 +12,7 @@
 
   --text-primary: light-dark(#0f172a, #e8eef4);
   --text-secondary: light-dark(#334155, #9fb0c0);
-  --text-muted: light-dark(#475569, #8395a7);
+  --text-muted: light-dark(#475569, #889aac);
 
   --accent: light-dark(#1565c0, #3b9eff);
   --accent-hover: light-dark(#0d47a1, #69b7ff);
@@ -24,7 +24,7 @@
   --warning: light-dark(#9a3412, #f5a623);
   --warning-dim: light-dark(rgba(154, 52, 18, 0.12), rgba(245, 166, 35, 0.16));
   --warning-text: light-dark(#7c2d12, #ffd485);
-  --danger: light-dark(#b91c1c, #e74c3c);
+  --danger: light-dark(#b91c1c, #ef5b4b);
   --danger-dim: light-dark(rgba(185, 28, 28, 0.12), rgba(231, 76, 60, 0.16));
   --danger-text: light-dark(#991b1b, #ff8577);
 
@@ -35,9 +35,74 @@
 
   --scrollbar-track: light-dark(#e2e8f0, #161d24);
   --scrollbar-thumb: light-dark(#64748b, #5b6d80);
+  /* Text on --success: white on the light-mode green, dark on the bright dark-mode green (WCAG AA). */
+  --on-success: light-dark(#fff, #0a0e12);
 
   accent-color: var(--accent);
   scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+}
+
+/* Browsers without light-dark() (Chrome / Edge < 123, Safari < 17.5) would leave every colour
+   token invalid: give them the same palette by media query. Keep in step with :root above. */
+@supports not (color: light-dark(#000, #fff)) {
+  :root {
+    --bg-app: #0f1419;
+    --bg-panel: #161d24;
+    --bg-elevated: #1e2730;
+    --bg-hover: #25303b;
+    --bg-input: #0c1014;
+    --bg-stage: #0a0e12;
+    --border: #2a3642;
+    --border-strong: #3b4b5c;
+    --text-primary: #e8eef4;
+    --text-secondary: #9fb0c0;
+    --text-muted: #889aac;
+    --accent: #3b9eff;
+    --accent-hover: #69b7ff;
+    --accent-dim: rgba(59, 158, 255, 0.16);
+    --accent-on: #07131f;
+    --success: #2ecc71;
+    --success-dim: rgba(46, 204, 113, 0.16);
+    --warning: #f5a623;
+    --warning-dim: rgba(245, 166, 35, 0.16);
+    --warning-text: #ffd485;
+    --danger: #ef5b4b;
+    --danger-dim: rgba(231, 76, 60, 0.16);
+    --danger-text: #ff8577;
+    --scrollbar-track: #161d24;
+    --scrollbar-thumb: #5b6d80;
+    --on-success: #0a0e12;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg-app: #f2f5f8;
+      --bg-panel: #ffffff;
+      --bg-elevated: #eef2f6;
+      --bg-hover: #e2e8f0;
+      --bg-input: #f8fafc;
+      --bg-stage: #e5ebf1;
+      --border: #cbd5e1;
+      --border-strong: #94a3b8;
+      --text-primary: #0f172a;
+      --text-secondary: #334155;
+      --text-muted: #475569;
+      --accent: #1565c0;
+      --accent-hover: #0d47a1;
+      --accent-dim: rgba(21, 101, 192, 0.12);
+      --accent-on: #ffffff;
+      --success: #166534;
+      --success-dim: rgba(22, 101, 52, 0.12);
+      --warning: #9a3412;
+      --warning-dim: rgba(154, 52, 18, 0.12);
+      --warning-text: #7c2d12;
+      --danger: #b91c1c;
+      --danger-dim: rgba(185, 28, 28, 0.12);
+      --danger-text: #991b1b;
+      --scrollbar-track: #e2e8f0;
+      --scrollbar-thumb: #64748b;
+      --on-success: #fff;
+    }
+  }
 }
 
 *, *::before, *::after {
@@ -911,7 +976,18 @@ details summary {
 .help-btn:focus-visible {
   border-color: var(--accent);
   color: var(--accent);
-  outline: none;
+  /* Transparent, not none: Forced Colors mode draws it, so keyboard focus stays visible there. */
+  outline: 2px solid transparent;
+}
+
+/* A 24 x 24 px target (WCAG 2.2 target size) around the 16 px circle. */
+.help-btn {
+  position: relative;
+}
+.help-btn::before {
+  content: '';
+  position: absolute;
+  inset: -4px;
 }
 
 .help-btn:focus-visible {
@@ -1210,8 +1286,7 @@ details.settings-block > summary {
 .guide-step.done .guide-check {
   background: var(--success);
   border-color: var(--success);
-  /* White on the light-mode green; dark text on the bright dark-mode green (WCAG AA). */
-  color: light-dark(#fff, #0a0e12);
+  color: var(--on-success);
 }
 .guide-step.done .guide-title {
   color: var(--text-secondary);

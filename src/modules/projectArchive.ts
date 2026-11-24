@@ -16,7 +16,7 @@ import {
 import { modelKindOf } from './modelCache.js';
 import { placeName } from './sitePlaces.js';
 import { isIsoDate } from './surveyDate.js';
-import { scaleModeLabel } from './imagePreprocess.js';
+import { MAX_FINE_GRAIN_UPSCALE, scaleModeLabel } from './imagePreprocess.js';
 import {
   getPhoto,
   getPhotoResult,
@@ -84,6 +84,11 @@ interface ArchivedSerializedSession
 interface ArchivedResultRecord
   extends Omit<PhotoResultRecord, 'serializedSession'> {
   serializedSession?: ArchivedSerializedSession;
+}
+
+/** Control characters (C0, DEL, C1) replaced by spaces in untrusted display text. */
+function stripControlChars(text: string): string {
+  return text.replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ');
 }
 
 export interface ProjectArchiveV1 {
@@ -283,12 +288,70 @@ function littleEndianBytesToInt32Bytes(b: Uint8Array): Uint8Array {
 
 export const exportSiteArchive = exportProjectArchive;
 
-/** Maximum accepted archive size (bytes of JSON text). */
-export const MAX_ARCHIVE_BYTES = 1024 * 1024 * 1024;
+/**
+ * Maximum accepted v1 archive size (bytes of JSON text): just under the longest string the
+ * browser can hold (V8: 2^29 - 24 characters), so a larger file gets this message instead of
+ * failing inside the browser.
+ */
+export const MAX_ARCHIVE_BYTES = 512 * 1024 * 1024 - 64;
 /** Maximum accepted image / mask dimension in an archive. */
 export const MAX_ARCHIVE_DIMENSION = 32768;
 /** Most photos (and results) one project file may hold; far above any real survey. */
 export const MAX_ARCHIVE_PHOTOS = 10_000;
+/**
+ * Largest label mask (pixels) in an archive: the largest working image the app makes, a photo
+ * decoded at MAX_DECODE_PIXELS (siteBatch.ts) and enlarged by the fine-grain upscale.
+ */
+export const MAX_ARCHIVE_MASK_PIXELS = 16_777_216 * MAX_FINE_GRAIN_UPSCALE ** 2;
+/** Limits on the regions of interest and exclusion areas of one photo. */
+const MAX_ROI_SHAPES = 10_000;
+const MAX_ROI_POINTS = 1_000_000;
+
+/**
+ * Every `{offset, length}` byte reference in a v2 header (photos, their backups, masks and
+ * working images). The app writes each image and mask as its own part, so no two references
+ * may overlap: a crafted file could otherwise point thousands of records at one large part and
+ * multiply it in memory or in browser storage.
+ */
+function collectByteRefs(arch: Partial<ProjectArchiveV1>): Array<{ offset: number; length: number; ctx: string }> {
+  const out: Array<{ offset: number; length: number; ctx: string }> = [];
+  const add = (ref: unknown, ctx: string): void => {
+    if (!isObj(ref)) return;
+    const { offset, length } = ref as { offset?: unknown; length?: unknown };
+    if (typeof offset === 'number' && typeof length === 'number' && Number.isInteger(offset) && Number.isInteger(length) && length > 0) {
+      out.push({ offset, length, ctx });
+    }
+  };
+  const addBackup = (b: unknown, ctx: string): void => {
+    if (!isObj(b)) return;
+    add(b['imageRef'], `${ctx}.imageRef`);
+    if (isObj(b['originalBackup'])) add(b['originalBackup']['imageRef'], `${ctx}.originalBackup.imageRef`);
+  };
+  for (const [i, p] of (Array.isArray(arch.photos) ? arch.photos : []).entries()) {
+    if (!isObj(p)) continue;
+    add(p['imageRef'], `photos[${i}].imageRef`);
+    addBackup(p['originalBackup'], `photos[${i}].originalBackup`);
+    addBackup(p['rectifyBackup'], `photos[${i}].rectifyBackup`);
+  }
+  for (const [i, r] of (Array.isArray(arch.results) ? arch.results : []).entries()) {
+    if (!isObj(r) || !isObj(r['serializedSession'])) continue;
+    const ss = r['serializedSession'];
+    add(ss['workingMasksRef'], `results[${i}].workingMasksRef`);
+    if (isObj(ss['workingImage'])) add(ss['workingImage']['dataRef'], `results[${i}].dataRef`);
+  }
+  return out;
+}
+
+function checkNoOverlappingRefs(arch: Partial<ProjectArchiveV1>): void {
+  const refs = collectByteRefs(arch).sort((a, b) => a.offset - b.offset);
+  for (let i = 1; i < refs.length; i++) {
+    const prev = refs[i - 1]!;
+    const cur = refs[i]!;
+    if (cur.offset < prev.offset + prev.length) {
+      throw new ArchiveValidationError(`${cur.ctx}: bytes shared with ${prev.ctx}.`);
+    }
+  }
+}
 
 class ArchiveValidationError extends Error {
   constructor(message: string) {
@@ -321,8 +384,10 @@ const isObj = (v: unknown): v is Record<string, unknown> =>
 const isFiniteNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 const isDim = (v: unknown): v is number =>
   typeof v === 'number' && Number.isInteger(v) && v > 0 && v <= MAX_ARCHIVE_DIMENSION;
+// Ids are also used as keys of plain objects (backup and retention records): never a name that
+// would reach the object's prototype.
 const isId = (v: unknown): v is string =>
-  typeof v === 'string' && v.length > 0 && v.length <= 256;
+  typeof v === 'string' && v.length > 0 && v.length <= 256 && !DANGEROUS_KEYS.has(v);
 
 function validatePoint(p: unknown, ctx: string): void {
   if (!isObj(p) || !isFiniteNum(p['x']) || !isFiniteNum(p['y'])) {
@@ -347,18 +412,33 @@ function validateRoi(r: unknown, ctx: string): void {
   if (!Array.isArray(polys) || !Array.isArray(strokes)) {
     throw new ArchiveValidationError(`${ctx}.roiConfig requires exclusionPolygons and exclusionStrokes arrays.`);
   }
+  if (polys.length + strokes.length > MAX_ROI_SHAPES) {
+    throw new ArchiveValidationError(`${ctx}.roiConfig has more than ${MAX_ROI_SHAPES} exclusion areas.`);
+  }
+  let points = 0;
+  const count = (n: number): void => {
+    points += n;
+    if (points > MAX_ROI_POINTS) throw new ArchiveValidationError(`${ctx}.roiConfig has more than ${MAX_ROI_POINTS} points.`);
+  };
   for (const poly of polys) {
     if (!Array.isArray(poly)) throw new ArchiveValidationError(`${ctx}.roiConfig polygon must be an array.`);
+    count(poly.length);
     for (const pt of poly) validatePoint(pt, `${ctx}.roiConfig polygon`);
   }
   for (const st of strokes) {
     if (!isObj(st) || !Array.isArray(st['points']) || !isFiniteNum(st['radiusPx'])) {
       throw new ArchiveValidationError(`${ctx}.roiConfig stroke is malformed.`);
     }
+    const radius = st['radiusPx'] as number;
+    if (radius < 0 || radius > MAX_ARCHIVE_DIMENSION) {
+      throw new ArchiveValidationError(`${ctx}.roiConfig stroke radius must be in [0, ${MAX_ARCHIVE_DIMENSION}].`);
+    }
+    count((st['points'] as unknown[]).length);
     for (const pt of st['points'] as unknown[]) validatePoint(pt, `${ctx}.roiConfig stroke`);
   }
   if (r['roiPolygon'] !== undefined) {
     if (!Array.isArray(r['roiPolygon'])) throw new ArchiveValidationError(`${ctx}.roiPolygon must be an array.`);
+    count(r['roiPolygon'].length);
     for (const pt of r['roiPolygon'] as unknown[]) validatePoint(pt, `${ctx}.roiPolygon`);
   }
 }
@@ -506,6 +586,8 @@ export async function importProjectArchive(
     delete (arch.site as { surveyDate?: unknown }).surveyDate; // unreadable date: fall back to photo dates
   }
 
+  if (payload !== null) checkNoOverlappingRefs(arch);
+
   // ---- Phase 1: validate + decode everything in memory --------------------------
   // Record times from outside the app are kept within [0, now] (a future date pins a site first).
   const importNow = Date.now();
@@ -595,12 +677,16 @@ export async function importProjectArchive(
   }
 
   const decodedResults: PhotoResultRecord[] = [];
-  const maskRefsSeen = new Set<number>();
+  const resultPhotoIds = new Set<string>();
   for (const [i, ar] of arch.results.entries()) {
     const ctx = `results[${i}]`;
     if (!ar || !isId(ar.photoId)) {
       throw new Error('Invalid archive: corrupt result record.');
     }
+    if (resultPhotoIds.has(ar.photoId)) throw new ArchiveValidationError(`${ctx}: duplicate result for one photo.`);
+    resultPhotoIds.add(ar.photoId);
+    // A result for a photo not in this file is never imported: do not decode it either.
+    if (!photoIds.has(ar.photoId)) continue;
     if (!['pending', 'running', 'done', 'error'].includes(ar.status as string)) {
       throw new ArchiveValidationError(`${ctx}.status is invalid.`);
     }
@@ -609,21 +695,24 @@ export async function importProjectArchive(
     if (payload !== null && serializedSession !== undefined) {
       const ss = serializedSession as unknown as Record<string, unknown>;
       const wi = isObj(ss['workingImage']) ? ss['workingImage'] : {};
-      // Check the mask's size against its image, and that no two results share one mask, before
-      // reading any bytes: a crafted file could otherwise make every result decode one huge part.
+      // Check the mask's and image's sizes against the working image before reading any bytes
+      // (no two references overlap: checkNoOverlappingRefs), so a crafted file cannot make a
+      // result decode a huge part.
       const maskBlob = refSlice(ss['workingMasksRef'], `${ctx}.workingMasksRef`);
       if (!isDim(wi['width']) || !isDim(wi['height']) || maskBlob.size !== wi['width'] * wi['height'] * 4) {
         throw new ArchiveValidationError(`${ctx}: mask size does not match its working image.`);
       }
-      const maskOffset = (ss['workingMasksRef'] as ArchiveRef).offset;
-      if (maskOffset !== undefined && maskBlob.size > 0) {
-        if (maskRefsSeen.has(maskOffset)) throw new ArchiveValidationError(`${ctx}: mask bytes shared with another result.`);
-        maskRefsSeen.add(maskOffset);
+      if (wi['width'] * wi['height'] > MAX_ARCHIVE_MASK_PIXELS) {
+        throw new ArchiveValidationError(`${ctx}: working image larger than ${MAX_ARCHIVE_MASK_PIXELS} pixels.`);
+      }
+      const imageBlob = wi['dataRef'] !== undefined ? refSlice(wi['dataRef'], `${ctx}.dataRef`) : null;
+      if (imageBlob !== null && imageBlob.size !== 0 && imageBlob.size !== wi['width'] * wi['height'] * 4) {
+        throw new ArchiveValidationError(`${ctx}: RGBA image size does not match its working image.`);
       }
       const masks = new Uint8Array(await maskBlob.arrayBuffer());
       bytes = {
         masks: littleEndianBytesToInt32Bytes(masks),
-        image: wi['dataRef'] !== undefined ? new Uint8Array(await refSlice(wi['dataRef'], `${ctx}.dataRef`).arrayBuffer()) : new Uint8Array(0),
+        image: imageBlob !== null ? new Uint8Array(await imageBlob.arrayBuffer()) : new Uint8Array(0),
       };
     }
     const errorMessage = typeof ar.errorMessage === 'string' ? ar.errorMessage.slice(0, 2000) : undefined;
@@ -645,10 +734,11 @@ export async function importProjectArchive(
   // the page on every start-up), and no record times in the future (they pin the site first).
   let site: SiteRecord = {
     siteId: arch.site.siteId,
-    name: arch.site.name.slice(0, 1024),
+    // No control characters in names shown in reports and file names.
+    name: stripControlChars(arch.site.name).slice(0, 1024),
     // Only photos in this file, each once (a dangling or repeated id would list a missing photo).
     photoOrder: [...new Set(arch.site.photoOrder.filter((id): id is string => isId(id) && importedPhotoIds.has(id)))],
-    ...(typeof arch.site.place === 'string' ? { place: arch.site.place } : {}),
+    ...(typeof arch.site.place === 'string' ? { place: stripControlChars(arch.site.place).slice(0, 1024) } : {}),
     ...(typeof arch.site.surveyDate === 'string' ? { surveyDate: arch.site.surveyDate } : {}),
     options: sanitizeSiteOptions(arch.site.options),
     createdAt: clampRecordTime(arch.site.createdAt, importNow),

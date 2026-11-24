@@ -893,7 +893,7 @@ export function recommendModel(
     model = 'unet';
     confidence = 0.9;
     rationale =
-      'Phone/tablet detected -> U-Net 25 MB (Cellpose-SAM needs 1.4-4 GB of memory and many minutes per photo on mobile processors).';
+      'Phone/tablet detected -> U-Net 26.5 MB (Cellpose-SAM needs 1.4-4 GB of memory and many minutes per photo on mobile processors).';
   } else if (!hasWebGPU || missingF16 || lowMemory) {
     model = 'unet';
     const hwReason = !hasWebGPU
@@ -902,7 +902,7 @@ export function recommendModel(
         ? 'WebGPU adapter lacks shader-f16 support for FP16 CP-SAM'
         : `Low device memory (${deviceMemoryGB} GB)`;
     confidence = Math.min(1, Math.max(0.65, 0.9 - 0.2 * complexityScore));
-    rationale = `${hwReason} -> U-Net 25 MB recommended for fast local execution.`;
+    rationale = `${hwReason} -> U-Net 26.5 MB recommended for fast local execution.`;
   } else if (complexityScore >= 0.45) {
     model = 'cpsam';
     confidence = Math.min(1, Math.max(0.55, 0.5 + 0.5 * complexityScore));
@@ -912,7 +912,7 @@ export function recommendModel(
     model = 'unet';
     confidence = Math.min(1, Math.max(0.55, 0.95 - 0.5 * complexityScore));
     rationale =
-      'Uniform fine gravel texture detected -> Lightweight U-Net 25 MB recommended.';
+      'Uniform fine gravel texture detected -> Lightweight U-Net 26.5 MB recommended.';
   }
 
   const elapsedMs = performance.now() - t0;

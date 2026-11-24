@@ -483,31 +483,42 @@ export class CanvasViewport {
     this.renderVectorOverlay();
   }
 
+  /** Increases with every photo change: a decode that finishes after a newer one started is dropped. */
+  private photoLoadSeq = 0;
+
   async setPhotoAndSession(
     photo: PhotoRecord | null,
     session: AnalysisSession | null,
-    fitToView = false,
+    _fitToView = false,
   ): Promise<void> {
     const photoChanged = this.photo?.photoId !== photo?.photoId || this.photo?.imageBlob !== photo?.imageBlob;
     this.photo = photo;
     this.session = session;
+    // Sessions are edited in place (split, merge, tidy...), so the mask image is rebuilt on every
+    // sync; selection and inspection changes use updateToolAndOverlays alone and skip this.
     this.maskDirty = true;
 
     if (photoChanged) {
+      const seq = ++this.photoLoadSeq;
       if (this.imageBitmap) {
         this.imageBitmap.close();
         this.imageBitmap = null;
       }
+      let bitmap: ImageBitmap | null = null;
       if (photo) {
         try {
-          this.imageBitmap = await createImageBitmap(photo.imageBlob);
+          bitmap = await createImageBitmap(photo.imageBlob);
         } catch {
-          this.imageBitmap = null;
+          bitmap = null;
         }
       }
-      if (fitToView || photoChanged) {
-        this.fitToScreen();
+      // Switched to another photo while this one decoded: never draw it, and free it.
+      if (seq !== this.photoLoadSeq) {
+        bitmap?.close();
+        return;
       }
+      this.imageBitmap = bitmap;
+      this.fitToScreen();
     }
     this.render();
   }
@@ -605,8 +616,9 @@ export class CanvasViewport {
     if (!this.session) return null;
     const wi = this.session.workingImage;
     const s = wi.effectiveScaleFactor;
-    const wx = Math.round(origX * s);
-    const wy = Math.round(origY * s);
+    // Image coordinates are continuous (pixel i spans [i, i + 1)): the pixel under a point is floor().
+    const wx = Math.floor(origX * s);
+    const wy = Math.floor(origY * s);
     if (wx < 0 || wy < 0 || wx >= wi.width || wy >= wi.height) return null;
     const id = this.session.getWorkingMasks()[wy * wi.width + wx] ?? 0;
     return id > 0 ? id : null;

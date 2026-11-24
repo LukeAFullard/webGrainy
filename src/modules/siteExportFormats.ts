@@ -35,6 +35,13 @@ export function buildSiteExportMetadata(
         photoId: e.photoId,
         label: e.label,
         mmPerPx: cal?.mmPerPx ?? null,
+        // How the scale was set, and the edits made to the outlines (as in the photo exports).
+        calibrationMethod:
+          cal === undefined ? null : cal.source === 'copied' ? `copied from photo "${cal.copiedFrom ?? 'unknown'}"` : (cal.source ?? 'two-point'),
+        excludeBorder: e.session.getExcludeBorder(),
+        manualOutlineEdits: e.session.getManualEditCount(),
+        outlinesTidied: e.session.getTidyCount() > 0,
+        ...(e.faciesWeight !== undefined ? { faciesWeight: e.faciesWeight } : {}),
         originalWidth: wi.originalWidth,
         originalHeight: wi.originalHeight,
         workingWidth: wi.width,
@@ -75,6 +82,8 @@ export function buildSiteExportMetadata(
           sizeMetric: report.sizeMetric,
           unit: report.unit,
           bootstrapConfidenceLevel: report.bootstrapCi.confidenceLevel,
+          bootstrapMode: report.bootstrapMode,
+          intervalStatus: report.ciStatus,
           minBaxisPx: report.minBaxisPx,
           dCutoffCommonMm: report.dCutoffCommonMm,
         }
@@ -89,6 +98,7 @@ export function buildSiteExportMetadata(
             bootstrapSeed: options.bootstrapSeed ?? 42,
             bootstrapTwoStage: options.bootstrapTwoStage ?? false,
             wolmanPointsPerPhoto: options.wolmanPointsPerPhoto ?? 100,
+            ...(options.wolmanGridSpacingMm !== undefined ? { wolmanGridSpacingMm: options.wolmanGridSpacingMm } : {}),
             maxExcludedFraction: options.maxExcludedFraction ?? 0.1,
           },
         }
@@ -217,7 +227,7 @@ export function exportSiteSummaryCsv(
   sh.aspectRatioCounts.forEach((c, i, all) => lines.push(`shape_bin,${(i / all.length).toFixed(1)}-${((i + 1) / all.length).toFixed(1)},${c},count`));
   const fr = report.fabricRose;
   lines.push(`fabric,grain_count,${fr.grainCount},count`);
-  lines.push(`fabric,mean_axial_orientation_deg,${numCell(fr.meanAxialDeg)},deg (0 = image vertical)`);
+  lines.push(`fabric,mean_axial_orientation_deg,${numCell(fr.meanAxialDeg)},deg (0 = image vertical; counter-clockwise)`);
   lines.push(`fabric,resultant_length_R,${numCell(fr.resultantLength)},ratio`);
   lines.push(`fabric,circular_variance,${numCell(fr.circularVariance)},ratio`);
   lines.push(`fabric,rayleigh_z,${numCell(fr.rayleighZ)},stat`);

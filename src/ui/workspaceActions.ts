@@ -15,6 +15,7 @@ import type { ImageGrainsEngine } from '../modules/engine.js';
 import * as projectStorage from '../modules/projectStorage.js';
 import { isStorageFullError, type PhotoRecord, type PhotoRectifyBackup, type SiteRecord } from '../modules/projectStorage.js';
 import { buildSiteInputs, computeWorkspaceReports, effectiveRoi } from '../modules/siteWorkspace.js';
+import { inPhotoOrder } from '../modules/siteBatch.js';
 import type { SiteAnalysisOptions, SitePhotoInput } from '../modules/siteAnalysis.js';
 import {
   COMPARE_COLORS,
@@ -79,7 +80,7 @@ export interface ImageIo {
     corners: [Point2D, Point2D, Point2D, Point2D],
     physWidthMm: number,
     physHeightMm: number,
-  ): Promise<{ blob: Blob; width: number; height: number; calibration: CalibrationResult } | null>;
+  ): Promise<{ blob: Blob; width: number; height: number; calibration: CalibrationResult; blurScore?: number } | null>;
   /** Optional memory-isolated AI enhancement (2x upscale or deblur). */
   enhance?(
     image: Blob,
@@ -125,6 +126,19 @@ export interface WorkspaceDeps {
 
 export function getActiveSite(state: AppState): SiteRecord | null {
   return state.sites.find((s) => s.siteId === state.activeSiteId) ?? null;
+}
+
+/**
+ * State that refers to a photo's old grains, cleared when its image is replaced (rectify, enhance
+ * and their undo): grain ids of the old outlines would point at other grains after re-analysis.
+ */
+function clearedPhotoSelection(state: AppState, photoId: string): Pick<AppState, 'photoErrors'> & Partial<Pick<AppState, 'selectedGrainIds' | 'inspectedGrainId'>> {
+  const photoErrors = new Map(state.photoErrors);
+  photoErrors.delete(photoId);
+  return {
+    photoErrors,
+    ...(state.activePhotoId === photoId ? { selectedGrainIds: new Set<number>(), inspectedGrainId: null } : {}),
+  };
 }
 
 export function getActivePhoto(state: AppState): PhotoRecord | null {
@@ -208,6 +222,8 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
    * this tab analyses or enhances (its own writes would race); its next save still merges.
    */
   async function refreshFromStorage(notice: { siteIds: readonly string[]; photoIds: readonly string[] }): Promise<void> {
+    // Sites changed in another tab: their cached comparison inputs are stale.
+    for (const id of notice.siteIds) storedSiteInputsCache.delete(id);
     const sites = await storage.listSites();
     const st = store.getState();
     const siteId = st.activeSiteId;
@@ -222,7 +238,9 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
       return;
     }
     const siteOptions = sanitizeSiteOptions(site.options);
-    const photos = await storage.listSitePhotos(siteId);
+    // In the site's photo order, as everywhere else (bootstrap resampling and convergence
+    // depend on photo order, so the active site must match Compare Sites and batch runs).
+    const photos = inPhotoOrder(await storage.listSitePhotos(siteId), site.photoOrder);
     const changed = new Set(notice.photoIds);
     const sessions = new Map(st.sessions);
     const photoStatuses = new Map(st.photoStatuses);
@@ -331,13 +349,14 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
 
     // The previously active site may have new results: reload sites for comparison when needed.
     storedSiteInputsCache.clear();
-    const photos = await storage.listSitePhotos(siteId);
+    const site = state.sites.find((s) => s.siteId === siteId);
+    // In the site's photo order (see refreshFromStorage).
+    const photos = inPhotoOrder(await storage.listSitePhotos(siteId), site?.photoOrder ?? []);
     const sessions = new Map<string, AnalysisSession>();
     const photoStatuses = new Map<string, 'pending' | 'running' | 'done' | 'error'>();
     const photoErrors = new Map<string, string>();
     const thumbUrls = new Map<string, string>();
 
-    const site = state.sites.find((s) => s.siteId === siteId);
     const nextSiteOptions = site ? sanitizeSiteOptions(site.options) : state.siteOptions;
 
     for (const p of photos) {
@@ -368,7 +387,22 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
     await deps.syncViewport(true);
   }
 
+  /**
+   * Loads the sites (creating a first one) at start-up. Never throws: if browser storage cannot
+   * be opened (private browsing, a storage policy, a full disk, damaged data), says so in
+   * `storageOpenError` (shown with a retry button) instead of leaving an empty workspace.
+   */
   async function createDefaultOrLoadSites(): Promise<void> {
+    try {
+      await loadOrCreateSites();
+      if (store.getState().storageOpenError !== null) store.setState({ storageOpenError: null });
+    } catch (err) {
+      console.error('Could not open browser storage', err);
+      store.setState({ storageOpenError: err instanceof Error ? `${err.name}: ${err.message}` : String(err) });
+    }
+  }
+
+  async function loadOrCreateSites(): Promise<void> {
     // Remove expired sites before any site is opened (opening one restarts its clock).
     await purgeExpiredSites().catch(() => undefined);
     let sites = await storage.listSites();
@@ -433,6 +467,7 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
       } catch (err) {
         store.setState({
           statusMessage: `Failed to import ${file.name}: ${err instanceof Error ? err.message : String(err)}`,
+          ...fullNotice(err, file.name),
         });
       }
       if (performance.now() >= taskDeadline) {
@@ -731,12 +766,17 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
     const site = getActiveSite(st);
     if (!site || st.batchRunning || enhancing) return;
     const ids = new Set(photoIds);
-    for (const id of ids) await storage.deletePhoto(id);
-    await storage.saveSite({ ...site, photoOrder: site.photoOrder.filter((id) => !ids.has(id)), updatedAt: Date.now() });
-    deps.markSiteChanged(site.siteId);
-    const sites = await storage.listSites();
-    store.setState({ sites, selectedPhotoIds: new Set(), statusMessage: `Deleted ${ids.size} photo${ids.size === 1 ? '' : 's'}.` });
-    await loadSiteData(site.siteId);
+    try {
+      for (const id of ids) await storage.deletePhoto(id);
+      await storage.saveSite({ ...site, photoOrder: site.photoOrder.filter((id) => !ids.has(id)), updatedAt: Date.now() });
+      deps.markSiteChanged(site.siteId);
+      const sites = await storage.listSites();
+      store.setState({ sites, selectedPhotoIds: new Set(), statusMessage: `Deleted ${ids.size} photo${ids.size === 1 ? '' : 's'}.` });
+    } catch (err) {
+      store.setState({ statusMessage: `Could not delete the photo${ids.size === 1 ? '' : 's'}: ${err instanceof Error ? err.message : String(err)}` });
+    }
+    // Show what storage now holds (also after a partial failure).
+    await loadSiteData(site.siteId).catch(() => undefined);
   }
 
   /** Stops the running batch (and, for "Analyse all sites", the whole job). */
@@ -744,10 +784,6 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
     batchAbortController?.abort();
   }
 
-  /**
-   * A save to browser storage failed: say so plainly (the change is shown but not stored),
-   * and when storage is full, show the storage-full notice with what to do.
-   */
   /**
    * Replaces the active photo's ROI / exclusion areas with `update(previous)`, applies them to its
    * results, saves the photo and refreshes the statistics and viewport.
@@ -765,6 +801,17 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
     void deps.syncViewport(false);
   }
 
+  /** The storage-full notice for a failed step, when the failure was a full browser storage. */
+  function fullNotice(err: unknown, what: string): Partial<AppState> {
+    return isStorageFullError(err)
+      ? { storageFullNotice: `Browser storage is full: ${what} could not be saved. Download results now, then free space.` }
+      : {};
+  }
+
+  /**
+   * A save to browser storage failed: say so plainly (the change is shown but not stored),
+   * and when storage is full, show the storage-full notice with what to do.
+   */
   function reportSaveFailure(err: unknown, what: string): void {
     const full = isStorageFullError(err);
     const message = full
@@ -846,6 +893,7 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
       store.setState({
         pendingCalibrationPoints: [],
         statusMessage: `Calibration failed: ${err instanceof Error ? err.message : String(err)}`,
+        ...fullNotice(err, 'the scale'),
       });
       await deps.syncViewport(false);
       return;
@@ -875,6 +923,7 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
     } catch (err) {
       store.setState({
         statusMessage: `Calibrated ${photo.label} (${cal.mmPerPx.toFixed(4)} mm/px), but could not save to browser storage: ${err instanceof Error ? err.message : String(err)}`,
+        ...fullNotice(err, `the scale of ${photo.label}`),
       });
     }
   }
@@ -922,9 +971,10 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
       };
       // The new image is a different raster: drop the current-enhancement record (its scale
       // factor no longer applies), but keep every step in the provenance history.
-      const { enhancement: _dropEnh, ...restMeta } = oldMeta ?? {};
+      const { enhancement: _dropEnh, blurScore: _oldBlur, ...restMeta } = oldMeta ?? {};
       const nextMeta: SitePhotoMetadata = {
         ...restMeta,
+        ...(rectified.blurScore !== undefined ? { blurScore: rectified.blurScore } : {}),
         processingHistory: [
           ...photoProcessingHistory(oldMeta),
           {
@@ -971,6 +1021,7 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
         thumbUrls: nextThumbs,
         sessions: nextSessions,
         photoStatuses: nextStatuses,
+        ...clearedPhotoSelection(latestState, latestPhoto.photoId),
         pendingRectifyPoints: [],
         activeTool: 'inspect',
         statusMessage: `Rectified ${latestPhoto.label} (${rectified.width}×${rectified.height}px, ${cal.mmPerPx.toFixed(4)} mm/px). Ready to re-analyse. Undo rectify restores the original.`,
@@ -982,6 +1033,7 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
       store.setState({
         pendingRectifyPoints: [],
         statusMessage: `Rectification failed: ${err instanceof Error ? err.message : String(err)}`,
+        ...fullNotice(err, 'the rectified photo'),
       });
       await deps.syncViewport(false);
     }
@@ -1030,6 +1082,7 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
         thumbUrls: nextThumbs,
         sessions: nextSessions,
         photoStatuses: nextStatuses,
+        ...clearedPhotoSelection(latestState, photo.photoId),
         pendingRectifyPoints: [],
         statusMessage: `Undid the rectification of ${photo.label}: back to the original ${backup.width}×${backup.height}px photo${backup.calibration ? ' and its scale' : ''}. Ready to analyse.`,
       });
@@ -1037,7 +1090,7 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
       deps.onStorageChanged();
       await deps.syncViewport(true);
     } catch (err) {
-      store.setState({ statusMessage: `Undo rectify failed: ${err instanceof Error ? err.message : String(err)}` });
+      store.setState({ statusMessage: `Undo rectify failed: ${err instanceof Error ? err.message : String(err)}`, ...fullNotice(err, 'the restored photo') });
     }
   }
 
@@ -1134,6 +1187,7 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
         thumbUrls: nextThumbs,
         sessions: nextSessions,
         photoStatuses: nextStatuses,
+        ...clearedPhotoSelection(latestState, latestPhoto.photoId),
         activeTool: 'inspect',
         statusMessage: `Enhanced ${latestPhoto.label} (${enhanced.enhancement.modelName}, ${enhanced.width}×${enhanced.height}px). Ready to analyse.`,
       });
@@ -1143,6 +1197,7 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
     } catch (err) {
       store.setState({
         statusMessage: `Enhancement failed: ${err instanceof Error ? err.message : String(err)}`,
+        ...fullNotice(err, 'the enhanced photo'),
       });
     } finally {
       enhancing = false;
@@ -1193,6 +1248,7 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
         thumbUrls: nextThumbs,
         sessions: nextSessions,
         photoStatuses: nextStatuses,
+        ...clearedPhotoSelection(latestState, photo.photoId),
         statusMessage: `Reverted ${photo.label} to original (${orig.width}×${orig.height}px). Ready to analyse.`,
       });
       recomputeReports();
@@ -1201,6 +1257,7 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
     } catch (err) {
       store.setState({
         statusMessage: `Revert failed: ${err instanceof Error ? err.message : String(err)}`,
+        ...fullNotice(err, 'the original photo'),
       });
     }
   }

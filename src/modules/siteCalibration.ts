@@ -50,6 +50,26 @@ export function validateSiteCalibration(
     options?.allowEqualPhotoFallback === true &&
     options?.poolingMode === 'equal-photo';
 
+  // An explicit request to work in pixels wins even when every photo has a scale (e.g. to
+  // compare a calibrated site with an uncalibrated one taken with the same camera and height).
+  if (requestedUnit === 'px') {
+    return {
+      valid: true,
+      unit: 'px',
+      calibratedPhotoIds,
+      uncalibratedPhotoIds,
+      warnings:
+        uncalibratedPhotoIds.length > 0 && calibratedPhotoIds.length > 0
+          ? [
+              `Mixed calibration detected (${names(uncalibratedPhotoIds)} uncalibrated): pooling in pixels as requested; results may be biased if camera heights differ.`,
+            ]
+          : uncalibratedPhotoIds.length > 0
+            ? ['Photos are uncalibrated; pooling in pixel units (physical mm metrics unavailable).']
+            : ['Pooling in pixels as requested (mm scales ignored); results assume the same camera and height.'],
+      message: 'Pixel-unit pooling requested.',
+    };
+  }
+
   if (uncalibratedPhotoIds.length === 0) {
     return {
       valid: true,
@@ -62,7 +82,7 @@ export function validateSiteCalibration(
   }
 
   if (calibratedPhotoIds.length === 0) {
-    if (requestedUnit === 'px' || allowFallback) {
+    if (allowFallback) {
       return {
         valid: true,
         unit: 'px',
@@ -85,14 +105,14 @@ export function validateSiteCalibration(
   }
 
   // Mixed calibration state
-  if (requestedUnit === 'px' || allowFallback) {
+  if (allowFallback) {
     return {
       valid: true,
       unit: 'px',
       calibratedPhotoIds,
       uncalibratedPhotoIds,
       warnings: [
-        `Mixed calibration detected (${uncalibratedPhotoIds.join(', ')} uncalibrated): using pixel/normalized fallback; results may be biased if camera heights differ.`,
+        `Mixed calibration detected (${names(uncalibratedPhotoIds)} uncalibrated): using pixel/normalized fallback; results may be biased if camera heights differ.`,
       ],
       message: 'Mixed calibration bypassed via pixel/equal-photo fallback.',
     };

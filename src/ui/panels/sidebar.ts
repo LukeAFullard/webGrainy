@@ -1,5 +1,5 @@
 /** Left panel: getting-started guide, site, photo list and analysis settings. */
-import { workingScaleFor } from '../../modules/imagePreprocess.js';
+import { analysisWorkingScale } from '../../modules/siteBatch.js';
 import { logicalCores, wasmThreadsFor } from '../../modules/onnxInference.js';
 import { backupStatus, readBackupRecords } from '../backup.js';
 import { RETENTION_CHOICES, siteExpiry, siteLastUsed, siteRetention } from '../../modules/retention.js';
@@ -15,10 +15,13 @@ import { getPhotoQualityWarnings } from '../../modules/photoQuality.js';
 import { photoSummary, visiblePhotos } from '../photoList.js';
 import { esc } from './html.js';
 
-/** Effective working-resolution scale factor for a photo under the selected Scale Mode. */
-export function workingScaleFactorFor(width: number, height: number, scaleMode: ScaleMode): number {
-  // The analysis's own rule (imagePreprocess.workingScaleFor).
-  return workingScaleFor(width, height, scaleMode);
+/**
+ * Effective working-resolution scale factor for a photo under the selected Scale Mode: the
+ * analysis's own rule, including the decode limit for very large photos and the photo's
+ * fine-grain upscale (siteBatch.analysisWorkingScale).
+ */
+export function workingScaleFactorFor(width: number, height: number, scaleMode: ScaleMode, fineGrainUpscale?: number): number {
+  return analysisWorkingScale(width, height, scaleMode, fineGrainUpscale);
 }
 
 export interface StorageInfo {
@@ -247,7 +250,7 @@ export function renderSidebarHtml(state: AppState, view: SidebarView): string {
             const activePhoto = getActivePhoto(state);
             const cal = activePhoto?.calibration;
             if (!activePhoto || !cal || !Number.isFinite(cal.mmPerPx) || cal.mmPerPx <= 0) return '';
-            const wScale = workingScaleFactorFor(activePhoto.width, activePhoto.height, p.scaleMode);
+            const wScale = workingScaleFactorFor(activePhoto.width, activePhoto.height, p.scaleMode, activePhoto.analysisConfig?.fineGrainUpscale);
             const mmPerWorkPx = cal.mmPerPx / wScale;
             const minSizeMm2 = p.minSize * mmPerWorkPx * mmPerWorkPx;
             const eqDiamMm = 2 * Math.sqrt(minSizeMm2 / Math.PI);
@@ -391,6 +394,12 @@ export function retentionBannerHtml(state: AppState, now = Date.now(), since = r
       ${days > 0 ? 'After that the site is removed from this browser. ' : ''}Use <em>Download results</em> (Site panel) to keep your results on your computer. The browser may also clear its storage sooner on its own (Safari after 7 days without a visit, unless the app is installed).
       <div class="row" style="margin-top:6px;"><button type="button" class="btn btn-xs" data-action="dismiss-retention-explained">Got it</button> ${helpButton('backup')}</div>
     </div>`);
+  }
+  if (state.storageOpenError) {
+    parts.push(`<div class="warning-banner" role="alert"><strong>Browser storage could not be opened, so your sites cannot be loaded or saved.</strong>
+      This happens in private / incognito windows, when the browser or an organisation policy blocks site storage, when the disk is full, or when the stored data is damaged.
+      Try a normal window, check the browser's site-data settings and free disk space, then try again. <span class="summary-note">(${esc(state.storageOpenError)})</span>
+      <div class="row" style="margin-top:6px;"><button type="button" class="btn btn-xs btn-primary" data-action="retry-storage">Try again</button></div></div>`);
   }
   if (state.storageFullNotice) {
     parts.push(`<div class="warning-banner" role="alert"><strong>Browser storage is full.</strong> ${esc(state.storageFullNotice)}

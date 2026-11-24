@@ -35,8 +35,9 @@ export function readBackupRecords(store: KeyValueStore | null = storage()): Back
   try {
     const raw = store?.getItem(BACKUP_KEY);
     const parsed: unknown = raw ? JSON.parse(raw) : {};
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
-    const out: BackupRecords = {};
+    // No prototype: a site id such as "__proto__" or "constructor" is then an ordinary key.
+    const out: BackupRecords = Object.create(null) as BackupRecords;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return out;
     for (const [id, v] of Object.entries(parsed as Record<string, unknown>)) {
       if (!v || typeof v !== 'object') continue;
       const r = v as Record<string, unknown>;
@@ -48,7 +49,7 @@ export function readBackupRecords(store: KeyValueStore | null = storage()): Back
     }
     return out;
   } catch {
-    return {};
+    return Object.create(null) as BackupRecords;
   }
 }
 

@@ -346,11 +346,20 @@ export async function downloadModel(
   const normalizedBase = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
   const url = `${normalizedBase}${fileName}`;
 
-  const response = await fetch(url, {
-    signal,
-    credentials: 'omit',
-    referrerPolicy: 'no-referrer',
-  });
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      signal,
+      credentials: 'omit',
+      referrerPolicy: 'no-referrer',
+    });
+  } catch (err) {
+    if (signal?.aborted) throw createAbortError(signal.reason);
+    // fetch() rejects with a bare "TypeError: Failed to fetch" when there is no connection.
+    throw new Error(
+      `Could not download the model "${modelId}": no connection to ${new URL(url).host} (offline, or blocked by a firewall or proxy). Connect and try again. (${err instanceof Error ? err.message : String(err)})`,
+    );
+  }
   if (!response.ok) {
     throw new Error(
       `Failed to download model "${modelId}" from ${url}: HTTP ${response.status} ${response.statusText}`,
@@ -368,6 +377,17 @@ export async function downloadModel(
       contentEncoding.trim().length > 0 &&
       contentEncoding.trim().toLowerCase() !== 'identity',
   );
+
+  // The pinned size is known: refuse a larger response before allocating or reading it all
+  // (a wrong Content-Length or an endless stream would otherwise exhaust memory before the
+  // SHA-256 check runs).
+  const maxBytes = integrityEnforced ? MODEL_INTEGRITY[modelId].sizeBytes : Number.POSITIVE_INFINITY;
+  const tooLarge = (n: number): Error =>
+    new Error(`Download of "${modelId}" is larger than the pinned model (${n} > ${maxBytes} bytes): wrong file or a broken proxy.`);
+  if (!isCompressed && totalBytes > maxBytes) {
+    void response.body?.cancel().catch(() => {});
+    throw tooLarge(totalBytes);
+  }
 
   const startTimeMs = performance.now();
   let modelBuffer: ArrayBuffer;
@@ -403,8 +423,8 @@ export async function downloadModel(
     let loadedBytes = 0;
     // Stream straight into a preallocated buffer when the size is known, avoiding a
     // transient 2x copy (~1.2 GB peak for the 617 MB CP-SAM model).
-    let prealloc: Uint8Array<ArrayBuffer> | null =
-      !isCompressed && totalBytes > 0 ? new Uint8Array(totalBytes) : null;
+    const preallocBytes = !isCompressed && totalBytes > 0 ? totalBytes : Number.isFinite(maxBytes) ? maxBytes : 0;
+    let prealloc: Uint8Array<ArrayBuffer> | null = preallocBytes > 0 ? new Uint8Array(preallocBytes) : null;
 
     const onAbort = () => {
       void reader.cancel().catch(() => {});
@@ -429,6 +449,10 @@ export async function downloadModel(
         }
 
         if (value && value.byteLength > 0) {
+          if (loadedBytes + value.byteLength > maxBytes) {
+            await reader.cancel().catch(() => {});
+            throw tooLarge(loadedBytes + value.byteLength);
+          }
           if (prealloc !== null && loadedBytes + value.byteLength <= prealloc.byteLength) {
             prealloc.set(value, loadedBytes);
           } else {
@@ -476,8 +500,10 @@ export async function downloadModel(
     }
 
     modelBuffer =
-      prealloc !== null && loadedBytes === prealloc.byteLength
-        ? prealloc.buffer
+      prealloc !== null
+        ? loadedBytes === prealloc.byteLength
+          ? prealloc.buffer
+          : prealloc.slice(0, loadedBytes).buffer
         : concatChunks(chunks, loadedBytes);
   }
 

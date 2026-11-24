@@ -391,9 +391,18 @@ export function comparisonWarnings(sites: readonly ComparedSite[]): string[] {
 }
 
 /** Comparison table and pairwise tests as `section,site,metric,value,unit` CSV. */
-export function comparisonCsv(sites: readonly ComparedSite[], metadata: Record<string, unknown>): string {
+export function comparisonCsv(allSites: readonly ComparedSite[], metadata: Record<string, unknown>): string {
   const lines = ['section,site,metric,value,unit'];
   for (const [k, v] of Object.entries(metadata)) lines.push(`metadata,,${csvCell(k)},${csvCell(typeof v === 'string' ? v : JSON.stringify(v))},meta`);
+  // As on screen and in the comparison report (buildComparisonView): when sites in mm and in px
+  // are mixed, only the mm sites are compared, so the Holm adjustment covers the same pairs.
+  const mixedUnits = new Set(allSites.filter((s) => s.report !== null).map((s) => s.report!.unit)).size > 1;
+  const sites = mixedUnits ? allSites.filter((s) => s.report === null || s.report.unit === 'mm') : allSites;
+  for (const s of allSites) {
+    if (mixedUnits && s.report !== null && s.report.unit !== 'mm') {
+      lines.push(`site,${csvCell(s.name)},status,${csvCell('Not compared: in pixels while other sites are in mm (calibrate it, or compare in pixels)')},text`);
+    }
+  }
   for (const s of sites) {
     const name = csvCell(s.name);
     const r = s.report;
@@ -412,6 +421,7 @@ export function comparisonCsv(sites: readonly ComparedSite[], metadata: Record<s
       ['ci_status', r.ciStatus, 'label'],
       ['size_metric', r.sizeMetric, 'metric'],
       ['size_cutoff', r.dCutoffCommonMm, 'mm'],
+      ['confidence_level', r.bootstrapCi.confidenceLevel, 'fraction'],
       ['D16', r.psd.D16, u],
       ['D16_ci_lo', r.bootstrapCi.lower.D16, u],
       ['D16_ci_hi', r.bootstrapCi.upper.D16, u],
@@ -430,7 +440,7 @@ export function comparisonCsv(sites: readonly ComparedSite[], metadata: Record<s
       ['folk_ward_kurtosis', r.folkWard?.kurtosisPhi, 'phi'],
       ['effective_grain_count', r.adequacy.effectiveGrainCount, 'count'],
       ['median_aspect_ratio_b_over_a', r.shape.medianAspectRatio, 'ratio'],
-      ['fabric_mean_orientation', r.fabricRose.meanAxialDeg, 'deg (0 = image vertical)'],
+      ['fabric_mean_orientation', r.fabricRose.meanAxialDeg, 'deg (0 = image vertical; counter-clockwise)'],
       ['fabric_resultant_length_R', r.fabricRose.resultantLength, 'ratio'],
       ['fabric_rayleigh_p', r.fabricRose.rayleighP ?? undefined, 'p'],
       ['sand_pct', r.wentworth?.sandPct, '%'],

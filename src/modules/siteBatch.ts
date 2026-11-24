@@ -2,8 +2,8 @@
  * Analysing the pending photos of a site one after another (decode within the pixel limit,
  * run the engine, save each result), with cancellation and storage-full handling.
  */
-import type { AnalysisConfig } from '../types/index.js';
-import type { ImageBufferLike } from './imagePreprocess.js';
+import type { AnalysisConfig, ScaleMode } from '../types/index.js';
+import { workingScaleFor, type ImageBufferLike } from './imagePreprocess.js';
 import type { AnalysisSession, ImageGrainsEngine } from './pipelineController.js';
 import { getPhotoResult, getSite, listSitePhotos, savePhotoResult, type PhotoRecord, type ProjectStorageOptions } from './projectDb.js';
 
@@ -60,20 +60,47 @@ function isAbortError(err: unknown): boolean {
  */
 export const MAX_DECODE_PIXELS = 16_777_216;
 
-/** Decodes `blob`, shrinking it (aspect kept) when it exceeds MAX_DECODE_PIXELS. */
+/**
+ * Working-image pixels per photo pixel that the next analysis of a `width` × `height` photo will
+ * use: the decode limit (MAX_DECODE_PIXELS, as in decodeWithinPixelLimit), then the scale mode
+ * (workingScaleFor, applied to the decoded size), then the fine-grain upscale. For converting
+ * settings given in working pixels (Min size) to and from mm before analysing.
+ */
+export function analysisWorkingScale(width: number, height: number, scaleMode: ScaleMode, fineGrainUpscale?: number): number {
+  const px = width * height;
+  const k = px > MAX_DECODE_PIXELS ? Math.sqrt(MAX_DECODE_PIXELS / px) : 1;
+  const dw = Math.max(1, Math.floor(width * k));
+  const dh = Math.max(1, Math.floor(height * k));
+  const up = fineGrainUpscale !== undefined && Number.isFinite(fineGrainUpscale) && fineGrainUpscale > 1 ? fineGrainUpscale : 1;
+  return (dw / width) * workingScaleFor(dw, dh, scaleMode) * up;
+}
+
+/**
+ * Decodes `blob`, shrinking it (aspect kept) when it exceeds MAX_DECODE_PIXELS. With the photo's
+ * known size (`knownSize`, as stored on import), a large photo is decoded straight at the smaller
+ * size, instead of once at full size (192 MB for 48 MP) just to read its dimensions.
+ */
 export async function decodeWithinPixelLimit(
   blob: Blob,
   createBitmap: (b: Blob, opts?: ImageBitmapOptions) => Promise<ImageBitmap>,
   maxPixels = MAX_DECODE_PIXELS,
+  knownSize?: { width: number; height: number },
 ): Promise<ImageBitmap> {
+  const resized = (width: number, height: number): Promise<ImageBitmap> => {
+    const k = Math.sqrt(maxPixels / (width * height));
+    const resizeWidth = Math.max(1, Math.floor(width * k));
+    const resizeHeight = Math.max(1, Math.floor(height * k));
+    return createBitmap(blob, { resizeWidth, resizeHeight, resizeQuality: 'high' });
+  };
+  if (knownSize && knownSize.width > 0 && knownSize.height > 0 && knownSize.width * knownSize.height > maxPixels) {
+    return resized(knownSize.width, knownSize.height);
+  }
   const bmp = await createBitmap(blob);
   const px = bmp.width * bmp.height;
   if (px <= maxPixels) return bmp;
-  const k = Math.sqrt(maxPixels / px);
-  const resizeWidth = Math.max(1, Math.floor(bmp.width * k));
-  const resizeHeight = Math.max(1, Math.floor(bmp.height * k));
+  const { width, height } = bmp;
   bmp.close();
-  return createBitmap(blob, { resizeWidth, resizeHeight, resizeQuality: 'high' });
+  return resized(width, height);
 }
 
 /**
@@ -136,13 +163,13 @@ export async function runSiteBatch(
 
   const decode =
     opts.decodeImage ??
-    (async (blob: Blob): Promise<ImageBitmap> => {
+    (async (blob: Blob, photo?: { width: number; height: number }): Promise<ImageBitmap> => {
       if (typeof globalThis.createImageBitmap !== 'function') {
         throw new Error(
           'createImageBitmap is not available in this environment; provide decodeImage option.',
         );
       }
-      return decodeWithinPixelLimit(blob, globalThis.createImageBitmap.bind(globalThis));
+      return decodeWithinPixelLimit(blob, globalThis.createImageBitmap.bind(globalThis), MAX_DECODE_PIXELS, photo);
     });
 
   const completedPhotoIds: string[] = [];

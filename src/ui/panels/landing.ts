@@ -629,6 +629,13 @@ export function renderLandingHtml(state: AppState, view: LandingView): string {
               ? `<span class="status-pill ok" title="Application and runtime are cached for offline use"><span class="dot" aria-hidden="true"></span>Offline Ready</span>`
               : ''
           }
+          ${
+            state.staleBuild
+              ? `<button type="button" class="btn btn-sm btn-primary" data-action="reload-stale" title="A newer version was installed in another tab. Reload to use it (your data is kept).">Reload now</button>`
+              : state.updateReady
+                ? `<button type="button" class="btn btn-sm btn-primary" data-action="apply-update" title="A new version is installed. Reload to use it (your data is kept).">Reload to update</button>`
+                : ''
+          }
           <button type="button" class="btn btn-sm" data-open-modal="models">Models${cachedCount > 0 ? ` (${cachedCount})` : ''}</button>
           <button type="button" class="btn btn-sm" data-open-help="">Help</button>
           <button type="button" class="btn btn-sm btn-primary" data-action="enter-workspace">Launch Workspace</button>
@@ -755,7 +762,7 @@ export function renderLandingHtml(state: AppState, view: LandingView): string {
           <article class="capability-card">
             <h3>Interactive Outline Editor</h3>
             <p>
-              Review stones with an optional 2&times;/4&times; magnifier, jump straight to the largest or flagged grains, and split, merge, delete, or draw outlines with instant Undo and Redo.
+              Review stones with an optional 2&times; magnifier, jump straight to the largest or flagged grains, and split, merge, delete, or draw outlines with instant Undo and Redo.
             </p>
             <footer>Split · Merge · Delete · Add · Largest / Flagged Review</footer>
           </article>
@@ -771,7 +778,7 @@ export function renderLandingHtml(state: AppState, view: LandingView): string {
           <article class="capability-card">
             <h3>Tables, Vector Outlines &amp; Project Backups</h3>
             <p>
-              Export per-grain and summary CSV/JSON tables, GeoJSON, GeoPackage (ArcGIS Pro, QGIS) and SVG outlines, 16-bit and 32-bit PNG label masks, SVG/PNG charts, a printable one-page report, or a <code>.webgrainy</code> project archive.
+              Export per-grain and summary CSV/JSON tables, GeoJSON, GeoPackage (ArcGIS Pro, QGIS) and SVG outlines, 16-bit and 32-bit PNG label masks, SVG/PNG charts, a printable site report, or a <code>.webgrainy</code> project archive.
             </p>
             <footer>CSV · JSON · GeoJSON · GeoPackage · SVG · PNG Masks · Printable Report</footer>
           </article>

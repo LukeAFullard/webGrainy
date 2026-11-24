@@ -65,7 +65,7 @@ for (const [i, row] of rows.entries()) {
   if (existsSync(jsonPath)) continue; // resumable
   const img = await decode(join(ROOT, '.cache', 'ig2', row.image.replaceAll('/', '__'))); // fetch_ig2_files.py flattens paths
   const t0 = Date.now();
-  const session = await engine.analyzeImage(img, { model: kind, cpsamWeights: 'int8', inferencePipeline: 'cellpose', scaleMode: 'auto' });
+  const session = await engine.analyzeImage(img, { model: kind, cpsamWeights: 'int8', scaleMode: 'auto' });
   const stats = session.getStats('bAxis', { minBaxisPx: 15 });
   const wi = session.workingImage;
   const masks = resizeLabelsNearest(session.getWorkingMasks(), wi.width, wi.height, wi.originalWidth, wi.originalHeight);

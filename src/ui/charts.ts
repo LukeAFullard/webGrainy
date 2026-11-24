@@ -35,6 +35,8 @@ export interface PsdChartInput {
   xAxis: 'mm' | 'phi';
   title: string;
   subtitle?: string;
+  /** Confidence level of `ciLower` / `ciUpper` (default 0.95), for the legend. */
+  ciLevel?: number;
   ciLower?: PsdPercentiles;
   ciUpper?: PsdPercentiles;
   perPhotoCurves?: Array<{ label: string; D16: number; D50: number; D84: number }>;
@@ -74,7 +76,7 @@ export function renderPsdChartSvg(input: PsdChartInput): string {
   }
 
   if (vals.length === 0) {
-    return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg"><rect width="${W}" height="${H}" fill="${bg}"/><text x="${W / 2}" y="${H / 2}" text-anchor="middle" fill="${muted}" font-size="12" font-family="system-ui, sans-serif">No valid grains to plot PSD</text></svg>`;
+    return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="No valid grains to plot PSD"><rect width="${W}" height="${H}" fill="${bg}"/><text x="${W / 2}" y="${H / 2}" text-anchor="middle" fill="${muted}" font-size="12" font-family="system-ui, sans-serif">No valid grains to plot PSD</text></svg>`;
   }
 
   const usePhi = input.unit === 'mm' && input.xAxis === 'phi';
@@ -99,7 +101,7 @@ export function renderPsdChartSvg(input: PsdChartInput): string {
     padT + plotH - (pct / 100) * plotH;
 
   const parts: string[] = [];
-  parts.push(`<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`);
+  parts.push(`<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Cumulative grain-size distribution (percent finer by size)">`);
   parts.push(`<rect width="${W}" height="${H}" fill="${bg}" />`);
 
   // Wentworth grade shading when in mm
@@ -193,7 +195,7 @@ export function renderPsdChartSvg(input: PsdChartInput): string {
     }
   }
 
-  // 95% Bootstrap CI ribbon
+  // Bootstrap CI ribbon
   let drewCi = false;
   if (input.ciLower && input.ciUpper) {
     const loPts: string[] = [];
@@ -286,7 +288,7 @@ export function renderPsdChartSvg(input: PsdChartInput): string {
     },
   ];
   if (drewCi) {
-    lineItems.push({ sym: (x, y) => `<rect x="${x}" y="${y - 7}" width="12" height="8" fill="rgba(59, 158, 255, 0.22)" />`, text: '95% CI (bootstrap)' });
+    lineItems.push({ sym: (x, y) => `<rect x="${x}" y="${y - 7}" width="12" height="8" fill="rgba(59, 158, 255, 0.22)" />`, text: `${Math.round((input.ciLevel ?? 0.95) * 100)}% CI (bootstrap)` });
   }
   if (drawPhotoCurves) {
     lineItems.push({ sym: (x, y) => `<line x1="${x}" y1="${y - 3}" x2="${x + 12}" y2="${y - 3}" stroke="rgba(159, 176, 192, 0.7)" stroke-width="1" />`, text: 'Each photo (D16–D50–D84)' });
@@ -322,7 +324,7 @@ export function renderPsdChartSvg(input: PsdChartInput): string {
     y += 14;
   }
   H = Math.max(240, y - 4);
-  parts[0] = `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`;
+  parts[0] = `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Cumulative grain-size distribution (percent finer by size)">`;
   parts[1] = `<rect width="${W}" height="${H}" fill="${bg}" />`;
 
   parts.push('</svg>');
@@ -332,6 +334,7 @@ export function renderPsdChartSvg(input: PsdChartInput): string {
 export function renderConvergenceChartSvg(
   points: readonly ConvergencePoint[],
   lightTheme = false,
+  confidenceLevel = 0.95,
 ): string {
   const W = 400;
   const H = 180;
@@ -346,12 +349,12 @@ export function renderConvergenceChartSvg(
   const muted = lightTheme ? '#4a5568' : '#8fa0b2';
 
   if (points.length === 0) {
-    return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg"><rect width="${W}" height="${H}" fill="${bg}"/><text x="${W / 2}" y="${H / 2}" text-anchor="middle" fill="${muted}" font-size="11" font-family="system-ui, sans-serif">Add &amp; analyze photos to view 1..N convergence</text></svg>`;
+    return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Add &amp; analyze photos to view 1..N convergence"><rect width="${W}" height="${H}" fill="${bg}"/><text x="${W / 2}" y="${H / 2}" text-anchor="middle" fill="${muted}" font-size="11" font-family="system-ui, sans-serif">Add &amp; analyze photos to view 1..N convergence</text></svg>`;
   }
 
   const allY = points.flatMap((p) => [p.D16, p.D50, p.D84, p.ciLoD50, p.ciHiD50]).filter((v) => Number.isFinite(v) && v > 0);
   if (allY.length === 0) {
-    return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg"><rect width="${W}" height="${H}" fill="${bg}"/><text x="${W / 2}" y="${H / 2}" text-anchor="middle" fill="${muted}" font-size="11" font-family="system-ui, sans-serif">No counted grains yet: convergence not available</text></svg>`;
+    return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="No counted grains yet: convergence not available"><rect width="${W}" height="${H}" fill="${bg}"/><text x="${W / 2}" y="${H / 2}" text-anchor="middle" fill="${muted}" font-size="11" font-family="system-ui, sans-serif">No counted grains yet: convergence not available</text></svg>`;
   }
   const yMin = Math.max(0, Math.min(...allY) * 0.85);
   const yMax = Math.max(...allY, yMin + 1) * 1.1;
@@ -362,9 +365,9 @@ export function renderConvergenceChartSvg(
     padT + plotH - ((val - yMin) / (yMax - yMin)) * plotH;
 
   const parts: string[] = [];
-  parts.push(`<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`);
+  parts.push(`<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="D16, D50 and D84 of the pooled site as photos are added, with confidence intervals">`);
   parts.push(`<rect width="${W}" height="${H}" fill="${bg}" />`);
-  parts.push(`<text x="${padL}" y="14" fill="${fg}" font-size="10.5" font-weight="700" font-family="system-ui, sans-serif">Cumulative Convergence (1..N Photos): D16 / D50 ± 95% CI / D84</text>`);
+  parts.push(`<text x="${padL}" y="14" fill="${fg}" font-size="10.5" font-weight="700" font-family="system-ui, sans-serif">Cumulative Convergence (1..N Photos): D16 / D50 ± ${Math.round(confidenceLevel * 100)}% CI / D84</text>`);
 
   // CI ribbon for D50 (through the photo counts that have a CI; large sites compute it at checkpoints)
   const ciIdx = points.map((p, i) => (Number.isFinite(p.ciLoD50) && Number.isFinite(p.ciHiD50) ? i : -1)).filter((i) => i >= 0);
@@ -428,14 +431,14 @@ export function renderJackknifeChartSvg(
   const axisCol = lightTheme ? '#cbd5e1' : '#3b4b5c';
 
   if (items.length === 0) {
-    return `<svg viewBox="0 0 ${W} 90" xmlns="http://www.w3.org/2000/svg"><rect width="${W}" height="90" fill="${bg}"/><text x="${W / 2}" y="48" text-anchor="middle" fill="${muted}" font-size="11" font-family="system-ui, sans-serif">Requires ≥ 2 included photos for Jackknife sensitivity</text></svg>`;
+    return `<svg viewBox="0 0 ${W} 90" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Requires ≥ 2 included photos for Jackknife sensitivity"><rect width="${W}" height="90" fill="${bg}"/><text x="${W / 2}" y="48" text-anchor="middle" fill="${muted}" font-size="11" font-family="system-ui, sans-serif">Requires ≥ 2 included photos for Jackknife sensitivity</text></svg>`;
   }
 
   const maxAbs = Math.max(12, ...items.filter((p) => Number.isFinite(p.relPctD50)).map((p) => Math.abs(p.relPctD50)));
   const zeroX = padL + plotW / 2;
 
   const parts: string[] = [];
-  parts.push(`<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`);
+  parts.push(`<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Change in the site D50 when each photo is left out">`);
   parts.push(`<rect width="${W}" height="${H}" fill="${bg}" />`);
   parts.push(`<text x="10" y="15" fill="${fg}" font-size="10.5" font-weight="700" font-family="system-ui, sans-serif">Leave-One-Out Jackknife Influence on D50 (%)</text>`);
   parts.push(`<line x1="${zeroX.toFixed(1)}" y1="${padT}" x2="${zeroX.toFixed(1)}" y2="${H - 8}" stroke="${axisCol}" />`);
@@ -480,12 +483,12 @@ export function renderSizeHistogramSvg(hist: SizeHistogram, lightTheme = false, 
   const muted = lightTheme ? '#4a5568' : '#8fa0b2';
   const heading = title ?? 'Size Distribution (area-weighted %)';
   if (hist.bins.length === 0) {
-    return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg"><rect width="${W}" height="${H}" fill="${bg}"/><text x="${W / 2}" y="${H / 2}" text-anchor="middle" fill="${muted}" font-size="11" font-family="system-ui, sans-serif">No grains yet</text></svg>`;
+    return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="No grains yet"><rect width="${W}" height="${H}" fill="${bg}"/><text x="${W / 2}" y="${H / 2}" text-anchor="middle" fill="${muted}" font-size="11" font-family="system-ui, sans-serif">No grains yet</text></svg>`;
   }
   const maxPct = Math.max(10, Math.ceil(Math.max(...hist.bins.map((b) => b.weightPct)) / 10) * 10);
   const bw = plotW / hist.bins.length;
   const parts: string[] = [];
-  parts.push(`<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`);
+  parts.push(`<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Grain-size histogram by size class">`);
   parts.push(`<rect width="${W}" height="${H}" fill="${bg}" />`);
   parts.push(`<text x="${padL}" y="15" fill="${fg}" font-size="10.5" font-weight="700" font-family="system-ui, sans-serif">${esc(heading)} · n=${hist.n}</text>`);
   for (const f of [0.5, 1]) {
@@ -526,13 +529,13 @@ export function renderAspectRatioHistogramSvg(counts: readonly number[], lightTh
   const muted = lightTheme ? '#4a5568' : '#8fa0b2';
   const n = counts.reduce((s, c) => s + c, 0);
   if (n === 0) {
-    return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg"><rect width="${W}" height="${H}" fill="${bg}"/><text x="${W / 2}" y="${H / 2}" text-anchor="middle" fill="${muted}" font-size="11" font-family="system-ui, sans-serif">No grains for Aspect Ratio (b/a) distribution</text></svg>`;
+    return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="No grains for Aspect Ratio (b/a) distribution"><rect width="${W}" height="${H}" fill="${bg}"/><text x="${W / 2}" y="${H / 2}" text-anchor="middle" fill="${muted}" font-size="11" font-family="system-ui, sans-serif">No grains for Aspect Ratio (b/a) distribution</text></svg>`;
   }
   const numBins = counts.length;
   const maxC = Math.max(1, ...counts);
   const bw = plotW / numBins;
   const parts: string[] = [];
-  parts.push(`<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`);
+  parts.push(`<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Aspect ratio (b/a) histogram">`);
   parts.push(`<rect width="${W}" height="${H}" fill="${bg}" />`);
   parts.push(`<text x="${padL}" y="14" fill="${fg}" font-size="10.5" font-weight="700" font-family="system-ui, sans-serif">Aspect Ratio (b / a) Distribution (n=${n})</text>`);
   counts.forEach((c, i) => {
@@ -558,7 +561,7 @@ export function renderFabricRoseSvg(rose: FabricRoseStats, lightTheme = false): 
   const gridCol = lightTheme ? '#cbd5e1' : '#26323e';
 
   const parts: string[] = [];
-  parts.push(`<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`);
+  parts.push(`<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Fabric rose: grain orientation counter-clockwise from the photo vertical">`);
   parts.push(`<rect width="${W}" height="${H}" fill="${bg}" />`);
   parts.push(`<text x="${cx}" y="15" text-anchor="middle" fill="${fg}" font-size="10.5" font-weight="700" font-family="system-ui, sans-serif">180° Symmetric Axial Fabric Rose (n=${rose.grainCount})</text>`);
 
@@ -568,32 +571,36 @@ export function renderFabricRoseSvg(rose: FabricRoseStats, lightTheme = false): 
   parts.push(`<line x1="${cx - R - 6}" y1="${cy}" x2="${cx + R + 6}" y2="${cy}" stroke="${gridCol}" />`);
   parts.push(`<line x1="${cx}" y1="${cy - R - 6}" x2="${cx}" y2="${cy + R + 6}" stroke="${gridCol}" />`);
   parts.push(`<text x="${cx}" y="${cy - R - 9}" text-anchor="middle" fill="${muted}" font-size="8.5" font-family="ui-monospace, monospace">0° (Vert)</text>`);
-  parts.push(`<text x="${cx + R + 10}" y="${cy + 3}" text-anchor="start" fill="${muted}" font-size="8.5" font-family="ui-monospace, monospace">90°</text>`);
+  // Angles run counter-clockwise from the photo's vertical (the same convention as each
+  // grain's `orientationRad`), so 90° sits on the left and the rose reads like the photo.
+  parts.push(`<text x="${cx - R - 10}" y="${cy + 3}" text-anchor="end" fill="${muted}" font-size="8.5" font-family="ui-monospace, monospace">90°</text>`);
 
   const maxPct = Math.max(5, ...rose.bins.map((b) => b.proportionPct));
   for (const bin of rose.bins) {
     if (bin.proportionPct <= 0) continue;
     const rad = (bin.proportionPct / maxPct) * R;
-    // Draw both bin and +180° symmetric mirror; 0° = top (image vertical y-axis)
+    // Draw both bin and +180° symmetric mirror; 0° = top (image vertical y-axis), angles
+    // increasing counter-clockwise on screen: angle d points along (-sin d, -cos d).
     for (const offsetDeg of [0, 180]) {
-      const a0 = ((bin.startDeg + offsetDeg - 90) * Math.PI) / 180;
-      const a1 = ((bin.endDeg + offsetDeg - 90) * Math.PI) / 180;
-      const x1 = cx + rad * Math.cos(a0);
-      const y1 = cy + rad * Math.sin(a0);
-      const x2 = cx + rad * Math.cos(a1);
-      const y2 = cy + rad * Math.sin(a1);
+      const a0 = ((bin.startDeg + offsetDeg) * Math.PI) / 180;
+      const a1 = ((bin.endDeg + offsetDeg) * Math.PI) / 180;
+      const x1 = cx - rad * Math.sin(a0);
+      const y1 = cy - rad * Math.cos(a0);
+      const x2 = cx - rad * Math.sin(a1);
+      const y2 = cy - rad * Math.cos(a1);
+      // sweep-flag 0: counter-clockwise on screen, matching increasing angle.
       parts.push(
-        `<path d="M ${cx} ${cy} L ${x1.toFixed(1)} ${y1.toFixed(1)} A ${rad.toFixed(1)} ${rad.toFixed(1)} 0 0 1 ${x2.toFixed(1)} ${y2.toFixed(1)} Z" fill="rgba(59, 158, 255, 0.55)" stroke="#3b9eff" stroke-width="0.8" />`,
+        `<path d="M ${cx} ${cy} L ${x1.toFixed(1)} ${y1.toFixed(1)} A ${rad.toFixed(1)} ${rad.toFixed(1)} 0 0 0 ${x2.toFixed(1)} ${y2.toFixed(1)} Z" fill="rgba(59, 158, 255, 0.55)" stroke="#3b9eff" stroke-width="0.8" />`,
       );
     }
   }
 
   // Mean resultant vector
   if (rose.grainCount > 0 && rose.resultantLength > 0) {
-    const meanRad = ((rose.meanAxialDeg - 90) * Math.PI) / 180;
+    const meanRad = (rose.meanAxialDeg * Math.PI) / 180;
     const len = Math.max(12, rose.resultantLength * R);
-    const dx = len * Math.cos(meanRad);
-    const dy = len * Math.sin(meanRad);
+    const dx = -len * Math.sin(meanRad);
+    const dy = -len * Math.cos(meanRad);
     parts.push(
       `<line x1="${(cx - dx).toFixed(1)}" y1="${(cy - dy).toFixed(1)}" x2="${(cx + dx).toFixed(1)}" y2="${(cy + dy).toFixed(1)}" stroke="#d98300" stroke-width="2.2" />`,
     );
@@ -625,6 +632,7 @@ export function renderPrintablePsdSvg(
     xAxis,
     title: `${siteName} — Cumulative PSD (${report.poolingMode})`,
     subtitle: `${report.includedPhotoCount} photos, n=${report.validGrainCount}, metric=${report.sizeMetric}, ${report.statisticalBasisLabel}`,
+    ciLevel: report.bootstrapCi.confidenceLevel,
     ciLower: report.bootstrapCi.lower,
     ciUpper: report.bootstrapCi.upper,
     perPhotoCurves,
@@ -669,7 +677,7 @@ export function renderComparePsdSvg(
     }
   }
   if (vals.length === 0) {
-    return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg"><rect width="${W}" height="${H}" fill="${bg}"/><text x="${W / 2}" y="${H / 2}" text-anchor="middle" fill="${muted}" font-size="12" font-family="system-ui, sans-serif">Choose at least one analysed, calibrated site</text></svg>`;
+    return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Choose at least one analysed, calibrated site"><rect width="${W}" height="${H}" fill="${bg}"/><text x="${W / 2}" y="${H / 2}" text-anchor="middle" fill="${muted}" font-size="12" font-family="system-ui, sans-serif">Choose at least one analysed, calibrated site</text></svg>`;
   }
   let xMin = Math.min(...vals);
   let xMax = Math.max(...vals);
@@ -680,7 +688,7 @@ export function renderComparePsdSvg(
   const xPx = (x: number): number => padL + (usePhi ? (xMax - x) / (xMax - xMin) : (x - xMin) / (xMax - xMin)) * plotW;
   const yPx = (pct: number): number => padT + plotH - (pct / 100) * plotH;
   const parts: string[] = [];
-  parts.push(`<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`);
+  parts.push(`<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Cumulative grain-size distributions of the compared sites">`);
   parts.push(`<rect width="${W}" height="${H}" fill="${bg}" />`);
   parts.push(`<text x="${padL}" y="15" fill="${fg}" font-size="10.5" font-weight="700" font-family="system-ui, sans-serif">Cumulative Grain-Size Distributions (${series.length} sites)</text>`);
   for (const pct of [0, 16, 50, 84, 100]) {
@@ -734,7 +742,7 @@ export function renderCompareSizeHistogramSvg(
   const muted = lightTheme ? '#4a5568' : '#8fa0b2';
   const all = series.flatMap((s) => s.hist.bins);
   if (all.length === 0) {
-    return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg"><rect width="${W}" height="${H}" fill="${bg}"/><text x="${W / 2}" y="${H / 2}" text-anchor="middle" fill="${muted}" font-size="11" font-family="system-ui, sans-serif">No size distributions to compare</text></svg>`;
+    return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="No size distributions to compare"><rect width="${W}" height="${H}" fill="${bg}"/><text x="${W / 2}" y="${H / 2}" text-anchor="middle" fill="${muted}" font-size="11" font-family="system-ui, sans-serif">No size distributions to compare</text></svg>`;
   }
   const unit = series[0]!.hist.unit;
   const lo = Math.log2(Math.min(...all.map((b) => b.lo)));
@@ -743,7 +751,7 @@ export function renderCompareSizeHistogramSvg(
   const xPx = (d: number): number => padL + ((Math.log2(d) - lo) / Math.max(1e-9, hi - lo)) * plotW;
   const yPx = (pct: number): number => padT + plotH - (pct / maxPct) * plotH;
   const parts: string[] = [];
-  parts.push(`<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`);
+  parts.push(`<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Grain-size histograms of the compared sites">`);
   parts.push(`<rect width="${W}" height="${H}" fill="${bg}" />`);
   parts.push(`<text x="${padL}" y="15" fill="${fg}" font-size="10.5" font-weight="700" font-family="system-ui, sans-serif">Size Distributions (area-weighted %)</text>`);
   for (const f of [0.5, 1]) {
@@ -822,7 +830,7 @@ export function renderTimeSeriesSvg(points: readonly TimeSeriesPoint[], unit: 'm
   const bg = lightTheme ? '#ffffff' : '#0c1014';
   const font = 'font-family="system-ui, sans-serif"';
   if (points.length === 0) {
-    return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg"><rect width="${W}" height="${H}" fill="${bg}"/><text x="${W / 2}" y="${H / 2}" text-anchor="middle" fill="${muted}" font-size="12" ${font}>Give at least one compared site a survey date</text></svg>`;
+    return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Give at least one compared site a survey date"><rect width="${W}" height="${H}" fill="${bg}"/><text x="${W / 2}" y="${H / 2}" text-anchor="middle" fill="${muted}" font-size="12" ${font}>Give at least one compared site a survey date</text></svg>`;
   }
   const t = points.map((p) => Date.parse(`${p.date}T00:00:00Z`));
   let tMin = Math.min(...t);
@@ -840,7 +848,7 @@ export function renderTimeSeriesSvg(points: readonly TimeSeriesPoint[], unit: 'm
     for (const v of [p.D16, p.D50, p.D84, ...(p.ci ? [...p.ci.D16, ...p.ci.D84] : [])]) if (v > 0 && Number.isFinite(v)) vals.push(Math.log10(v));
   }
   if (vals.length === 0) {
-    return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg"><rect width="${W}" height="${H}" fill="${bg}"/><text x="${W / 2}" y="${H / 2}" text-anchor="middle" fill="${muted}" font-size="12" ${font}>No counted grains in the dated surveys</text></svg>`;
+    return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="No counted grains in the dated surveys"><rect width="${W}" height="${H}" fill="${bg}"/><text x="${W / 2}" y="${H / 2}" text-anchor="middle" fill="${muted}" font-size="12" ${font}>No counted grains in the dated surveys</text></svg>`;
   }
   // Surveys without a value (no counted grains) are not plotted rather than drawn at NaN.
   const has = (v: number): boolean => Number.isFinite(v) && v > 0;
@@ -982,7 +990,7 @@ export function renderCompositionBarsSvg(
       const v = Math.max(0, s.w[c.key]);
       const w = (v / 100) * plotW;
       if (w > 0) {
-        parts.push(`<rect x="${x.toFixed(1)}" y="${y + 3}" width="${w.toFixed(1)}" height="${rowH - 7}" fill="${c.fill}"><title>${esc(s.name)}: ${c.label} ${v.toFixed(1)}%</title></rect>`);
+        parts.push(`<rect x="${x.toFixed(1)}" y="${y + 3}" width="${w.toFixed(1)}" height="${rowH - 7}" fill="${c.fill}"><title>${esc(s.name)}: ${esc(c.label)} ${v.toFixed(1)}%</title></rect>`);
         if (w > 26) parts.push(`<text x="${(x + w / 2).toFixed(1)}" y="${y + 14}" text-anchor="middle" fill="#1a202c" font-size="8.5" ${font}>${v.toFixed(0)}%</text>`);
       }
       x += w;
@@ -992,7 +1000,7 @@ export function renderCompositionBarsSvg(
   classes.forEach((c, i) => {
     const lx = 8 + i * 98;
     parts.push(`<rect x="${lx}" y="${ly - 8}" width="9" height="9" fill="${c.fill}"/>`);
-    parts.push(`<text x="${lx + 12}" y="${ly}" fill="${muted}" font-size="8.5" ${font}>${c.label}</text>`);
+    parts.push(`<text x="${lx + 12}" y="${ly}" fill="${muted}" font-size="8.5" ${font}>${esc(c.label)}</text>`);
   });
   return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Size-class composition by site">${parts.join('')}</svg>`;
 }

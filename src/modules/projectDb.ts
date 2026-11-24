@@ -299,6 +299,13 @@ export async function listSitePhotos(
         settled = true;
         reject(tx.error ?? new Error('Transaction failed listing site photos.'));
       };
+
+      // An aborted transaction (e.g. the browser closing the database) fires only 'abort'.
+      tx.onabort = () => {
+        if (settled) return;
+        settled = true;
+        reject(tx.error ?? new Error('Transaction aborted listing site photos.'));
+      };
     });
   } finally {
     db.close();

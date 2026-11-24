@@ -11,7 +11,7 @@ import {
   type PhotoRecord,
   type SiteRecord,
 } from '../modules/projectStorage.js';
-import { broadcastNoticeChannel, createSyncedRecords } from '../modules/recordSync.js';
+import { broadcastNoticeChannel, createSyncedRecords, threeWayMerge } from '../modules/recordSync.js';
 import { rectifyPerspective } from '../modules/roiAndRectify.js';
 import { sizeCutoffExplanation } from '../modules/sedimentStats.js';
 import {
@@ -41,7 +41,7 @@ import { renderToolbarHtml } from './panels/toolbar.js';
 import { renderDashboardHtml } from './panels/dashboard.js';
 import { renderCompareHtml } from './panels/compare.js';
 import { esc, type ChartRegistry } from './panels/html.js';
-import type { ControlLike, ElementLike, EventContext } from './events/context.js';
+import { confirmDiscardEdits, type ControlLike, type ElementLike, type EventContext } from './events/context.js';
 import { routeChange, routeClick } from './events/router.js';
 import { handleDashboardKey } from './events/dashboard.js';
 import { handleLandingKey } from './events/sidebar.js';
@@ -277,14 +277,20 @@ const syncedRecords = createSyncedRecords(
     tabId: TAB_ID,
     channel: noticeChannel,
     hooks: {
-      onMerged: (kind, rec) => {
+      // Keep edits made here after this save started (their own saves are still pending):
+      // apply what changed in memory since `saved` on top of the merged record.
+      onMerged: (kind, rec, saved) => {
         const st = store.getState();
         if (kind === 'photo') {
           const p = rec as PhotoRecord;
-          store.setState({ photos: st.photos.map((x) => (x.photoId === p.photoId ? p : x)) });
+          store.setState({
+            photos: st.photos.map((x) => (x.photoId === p.photoId ? (x === saved ? p : threeWayMerge(saved as PhotoRecord, x, p)) : x)),
+          });
         } else {
           const site = rec as SiteRecord;
-          store.setState({ sites: st.sites.map((x) => (x.siteId === site.siteId ? site : x)) });
+          store.setState({
+            sites: st.sites.map((x) => (x.siteId === site.siteId ? (x === saved ? site : threeWayMerge(saved as SiteRecord, x, site)) : x)),
+          });
         }
       },
     },
@@ -414,12 +420,11 @@ function announceStatus(message: string): void {
   srAnnouncerEl.textContent = message;
 }
 
-async function syncViewport(fitToView = false): Promise<void> {
+/** Selection, inspection and tool state only (no photo or mask change: nothing is rebuilt). */
+function syncViewportOverlays(): void {
   if (!viewport) return;
   const state = store.getState();
   const photo = getActivePhoto(state);
-  const session = photo ? state.sessions.get(photo.photoId) ?? null : null;
-  await viewport.setPhotoAndSession(photo, session, fitToView);
   viewport.updateToolAndOverlays({
     tool: state.activeTool,
     overlays: state.overlays,
@@ -430,6 +435,15 @@ async function syncViewport(fitToView = false): Promise<void> {
     calPoints: state.pendingCalibrationPoints,
     rectifyPoints: state.pendingRectifyPoints,
   });
+}
+
+async function syncViewport(fitToView = false): Promise<void> {
+  if (!viewport) return;
+  const state = store.getState();
+  const photo = getActivePhoto(state);
+  const session = photo ? state.sessions.get(photo.photoId) ?? null : null;
+  await viewport.setPhotoAndSession(photo, session, fitToView);
+  syncViewportOverlays();
 }
 
 function renderLanding(state: AppState): void {
@@ -492,10 +506,20 @@ function renderViewportExtras(state: AppState): void {
   const session = activePhoto ? state.sessions.get(activePhoto.photoId) ?? null : null;
   emptyStateEl.style.display = activePhoto ? 'none' : 'flex';
 
+  // Tell screen-reader users which photo the canvas shows and what is on it.
+  const stage = document.getElementById('canvas-stage');
+  if (stage) {
+    const what = activePhoto
+      ? `Photo ${activePhoto.label}${session ? `, ${session.getResult().grainCount} grains detected` : ', not analysed yet'}`
+      : 'No photo open';
+    const label = `${what}. Use arrow keys to pan, plus or minus to zoom, 0 to fit.`;
+    if (stage.getAttribute('aria-label') !== label) stage.setAttribute('aria-label', label);
+  }
+
   const pt = viewport?.getCursorImgPt();
   const zoomPct = viewport ? Math.round(viewport.getZoom() * 100) : 100;
   footerEl.innerHTML = `
-    <span>${state.staleBuild ? `<button type="button" class="btn btn-xs btn-primary" data-action="reload-stale" ${state.batchRunning ? 'disabled title="Available when the analysis finishes"' : 'title="A newer version was installed in another tab. Reload to use it (your data is kept)."'}>Reload now</button> ` : ''}${state.updateReady ? `<button type="button" class="btn btn-xs btn-primary" data-action="apply-update" ${state.batchRunning || state.enhancing ? 'disabled title="Available when the analysis finishes"' : 'title="A new version is installed. Reload to use it (your data is kept)."'}>Reload to update</button> ` : ''}${esc(state.statusMessage)}</span>
+    <span>${state.isolationReloadPending && !state.staleBuild && !state.updateReady ? `<button type="button" class="btn btn-xs" data-action="reload-isolation" ${state.batchRunning || state.enhancing ? 'disabled title="Available when the analysis finishes"' : 'title="The app was just installed in this browser. Reloading the page once lets CPU analysis use several threads (about 3x faster). Your data is kept."'}>Reload for faster CPU analysis</button> ` : ''}${state.staleBuild ? `<button type="button" class="btn btn-xs btn-primary" data-action="reload-stale" ${state.batchRunning ? 'disabled title="Available when the analysis finishes"' : 'title="A newer version was installed in another tab. Reload to use it (your data is kept)."'}>Reload now</button> ` : ''}${state.updateReady ? `<button type="button" class="btn btn-xs btn-primary" data-action="apply-update" ${state.batchRunning || state.enhancing ? 'disabled title="Available when the analysis finishes"' : 'title="A new version is installed. Reload to use it (your data is kept)."'}>Reload to update</button> ` : ''}${esc(state.statusMessage)}</span>
     <span>${activePhoto ? `${activePhoto.width}×${activePhoto.height}px | Zoom ${zoomPct}%` : ''}${pt ? ` | (${Math.round(pt.x)}, ${Math.round(pt.y)})` : ''}</span>
   `;
 
@@ -624,8 +648,43 @@ function renderDashboard(state: AppState): void {
   dashboardEl.scrollTop = scroll;
 }
 
+/** A key that finds "the same" control again after its HTML is rebuilt. */
+function controlKey(el: Element): string | null {
+  if (el.id) return `#${CSS.escape(el.id)}`;
+  // Controls are identified by their data-* attributes (and name / radio value).
+  const parts: string[] = [];
+  for (const a of Array.from(el.attributes)) {
+    if ((a.name.startsWith('data-') && a.name !== 'data-bound') || a.name === 'name' || (a.name === 'value' && el.getAttribute('type') === 'radio')) {
+      parts.push(`[${a.name}="${CSS.escape(a.value)}"]`);
+    }
+  }
+  return parts.length > 0 ? `${el.tagName.toLowerCase()}${parts.join('')}` : null;
+}
+
+let lastModalKey = '';
+/** Where focus was before the dialog opened, restored when it closes. */
+let modalReturnFocus: { el: HTMLElement; key: string | null } | null = null;
+
+function restoreFocus(target: { el: HTMLElement; key: string | null } | null, scope: ParentNode): void {
+  if (!target) return;
+  const el = target.el.isConnected ? target.el : target.key ? scope.querySelector<HTMLElement>(target.key) : null;
+  el?.focus({ preventScroll: true });
+}
+
 function renderModals(state: AppState): void {
   if (!appDialogEl) return;
+  // Re-rendering an open dialog (progress ticks, checkboxes) replaces its HTML: keep keyboard
+  // focus on the same control and the body's scroll position.
+  const wasOpen = appDialogEl.open;
+  const active = document.activeElement;
+  const focusInside = wasOpen && active instanceof HTMLElement && appDialogEl.contains(active) ? { el: active, key: controlKey(active) } : null;
+  // The same dialog (and help topic) re-rendered: keep its scroll position; another one starts at the top.
+  const modalKey = `${state.activeModal ?? ''}|${state.helpTopic ?? ''}`;
+  const sameModal = wasOpen && modalKey === lastModalKey;
+  lastModalKey = modalKey;
+  const scrollTop = sameModal ? appDialogEl.querySelector('.modal-body')?.scrollTop ?? 0 : 0;
+  // Expanded sections (<details>) are not in the state: keep them expanded across the re-render.
+  const openDetails = sameModal ? Array.from(appDialogEl.querySelectorAll('details')).map((d) => d.open) : [];
   if (state.activeModal === 'models') {
     appDialogEl.innerHTML = renderModelsModalHtml(state, actions.getCachedQuota());
   } else if (state.activeModal === 'export') {
@@ -643,11 +702,24 @@ function renderModals(state: AppState): void {
       appDialogEl.close();
     }
     appDialogEl.innerHTML = '';
+    // Back to where the user was (the opener may have been re-rendered: find it again).
+    const back = modalReturnFocus;
+    modalReturnFocus = null;
+    restoreFocus(back, document);
     return;
   }
 
   if (!appDialogEl.open) {
+    modalReturnFocus = active instanceof HTMLElement && active !== document.body ? { el: active, key: controlKey(active) } : null;
     appDialogEl.showModal();
+  } else {
+    if (sameModal) {
+      const details = appDialogEl.querySelectorAll('details');
+      if (details.length === openDetails.length) details.forEach((d, i) => (d.open = openDetails[i] === true));
+    }
+    const body = appDialogEl.querySelector('.modal-body');
+    if (body && sameModal) body.scrollTop = scrollTop;
+    restoreFocus(focusInside && !focusInside.el.isConnected ? focusInside : null, appDialogEl);
   }
 }
 
@@ -684,6 +756,8 @@ function renderAll(state: AppState): void {
     prev.capabilities !== state.capabilities ||
     prev.isOnline !== state.isOnline ||
     prev.swStatus !== state.swStatus ||
+    prev.updateReady !== state.updateReady ||
+    prev.staleBuild !== state.staleBuild ||
     prev.photos.length !== state.photos.length ||
     prev.sites.length !== state.sites.length
   ) {
@@ -720,7 +794,8 @@ function renderAll(state: AppState): void {
     prev.retentionDays !== state.retentionDays ||
     prev.retentionNotice !== state.retentionNotice ||
     prev.retentionHeld !== state.retentionHeld ||
-    prev.storageFullNotice !== state.storageFullNotice
+    prev.storageFullNotice !== state.storageFullNotice ||
+    prev.storageOpenError !== state.storageOpenError
   ) {
     renderSidebar(state);
   }
@@ -865,14 +940,14 @@ function mountShell(): void {
     {
       onInspectGrain: (grainId) => {
         store.setState({ inspectedGrainId: grainId });
-        void syncViewport(false);
+        syncViewportOverlays();
       },
       onToggleSelectGrain: (grainId) => {
         const next = new Set(store.getState().selectedGrainIds);
         if (next.has(grainId)) next.delete(grainId);
         else next.add(grainId);
         store.setState({ selectedGrainIds: next });
-        void syncViewport(false);
+        syncViewportOverlays();
       },
       onSplitLine: (grainId, points) => {
         const state = store.getState();
@@ -989,6 +1064,13 @@ function mountShell(): void {
           rectifyHeightMm: ph,
         });
         if (next.length === 4) {
+          // Rectifying replaces the image, so the photo's outlines (and any manual edits) go.
+          const id = st.activePhotoId;
+          if (id && !confirmDiscardEdits({ store, ui: { confirm: (m) => window.confirm(m) } }, [id], { doing: 'Rectifying the photo', ask: 'Continue anyway?' })) {
+            store.setState({ pendingRectifyPoints: [], statusMessage: 'Rectification cancelled.' });
+            void syncViewport(false);
+            return;
+          }
           void applyRectificationToActive(
             [next[0]!, next[1]!, next[2]!, next[3]!],
             pw,
@@ -1094,6 +1176,7 @@ function eventContext(): EventContext {
       focusGrain: (id) => viewport?.focusOnGrain(id),
       applyUpdate: () => swUpdates?.applyUpdate() ?? false,
       reloadPage: () => location.reload(),
+      reloadForIsolation: () => isolationReloadNow?.(),
       downloadResults,
       isTyping: () => {
         const el = document.activeElement;
@@ -1418,6 +1501,9 @@ function attachDelegatedHandlers(): void {
 
 let swUpdates: SwUpdateController | null = null;
 
+/** Reloads once for cross-origin isolation, if still needed (set up by registerServiceWorker). */
+let isolationReloadNow: (() => void) | null = null;
+
 async function registerServiceWorker(): Promise<void> {
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
     store.setState({ swStatus: 'registering' });
@@ -1449,34 +1535,45 @@ async function registerServiceWorker(): Promise<void> {
       // Only reload while the user is on the landing page and nothing is running: a reload in the
       // workspace would cut off whatever they are doing (calibrating, importing, typing). Otherwise
       // wait until they are back on the landing page; until then the CPU uses one thread.
+      // In the workspace the footer offers the reload instead ("Reload for faster CPU analysis").
       const canReloadNow = (st: AppState): boolean => st.showLanding && !st.batchRunning && st.enhancing !== true;
-      let waitingToReload = false;
-      const reloadForIsolation = (): void => {
-        if ((self as { crossOriginIsolated?: boolean }).crossOriginIsolated === true) return;
-        if (!navigator.serviceWorker.controller) return;
+      let stopWaiting: (() => void) | null = null;
+      const needsIsolationReload = (): boolean => {
+        if ((self as { crossOriginIsolated?: boolean }).crossOriginIsolated === true) return false;
+        if (!navigator.serviceWorker.controller) return false;
         try {
-          if (sessionStorage.getItem('webgrainy-coi-reload') === '1') return;
+          return sessionStorage.getItem('webgrainy-coi-reload') !== '1';
         } catch {
-          return; // storage unavailable: don't risk a reload loop
+          return false; // storage unavailable: don't risk a reload loop
         }
-        if (!canReloadNow(store.getState())) {
-          if (!waitingToReload) {
-            waitingToReload = true;
-            store.subscribe((st) => {
-              if (waitingToReload && canReloadNow(st)) {
-                waitingToReload = false;
-                reloadForIsolation();
-              }
-            });
-          }
-          return;
-        }
+      };
+      const reloadOnce = (): void => {
         try {
           sessionStorage.setItem('webgrainy-coi-reload', '1');
         } catch {
           return;
         }
         location.reload();
+      };
+      isolationReloadNow = () => {
+        if (needsIsolationReload()) reloadOnce();
+      };
+      const reloadForIsolation = (): void => {
+        if (!needsIsolationReload()) return;
+        if (!canReloadNow(store.getState())) {
+          if (stopWaiting === null) {
+            store.setState({ isolationReloadPending: true });
+            stopWaiting = store.subscribe((st) => {
+              if (canReloadNow(st)) {
+                stopWaiting?.();
+                stopWaiting = null;
+                reloadForIsolation();
+              }
+            });
+          }
+          return;
+        }
+        reloadOnce();
       };
       if (hadController) reloadForIsolation();
       navigator.serviceWorker.addEventListener('controllerchange', () => {
@@ -1550,11 +1647,13 @@ async function bootstrap(): Promise<void> {
   // the disk is low). Removal then follows the user's choice only.
   void navigator.storage?.persist?.().then(() => refreshStorageInfo()).catch(() => undefined);
 
-  await Promise.all([
-    refreshCapabilities(),
-    registerServiceWorker(),
-    createDefaultOrLoadSites(),
-  ]);
+  // One failing start-up step must not stop the others (or the launch queue) from running.
+  const steps: Array<[string, Promise<void>]> = [
+    ['capability check', refreshCapabilities()],
+    ['service worker registration', registerServiceWorker()],
+    ['loading sites', createDefaultOrLoadSites()],
+  ];
+  await Promise.all(steps.map(([name, p]) => p.catch((err: unknown) => console.error(`Start-up step failed: ${name}`, err))));
   setupLaunchQueue();
   // A tab left open for days still removes sites past their date (hourly check).
   setInterval(() => void actions.purgeExpiredSites().catch(() => undefined), 3_600_000);

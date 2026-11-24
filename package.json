@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "description": "100% client-side, privacy-first, offline-first gravel and sediment grain-sizing engine (ImageGrains 2.0 Web)",
   "private": true,
+  "license": "BSD-3-Clause",
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -14,8 +15,8 @@
     "tutorials": "node scripts/record-tutorials.mjs"
   },
   "dependencies": {
-    "onnxruntime-web": "^1.31.1",
-    "utif2": "^4.1.0"
+    "onnxruntime-web": "1.31.1",
+    "utif2": "4.1.0"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",

@@ -24,6 +24,17 @@ describe('decodeWithinPixelLimit', () => {
   });
 });
 
+describe('F-32: a large photo of known size is decoded once, straight at the reduced size', () => {
+  it('48 MP with the stored size: one createImageBitmap call, already resized', async () => {
+    const bitmap = (width: number, height: number) => ({ width, height, close: vi.fn() }) as unknown as ImageBitmap;
+    const create = vi.fn(async (_b: Blob, o?: ImageBitmapOptions) => (o?.resizeWidth ? bitmap(o.resizeWidth, o.resizeHeight!) : bitmap(8000, 6000)));
+    const b = await decodeWithinPixelLimit(new Blob([]), create, MAX_DECODE_PIXELS, { width: 8000, height: 6000 });
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(create.mock.calls[0]![1]).toMatchObject({ resizeQuality: 'high' });
+    expect(b.width * b.height).toBeLessThanOrEqual(MAX_DECODE_PIXELS);
+  });
+});
+
 describe('engine: originalSize', () => {
   const session = (): InferenceSessionLike => ({
     async run(feeds: Record<string, unknown>) {

@@ -77,15 +77,20 @@ export function manageSwUpdates(reg: RegistrationLike, deps: SwUpdateDeps): SwUp
     }
   }
 
-  reg.addEventListener('updatefound', () => {
-    const installing = reg.installing;
-    if (!installing) return;
+  const watched = new Set<WorkerLike>();
+  const watchInstalling = (installing: WorkerLike | null): void => {
+    if (!installing || watched.has(installing)) return;
+    watched.add(installing);
     deps.onStateChange(installing, () => {
       // Installed while this page is controlled: an update. Never activate it behind the
       // page's back; offer a reload instead.
       if (installing.state === 'installed' && deps.hasController()) markWaiting(installing);
     });
-  });
+  };
+  reg.addEventListener('updatefound', () => watchInstalling(reg.installing));
+  // An update that started installing before registration resolved fired 'updatefound' before
+  // this listener existed: watch it too.
+  watchInstalling(reg.installing);
 
   let controllerChanges = 0;
   deps.addControllerChangeListener(() => {

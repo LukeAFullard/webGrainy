@@ -952,7 +952,7 @@ export class AnalysisSession {
     }
     const f = this.getFabricRose(sizeMetric, cutoffs);
     out.push(`fabric,grain_count,${f.grainCount},count`);
-    out.push(`fabric,mean_axial_orientation_deg,${f.meanAxialDeg},deg (0 = image vertical)`);
+    out.push(`fabric,mean_axial_orientation_deg,${f.meanAxialDeg},deg (0 = image vertical; counter-clockwise)`);
     out.push(`fabric,resultant_length_R,${f.resultantLength},ratio`);
     out.push(`fabric,circular_variance,${f.circularVariance},ratio`);
     out.push(`fabric,rayleigh_z,${f.rayleighZ},stat`);
@@ -971,7 +971,7 @@ export class AnalysisSession {
    */
   private maskForExport(
     bitDepth: 16 | 32,
-    options?: { resolution?: 'original' | 'working'; photoMetadata?: Record<string, unknown>; onlyIds?: ReadonlySet<number> },
+    options?: { resolution?: 'original' | 'working'; photoMetadata?: Record<string, unknown>; onlyIds?: ReadonlySet<number>; idEncoding?: string },
   ): { masks: Int32Array; width: number; height: number; text: Record<string, string> } {
     const wi = this.workingImage;
     const resolution = options?.resolution ?? 'original';
@@ -1001,7 +1001,7 @@ export class AnalysisSession {
         workingHeight: wi.height,
         effectiveScaleFactor: wi.effectiveScaleFactor,
         resampling: resolution === 'original' && (width !== wi.width || height !== wi.height) ? 'nearest-neighbour from working-image labels' : 'none',
-        idEncoding: bitDepth === 16 ? '16-bit grayscale grain_id (clamped to 65535)' : '32-bit grain_id, big-endian in RGBA bytes',
+        idEncoding: options?.idEncoding ?? (bitDepth === 16 ? '16-bit grayscale grain_id (clamped to 65535)' : '32-bit grain_id, big-endian in RGBA bytes'),
         background: 0,
         grains: only ? 'only the grains counted in the statistics (border rule, ROI and size cutoffs applied)' : 'all detected grains',
       },
@@ -1031,7 +1031,13 @@ export class AnalysisSession {
     onlyIds?: ReadonlySet<number>,
     photoMetadata?: Record<string, unknown>,
   ): { masks: Int32Array; width: number; height: number; metadataJson: string } {
-    const m = this.maskForExport(32, { resolution: 'original', ...(onlyIds ? { onlyIds } : {}), ...(photoMetadata ? { photoMetadata } : {}) });
+    // For the label GeoTIFFs (geotiffWriter.encodeLabelGeoTiff), not the PNG32 RGBA layout.
+    const m = this.maskForExport(32, {
+      resolution: 'original',
+      ...(onlyIds ? { onlyIds } : {}),
+      ...(photoMetadata ? { photoMetadata } : {}),
+      idEncoding: 'one band of unsigned integers = grain_id (16-bit, or 32-bit when an id exceeds 65535), little-endian; 0 = background (nodata)',
+    });
     return { masks: m.masks, width: m.width, height: m.height, metadataJson: m.text['webgrainy'] ?? '' };
   }
 
@@ -1072,12 +1078,15 @@ export class AnalysisSession {
     styleOf?: (g: GrainMorphometrics) => GrainSvgStyle | null,
   ): string {
     const grains = onlyIds ? this.workingGrains.filter((g) => onlyIds.has(g.id)) : this.workingGrains;
+    // Styles are chosen from the calibrated grains (sizes in mm and photo pixels), as in exportGeoJson.
+    const grainById = new Map(this.grains.map((g) => [g.id, g]));
+    const style = styleOf ? (wg: GrainMorphometrics) => styleOf(grainById.get(wg.id) ?? wg) : undefined;
     return buildContourSvg(this.workingMasks, grains, this.workingImage.width, this.workingImage.height, {
       scaleInv: this.outputScaleInv(),
       outWidth: this.workingImage.originalWidth,
       outHeight: this.workingImage.originalHeight,
-      metadata: this.getExportMetadata(photoMetadata),
-      ...(styleOf ? { styleOf } : {}),
+      metadata: { ...this.getExportMetadata(photoMetadata), grains: onlyIds ? 'only the grains counted in the statistics (border rule, ROI and size cutoffs applied)' : 'all detected grains' },
+      ...(style ? { styleOf: style } : {}),
     });
   }
 

@@ -3,7 +3,7 @@
  * on their own computer (the browser only keeps sites for a limited time). Reuses the
  * single-file exports, so the files are identical to those downloaded one by one.
  */
-import { APP_VERSION, BUILD_COMMIT, CITATION_NOTICE, UNOFFICIAL_NOTICE } from './provenance.js';
+import { APP_VERSION, BUILD_COMMIT, CITATION_NOTICE, UNOFFICIAL_NOTICE, ACCURACY_NOTICE } from './provenance.js';
 import { buildExport, type ExportContext, type ExportKind } from './exports.js';
 import type { PhotoRecord, SiteRecord } from './projectStorage.js';
 import type { SiteAnalysisReport, SitePhotoInput, SiteAnalysisOptions } from './siteAnalysis.js';
@@ -71,7 +71,8 @@ export async function resultsBundleEntries(input: ResultsBundleInput): Promise<Z
   // The whole site as one GeoPackage, when its photos can be placed on a map (GeoTIFFs).
   const siteGpkg = await buildExport('site-gpkg', base);
   if (siteGpkg && !siteGpkg.filename.endsWith('_pixels.gpkg')) {
-    const name = siteGpkg.filename.slice(siteGpkg.filename.indexOf('site_outlines_'));
+    // lastIndexOf: the site name itself may contain "site_outlines_".
+    const name = siteGpkg.filename.slice(siteGpkg.filename.lastIndexOf('site_outlines_'));
     entries.push({ name, data: siteGpkg.blob });
     listed.push(
       `${name}\n    Every GeoTIFF photo's grain outlines in one GeoPackage layer (photo_id, included_in_stats and the measurements as fields), ` +
@@ -80,7 +81,7 @@ export async function resultsBundleEntries(input: ResultsBundleInput): Promise<Z
   }
   if (input.reportHtml) {
     entries.push({ name: 'site_report.html', data: input.reportHtml });
-    listed.push('site_report.html\n    Printable one-page report (open in a browser, print or save as PDF).');
+    listed.push('site_report.html\n    Printable site report (open in a browser, print or save as PDF).');
   }
   const used = new Set<string>();
   let photoCount = 0;
@@ -184,6 +185,7 @@ export async function resultsBundleEntries(input: ResultsBundleInput): Promise<Z
     ...listed,
     '',
     UNOFFICIAL_NOTICE,
+    ACCURACY_NOTICE,
     CITATION_NOTICE,
     '',
   ].join('\n');

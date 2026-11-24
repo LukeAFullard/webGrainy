@@ -398,7 +398,7 @@ describe('imageEnhance', () => {
     await engine.dispose();
   });
 
-  it('discloses AI pre-processing enhancement in the printable report Methods summary', () => {
+  it('discloses image enhancement in the printable report Methods summary', () => {
     const w = 80;
     const h = 80;
     const masks = new Int32Array(w * h);
@@ -459,6 +459,6 @@ describe('imageEnhance', () => {
     });
 
     expect(html).toContain('Pre-processing enhancement');
-    expect(html).toContain('Optional AI pre-processing enhancement applied to 2 photos prior to segmentation');
+    expect(html).toContain('Optional image enhancement (2× AI upscaling or Richardson–Lucy deblurring) applied to 2 photos before segmentation');
   });
 });

@@ -141,7 +141,7 @@ export async function rectifyWithCanvas(
   physWidthMm: number,
   physHeightMm: number,
   rectifyPerspective: typeof import('../modules/roiAndRectify.js').rectifyPerspective,
-): Promise<{ blob: Blob; width: number; height: number; calibration: CalibrationResult } | null> {
+): Promise<{ blob: Blob; width: number; height: number; calibration: CalibrationResult; blurScore?: number } | null> {
   const bmp = await createImageBitmap(image);
   const off = document.createElement('canvas');
   off.width = bmp.width;
@@ -181,20 +181,27 @@ export async function rectifyWithCanvas(
   });
 
   const calibration = rectificationCalibration(rectified, physWidthMm);
-  return { blob, width: rectified.width, height: rectified.height, calibration };
+  // The sharpness of the rectified raster (resampling changes it), not the original's.
+  const blurScore = await computeBlurScoreFromBlob(blob);
+  return { blob, width: rectified.width, height: rectified.height, calibration, ...(blurScore !== undefined ? { blurScore } : {}) };
 }
 
 /** RGBA pixels of a stored photo at its own size (for reprojected photo exports). */
 export async function decodePhotoRgba(blob: Blob): Promise<{ data: Uint8ClampedArray; width: number; height: number } | null> {
+  let bmp: ImageBitmap | null = null;
   try {
-    const bmp = await createImageBitmap(blob);
-    const c = new OffscreenCanvas(bmp.width, bmp.height);
-    const ctx = c.getContext('2d');
+    bmp = await createImageBitmap(blob);
+    const { width, height } = bmp;
+    const c: OffscreenCanvas | HTMLCanvasElement =
+      typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(width, height) : Object.assign(document.createElement('canvas'), { width, height });
+    const ctx = c.getContext('2d') as OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D | null;
     if (!ctx) return null;
     ctx.drawImage(bmp, 0, 0);
-    const { data } = ctx.getImageData(0, 0, bmp.width, bmp.height);
-    return { data, width: bmp.width, height: bmp.height };
+    const { data } = ctx.getImageData(0, 0, width, height);
+    return { data, width, height };
   } catch {
     return null;
+  } finally {
+    bmp?.close();
   }
 }

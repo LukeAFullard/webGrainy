@@ -286,9 +286,9 @@ export interface SiteAnalysisReport {
   /**
    * How far `bootstrapCi` can be trusted: 'ok'; 'few-photos' (fewer than 5 photos: approximate);
    * 'single-photo' (grain resampling only: no patch-to-patch variation); 'degenerate' (photos
-   * give identical results, e.g. the same photo twice: no interval).
+   * give identical results, e.g. the same photo twice: no interval); 'no-grains' (no grain counted).
    */
-  ciStatus: 'ok' | 'few-photos' | 'single-photo' | 'degenerate';
+  ciStatus: 'ok' | 'few-photos' | 'single-photo' | 'degenerate' | 'no-grains';
   /**
    * Standard error of ln(Dx) behind `bootstrapCi` (larger of the bootstrap SE x sqrt(n/(n-1)) and
    * the leave-one-photo-out jackknife SE); NaN when not estimable or for a single photo. The site

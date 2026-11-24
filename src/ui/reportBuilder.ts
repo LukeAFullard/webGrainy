@@ -121,7 +121,7 @@ export async function buildPrintableReport(
   const so = st.siteOptions;
   const hist = report.unit === 'mm' ? sizeHistogramFromWentworth(report.wentworthHistogram10Phi, 1) : null;
   const prov = siteReportProvenance(buildSiteInputs(st), report, so);
-  const { detectionLimit, resolutionRangeMmPerPx } = prov;
+  const { detectionLimit, sizeCutoff, resolutionRangeMmPerPx } = prov;
   const singleModel = prov.models.length === 1 ? prov.models[0]! : null;
 
   const html = buildSiteReportHtml({
@@ -131,10 +131,17 @@ export async function buildPrintableReport(
     metadata: {
       ...baseExportMetadata(),
       modelId: prov.models.map((m) => m.modelId).join(' + '),
-      ...(singleModel?.modelSha256 ? { modelSha256: singleModel.modelSha256 } : {}),
+      // Every model's fingerprint and revision, also when photos were analysed with several.
+      ...(prov.models.some((m) => m.modelSha256)
+        ? { modelSha256: singleModel ? singleModel.modelSha256 ?? 'unknown' : prov.models.map((m) => `${m.modelId}: ${m.modelSha256 ?? 'unknown'}`).join('; ') }
+        : {}),
+      ...(prov.models.some((m) => m.modelRevision)
+        ? { modelRevision: [...new Set(prov.models.map((m) => m.modelRevision ?? 'unknown'))].join('; ') }
+        : {}),
     },
     settings: prov.settings,
     ...(detectionLimit !== undefined ? { detectionLimit } : {}),
+    ...(sizeCutoff !== undefined ? { sizeCutoff } : {}),
     manualEditsCount: prov.manualEditsCount,
     tidiedPhotosCount: prov.tidiedPhotosCount,
     ...(prov.enhancedPhotosCount > 0 ? { enhancedPhotosCount: prov.enhancedPhotosCount } : {}),
@@ -145,10 +152,12 @@ export async function buildPrintableReport(
       xAxis: st.psdXAxis,
       title: 'Cumulative grain-size distribution',
       subtitle: `${report.includedPhotoCount} photos, n=${report.validGrainCount}`,
+      ciLevel: report.bootstrapCi.confidenceLevel,
       ciLower: report.bootstrapCi.lower,
       ciUpper: report.bootstrapCi.upper,
       perPhotoCurves: report.perPhoto,
-      ...(detectionLimit !== undefined ? { detectionLimit } : {}),
+      // The line marks the smallest grain counted (the Field-count cutoff when it is larger).
+      ...(sizeCutoff !== undefined ? { detectionLimit: sizeCutoff } : {}),
       lightTheme: true,
     }),
     histogramSvg: hist && hist.bins.length > 0 ? renderSizeHistogramSvg(hist, true, `Size distribution (${histogramBasis(report.poolingMode)}, 1 φ classes)`) : null,
@@ -157,7 +166,7 @@ export async function buildPrintableReport(
     overlayLegend: overlayLegend(mode, classesSeen),
     shapeSvg: options.includeShapeFabric && report.shape.n > 0 ? renderAspectRatioHistogramSvg(report.shape.aspectRatioCounts, true) : null,
     fabricSvg: options.includeShapeFabric && report.fabricRose.grainCount > 0 ? renderFabricRoseSvg(report.fabricRose, true) : null,
-    convergenceSvg: options.includeUncertainty && report.convergence.length > 1 ? renderConvergenceChartSvg(report.convergence, true) : null,
+    convergenceSvg: options.includeUncertainty && report.convergence.length > 1 ? renderConvergenceChartSvg(report.convergence, true, report.bootstrapCi.confidenceLevel) : null,
     jackknifeSvg: options.includeUncertainty && report.jackknife ? renderJackknifeChartSvg(report.jackknife, true) : null,
   });
   return html;

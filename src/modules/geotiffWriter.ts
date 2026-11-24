@@ -159,6 +159,8 @@ export async function encodeGeoTiff(
     }
   }
   const stripOffset = extra;
+  // Classic TIFF offsets are 32-bit: a file of 4 GB or more would be corrupt (BigTIFF is not written).
+  if (stripOffset + data.length > 0xffffffff) throw new Error('The GeoTIFF would be larger than 4 GB; export a smaller area.');
   (tags.find((t) => t.tag === 273)!.values as number[])[0] = stripOffset;
   const out = new Uint8Array(stripOffset + data.length);
   const o = new DataView(out.buffer);

@@ -180,11 +180,63 @@ describe('project import checks (audit S12)', () => {
       const rs = h['results'] as R[];
       rs[1]!.serializedSession.workingMasksRef = rs[0]!.serializedSession.workingMasksRef;
     });
-    await expect(importProjectArchive(shared, { indexedDB: createProjectMockIDB() })).rejects.toThrow(/shared with another result/);
+    await expect(importProjectArchive(shared, { indexedDB: createProjectMockIDB() })).rejects.toThrow(/bytes shared with/);
     const wrong = await withHeader(blob, (h) => {
       (h['results'] as R[])[0]!.serializedSession.workingImage.width = 41;
     });
     await expect(importProjectArchive(wrong, { indexedDB: createProjectMockIDB() })).rejects.toThrow(/mask size does not match/);
+  });
+
+  it('F-08: rejects photos or masks pointing into the same bytes, even at different offsets', async () => {
+    const blob = await twoPhotoArchive();
+    type P = { imageRef: { offset: number; length: number } };
+    const samePhoto = await withHeader(blob, (h) => {
+      const ps = h['photos'] as P[];
+      ps[1]!.imageRef = { ...ps[0]!.imageRef };
+    });
+    await expect(importProjectArchive(samePhoto, { indexedDB: createProjectMockIDB() })).rejects.toThrow(/bytes shared with/);
+    type R = { serializedSession: { workingMasksRef: { offset: number; length: number } } };
+    const overlapping = await withHeader(blob, (h) => {
+      const rs = h['results'] as R[];
+      const m0 = rs[0]!.serializedSession.workingMasksRef;
+      rs[1]!.serializedSession.workingMasksRef = { offset: m0.offset + 4, length: m0.length };
+    });
+    await expect(importProjectArchive(overlapping, { indexedDB: createProjectMockIDB() })).rejects.toThrow(/bytes shared with|invalid byte reference/);
+  });
+
+  it('F-08: rejects a duplicate result, and does not decode results of photos not in the file', async () => {
+    const blob = await twoPhotoArchive();
+    type R = { photoId: string };
+    const dup = await withHeader(blob, (h) => {
+      (h['results'] as R[])[1]!.photoId = 'P1';
+    });
+    await expect(importProjectArchive(dup, { indexedDB: createProjectMockIDB() })).rejects.toThrow(/duplicate result/);
+    const orphan = await withHeader(blob, (h) => {
+      const r = (h['results'] as Array<R & { serializedSession: { workingImage: { width: number } } }>)[1]!;
+      r.photoId = 'ghost';
+      r.serializedSession.workingImage.width = 41; // would fail if it were decoded
+    });
+    const db = { indexedDB: createProjectMockIDB() };
+    await importProjectArchive(orphan, db);
+    expect((await listSitePhotos('S', db)).map((p) => p.photoId).sort()).toEqual(['P1', 'P2']);
+  });
+
+  it('F-08: caps exclusion areas', async () => {
+    const blob = await twoPhotoArchive();
+    const many = await withHeader(blob, (h) => {
+      (h['photos'] as Array<Record<string, unknown>>)[0]!['roiConfig'] = {
+        exclusionPolygons: [],
+        exclusionStrokes: [{ points: [{ x: 1, y: 1 }], radiusPx: 1e9 }],
+      };
+    });
+    await expect(importProjectArchive(many, { indexedDB: createProjectMockIDB() })).rejects.toThrow(/radius/);
+  });
+
+  it('F-28: refuses a site id that is a prototype name', async () => {
+    const blob = await withHeader(await twoPhotoArchive(), (h) => {
+      (h['site'] as { siteId: string }).siteId = 'constructor';
+    });
+    await expect(importProjectArchive(blob, { indexedDB: createProjectMockIDB() })).rejects.toThrow(/siteId/);
   });
 
   it('keeps only photo ids of this file in photoOrder, each once', async () => {
