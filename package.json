@@ -5,6 +5,9 @@
   "private": true,
   "license": "BSD-3-Clause",
   "type": "module",
+  "engines": {
+    "node": "^22.13.0 || ^24.0.0 || >=26.0.0"
+  },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "build": "node esbuild.config.mjs",

@@ -90,7 +90,7 @@ npm run test:e2e:sw        # service-worker updates with two builds and several 
 npm run test:perf          # strict timing budgets (run on an idle machine)
 ```
 
-CI runs all of these except `test:perf` on every push and pull request. The app is a static site: [DEPLOYMENT.md](DEPLOYMENT.md) explains hosting, including the headers needed for multi-threaded CPU inference.
+Node.js 22.13 or later (or 24 and later) is required. CI runs all of these except `test:perf` on every pull request and every push to `main`; a push to `main` that passes is then deployed to GitHub Pages. The app is a static site: [DEPLOYMENT.md](DEPLOYMENT.md) explains hosting, including the headers needed for multi-threaded CPU inference.
 
 ### Tutorial videos
 
@@ -126,6 +126,7 @@ validation/      benchmarks and their data: held-out accuracy, parity with upstr
                  Cellpose/ImageGrains, K1 field comparison, preprocessing and
                  quantization studies, GPU-vs-CPU checks, numerical oracle
 docs/            settings guide
+licenses/        third-party notices shipped with the app (ONNX Runtime's, per version)
 ```
 
 ### Library use

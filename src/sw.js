@@ -6,14 +6,52 @@
 //   - SHELL_ASSETS / ORT_ASSETS: generated precache lists.
 //   - ORT_VERSION: onnxruntime-web version; the ~30 MB runtime lives in its own cache
 //                  so UI-only releases do not re-download it.
+//   - ORT_SHA256 / ORT_FILES_ID: SHA-256 of each runtime file, and an id derived from them
+//                  that names the runtime cache (see precacheOrt).
 const BUILD_HASH = '__WEBGRAINY_BUILD_HASH__';
 const ORT_VERSION = '__WEBGRAINY_ORT_VERSION__';
 const SHELL_ASSETS = __WEBGRAINY_SHELL_ASSETS__;
 const ORT_ASSETS = __WEBGRAINY_ORT_ASSETS__;
+const ORT_SHA256 = __WEBGRAINY_ORT_SHA256__;
+const ORT_FILES_ID = '__WEBGRAINY_ORT_FILES_ID__';
 
 const SHELL_CACHE = `webgrainy-shell-${BUILD_HASH}`;
-const ORT_CACHE = `webgrainy-ort-${ORT_VERSION}`;
+// Named by the runtime files' hashes, not only the version, so a cache filled by an earlier
+// service worker without the checks below (possibly with stale files) is never reused.
+const ORT_CACHE = `webgrainy-ort-${ORT_VERSION}-${ORT_FILES_ID}`;
 const KEEP = new Set([SHELL_CACHE, ORT_CACHE]);
+
+// Precache requests bypass the browser's HTTP cache. Hosts such as GitHub Pages send
+// `Cache-Control: max-age=600`: a plain fetch soon after a deploy returns the previous build's
+// files from the HTTP cache, which would then be stored under the NEW build's cache name, so
+// "Reload to update" would keep running the old code (until the next deploy).
+const fresh = (url) => new Request(url, { cache: 'reload' });
+
+async function sha256Hex(buffer) {
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', buffer));
+  let hex = '';
+  for (const b of digest) hex += b.toString(16).padStart(2, '0');
+  return hex;
+}
+
+// The runtime cache is shared by every build with the same runtime and only missing files are
+// fetched, so a wrong file stored here would outlive later deploys. Each file is therefore
+// stored only after its SHA-256 matched this build. On a mismatch (e.g. a CDN still serving
+// the previous deploy) the install fails and the browser retries the update on a later visit.
+async function precacheOrt() {
+  const cache = await caches.open(ORT_CACHE);
+  for (const url of ORT_ASSETS) {
+    if (await cache.match(url)) continue;
+    const res = await fetch(fresh(url));
+    if (!res.ok) throw new Error(`Precache ${url}: HTTP ${res.status}`);
+    const body = await res.arrayBuffer();
+    const actual = await sha256Hex(body);
+    if (actual !== ORT_SHA256[url]) {
+      throw new Error(`Precache ${url}: SHA-256 ${actual} does not match this build (${ORT_SHA256[url]})`);
+    }
+    await cache.put(url, new Response(body, { status: res.status, statusText: res.statusText, headers: res.headers }));
+  }
+}
 
 // Cross-origin isolation (COOP/COEP) lets onnxruntime-web use WASM threads (about 2-3x
 // faster CPU inference; see DEPLOYMENT.md). Many static hosts (e.g. GitHub Pages) cannot
@@ -44,15 +82,8 @@ function withIsolationHeaders(response) {
 self.addEventListener('install', (event) => {
   event.waitUntil(
     Promise.all([
-      caches.open(SHELL_CACHE).then((cache) => cache.addAll(SHELL_ASSETS)),
-      caches.open(ORT_CACHE).then(async (cache) => {
-        // Only fetch runtime files that are not already cached for this ORT version.
-        const missing = [];
-        for (const url of ORT_ASSETS) {
-          if (!(await cache.match(url))) missing.push(url);
-        }
-        await cache.addAll(missing);
-      }),
+      caches.open(SHELL_CACHE).then((cache) => cache.addAll(SHELL_ASSETS.map(fresh))),
+      precacheOrt(),
     ]),
   );
 });

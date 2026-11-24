@@ -298,15 +298,44 @@ try {
     await page.click('details.settings-block > summary');
     await page.selectOption('select[data-param="model"]', M.select);
     if (M.weights) await page.selectOption('select[data-param="cpsamWeights"]', M.weights);
+    if (SMOKE_MODEL === 'cpsam') {
+      // Cancel during a CPU tile (seconds long, so this is deterministic): the page must say at
+      // once that it is stopping, and afterwards the photo is pending, not "running"
+      // (production readiness review m1, m2).
+      await page.click('button[data-action="run-active"]');
+      // Wait for the tile loop itself ("tile N of M"): plain "Finding grains…" already shows before
+      // the model download, which Cancel stops at once (no "Stopping…" phase to check).
+      await page.waitForFunction(() => /Finding grains: tile \d+ of \d+/.test(document.getElementById('activity-bar')?.innerText ?? ''), null, { timeout: TIMEOUT_MS, polling: 250 });
+      await page.locator('[data-action="cancel-batch"]:visible').first().click();
+      const stoppingShown = await page
+        .waitForFunction(
+          () =>
+            document.querySelectorAll('[data-action="cancel-batch"]').length === 0 &&
+            [...document.querySelectorAll('button')].some((b) => b.disabled && b.textContent.trim() === 'Stopping…') &&
+            /Stopping: the current step finishes first/.test(document.getElementById('activity-bar')?.innerText ?? ''),
+          null,
+          { timeout: 2000, polling: 50 },
+        )
+        .then(() => true, () => false);
+      if (!stoppingShown) fail('Cancel did not switch the page to "Stopping…" at once');
+      await page.waitForFunction(() => /Batch cancelled/.test(document.getElementById('viewport-footer')?.innerText ?? ''), null, { timeout: TIMEOUT_MS, polling: 500 });
+      const item = await page.evaluate(() => document.querySelector('.photo-item')?.innerText ?? '');
+      if (!/\bpending\b/.test(item) || /\brunning\b/.test(item)) fail(`after Cancel the photo should be pending, not running: ${item.replace(/\s+/g, ' ')}`);
+      console.log('ok: Cancel shows "Stopping…" at once; the photo is pending afterwards');
+    }
     await page.click('button[data-action="run-active"]');
+    // Read the visible status line (#viewport-footer): the screen-reader announcer keeps the
+    // previous batch's result while a batch runs, and an earlier (cancelled) batch's status must
+    // not count as the end of this one.
+    await page.waitForFunction(() => !/Batch (complete|error|cancelled)/.test(document.getElementById('viewport-footer')?.innerText ?? ''), null, { timeout: 30000, polling: 100 });
 
     const t0 = Date.now();
     await page.waitForFunction(
-      () => /Batch complete|Batch error|Batch cancelled/.test(document.body.innerText),
+      () => /Batch complete|Batch error|Batch cancelled/.test(document.getElementById('viewport-footer')?.innerText ?? ''),
       null,
       { timeout: TIMEOUT_MS, polling: 2000 },
     );
-    const footer = await page.evaluate(() => document.body.innerText.match(/Batch[^\n]*/)?.[0] ?? '');
+    const footer = await page.evaluate(() => (document.getElementById('viewport-footer')?.innerText ?? '').match(/Batch[^\n]*/)?.[0] ?? '');
     console.log(`analysis finished in ${((Date.now() - t0) / 1000).toFixed(0)} s: ${footer}`);
     if (!/1 done, 0 failed/.test(footer)) fail(`analysis did not succeed: ${footer}`);
     const longTasks = await page.evaluate(() => window.__longTasks.slice());

@@ -90,6 +90,7 @@ function setup(
     enhance?: () => Promise<unknown>;
     ifSiteNotOpen?: (siteId: string, openHere: string | null, fn: () => Promise<void>) => Promise<boolean>;
     retentionSince?: () => number;
+    imageSize?: () => Promise<{ width: number; height: number }>;
   } = {},
 ) {
   const store = new AppStore(createInitialState());
@@ -103,7 +104,7 @@ function setup(
     storage: world.storage,
     loadStoredSiteInputs: async () => [],
     images: {
-      imageSize: async () => ({ width: 120, height: 80 }),
+      imageSize: overrides.imageSize ?? (async () => ({ width: 120, height: 80 })),
       metadata: async () => undefined,
       rectify: (overrides.rectify ?? (async () => null)) as never,
       ...(overrides.enhance ? { enhance: overrides.enhance as never } : {}),
@@ -113,6 +114,7 @@ function setup(
       begin: (t) => log.push(`begin ${t}`),
       photoStarted: (i, l) => log.push(`photo ${i} ${l}`),
       setTotal: () => {},
+      stopping: () => log.push('stopping'),
       end: () => log.push('end'),
     },
     job: {
@@ -155,6 +157,35 @@ describe('workspace actions', () => {
     await actions.handleFilesAdded([new File(['x'], 'one-more.jpg', { type: 'image/jpeg' })]);
     expect(world.sites.get('a')!.photoOrder).toHaveLength(SITE_PHOTO_SOFT_LIMIT + 1);
     expect(store.getState().statusMessage).toMatch(/101 photos.*splitting/);
+  });
+
+  it('Cancel shows "stopping" at once, and a photo cut short is pending again, not running (review m1, m2)', async () => {
+    const world = fakeWorld();
+    world.sites.set('a', site('a', ['p1', 'p2']));
+    world.photos.set('p1', photo('p1', 'a'));
+    world.photos.set('p2', photo('p2', 'a'));
+    const during: Array<{ stopping?: boolean; message: string; p1?: string }> = [];
+    let store: AppStore | null = null;
+    world.storage.runSiteBatch = async (o: BatchRunOptions): Promise<BatchRunResult> => {
+      o.onPhotoStart?.(world.photos.get('p1')!);
+      world.actionsRef.current!.cancelBatch();
+      world.actionsRef.current!.cancelBatch(); // a second click changes nothing
+      const st = store!.getState();
+      during.push({ ...(st.batchStopping !== undefined ? { stopping: st.batchStopping } : {}), message: st.statusMessage, ...(st.photoStatuses.get('p1') ? { p1: st.photoStatuses.get('p1')! } : {}) });
+      // The engine notices Cancel after its current step: p1 was not finished.
+      return { siteId: o.siteId, total: 2, completed: 0, failed: 0, aborted: true, completedPhotoIds: [], failedPhotoIds: [] };
+    };
+    const env = setup(world);
+    store = env.store;
+    await env.actions.createDefaultOrLoadSites();
+    await env.actions.runBatch();
+    expect(during).toEqual([{ stopping: true, message: 'Stopping: the current step finishes first…', p1: 'running' }]);
+    expect(env.log.filter((l) => l === 'stopping')).toHaveLength(1);
+    const st = env.store.getState();
+    expect(st.photoStatuses.get('p1')).toBe('pending');
+    expect(st.batchStopping).toBe(false);
+    expect(st.batchRunning).toBe(false);
+    expect(st.statusMessage).toBe('Batch cancelled (0/2 completed)');
   });
 
   it('records statuses, errors and sessions during a batch', async () => {
@@ -252,6 +283,30 @@ describe('workspace actions', () => {
     expect(st.photoStatuses.get(st.photos[0]!.photoId)).toBe('pending');
     expect(world.sites.get('a')!.photoOrder).toHaveLength(1);
     expect(changed).toContain('a');
+  });
+
+  it('says why a photo the browser cannot decode was not added: HEIC, damaged, empty (review m3)', async () => {
+    const world = fakeWorld();
+    world.sites.set('a', site('a', []));
+    const decodeError = Object.assign(new Error('The source image could not be decoded.'), { name: 'InvalidStateError' });
+    const { store, actions } = setup(world, { imageSize: async () => Promise.reject(decodeError) });
+    await actions.createDefaultOrLoadSites();
+    const messages: string[] = [];
+    for (const f of [
+      new File(['x'], 'IMG_0042.HEIC', { type: 'image/heic' }),
+      new File(['x'], 'broken.jpg', { type: 'image/jpeg' }),
+      new File([], 'empty.png', { type: 'image/png' }),
+    ]) {
+      await actions.handleFilesAdded([f]);
+      messages.push(store.getState().statusMessage);
+    }
+    expect(messages).toEqual([
+      'Failed to import IMG_0042.HEIC: HEIC/HEIF photos cannot be opened in this browser. Save or share the photo as JPEG (on an iPhone: Settings → Camera → Formats → Most Compatible) and add it again.',
+      'Failed to import broken.jpg: the file is damaged, or not an image this browser can read. Use JPEG, PNG, WebP or TIFF.',
+      'Failed to import empty.png: the file is empty (0 bytes).',
+    ]);
+    expect(store.getState().photos).toEqual([]);
+    expect(store.getState().storageFullNotice ?? null).toBeNull();
   });
 
   it('analyse -> calibrate updates singlePhotoStats and siteReport immediately even if IDB savePhotoResult fails, and re-analyse preserves calibration', async () => {

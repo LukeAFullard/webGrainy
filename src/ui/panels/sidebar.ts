@@ -116,7 +116,9 @@ export function renderSidebarHtml(state: AppState, view: SidebarView): string {
           }
           ${
             state.batchRunning
-              ? `<button type="button" class="btn btn-sm btn-danger" data-action="cancel-batch">Cancel</button>`
+              ? state.batchStopping
+                ? `<button type="button" class="btn btn-sm btn-danger" disabled title="The current step finishes first">Stopping…</button>`
+                : `<button type="button" class="btn btn-sm btn-danger" data-action="cancel-batch">Cancel</button>`
               : pendingCount > 0
                 ? `<button type="button" class="btn btn-sm btn-primary" data-action="run-batch" ${state.enhancing ? 'disabled' : ''}>Analyse ${pendingCount === state.photos.length ? (pendingCount === 1 ? 'photo' : `all ${pendingCount}`) : `${pendingCount} new`}</button>`
                 : ''

@@ -15,10 +15,11 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Least privilege: only the deploy job can publish to Pages (pages: write, and id-token: write
+# for the deployment's OIDC token). The build job runs npm ci and the test suite (third-party
+# code), so it gets read access only.
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
   group: pages
@@ -38,6 +39,9 @@ jobs:
         (github.event_name == 'workflow_dispatch' && needs.ci.result == 'success') ||
         (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
       )
+    permissions:
+      contents: read
+      pages: read # actions/configure-pages reads the site's Pages settings
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -65,6 +69,13 @@ jobs:
 
   deploy:
     needs: build
+    # Required: without it the implicit `success()` also looks at `ci`, which is skipped on every
+    # push to main (workflow_run), so the deploy was skipped too while the run still showed green.
+    if: ${{ !cancelled() && needs.build.result == 'success' }}
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
     runs-on: ubuntu-latest
     environment:
       name: github-pages

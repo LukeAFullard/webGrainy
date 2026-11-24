@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyEvent, describeActivity, formatDuration, markTilesStarting, newActivity, startPhoto } from '../src/ui/progress.js';
+import { applyEvent, describeActivity, formatDuration, markStopping, markTilesStarting, newActivity, renderActivityHtml, startPhoto } from '../src/ui/progress.js';
 
 describe('analysis progress', () => {
   it('reports download, model load, tiles with time left, and outlines', () => {
@@ -35,5 +35,19 @@ describe('analysis progress', () => {
     expect(formatDuration(60_000)).toBe('1 min');
     expect(formatDuration(95_000)).toBe('1 min 35 s');
     expect(formatDuration(3_900_000)).toBe('1 h 5 min');
+  });
+
+  it('after Cancel says the current step finishes first, with the tile time, and disables Cancel (review m2)', () => {
+    let s = markTilesStarting(applyEvent(startPhoto(newActivity(1), 1, 'a.jpg'), 'inference', {}, 0), 0);
+    s = applyEvent(s, 'inference', { completedTiles: 1, totalTiles: 9 }, 18_000);
+    expect(renderActivityHtml(s)).toContain('data-action="cancel-batch"');
+    const stopped = markStopping(s);
+    expect(markStopping(stopped)).toBe(stopped);
+    expect(describeActivity(stopped).detail).toBe('Stopping: the current step finishes first (a tile takes about 18 s)…');
+    const html = renderActivityHtml(stopped);
+    expect(html).not.toContain('data-action="cancel-batch"');
+    expect(html).toMatch(/<button[^>]*disabled[^>]*>Stopping…<\/button>/);
+    // Outside the tile loop there is no tile time to quote.
+    expect(describeActivity(markStopping(startPhoto(newActivity(1), 1, 'a.jpg'))).detail).toBe('Stopping: the current step finishes first…');
   });
 });

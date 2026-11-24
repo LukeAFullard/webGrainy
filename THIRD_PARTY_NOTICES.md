@@ -38,8 +38,21 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-ONNX Runtime itself incorporates further third-party components. Their notices are
-published at <https://github.com/microsoft/onnxruntime/blob/main/ThirdPartyNotices.txt>.
+#### Third-party components inside the ONNX Runtime WebAssembly binary
+
+`dist/ort/ort-wasm-simd-threaded.jsep.wasm` contains compiled code of further third-party
+components (among others Protocol Buffers, Abseil, RE2, ONNX, Eigen, SafeInt, nlohmann/json,
+FlatBuffers and the Guidelines Support Library, under licences such as BSD-3-Clause,
+Apache-2.0, MIT and MPL-2.0). Their notices and licence
+texts, as published by Microsoft with ONNX Runtime **1.31.1**, are reproduced in full and
+unchanged in
+[`licenses/onnxruntime-1.31.1-ThirdPartyNotices.txt`](licenses/onnxruntime-1.31.1-ThirdPartyNotices.txt),
+which ships with the app as `ort/ThirdPartyNotices.txt` (linked from the About dialog, and
+available offline). Source of that file: `onnxruntime/ThirdPartyNotices.txt` in the official
+`onnxruntime` 1.31.1 release on PyPI (<https://pypi.org/project/onnxruntime/1.31.1/>), SHA-256
+`143764b952fdb1a7c69ce653bfba74a7744d6a8a573bfb73e235fba356c83de3`. The `onnxruntime-web` npm
+package does not include it. The build stops if the notices for the installed ONNX Runtime
+version are missing, so an update of ONNX Runtime must bring its matching file.
 
 ### UTIF (`utif2` 4.1.0) — MIT
 

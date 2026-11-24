@@ -142,6 +142,9 @@ describe('panel renderers', () => {
     const running = renderSidebarHtml({ ...analysed, batchRunning: true, photoStatuses: new Map([['p1', 'running'], ['p2', 'pending']] as const) }, sidebarView);
     expect(running).toMatch(/data-action="cancel-batch"|Cancel/);
     expect(running).toMatch(/data-action="run-active"[^>]*disabled/);
+    const stopping = renderSidebarHtml({ ...analysed, batchRunning: true, batchStopping: true }, sidebarView);
+    expect(stopping).not.toContain('data-action="cancel-batch"');
+    expect(stopping).toMatch(/<button[^>]*disabled[^>]*>Stopping…<\/button>/);
     const failed = renderSidebarHtml({ ...analysed, photoStatuses: new Map([['p1', 'done'], ['p2', 'error']] as const), photoErrors: new Map([['p2', 'out of memory']]) }, sidebarView);
     expect(failed).toContain('out of memory');
     const noThreads = renderSidebarHtml(analysed, { ...sidebarView, crossOriginIsolated: false, canNotify: false });

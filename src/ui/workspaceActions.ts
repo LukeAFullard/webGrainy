@@ -33,6 +33,7 @@ import {
 import { isSupportedImageFile } from '../modules/tiffDecode.js';
 import { photoProcessingHistory, type PhotoEnhancementInfo, type SitePhotoMetadata } from '../modules/siteTypes.js';
 import { toAnalysisConfig, type AppState, type AppStore } from './state.js';
+import { undecodableImageError } from './importErrors.js';
 
 /** The storage functions the actions use (projectStorage by default). */
 export type WorkspaceStorage = Pick<
@@ -49,6 +50,8 @@ export interface ActivityHooks {
   begin(totalPhotos: number): void;
   photoStarted(index: number, label: string): void;
   setTotal(totalPhotos: number): void;
+  /** Cancel was pressed: show that the batch stops after the current step. */
+  stopping?(): void;
   end(): void;
 }
 
@@ -440,7 +443,9 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
         const blob = prepared ? prepared.blob : file;
         const { width, height } = prepared
           ? { width: prepared.width, height: prepared.height }
-          : await images.imageSize(file);
+          : await images.imageSize(file).catch((err: unknown): never => {
+              throw undecodableImageError(file, err);
+            });
         const metadata = prepared
           ? prepared.metadata
           : await images.metadata(file).catch(() => undefined);
@@ -599,7 +604,7 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
       });
     } finally {
       batchAbortController = null;
-      store.setState({ batchRunning: false, batchProgress: null });
+      store.setState({ batchRunning: false, batchStopping: false, batchProgress: null });
       activity.end();
       storedSiteInputsCache.clear();
       job.finish(true, ''); // no-op unless an error ended the job early
@@ -740,7 +745,8 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
       });
     } finally {
       batchAbortController = null;
-      store.setState({ batchRunning: false, batchProgress: null });
+      const statuses = clearRunningStatuses();
+      store.setState({ batchRunning: false, batchStopping: false, batchProgress: null, ...(statuses ? { photoStatuses: statuses } : {}) });
       activity.end();
       job.releaseWakeLock();
       if (!allSitesJobActive) job.finish(true, ''); // no-op unless an error ended the job early
@@ -779,9 +785,25 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
     await loadSiteData(site.siteId).catch(() => undefined);
   }
 
-  /** Stops the running batch (and, for "Analyse all sites", the whole job). */
+  /**
+   * Stops the running batch (and, for "Analyse all sites", the whole job). The engine checks
+   * for this between steps, so the current step (a model tile can take many seconds on the
+   * CPU) finishes first: say so at once instead of leaving the button looking unresponsive.
+   */
   function cancelBatch(): void {
-    batchAbortController?.abort();
+    if (!batchAbortController || batchAbortController.signal.aborted) return;
+    batchAbortController.abort();
+    activity.stopping?.();
+    store.setState({ batchStopping: true, statusMessage: 'Stopping: the current step finishes first…' });
+  }
+
+  /** Photos still marked running when a batch ends were not finished: they are pending again. */
+  function clearRunningStatuses(): Map<string, 'pending' | 'running' | 'done' | 'error'> | null {
+    const statuses = store.getState().photoStatuses;
+    if (![...statuses.values()].includes('running')) return null;
+    const next = new Map(statuses);
+    for (const [id, s] of next) if (s === 'running') next.set(id, 'pending');
+    return next;
   }
 
   /**

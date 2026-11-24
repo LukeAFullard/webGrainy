@@ -54,7 +54,7 @@ import { buildCompareReportHtml, compareReportTitle, comparisonStatistics } from
 import { buildComparisonView } from './comparisonView.js';
 import { APP_SHELL_HTML } from './shellHtml.js';
 import { computeBlurScoreFromBlob, decodeTiffFileToPng, enhanceWithCanvas, rectifyWithCanvas } from './imageCanvas.js';
-import { applyEvent, newActivity, renderActivityHtml, startPhoto, type ActivityState } from './progress.js';
+import { applyEvent, markStopping, newActivity, renderActivityHtml, startPhoto, type ActivityState } from './progress.js';
 import { CPU_THREADS_KEY, readCpuThreadPref } from './cpuThreads.js';
 import { svgToPngBlob, withSvgMetadata } from './chartExport.js';
 import { baseExportMetadata } from '../modules/provenance.js';
@@ -361,6 +361,11 @@ const actions = createWorkspaceActions({
         activity = { ...activity, photoTotal: total };
         scheduleActivityRender();
       }
+    },
+    stopping: () => {
+      if (!activity) return;
+      activity = markStopping(activity);
+      renderActivityBar();
     },
     end: () => {
       activity = null;
@@ -783,6 +788,7 @@ function renderAll(state: AppState): void {
     prev.sessions !== state.sessions ||
     prev.thumbUrls !== state.thumbUrls ||
     prev.batchRunning !== state.batchRunning ||
+    prev.batchStopping !== state.batchStopping ||
     prev.batchProgress !== state.batchProgress ||
     prev.analysisParams !== state.analysisParams ||
     prev.photoErrors !== state.photoErrors ||
