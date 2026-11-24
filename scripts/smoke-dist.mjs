@@ -100,7 +100,12 @@ console.log(`ok: ${lists.flat().length} precache assets reachable`);
 
 // 1b. The build must stamp the source commit (every export records it as appCommit).
 const mainJs = readFileSync(join(DIST, 'ui', 'main.js'), 'utf8');
-const commit = mainJs.match(/BUILD_COMMIT = (?:true \? )?"([^"]*)"/)?.[1] ?? null;
+// The bundle is minified (variable names change): read the commit from the build banner, and
+// check that the same commit string is compiled into the code (BUILD_COMMIT).
+const commit = mainJs.match(/^\/\*! webGrainy \S+ build (\S+) \*\//)?.[1] ?? null;
+if (commit !== null && mainJs.indexOf(JSON.stringify(commit), 40) === -1) {
+  fail(`build banner names commit ${commit}, but the code does not contain it`);
+}
 if (mainJs.includes('__BUILD_COMMIT__') || commit === null || !/^[0-9a-f]{7,40}(-modified)?$/.test(commit)) {
   fail(`build commit not stamped into dist/ui/main.js (found ${commit})`);
 }

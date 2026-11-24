@@ -47,11 +47,15 @@ export const dialogActions: Record<string, ActionHandler> = {
     modelAbortControllers.get(el.dataset['modelId'] as ModelId)?.abort();
   },
   'delete-model': (el, ctx) => {
-    void deleteCachedModel(el.dataset['modelId'] as ModelId).then(() => ctx.actions.refreshCapabilities());
+    void deleteCachedModel(el.dataset['modelId'] as ModelId)
+      .then(() => ctx.actions.refreshCapabilities())
+      .catch((err: unknown) => ctx.store.setState({ statusMessage: `Could not remove the model: ${err instanceof Error ? err.message : String(err)}` }));
   },
   'printable-report': (_el, ctx) => ctx.ui.openReport(),
   'clear-model-cache': (_el, ctx) => {
-    void clearModelCache().then(() => ctx.actions.refreshCapabilities());
+    void clearModelCache()
+      .then(() => ctx.actions.refreshCapabilities())
+      .catch((err: unknown) => ctx.store.setState({ statusMessage: `Could not clear the model cache: ${err instanceof Error ? err.message : String(err)}` }));
   },
 };
 

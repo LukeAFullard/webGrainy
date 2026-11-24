@@ -346,11 +346,20 @@ export async function downloadModel(
   const normalizedBase = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
   const url = `${normalizedBase}${fileName}`;
 
-  const response = await fetch(url, {
-    signal,
-    credentials: 'omit',
-    referrerPolicy: 'no-referrer',
-  });
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      signal,
+      credentials: 'omit',
+      referrerPolicy: 'no-referrer',
+    });
+  } catch (err) {
+    if (signal?.aborted) throw createAbortError(signal.reason);
+    // fetch() rejects with a bare "TypeError: Failed to fetch" when there is no connection.
+    throw new Error(
+      `Could not download the model "${modelId}": no connection to ${new URL(url).host} (offline, or blocked by a firewall or proxy). Connect and try again. (${err instanceof Error ? err.message : String(err)})`,
+    );
+  }
   if (!response.ok) {
     throw new Error(
       `Failed to download model "${modelId}" from ${url}: HTTP ${response.status} ${response.statusText}`,

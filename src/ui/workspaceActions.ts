@@ -222,6 +222,8 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
    * this tab analyses or enhances (its own writes would race); its next save still merges.
    */
   async function refreshFromStorage(notice: { siteIds: readonly string[]; photoIds: readonly string[] }): Promise<void> {
+    // Sites changed in another tab: their cached comparison inputs are stale.
+    for (const id of notice.siteIds) storedSiteInputsCache.delete(id);
     const sites = await storage.listSites();
     const st = store.getState();
     const siteId = st.activeSiteId;
@@ -465,6 +467,7 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
       } catch (err) {
         store.setState({
           statusMessage: `Failed to import ${file.name}: ${err instanceof Error ? err.message : String(err)}`,
+          ...fullNotice(err, file.name),
         });
       }
       if (performance.now() >= taskDeadline) {
@@ -763,12 +766,17 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
     const site = getActiveSite(st);
     if (!site || st.batchRunning || enhancing) return;
     const ids = new Set(photoIds);
-    for (const id of ids) await storage.deletePhoto(id);
-    await storage.saveSite({ ...site, photoOrder: site.photoOrder.filter((id) => !ids.has(id)), updatedAt: Date.now() });
-    deps.markSiteChanged(site.siteId);
-    const sites = await storage.listSites();
-    store.setState({ sites, selectedPhotoIds: new Set(), statusMessage: `Deleted ${ids.size} photo${ids.size === 1 ? '' : 's'}.` });
-    await loadSiteData(site.siteId);
+    try {
+      for (const id of ids) await storage.deletePhoto(id);
+      await storage.saveSite({ ...site, photoOrder: site.photoOrder.filter((id) => !ids.has(id)), updatedAt: Date.now() });
+      deps.markSiteChanged(site.siteId);
+      const sites = await storage.listSites();
+      store.setState({ sites, selectedPhotoIds: new Set(), statusMessage: `Deleted ${ids.size} photo${ids.size === 1 ? '' : 's'}.` });
+    } catch (err) {
+      store.setState({ statusMessage: `Could not delete the photo${ids.size === 1 ? '' : 's'}: ${err instanceof Error ? err.message : String(err)}` });
+    }
+    // Show what storage now holds (also after a partial failure).
+    await loadSiteData(site.siteId).catch(() => undefined);
   }
 
   /** Stops the running batch (and, for "Analyse all sites", the whole job). */
@@ -776,10 +784,6 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
     batchAbortController?.abort();
   }
 
-  /**
-   * A save to browser storage failed: say so plainly (the change is shown but not stored),
-   * and when storage is full, show the storage-full notice with what to do.
-   */
   /**
    * Replaces the active photo's ROI / exclusion areas with `update(previous)`, applies them to its
    * results, saves the photo and refreshes the statistics and viewport.
@@ -797,6 +801,17 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
     void deps.syncViewport(false);
   }
 
+  /** The storage-full notice for a failed step, when the failure was a full browser storage. */
+  function fullNotice(err: unknown, what: string): Partial<AppState> {
+    return isStorageFullError(err)
+      ? { storageFullNotice: `Browser storage is full: ${what} could not be saved. Download results now, then free space.` }
+      : {};
+  }
+
+  /**
+   * A save to browser storage failed: say so plainly (the change is shown but not stored),
+   * and when storage is full, show the storage-full notice with what to do.
+   */
   function reportSaveFailure(err: unknown, what: string): void {
     const full = isStorageFullError(err);
     const message = full
@@ -878,6 +893,7 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
       store.setState({
         pendingCalibrationPoints: [],
         statusMessage: `Calibration failed: ${err instanceof Error ? err.message : String(err)}`,
+        ...fullNotice(err, 'the scale'),
       });
       await deps.syncViewport(false);
       return;
@@ -907,6 +923,7 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
     } catch (err) {
       store.setState({
         statusMessage: `Calibrated ${photo.label} (${cal.mmPerPx.toFixed(4)} mm/px), but could not save to browser storage: ${err instanceof Error ? err.message : String(err)}`,
+        ...fullNotice(err, `the scale of ${photo.label}`),
       });
     }
   }
@@ -1016,6 +1033,7 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
       store.setState({
         pendingRectifyPoints: [],
         statusMessage: `Rectification failed: ${err instanceof Error ? err.message : String(err)}`,
+        ...fullNotice(err, 'the rectified photo'),
       });
       await deps.syncViewport(false);
     }
@@ -1072,7 +1090,7 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
       deps.onStorageChanged();
       await deps.syncViewport(true);
     } catch (err) {
-      store.setState({ statusMessage: `Undo rectify failed: ${err instanceof Error ? err.message : String(err)}` });
+      store.setState({ statusMessage: `Undo rectify failed: ${err instanceof Error ? err.message : String(err)}`, ...fullNotice(err, 'the restored photo') });
     }
   }
 
@@ -1179,6 +1197,7 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
     } catch (err) {
       store.setState({
         statusMessage: `Enhancement failed: ${err instanceof Error ? err.message : String(err)}`,
+        ...fullNotice(err, 'the enhanced photo'),
       });
     } finally {
       enhancing = false;
@@ -1238,6 +1257,7 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
     } catch (err) {
       store.setState({
         statusMessage: `Revert failed: ${err instanceof Error ? err.message : String(err)}`,
+        ...fullNotice(err, 'the original photo'),
       });
     }
   }

@@ -27,7 +27,9 @@ GitHub Pages can't set COOP/COEP headers; the app's service worker adds them (se
 
 All URLs are relative to `index.html`. You can host from a sub-path such as
 `https://example.org/tools/webgrainy/`. Keep the directory layout of `dist/` intact:
-`ui/`, `workers/` and `ort/` must sit next to `index.html`. The ORT runtime path is
+`ui/`, `workers/` and `ort/` must sit next to `index.html`. `dist/index.js`, `dist/modules/` and
+`dist/chunks/` are the JavaScript library build (see the README) and are not needed to host the app
+(the GitHub Pages workflow leaves them out). The ORT runtime path is
 resolved against the page URL (`document.baseURI`), not the script URL.
 
 ## Recommended HTTP headers

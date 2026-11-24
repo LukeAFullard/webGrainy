@@ -151,6 +151,10 @@ async function readCachedEnhanceModel(modelId: string): Promise<ArrayBuffer | nu
       req.onerror = () => resolve(null);
       tx.oncomplete = () => db.close();
       tx.onerror = () => db.close();
+      tx.onabort = () => {
+        db.close();
+        resolve(null);
+      };
     } catch {
       db.close();
       resolve(null);
@@ -170,6 +174,12 @@ async function writeCachedEnhanceModel(rec: CachedEnhanceRecord): Promise<void> 
         resolve();
       };
       tx.onerror = () => {
+        db.close();
+        resolve();
+      };
+      // A quota-exceeded write aborts the transaction (only 'abort' may fire): caching is
+      // best-effort, so carry on instead of waiting forever.
+      tx.onabort = () => {
         db.close();
         resolve();
       };
