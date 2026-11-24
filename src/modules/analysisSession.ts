@@ -1078,12 +1078,15 @@ export class AnalysisSession {
     styleOf?: (g: GrainMorphometrics) => GrainSvgStyle | null,
   ): string {
     const grains = onlyIds ? this.workingGrains.filter((g) => onlyIds.has(g.id)) : this.workingGrains;
+    // Styles are chosen from the calibrated grains (sizes in mm and photo pixels), as in exportGeoJson.
+    const grainById = new Map(this.grains.map((g) => [g.id, g]));
+    const style = styleOf ? (wg: GrainMorphometrics) => styleOf(grainById.get(wg.id) ?? wg) : undefined;
     return buildContourSvg(this.workingMasks, grains, this.workingImage.width, this.workingImage.height, {
       scaleInv: this.outputScaleInv(),
       outWidth: this.workingImage.originalWidth,
       outHeight: this.workingImage.originalHeight,
       metadata: { ...this.getExportMetadata(photoMetadata), grains: onlyIds ? 'only the grains counted in the statistics (border rule, ROI and size cutoffs applied)' : 'all detected grains' },
-      ...(styleOf ? { styleOf } : {}),
+      ...(style ? { styleOf: style } : {}),
     });
   }
 

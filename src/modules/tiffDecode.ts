@@ -38,7 +38,10 @@ export function isTiffFile(file: { name?: string; type?: string }): boolean {
 
 /** Returns true if a file is a supported photo format (standard browser image/* or TIFF). */
 export function isSupportedImageFile(file: { name?: string; type?: string }): boolean {
-  return (file.type ?? '').toLowerCase().startsWith('image/') || isTiffFile(file);
+  const t = (file.type ?? '').toLowerCase();
+  // SVG is a vector document, not a photo (and can carry scripts): never imported as one.
+  if (t === 'image/svg+xml' || /\.svgz?$/i.test(file.name ?? '')) return false;
+  return t.startsWith('image/') || isTiffFile(file);
 }
 
 /** Checks standard TIFF (`II*\0`, `MM\0*`) or BigTIFF (`II+\0`, `MM\0+`) magic headers. */
@@ -149,7 +152,12 @@ function extractGeoTiffCalibration(
   // rotated rasters) when that maps pixels to the map without skew.
   let pixelSize: [number, number] | undefined;
   let fromTransform = false;
-  if (Array.isArray(scaleTag) && scaleTag.length >= 2) {
+  // A pixel scale of zero (or garbage) next to a valid transformation falls back to the
+  // transformation, as georef.ts (which prefers ModelTransformationTag) places the photo.
+  const scaleOk =
+    Array.isArray(scaleTag) && scaleTag.length >= 2 && Number(scaleTag[0]) > 0 && Number(scaleTag[1]) > 0 &&
+    Number.isFinite(Number(scaleTag[0])) && Number.isFinite(Number(scaleTag[1]));
+  if (scaleOk) {
     pixelSize = [Number(scaleTag[0]), Number(scaleTag[1])];
   } else if (Array.isArray(transformTag) && transformTag.length >= 16) {
     const [m0, m1, m4, m5] = [Number(transformTag[0]), Number(transformTag[1]), Number(transformTag[4]), Number(transformTag[5])];

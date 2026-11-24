@@ -132,6 +132,8 @@ export async function buildZip(entries: readonly ZipEntry[], now = new Date()): 
   }
   const cdSize = central.reduce((n, c) => n + c.byteLength, 0);
   if (offset + cdSize > LIMIT) throw new Error('The download is larger than 4 GB; leave out the project file or download fewer photos.');
+  // The (non-ZIP64) end record counts entries in 16 bits.
+  if (entries.length > 0xffff) throw new Error('The download has more than 65,535 files; download fewer photos.');
   const end = new Uint8Array(22);
   const ev = new DataView(end.buffer);
   ev.setUint32(0, 0x06054b50, true);

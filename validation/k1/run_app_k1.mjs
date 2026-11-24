@@ -119,7 +119,6 @@ for (const kind of models) {
     const session = await engine.analyzeImage(img, {
       model: kind,
       cpsamWeights: 'int8',
-      inferencePipeline: 'cellpose',
       scaleMode: 'auto',
       calibration: ScaleCalibrator.calibrate({ x: 0, y: 0 }, { x: 100, y: 0 }, 100 * MM_PER_PX),
     });

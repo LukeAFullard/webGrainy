@@ -113,7 +113,8 @@ export function computeBinomialCi(
   const isKish =
     poolingMode !== 'number-weighted' && poolingMode !== 'virtual-wolman-grid';
   const rawN = isKish
-    ? (sumW * sumW) / Math.max(1e-12, sumW2)
+    ? // No floor on sumW2: scale-free, so tiny normalised weights (equal-photo / facies) keep their n_eff.
+      sumW2 > 0 ? (sumW * sumW) / sumW2 : 0
     : sumW;
   const nUsed = Math.max(1, Math.round(rawN));
 
@@ -586,11 +587,12 @@ export function runBootstrapReference(
     if (unit === 'mm') {
       const fw = computeFolkWardStats(psd);
       if (fw !== null) {
-        fwMeanPhi.push(fw.meanPhi);
-        fwSortingPhi.push(fw.sortingPhi);
-        fwSkewnessPhi.push(fw.skewnessPhi);
-        fwKurtosisPhi.push(fw.kurtosisPhi);
-        fwMeanMm.push(fw.meanMm);
+        // Only finite values: a NaN would corrupt the sorted percentile of its measure.
+        if (Number.isFinite(fw.meanPhi)) fwMeanPhi.push(fw.meanPhi);
+        if (Number.isFinite(fw.sortingPhi)) fwSortingPhi.push(fw.sortingPhi);
+        if (Number.isFinite(fw.skewnessPhi)) fwSkewnessPhi.push(fw.skewnessPhi);
+        if (Number.isFinite(fw.kurtosisPhi)) fwKurtosisPhi.push(fw.kurtosisPhi);
+        if (Number.isFinite(fw.meanMm)) fwMeanMm.push(fw.meanMm);
       }
     }
   }

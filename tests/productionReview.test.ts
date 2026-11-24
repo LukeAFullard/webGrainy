@@ -23,7 +23,7 @@ import { buildSiteReportHtml } from '../src/ui/report.js';
 import { squareGrainSession } from './helpers/squareSession.js';
 import { readFileSync } from 'node:fs';
 import pako from 'pako';
-import { decodeTiffBuffer, validateTiffStructure } from '../src/modules/tiffDecode.js';
+import { decodeTiffBuffer, isSupportedImageFile, validateTiffStructure } from '../src/modules/tiffDecode.js';
 import { PARAM_RANGES, parseParamInput, sanitizeAnalysisParams } from '../src/ui/savedSettings.js';
 import { POSTPROCESS_LIMITS } from '../src/modules/postprocessCore.js';
 import { PRINT_SCRIPT_SHA256, PRINT_SCRIPT_SOURCE, REPORT_CSP, reportDocument } from '../src/ui/report.js';
@@ -481,5 +481,14 @@ describe('F-31: every chart is announced as an image with a label', () => {
     const roots = src.match(/<svg viewBox=[^>]*>/g) ?? [];
     expect(roots.length).toBeGreaterThan(20);
     for (const r of roots) expect(r, r).toMatch(/role="img" aria-label="[^"]+"/);
+  });
+});
+
+describe('F-37: SVG files are not imported as photos', () => {
+  it('rejects image/svg+xml and .svg, keeps photos and TIFFs', () => {
+    expect(isSupportedImageFile({ name: 'x.svg', type: 'image/svg+xml' })).toBe(false);
+    expect(isSupportedImageFile({ name: 'x.svg', type: '' })).toBe(false);
+    expect(isSupportedImageFile({ name: 'x.jpg', type: 'image/jpeg' })).toBe(true);
+    expect(isSupportedImageFile({ name: 'x.tif', type: '' })).toBe(true);
   });
 });

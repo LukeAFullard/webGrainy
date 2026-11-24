@@ -389,7 +389,7 @@ ${h2('Grain shape and fabric')}
 <table class="compact">
   <tr><th>Median b/a</th><td class="n">${num(r.shape.medianAspectRatio, 'shape/median_aspect_ratio_b_over_a')}</td><th>Grains</th><td class="n">${r.shape.n}</td></tr>
   ${fr.grainCount > 0 ? `<tr><th>Mean orientation</th><td class="n">${num(fr.meanAxialDeg, 'fabric/mean_axial_orientation_deg', 0)}°</td><th>Alignment R</th><td class="n">${num(fr.resultantLength, 'fabric/resultant_length_R')}</td></tr>
-  <tr><th>Rayleigh p</th><td class="n">${fr.rayleighP !== null && fr.rayleighP >= 0.001 ? num(fr.rayleighP, 'fabric/rayleigh_p', 3) : fmtP(fr.rayleighP)}</td><th></th><td class="small">${fr.rayleighP !== null && fr.rayleighP < 0.05 ? 'a preferred direction' : 'no clear preferred direction'} (n = ${fr.grainCount})</td></tr>` : ''}
+  <tr><th>Rayleigh p</th><td class="n">${fr.rayleighP !== null && fr.rayleighP >= 0.001 ? num(fr.rayleighP, 'fabric/rayleigh_p', 3) : fmtP(fr.rayleighP)}</td><th></th><td class="small">${fr.rayleighP === null ? 'too few grains to test' : fr.rayleighP < 0.05 ? 'a preferred direction' : 'no clear preferred direction'} (n = ${fr.grainCount})</td></tr>` : ''}
 </table>
 <p class="cap">R: 0 = orientations random, 1 = all parallel (axial statistics, Curray 1956; Mardia &amp; Jupp 2000). Orientations are relative to each photo's frame, so they combine meaningfully only when the photos were taken the same way round (e.g. top of the photo upstream).</p>
 </section>`

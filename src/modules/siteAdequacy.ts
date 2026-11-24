@@ -57,7 +57,7 @@ export function assessSampleAdequacy(
       }
     }
     effectiveGrainCount =
-      sumW > 0 ? Math.max(1, Math.round((sumW * sumW) / Math.max(1e-12, sumW2))) : 0;
+      sumW > 0 && sumW2 > 0 ? Math.max(1, Math.round((sumW * sumW) / sumW2)) : 0;
   }
 
   const byGrains: SampleAdequacyRating =

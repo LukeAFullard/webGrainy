@@ -206,7 +206,7 @@ if (fs.existsSync(uiCssEntry)) {
 }
 
 // 6. Copy src/index.html, src/sw.js, src/manifest.webmanifest, and src/icon.svg -> dist/
-for (const staticAsset of ['index.html', 'gpucheck.html', 'sw.js', 'manifest.webmanifest', 'icon.svg']) {
+for (const staticAsset of ['index.html', 'gpucheck.html', 'sw.js', 'manifest.webmanifest', 'icon.svg', 'icon-192.png', 'icon-512.png']) {
   const assetSrc = path.join(srcDir, staticAsset);
   if (fs.existsSync(assetSrc)) {
     fs.copyFileSync(assetSrc, path.join(distDir, staticAsset));
@@ -251,6 +251,8 @@ const SHELL_ASSETS = [
   './index.html',
   './manifest.webmanifest',
   './icon.svg',
+  './icon-192.png',
+  './icon-512.png',
   './ui/main.js',
   './ui/main.css',
   './workers/grainPostprocess.worker.js',
