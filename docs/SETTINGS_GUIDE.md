@@ -529,19 +529,12 @@ a drag moves the photo when zoomed in and scrolls the page otherwise; a tap uses
 
 | Panel | Settings |
 |---|---|
-| **Left panel → Analysis settings** | Model, CP-SAM weights, Scale mode, Exclude border grains; *Fine-tuning:* Flow threshold, Cellprob threshold, Min size, Max area fraction, Border margin, CLAHE; *Advanced:* Flow steps, Seed density, CPU threads, Skip areas outside the ROI |
+| **Left panel → Analysis settings** | Model, CP-SAM weights, Scale mode, Exclude border grains; *Fine-tuning:* Flow threshold, Cellprob threshold, Min size, Max area fraction, Border margin; *Advanced:* Flow steps, Seed density, CPU threads, Skip areas outside the ROI, Apply CLAHE, CLAHE clip |
 | **Left sidebar → photo list** | Include/exclude photo from the site; Facies weight (Facies-weighted mode only) |
 | **Toolbar (above the photo)** | *Scale:* Calibrate, Rectify · *Areas:* ROI, Exclude, Brush, Clear areas · *Edit grains* (after analysis): Split, Merge, Delete, Add · Display |
 | **Right-hand panel → Statistics settings** | Pooling mode, Size metric, Field-count cutoff, Min b-axis, Exclusion overlap, Harmonize cutoff, *Uncertainty & sampling:* Confidence level, Bootstrap repeats, Bootstrap seed, Two-stage bootstrap, Virtual Wolman points |
 
 All settings are recorded in every export.
-
----|---|---|
-| Border exclusion | On, 2 px | Grains touching the photo edge are left out, because they are cut off and would look too small. |
-| Bootstrap repeats | 500, seed 42 | Number of resamples used for the site confidence interval. The fixed seed makes results repeatable. |
-| Confidence level | 95% | Width of the reported uncertainty ranges. |
-| Virtual Wolman points | 100 per photo | Grid density for the Virtual Wolman Grid pooling mode. |
-| Post-processing iterations etc. | as tested | Internal model settings, matched to the accuracy test. |
 
 ---
 
@@ -572,8 +565,9 @@ by hand (`validation/heldout/heldout_app_results.md`):
 | **U-Net** | about 6% | about 16% | 4 of 40 |
 
 On these figures webGrainy is **as accurate as the original ImageGrains software**: the
-small differences are within the noise of 40 photos. Its grain outlines are a little
-less precise than the original's.
+small differences are within the noise of 40 photos. Its grain outlines are as precise as the
+original's (panoptic quality against the hand-drawn outlines: Cellpose-SAM 0.654 vs 0.642,
+U-Net 0.540 vs 0.528; `validation/heldout/heldout_app_results.md`, `validation/quantization/README.md`).
 
 **Important limits:**
 - **Test coverage:** the test images come from rivers the model was trained on, and more than

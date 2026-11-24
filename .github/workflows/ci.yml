@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Also run by pages.yml before a manual deploy, so every deploy passes the full gate.
+  workflow_call:
 
 permissions:
   contents: read

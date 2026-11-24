@@ -7,6 +7,7 @@ name: Deploy app to GitHub Pages
 
 # Deploys only after the CI workflow (dependency audit, oracle, CRS check, browser and
 # service-worker smoke tests) has passed on main, and deploys exactly the commit CI tested.
+# A manual run ("Run workflow") runs the same CI first and deploys only if it passes.
 on:
   workflow_run:
     workflows: [CI]
@@ -24,8 +25,19 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Manual runs only: the full CI gate (pushes to main already passed it via workflow_run).
+  ci:
+    if: github.event_name == 'workflow_dispatch'
+    uses: ./.github/workflows/ci.yml
+
   build:
-    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+    needs: ci
+    # Runs after `ci` passed (manual run), or with `ci` skipped after CI passed on a push to main.
+    if: >-
+      !cancelled() && (
+        (github.event_name == 'workflow_dispatch' && needs.ci.result == 'success') ||
+        (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+      )
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

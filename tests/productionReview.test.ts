@@ -234,3 +234,32 @@ describe('F-10: colour tokens work without light-dark()', () => {
     expect(css.slice(css.indexOf('@supports not')).match(/light-dark\(/g)).toHaveLength(1);
   });
 });
+
+describe('F-12: switching photos quickly never shows or leaks a stale decode', () => {
+  it('a slow decode of an earlier photo is closed, not drawn, when a later photo finished first', async () => {
+    const { CanvasViewport } = await import('../src/ui/canvasViewport.js');
+    const resolvers = new Map<Blob, (b: ImageBitmap) => void>();
+    const closed: string[] = [];
+    const g = globalThis as { createImageBitmap?: unknown };
+    const saved = g.createImageBitmap;
+    g.createImageBitmap = (blob: Blob) => new Promise((res) => resolvers.set(blob, res));
+    try {
+      const view = { photo: null, session: null, imageBitmap: null as unknown, maskDirty: false, photoLoadSeq: 0, fitToScreen: () => {}, render: () => {} };
+      const blobA = new Blob(['a']);
+      const blobB = new Blob(['b']);
+      const bmp = (name: string) => ({ name, close: () => closed.push(name) }) as unknown as ImageBitmap;
+      const call = (photoId: string, imageBlob: Blob) =>
+        CanvasViewport.prototype.setPhotoAndSession.call(view as never, { photoId, imageBlob } as never, null);
+      const a = call('A', blobA);
+      const b = call('B', blobB);
+      resolvers.get(blobB)!(bmp('B'));
+      await b;
+      resolvers.get(blobA)!(bmp('A'));
+      await a;
+      expect((view.imageBitmap as { name: string }).name).toBe('B');
+      expect(closed).toEqual(['A']);
+    } finally {
+      g.createImageBitmap = saved;
+    }
+  });
+});

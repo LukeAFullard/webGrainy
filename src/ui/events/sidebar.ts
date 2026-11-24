@@ -174,6 +174,11 @@ export const sidebarActions: Record<string, ActionHandler> = {
     writeFlag(RETENTION_EXPLAINED_KEY, true);
     ctx.ui.renderSidebar();
   },
+  'reload-isolation': (_el, ctx) => {
+    const st = ctx.store.getState();
+    if (st.batchRunning || st.enhancing === true) return;
+    ctx.ui.reloadForIsolation?.();
+  },
   'reload-stale': (_el, ctx) => {
     if (ctx.store.getState().batchRunning) return;
     ctx.ui.reloadPage?.();

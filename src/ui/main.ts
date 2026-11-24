@@ -420,12 +420,11 @@ function announceStatus(message: string): void {
   srAnnouncerEl.textContent = message;
 }
 
-async function syncViewport(fitToView = false): Promise<void> {
+/** Selection, inspection and tool state only (no photo or mask change: nothing is rebuilt). */
+function syncViewportOverlays(): void {
   if (!viewport) return;
   const state = store.getState();
   const photo = getActivePhoto(state);
-  const session = photo ? state.sessions.get(photo.photoId) ?? null : null;
-  await viewport.setPhotoAndSession(photo, session, fitToView);
   viewport.updateToolAndOverlays({
     tool: state.activeTool,
     overlays: state.overlays,
@@ -436,6 +435,15 @@ async function syncViewport(fitToView = false): Promise<void> {
     calPoints: state.pendingCalibrationPoints,
     rectifyPoints: state.pendingRectifyPoints,
   });
+}
+
+async function syncViewport(fitToView = false): Promise<void> {
+  if (!viewport) return;
+  const state = store.getState();
+  const photo = getActivePhoto(state);
+  const session = photo ? state.sessions.get(photo.photoId) ?? null : null;
+  await viewport.setPhotoAndSession(photo, session, fitToView);
+  syncViewportOverlays();
 }
 
 function renderLanding(state: AppState): void {
@@ -501,7 +509,7 @@ function renderViewportExtras(state: AppState): void {
   const pt = viewport?.getCursorImgPt();
   const zoomPct = viewport ? Math.round(viewport.getZoom() * 100) : 100;
   footerEl.innerHTML = `
-    <span>${state.staleBuild ? `<button type="button" class="btn btn-xs btn-primary" data-action="reload-stale" ${state.batchRunning ? 'disabled title="Available when the analysis finishes"' : 'title="A newer version was installed in another tab. Reload to use it (your data is kept)."'}>Reload now</button> ` : ''}${state.updateReady ? `<button type="button" class="btn btn-xs btn-primary" data-action="apply-update" ${state.batchRunning || state.enhancing ? 'disabled title="Available when the analysis finishes"' : 'title="A new version is installed. Reload to use it (your data is kept)."'}>Reload to update</button> ` : ''}${esc(state.statusMessage)}</span>
+    <span>${state.isolationReloadPending && !state.staleBuild && !state.updateReady ? `<button type="button" class="btn btn-xs" data-action="reload-isolation" ${state.batchRunning || state.enhancing ? 'disabled title="Available when the analysis finishes"' : 'title="The app was just installed in this browser. Reloading the page once lets CPU analysis use several threads (about 3x faster). Your data is kept."'}>Reload for faster CPU analysis</button> ` : ''}${state.staleBuild ? `<button type="button" class="btn btn-xs btn-primary" data-action="reload-stale" ${state.batchRunning ? 'disabled title="Available when the analysis finishes"' : 'title="A newer version was installed in another tab. Reload to use it (your data is kept)."'}>Reload now</button> ` : ''}${state.updateReady ? `<button type="button" class="btn btn-xs btn-primary" data-action="apply-update" ${state.batchRunning || state.enhancing ? 'disabled title="Available when the analysis finishes"' : 'title="A new version is installed. Reload to use it (your data is kept)."'}>Reload to update</button> ` : ''}${esc(state.statusMessage)}</span>
     <span>${activePhoto ? `${activePhoto.width}×${activePhoto.height}px | Zoom ${zoomPct}%` : ''}${pt ? ` | (${Math.round(pt.x)}, ${Math.round(pt.y)})` : ''}</span>
   `;
 
@@ -872,14 +880,14 @@ function mountShell(): void {
     {
       onInspectGrain: (grainId) => {
         store.setState({ inspectedGrainId: grainId });
-        void syncViewport(false);
+        syncViewportOverlays();
       },
       onToggleSelectGrain: (grainId) => {
         const next = new Set(store.getState().selectedGrainIds);
         if (next.has(grainId)) next.delete(grainId);
         else next.add(grainId);
         store.setState({ selectedGrainIds: next });
-        void syncViewport(false);
+        syncViewportOverlays();
       },
       onSplitLine: (grainId, points) => {
         const state = store.getState();
@@ -1101,6 +1109,7 @@ function eventContext(): EventContext {
       focusGrain: (id) => viewport?.focusOnGrain(id),
       applyUpdate: () => swUpdates?.applyUpdate() ?? false,
       reloadPage: () => location.reload(),
+      reloadForIsolation: () => isolationReloadNow?.(),
       downloadResults,
       isTyping: () => {
         const el = document.activeElement;
@@ -1425,6 +1434,9 @@ function attachDelegatedHandlers(): void {
 
 let swUpdates: SwUpdateController | null = null;
 
+/** Reloads once for cross-origin isolation, if still needed (set up by registerServiceWorker). */
+let isolationReloadNow: (() => void) | null = null;
+
 async function registerServiceWorker(): Promise<void> {
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
     store.setState({ swStatus: 'registering' });
@@ -1456,34 +1468,45 @@ async function registerServiceWorker(): Promise<void> {
       // Only reload while the user is on the landing page and nothing is running: a reload in the
       // workspace would cut off whatever they are doing (calibrating, importing, typing). Otherwise
       // wait until they are back on the landing page; until then the CPU uses one thread.
+      // In the workspace the footer offers the reload instead ("Reload for faster CPU analysis").
       const canReloadNow = (st: AppState): boolean => st.showLanding && !st.batchRunning && st.enhancing !== true;
-      let waitingToReload = false;
-      const reloadForIsolation = (): void => {
-        if ((self as { crossOriginIsolated?: boolean }).crossOriginIsolated === true) return;
-        if (!navigator.serviceWorker.controller) return;
+      let stopWaiting: (() => void) | null = null;
+      const needsIsolationReload = (): boolean => {
+        if ((self as { crossOriginIsolated?: boolean }).crossOriginIsolated === true) return false;
+        if (!navigator.serviceWorker.controller) return false;
         try {
-          if (sessionStorage.getItem('webgrainy-coi-reload') === '1') return;
+          return sessionStorage.getItem('webgrainy-coi-reload') !== '1';
         } catch {
-          return; // storage unavailable: don't risk a reload loop
+          return false; // storage unavailable: don't risk a reload loop
         }
-        if (!canReloadNow(store.getState())) {
-          if (!waitingToReload) {
-            waitingToReload = true;
-            store.subscribe((st) => {
-              if (waitingToReload && canReloadNow(st)) {
-                waitingToReload = false;
-                reloadForIsolation();
-              }
-            });
-          }
-          return;
-        }
+      };
+      const reloadOnce = (): void => {
         try {
           sessionStorage.setItem('webgrainy-coi-reload', '1');
         } catch {
           return;
         }
         location.reload();
+      };
+      isolationReloadNow = () => {
+        if (needsIsolationReload()) reloadOnce();
+      };
+      const reloadForIsolation = (): void => {
+        if (!needsIsolationReload()) return;
+        if (!canReloadNow(store.getState())) {
+          if (stopWaiting === null) {
+            store.setState({ isolationReloadPending: true });
+            stopWaiting = store.subscribe((st) => {
+              if (canReloadNow(st)) {
+                stopWaiting?.();
+                stopWaiting = null;
+                reloadForIsolation();
+              }
+            });
+          }
+          return;
+        }
+        reloadOnce();
       };
       if (hadController) reloadForIsolation();
       navigator.serviceWorker.addEventListener('controllerchange', () => {

@@ -136,7 +136,9 @@ image enlarged ×1.5. In tests this improved outlines of fine gravel. It is a su
 applied automatically.
 
 **Contrast enhancement (optional, off by default).** CLAHE (contrast-limited adaptive
-histogram equalisation) can help photos with deep shadows or glare.
+histogram equalisation) is available under *Advanced* for experiments only: in the
+pre-processing benchmark (`validation/preprocessing/`) it lowered outline accuracy on both
+models and increased the D50 error, so it should normally be left off.
 
 **Brightness normalisation.** Before the model sees the image, brightness is stretched so
 that the darkest 1% and brightest 1% of pixels map to 0 and 1 (Cellpose's standard

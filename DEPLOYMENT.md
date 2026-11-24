@@ -65,8 +65,8 @@ results in `validation/perf/cpu_threads_results.txt`):
 | U-Net inference, 1024×768 image | 19.5 s | 11.8 s | **6.2 s** |
 | Cellpose-SAM, one 256×256 tile | 32.3 s | 16.8 s | **9.5 s** |
 
-A 1024×768 photo needs about 20 Cellpose-SAM tiles, so on CPU it takes roughly 11 minutes
-single-threaded and roughly 3 minutes isolated on 4 cores (these are FP16 timings; the INT8
+A 1024×768 photo needs 35 Cellpose-SAM tiles (5 × 7 tiles of 256 px with 25% overlap), so on
+CPU it takes roughly 19 minutes single-threaded and roughly 5.5 minutes isolated on 4 cores (these are FP16 timings; the INT8
 weights, used automatically on the CPU since this release, use half the memory and are
 the same speed to about 2× faster, depending on the machine). Prefer U-Net when no FP16-capable GPU is
 available. To enable WASM threads, send:
@@ -86,33 +86,57 @@ console and that a model download still succeeds.
 - `sw.js` must **not** be cached by the HTTP layer (`Cache-Control: no-cache`). The app
   registers it with `updateViaCache: 'none'`, but CDN caching can still delay updates.
 - Each build stamps `sw.js` with a content hash of the app shell. Any code change
-  produces a new service worker, which precaches the new shell. The app then activates
-  it and prompts the user to reload. The ~30 MB ORT runtime is cached separately, keyed
+  produces a new service worker, which precaches the new shell and then waits. The app
+  shows "Reload to update" and activates the new worker only when the user chooses to reload
+  (or at start-up, when no other tab of the app is open and nothing is running), so an open
+  page never runs a mix of old and new code. The ~30 MB ORT runtime is cached separately, keyed
   by ORT version, so UI-only releases do not re-download it.
 - Other files can be cached normally. The service worker serves them from its
   versioned cache.
 
 ## Example: nginx
 
+Two nginx rules matter here: a `types { }` block *replaces* the inherited MIME types (so
+keep `include mime.types;` in front of it, or `.html` and `.css` are served as
+`application/octet-stream` and blocked by `nosniff`), and a location with its own `add_header`
+drops every `add_header` of the enclosing levels (so the security headers are kept in one
+snippet and included wherever headers are added).
+
+`/etc/nginx/snippets/webgrainy-headers.conf`:
+
+```nginx
+add_header X-Content-Type-Options nosniff always;
+add_header Referrer-Policy no-referrer always;
+add_header Cross-Origin-Opener-Policy same-origin always;
+add_header Cross-Origin-Embedder-Policy require-corp always;
+add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; connect-src 'self' https://huggingface.co https://*.huggingface.co https://*.hf.co; img-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; font-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'" always;
+```
+
+Server block:
+
 ```nginx
 location /webgrainy/ {
   alias /srv/webgrainy/dist/;
-  types { application/wasm wasm; text/javascript mjs js; application/manifest+json webmanifest; }
-  add_header X-Content-Type-Options nosniff always;
-  add_header Referrer-Policy no-referrer always;
-  add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; connect-src 'self' https://huggingface.co https://*.huggingface.co https://*.hf.co; img-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'" always;
-  location ~ /sw\.js$ { add_header Cache-Control "no-cache" always; }
+  include mime.types;
+  types { application/wasm wasm; text/javascript mjs; application/manifest+json webmanifest; }
+  include snippets/webgrainy-headers.conf;
+}
+location = /webgrainy/sw.js {
+  alias /srv/webgrainy/dist/sw.js;
+  include snippets/webgrainy-headers.conf;
+  add_header Cache-Control "no-cache" always;
 }
 ```
 
 ## Post-deployment checklist
 
 1. Open the site and check the DevTools console for errors, failed requests or CSP violations.
-2. Analyse a photo with U-Net. "Models (1 cached)" should appear, and the photo should finish `done`.
+2. Analyse a photo with U-Net. The Models dialog should then list U-Net as *Cached*, and the photo should finish `done`.
 3. Go offline (DevTools → Network → Offline), reload, and analyse again. It must work
    without network access once the model and runtime are cached.
-4. Export a summary JSON and confirm that `metadata.analysis.modelSha256` matches the
-   pinned hash in `src/modules/modelCache.ts`.
+4. Export a summary JSON and confirm that the model hash (`metadata.analysis.modelSha256` in a
+   photo summary, `metadata.photos[i].modelSha256` in a site summary) matches the pinned hash in
+   `src/modules/modelCache.ts`.
 
 Run `npm run test:e2e:browser` locally against the exact `dist/` you deploy. It checks
 steps 1–2 headlessly.

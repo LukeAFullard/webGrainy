@@ -61,6 +61,8 @@ export interface EventContext {
     applyUpdate?(): boolean;
     /** Reloads the page (after a newer version took over in another tab). */
     reloadPage?(): void;
+    /** Reload once so the page becomes cross-origin isolated (multi-threaded CPU analysis). */
+    reloadForIsolation?(): void;
     /** Builds and saves the open site's results .zip (optionally with the project file). */
     downloadResults?(includeProject: boolean): Promise<void>;
     downloadChart(id: string, format: 'svg' | 'png'): Promise<void>;

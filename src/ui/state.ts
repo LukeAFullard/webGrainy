@@ -83,6 +83,11 @@ export interface AppState {
   swStatus: SwStatus;
   /** A new app version is installed and waits for "Reload to update". */
   updateReady: boolean;
+  /**
+   * The page is not yet cross-origin isolated (first visit): a reload enables multi-threaded CPU
+   * analysis. Done automatically on the landing page; in the workspace a button offers it.
+   */
+  isolationReloadPending: boolean;
   /** A newer version took over this page from another tab: reload before analysing. */
   staleBuild: boolean;
   /** Days sites are kept in this browser after their last use (0 = until deleted). */
@@ -201,6 +206,7 @@ export function createInitialState(): AppState {
     isOnline: typeof navigator !== 'undefined' ? navigator.onLine : true,
     swStatus: 'unsupported',
     updateReady: false,
+    isolationReloadPending: false,
     staleBuild: false,
     retentionDays: DEFAULT_RETENTION_DAYS,
     retentionNotice: null,
