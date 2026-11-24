@@ -345,7 +345,8 @@ const TIFF_TYPE_BYTES: Readonly<Record<number, number>> = { 1: 1, 2: 1, 3: 2, 4:
 /** Tags whose values are offsets of further IFDs that UTIF reads (SubIFDs, EXIF, GPS, Fuji). */
 const SUB_IFD_TAGS: ReadonlySet<number> = new Set([330, 34665, 34853, 61440]);
 
-const malformedTiff = (why: string): Error => new Error(`This TIFF file is damaged or not a valid TIFF (${why}), so it was not opened.`);
+const malformedTiff = (why: string, cause?: unknown): Error =>
+  new Error(`This TIFF file is damaged or not a valid TIFF (${why}), so it was not opened.`, cause !== undefined ? { cause } : undefined);
 
 /**
  * Walks the IFD structure before UTIF reads it, which UTIF does without any checks: a chain that
@@ -451,6 +452,23 @@ function boundedInflateRaw(limit: number): (src: Uint8Array) => Uint8Array {
 }
 
 export function decodeTiffBuffer(buf: ArrayBuffer): DecodedTiffImage {
+  try {
+    return decodeTiffBufferUnchecked(buf);
+  } catch (err) {
+    // UTIF reads the pixel data without checks: on damaged files it fails with raw JavaScript
+    // errors such as "Cannot read properties of undefined (reading '0')", or throws values that
+    // are not Errors at all (numbers, strings, its JPEG decoder's { message } objects; pako 1.x
+    // throws strings). Everything this module throws on purpose is an Error with a readable
+    // message (BigTIFF, size, band layout, broken structure): keep those, and report the rest
+    // as a damaged file.
+    if (!(err instanceof Error) || err instanceof TypeError || err instanceof RangeError) {
+      throw malformedTiff('its image data could not be read', err);
+    }
+    throw err;
+  }
+}
+
+function decodeTiffBufferUnchecked(buf: ArrayBuffer): DecodedTiffImage {
   if (!isTiffBytes(buf)) {
     throw new Error('File does not have a valid TIFF header.');
   }

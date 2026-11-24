@@ -287,5 +287,16 @@ First public release.
   official ONNX Runtime 1.31.1 release) are now included as `ort/ThirdPartyNotices.txt`, linked
   from the About dialog and available offline. The build stops if they are missing for the
   installed ONNX Runtime version.
+- **Cancel:** the page says at once that it is stopping (*Stopping…*, the current step finishes
+  first: a model tile on the CPU can take many seconds), and a photo cut short shows as not
+  analysed instead of staying "running" until the page was reloaded.
+- **Clearer import errors:** a photo the browser cannot open is reported as empty, as HEIC/HEIF
+  (with how to get a JPEG from an iPhone) or as damaged or unsupported, instead of "The source
+  image could not be decoded."; a damaged TIFF that crashed the TIFF library is reported as a
+  damaged TIFF instead of an internal error such as "Cannot read properties of undefined".
+- GitHub Pages workflow: only the deploy job may publish (`pages: write`, `id-token: write`); the
+  build job, which runs the dependencies and tests, has read access only.
+- `package.json` states the supported Node.js versions (22.13 or later, or 24 and later); the
+  README says when CI runs.
 
 [0.1.0]: https://github.com/LukeAFullard/webGrainy/releases/tag/v0.1.0

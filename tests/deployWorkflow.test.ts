@@ -44,6 +44,19 @@ describe('Pages deploy workflow', () => {
     expect(deploy).toContain("if: ${{ !cancelled() && needs.build.result == 'success' }}");
   });
 
+  it('only the deploy job can publish: pages and id-token write are not granted workflow-wide (review m4)', () => {
+    /** `key: value` lines of a permissions block whose keys are indented by `indent` spaces. */
+    const perms = (text: string, indent: number): Record<string, string> => {
+      const m = text.match(new RegExp(`^ {${indent - 2}}permissions:\\n((?: {${indent}}[\\w-]+: \\w+.*\\n?)+)`, 'm'));
+      expect(m, 'permissions block').not.toBeNull();
+      return Object.fromEntries([...m![1]!.matchAll(/^ +([\w-]+): (\w+)/gm)].map((x) => [x[1]!, x[2]!]));
+    };
+    expect(perms(workflow, 2)).toEqual({ contents: 'read' });
+    expect(perms(jobBlock('build'), 6)).toEqual({ contents: 'read', pages: 'read' });
+    expect(perms(jobBlock('deploy'), 6)).toEqual({ contents: 'read', pages: 'write', 'id-token': 'write' });
+    expect(jobBlock('ci')).not.toMatch(/permissions:/);
+  });
+
   it('every job downstream of ci states its own condition', () => {
     const jobs = [...workflow.matchAll(/^ {2}([a-z][\w-]*):$/gm)].map((m) => m[1]!);
     const needs = new Map(jobs.map((j) => [j, jobBlock(j).match(/^ {4}needs: \[?([\w, -]+)\]?$/m)?.[1]?.split(/,\s*/) ?? []]));

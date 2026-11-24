@@ -22,6 +22,8 @@ export interface ActivityState {
   msPerTile: number | null;
   tileSamples: number;
   postPercent: number;
+  /** Cancel was pressed: the current step finishes first (a CPU tile cannot be interrupted). */
+  stopping?: boolean;
 }
 
 export function newActivity(photoTotal: number): ActivityState {
@@ -99,6 +101,11 @@ export function applyEvent(s: ActivityState, stage: string, detail: unknown, now
   }
 }
 
+/** Cancel was pressed; the bar says the batch stops after the current step. */
+export function markStopping(s: ActivityState): ActivityState {
+  return s.stopping ? s : { ...s, stopping: true };
+}
+
 /** Marks the moment tile requests begin (so the first tile can be timed). */
 export function markTilesStarting(s: ActivityState, now: number): ActivityState {
   return s.tilesStartedAt === null ? { ...s, tilesStartedAt: now } : s;
@@ -164,6 +171,11 @@ export function describeActivity(s: ActivityState): ActivityView {
       break;
   }
   const batchFraction = s.photoTotal > 0 ? Math.min(1, (Math.max(0, s.photoIndex - 1) + within) / s.photoTotal) : 0;
+  if (s.stopping) {
+    // The engine checks for Cancel between steps: a model tile on the CPU runs to its end.
+    const tile = s.stage === 'inference' && s.tilesTotal > 0 && s.msPerTile !== null ? ` (a tile takes about ${formatDuration(s.msPerTile)})` : '';
+    detail = `Stopping: the current step finishes first${tile}…`;
+  }
   return { title, detail, fraction, batchFraction };
 }
 
@@ -186,6 +198,10 @@ export function renderActivityHtml(s: ActivityState): string {
       }
       ${s.photoTotal > 1 ? `<progress class="native-progress batch" value="${Math.round(v.batchFraction * 100)}" max="100" aria-label="All photos progress"></progress>` : ''}
     </div>
-    <button type="button" class="btn btn-sm btn-danger" data-action="cancel-batch">Cancel</button>
+    ${
+      s.stopping
+        ? '<button type="button" class="btn btn-sm btn-danger" disabled>Stopping…</button>'
+        : '<button type="button" class="btn btn-sm btn-danger" data-action="cancel-batch">Cancel</button>'
+    }
   `;
 }

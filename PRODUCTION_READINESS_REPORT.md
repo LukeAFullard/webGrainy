@@ -136,16 +136,16 @@ A second harness, `swort.cjs`, used three deploys with an ONNX Runtime version b
 
 | # | Issue | Evidence | Recommended fix |
 | --- | --- | --- | --- |
-| m1 | After **Cancel**, the photo keeps a "running" badge until the page is reloaded. Storage is correct: it shows `pending` after a reload, and re-running works. | `cancel.cjs`: "Batch cancelled (0/1 completed)" but the item still shows `running` 3 s later, and `pending` after a reload. On abort, `workspaceActions.ts:716-748` never resets the in-memory `photoStatuses` entry. | In `finally`/abort, set any `'running'` entry back to `'pending'`. |
-| m2 | Cancelling takes effect only between CPU tiles: 23.4 s measured for Cellpose-SAM INT8. This was a documented decision in batch 10. | `cancel.cjs` | Show "stopping after the current tile…" to the user. |
-| m3 | Unhelpful import messages. HEIC, corrupt and empty files show "The source image could not be decoded". About 2% of mutated TIFFs surface raw `TypeError`s from UTIF, e.g. "Cannot read properties of undefined (reading '0')". Both fail safely. | `reject.cjs`, `fuzz_tiff.mjs` | Map decode errors to "unsupported or damaged image (HEIC: export as JPEG)", and wrap UTIF errors. |
-| m4 | `pages.yml:18-21` grants `pages: write` and `id-token: write` workflow-wide, so the `build` job (which runs `npm ci` and the tests) holds them too. | workflow file | Move both permissions to the `deploy` job. |
-| m5 | `README.md:93` says "CI runs … on every push and pull request". CI runs on pushes to `main` and on PRs only. | `ci.yml:3-7` | Reword. |
+| m1 | **Fixed (section 9).** After **Cancel**, the photo keeps a "running" badge until the page is reloaded. Storage is correct: it shows `pending` after a reload, and re-running works. | `cancel.cjs`: "Batch cancelled (0/1 completed)" but the item still shows `running` 3 s later, and `pending` after a reload. On abort, `workspaceActions.ts:716-748` never resets the in-memory `photoStatuses` entry. | In `finally`/abort, set any `'running'` entry back to `'pending'`. |
+| m2 | **Fixed (section 9).** Cancelling takes effect only between CPU tiles: 23.4 s measured for Cellpose-SAM INT8. This was a documented decision in batch 10. | `cancel.cjs` | Show "stopping after the current tile…" to the user. |
+| m3 | **Fixed (section 9).** Unhelpful import messages. HEIC, corrupt and empty files show "The source image could not be decoded". About 2% of mutated TIFFs surface raw `TypeError`s from UTIF, e.g. "Cannot read properties of undefined (reading '0')". Both fail safely. | `reject.cjs`, `fuzz_tiff.mjs` | Map decode errors to "unsupported or damaged image (HEIC: export as JPEG)", and wrap UTIF errors. |
+| m4 | **Fixed (section 9).** `pages.yml:18-21` grants `pages: write` and `id-token: write` workflow-wide, so the `build` job (which runs `npm ci` and the tests) holds them too. | workflow file | Move both permissions to the `deploy` job. |
+| m5 | **Fixed (section 9).** `README.md:93` says "CI runs … on every push and pull request". CI runs on pushes to `main` and on PRs only. | `ci.yml:3-7` | Reword. |
 | m6 | `CHANGELOG.md:265` says "the GitHub Pages deploy waits for CI". True, but no deploy happens on push (see B1). | | Fix B1. |
 | m7 | Release date 2026-12-19 is future-dated in README:9, CHANGELOG:6 and CITATION.cff; the CHANGELOG link points to tag `v0.1.0`, which does not exist yet. | | Confirm the date when tagging; create the tag and GitHub release. |
 | m8 | The float16 encoder writes `+0.0` as `0x8000` (−0). The oracle reports 1 mismatch in 20,029 values; this is numerically harmless. | oracle output | Optional. |
 | m9 | The CSV comment-line formula guard inserts `'` inside prose, e.g. `# sizeMetricDefinition: b_axis '= minor axis …`. Cosmetic. | `prov_check.mjs` output | Optional: skip the word guard for known static notices. |
-| m10 | `package.json` has no `engines` field; CI uses Node 22. | | Add `"engines": {"node": ">=22"}`. |
+| m10 | **Fixed (section 9).** `package.json` has no `engines` field; CI uses Node 22. | | Add `"engines": {"node": ">=22"}`. |
 | m11 | The smoke tests intercept the Hugging Face URL, so CI never exercises the real CDN, CORS, COEP and CSP path. I verified it manually (see matrix). | `smoke-dist.mjs` routes `https://huggingface.co/**` | Optional scheduled, non-blocking real-download check. |
 
 ---
@@ -258,7 +258,7 @@ All F-items with tests pass at HEAD (`productionReview.test.ts` and companions: 
 1. **B1, fixed (section 8).** After merging to `main`, confirm the *Deploy app to GitHub Pages* run shows `deploy: success` (not skipped). Confirm the live `sw.js` `BUILD_HASH` and the `main.js` banner commit equal the release commit (now step 1 of the post-deployment checklist in `DEPLOYMENT.md`).
 2. ~~Fix M1~~: **done** (section 8). Users of the pre-release will re-download the ~30 MB runtime once.
 3. ~~Fix M2~~: **done** (section 8).
-4. Optional minor fixes: m1 (stale "running" badge), m4 (permissions), m5 (README wording), m10 (`engines`).
+4. Minor fixes: m1–m5 and m10 are **done** (section 9). m6 is resolved by B1; m7 is step 7 below; m8, m9 and m11 remain optional.
 5. Finish the Cellpose-SAM held-out re-run and confirm `git diff validation/heldout/` shows no data change.
 6. Run the manual WebGPU check (`gpucheck.html`) on at least one shader-f16 GPU, and a short manual pass on Safari and Firefox.
 7. Set the final release date consistently in `README.md:9`, `CHANGELOG.md:6` and `CITATION.cff` (`date-released`).
@@ -315,7 +315,24 @@ Each fix comes with a regression test, and I checked that each test **fails on t
 | Offline after first load (`offline.cjs`) | PASS |
 | Cellpose-SAM held-out re-run (scratch copy) | 21 of 40 images re-run so far, all **identical** to the committed per-image results (still running, about 3 min per image) |
 
-`CHANGELOG.md` has a new "Fixed before release (production readiness review)" subsection for these three fixes. The minor issues (m1–m11) are unchanged.
+`CHANGELOG.md` has a new "Fixed before release (production readiness review)" subsection for these three fixes. Minor issues m1–m5 and m10 were fixed afterwards (section 9).
+
+---
+
+## 9. Follow-up: minor issues m1–m5 and m10
+
+| # | Change | Verification |
+| --- | --- | --- |
+| m1 | When a batch ends, photos still marked `running` go back to `pending` (`workspaceActions.ts`, `clearRunningStatuses`), as a reload already showed. | Unit test (cancel during a photo) fails on the old code, passes now. Browser (`cancel_m12.cjs`): the photo shows `pending` right after Cancel, 3 s later and after a reload; re-running works. |
+| m2 | Cancel immediately shows *Stopping…* (disabled) in the activity bar and the photo list, with "Stopping: the current step finishes first…", including the measured time per tile once one is known. A second click does nothing. | Unit tests for the progress model, activity bar, photo list and the cancel flow. In the browser the first run found a gap that unit tests could not: the photo list's Cancel button stayed live, because `batchStopping` was missing from the sidebar's re-render conditions in `main.ts`. Fixed; now there are 0 live Cancel buttons and 2 disabled *Stopping…* buttons. This is now also checked in the Cellpose-SAM browser smoke test, where a CPU tile is long enough to make the check deterministic. |
+| m3 | A photo the browser cannot decode is reported as empty, as HEIC/HEIF (with how to get a JPEG on an iPhone), or as damaged/unsupported (`src/ui/importErrors.ts`; the browser's error is kept as `cause`). In the TIFF decoder, raw errors and non-`Error` values thrown inside UTIF become "This TIFF file is damaged or not a valid TIFF (its image data could not be read)…"; its own explanations are unchanged. | Two real fuzz-found TIFFs are kept as fixtures (`tests/fixtures/damaged_tiff_utif_*.tif`): one hit a `TypeError` inside UTIF, the other made UTIF throw the number `1`. Both tests fail on the old decoder. Fuzzing 6,000 mutated TIFFs: **0** raw errors (before: about 200 per 6,000). Browser (`reject_m3.cjs`): all 5 bad files give the new messages. |
+| m4 | `pages.yml`: workflow-level `contents: read` only; `build` gets `contents: read` and `pages: read` (`configure-pages` v5.0.0 only calls `GET …/pages`); `deploy` gets `contents: read`, `pages: write` and `id-token: write`, the same set the whole workflow had before. | Workflow test (5 tests) checks each job's permissions; PyYAML parse. Checked the pinned `configure-pages` and `upload-pages-artifact` sources: the latter does not use the GitHub token. |
+| m5 | README states the supported Node.js versions and that CI runs on every pull request and every push to `main`, followed by the Pages deploy. | — |
+| m10 | `package.json` `engines`: `^22.13.0 \|\| ^24.0.0 \|\| >=26.0.0`. This is Vitest 5's own range, and `node:sqlite`, used by the GeoPackage tests and the smoke test, needs no flag from 22.13. The lockfile gains only the same `engines` block. | `npm ci` clean on Node 22.23.5 (no `EBADENGINE`). |
+
+Two fixes to the smoke test itself while adding the cancel check: (1) it now reads the visible status line (`#viewport-footer`). `document.body.innerText` also contains the screen-reader announcer, which by design keeps the previous batch's result while a batch runs, so after a cancelled batch a re-run looked finished at once. (2) The cancel waits for the tile loop ("tile N of M"): plain "Finding grains…" already shows before the model download, which Cancel stops at once.
+
+Gates after these changes: typecheck 0 errors; **85 files, 869 tests** pass; build; U-Net browser smoke PASS; Cellpose-SAM browser smoke with the new cancel check PASS, twice in a row (n = 53 grains both times); SW update smoke PASS.
 
 ---
 

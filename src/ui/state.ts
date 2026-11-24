@@ -167,6 +167,8 @@ export interface AppState {
   siteOptions: SiteAnalysisOptions;
 
   batchRunning: boolean;
+  /** Cancel was pressed: the batch stops once the current step (e.g. a CPU tile) finishes. */
+  batchStopping?: boolean;
   /** True while an optional AI enhancement (2× Upscale / Deblur) is running. */
   enhancing?: boolean;
   /** True while Save image is drawing the full-resolution PNG. */
@@ -273,6 +275,7 @@ export function createInitialState(): AppState {
     siteOptions: { ...DEFAULT_SITE_OPTIONS },
 
     batchRunning: false,
+    batchStopping: false,
     enhancing: false,
     batchProgress: null,
 
