@@ -586,7 +586,7 @@ export function renderAboutModalHtml(): string {
         </div>
         <div class="stat-card" style="padding:10px;line-height:1.5;font-size:0.85rem;color:var(--text-secondary);">
           <strong style="color:var(--text-primary);">License &amp; No Warranty (BSD 3-Clause):</strong> webGrainy is free, open-source software provided <strong>"as is"</strong>, without warranty of any kind. Always inspect grain outlines and verify measurements before relying on them for engineering, regulatory, or published work.
-          <a href="./LICENSE.txt" target="_blank" rel="noopener">Licence</a> · <a href="./THIRD_PARTY_NOTICES.md" target="_blank" rel="noopener">Third-party notices</a>
+          <a href="./LICENSE.txt" target="_blank" rel="noopener">Licence</a> · <a href="./THIRD_PARTY_NOTICES.md" target="_blank" rel="noopener">Third-party notices</a> · <a href="./ort/ThirdPartyNotices.txt" target="_blank" rel="noopener">ONNX Runtime third-party notices</a>
         </div>
         <div>
           <div style="font-weight:700;margin-bottom:6px;">Scientific Citations (${FULL_SCIENTIFIC_CITATIONS.length} References)</div>

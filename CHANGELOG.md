@@ -268,4 +268,24 @@ First public release.
   no longer ticks the last getting-started step; the landing page lists the real editing shortcuts
   (6–9) and the *Download results…* button, and does not count the empty first site as a saved site.
 
+### Fixed before release (production readiness review)
+
+- **GitHub Pages deploys again on every push to `main`.** Since the manual-deploy gate was added,
+  the deploy job was skipped (its unconditional `needs` saw the skipped manual-only CI job) while
+  the run still showed success, so the site stayed on an older build. A test now checks the
+  workflow's job conditions.
+- **Updates install the new version.** The service worker read the files it precaches through the
+  browser's HTTP cache: with GitHub Pages' 10-minute caching, a deploy soon after a visit stored the
+  previous build's files as the new version, so *Reload to update* kept the old code, and an
+  outdated ONNX Runtime could stay cached across later releases. Precache requests now bypass the
+  HTTP cache; ONNX Runtime files are stored only if their SHA-256 matches the build (otherwise the
+  update is retried later), in a cache named by those hashes. The service-worker smoke test now
+  serves files with GitHub Pages' caching and checks the updated tab really runs the new code.
+  Browsers that used an earlier pre-release download the ~30 MB runtime once more.
+- **ONNX Runtime's third-party notices ship with the app.** The WebAssembly runtime contains
+  compiled third-party code (Protocol Buffers, Abseil, RE2, ONNX, ...); its notices (from the
+  official ONNX Runtime 1.31.1 release) are now included as `ort/ThirdPartyNotices.txt`, linked
+  from the About dialog and available offline. The build stops if they are missing for the
+  installed ONNX Runtime version.
+
 [0.1.0]: https://github.com/LukeAFullard/webGrainy/releases/tag/v0.1.0

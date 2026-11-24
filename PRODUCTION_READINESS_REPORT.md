@@ -3,13 +3,15 @@
 - **Audited commit:** `f740f522f484` (`main`, "Merge pull request #101", the merge of the review batches 1–11)
 - **Date:** 2026-11-24
 - **Environment:** Linux container, Node 22.23.5, npm 10.9.9, 4 CPU cores, no GPU. Headless Chromium (Playwright 1.63.0). Outbound access to Hugging Face, Zenodo and GitHub.
-- **Method:** I ran every gate listed in the brief. I added scratch harnesses (kept outside the repository) for behaviour that no repository test covers. No source, test, config or documentation file in the repository was changed; this report is the only new file.
+- **Method:** I ran every gate listed in the brief. I added scratch harnesses (kept outside the repository) for behaviour that no repository test covers. During the audit no source, test, config or documentation file in the repository was changed; this report was the only new file. The fixes for B1, M1 and M2 came afterwards, in a separate commit (section 8).
 
 ---
 
 ## 1. Verdict
 
-### **NOT PRODUCTION READY**
+> **Update after the fixes (section 8):** B1, M1 and M2 are fixed, and each fix has a regression test that fails on the old code. Typecheck, the full suite (860 tests), the build, and both browser smoke tests and the service-worker smoke test pass on the fixed tree. **Re-assessed verdict for the fixed tree: PRODUCTION READY. No blocking or major issues remain open.** One thing can only be observed on GitHub after the merge: that the first Pages run on `main` shows `deploy: success`. That is step 1 of the release checklist (section 7). The verdict below is the original one, for the audited commit `f740f522f484`.
+
+### **NOT PRODUCTION READY** (audited commit `f740f522f484`)
 
 The code itself is in very good shape:
 
@@ -253,15 +255,67 @@ All F-items with tests pass at HEAD (`productionReview.test.ts` and companions: 
 
 ## 7. Release checklist for v0.1.0
 
-1. **Fix B1**: add `if: ${{ !cancelled() && needs.build.result == 'success' }}` to the `deploy` job in `pages.yml`. Merge, then confirm the Pages run shows `deploy: success` and that the live `sw.js` `BUILD_HASH` and `main.js` banner commit equal the release commit.
-2. **Fix M1** (recommended before release): use `new Request(url, { cache: 'reload' })` in both `addAll` calls in `src/sw.js`, and add a `max-age=600` variant to `scripts/smoke-sw-update.mjs`.
-3. **Fix M2**, or record an explicit acceptance: vendor ONNX Runtime v1.31.1 `ThirdPartyNotices.txt` into `dist/`, add it to the precache list, and link the tag rather than `main`.
+1. **B1, fixed (section 8).** After merging to `main`, confirm the *Deploy app to GitHub Pages* run shows `deploy: success` (not skipped). Confirm the live `sw.js` `BUILD_HASH` and the `main.js` banner commit equal the release commit (now step 1 of the post-deployment checklist in `DEPLOYMENT.md`).
+2. ~~Fix M1~~: **done** (section 8). Users of the pre-release will re-download the ~30 MB runtime once.
+3. ~~Fix M2~~: **done** (section 8).
 4. Optional minor fixes: m1 (stale "running" badge), m4 (permissions), m5 (README wording), m10 (`engines`).
 5. Finish the Cellpose-SAM held-out re-run and confirm `git diff validation/heldout/` shows no data change.
 6. Run the manual WebGPU check (`gpucheck.html`) on at least one shader-f16 GPU, and a short manual pass on Safari and Firefox.
 7. Set the final release date consistently in `README.md:9`, `CHANGELOG.md:6` and `CITATION.cff` (`date-released`).
 8. Tag `v0.1.0` on the deployed commit and create the GitHub release; the CHANGELOG link points to it. Optionally attach the tutorial videos (`npm run tutorials`).
 9. Run the post-deployment checklist in `DEPLOYMENT.md` on the live URL: console clean, U-Net analysis, offline reload, and the exported `modelSha256` equal to the pinned hash.
+
+---
+
+## 8. Follow-up: fixes for B1, M1 and M2
+
+Each fix comes with a regression test, and I checked that each test **fails on the old code** and passes on the fix.
+
+### B1: Pages deploy job skipped → fixed
+
+| | |
+| --- | --- |
+| **Change** | `.github/workflows/pages.yml`: the `deploy` job gets `if: ${{ !cancelled() && needs.build.result == 'success' }}`, with a comment explaining why. |
+| **Regression test** | `tests/deployWorkflow.test.ts` (4 tests). It checks that `deploy` has the condition, and that *every* job downstream of the manual-only `ci` job states its own `!cancelled()` condition. On the old workflow: 2 failures. On the fix: 4/4 pass. |
+| **Other checks** | The workflow parses (PyYAML) with the expected `needs` and `if` on each job. The `build` job uses the same `!cancelled()` override and **ran** in run #84 although `ci` was skipped, which is live evidence that the expression works on GitHub. |
+| **Can only be confirmed after merging** | That the deploy actually happens: GitHub runs `pages.yml` only after CI on `main`. This is now step 1 of the post-deployment checklist in `DEPLOYMENT.md`. |
+
+### M1: service worker precached stale files → fixed
+
+| | |
+| --- | --- |
+| **Change** | `src/sw.js`: every precache request (shell and runtime) is `new Request(url, { cache: 'reload' })`, so it bypasses the browser's HTTP cache. Each ONNX Runtime file is stored only after its SHA-256 matches the build; on a mismatch or HTTP error the install fails and the browser retries it later. The runtime cache is named `webgrainy-ort-<version>-<files id>`, so any older, possibly stale, runtime cache is removed on activation. `esbuild.config.mjs` stamps `ORT_SHA256` and `ORT_FILES_ID` into `sw.js`. |
+| **Unit test** | `tests/swPrecache.test.ts` (6 tests) runs the real `src/sw.js` install and activate handlers against in-memory caches. It checks: every precache request uses `cache: 'reload'`; runtime files are stored with their content type; a stale or mismatching runtime file fails the install and is not cached; an HTTP error is not cached; verified runtime files are not downloaded again; activation removes the old version-only cache. **Old `sw.js`: 6/6 fail. New: 6/6 pass.** |
+| **Browser test** | `scripts/smoke-sw-update.mjs` now serves `Cache-Control: max-age=600` (GitHub Pages), deploys a v2 that also changes the ONNX Runtime file, then a v3 whose runtime file does not match its build. 9 checks, **PASS**. Against a copy of the fixed build with `cache: 'reload'` removed: **5 checks FAIL**. In that run the new SHA-256 check also refused the stale runtime, so nothing wrong was installed. |
+| **Original audit harness** | `swstale.cjs` with `max-age=600`: after the deploy all 15 shell files reached the server, the new cache holds v2, and the page serves v2 after "Reload to update". Before the fix only `/sw.js` reached the server and the page stayed on v1. |
+| **Offline re-check** | `offline.cjs`: first load, analysis, offline reload, analysis again: `1 done`, 0 Hugging Face requests. Caches: `webgrainy-shell-<build>`, `webgrainy-ort-1.31.1-4ea53ca2caee`. Same result with the server gzip-encoding responses as GitHub Pages does (`offline_gzip.cjs`: `Content-Encoding: gzip`, compressed `Content-Length`), so the hash check runs on the decoded bytes and the cached runtime loads. |
+| **Side effect** | Browsers that used a pre-release download the 29.5 MB runtime once more, because its cache name changed. This is recorded in the CHANGELOG. |
+| **Docs** | `DEPLOYMENT.md` Caching section updated. |
+
+### M2: ONNX Runtime third-party notices → fixed
+
+| | |
+| --- | --- |
+| **Change** | `licenses/onnxruntime-1.31.1-ThirdPartyNotices.txt`, unchanged from `onnxruntime/ThirdPartyNotices.txt` in the official `onnxruntime` 1.31.1 wheel on PyPI (file SHA-256 `143764b9…3de3`). It covers the components found in the `.wasm`: protobuf, abseil, re2, ONNX, Eigen, SafeInt, nlohmann/json, FlatBuffers and GSL. |
+| **Shipping** | The build copies it to `dist/ort/ThirdPartyNotices.txt` and adds it to the service-worker precache (offline). The build **fails** if the notices for the installed ONNX Runtime version are missing. The About dialog links it. `THIRD_PARTY_NOTICES.md` replaces the link to the moving `main` branch with the vendored file, its source and its SHA-256. |
+| **Test** | `tests/thirdPartyNotices.test.ts` (3 tests): the vendored file matches the installed `onnxruntime-web` version and names the compiled-in components; `THIRD_PARTY_NOTICES.md` names it with the correct SHA-256 and no longer links `main`; it is copied, precached and linked from About. |
+| **Checked in the browser** | Offline: `./ort/ThirdPartyNotices.txt` → `200` from the service-worker cache. |
+| **Limitation** | `raw.githubusercontent.com` is blocked from this environment, so I could not diff the file against the `v1.31.1` git tag. The wheel's copy is Microsoft's published notices for the same release. |
+
+### Gates on the fixed tree
+
+| Check | Result |
+| --- | --- |
+| `npm run typecheck` | PASS (0 errors) |
+| `npx vitest run` | PASS: 84 files, **860 tests** (847 + 13 new) |
+| `npm run build` | PASS; 17 precache assets (adds `ort/ThirdPartyNotices.txt`) |
+| `npm run test:e2e:browser` (U-Net) | PASS (n = 37 grains, longest main-thread task 0.10 s) |
+| `npm run test:e2e:browser` (`SMOKE_MODEL=cpsam`) | PASS (n = 53 grains, same as before the fixes) |
+| `npm run test:e2e:sw` (now with `max-age=600`) | PASS (9/9 checks) |
+| Offline after first load (`offline.cjs`) | PASS |
+| Cellpose-SAM held-out re-run (scratch copy) | 21 of 40 images re-run so far, all **identical** to the committed per-image results (still running, about 3 min per image) |
+
+`CHANGELOG.md` has a new "Fixed before release (production readiness review)" subsection for these three fixes. The minor issues (m1–m11) are unchanged.
 
 ---
 

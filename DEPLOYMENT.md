@@ -92,7 +92,12 @@ console and that a model download still succeeds.
   shows "Reload to update" and activates the new worker only when the user chooses to reload
   (or at start-up, when no other tab of the app is open and nothing is running), so an open
   page never runs a mix of old and new code. The ~30 MB ORT runtime is cached separately, keyed
-  by ORT version, so UI-only releases do not re-download it.
+  by ORT version and the SHA-256 of its files, so UI-only releases do not re-download it.
+- The service worker fetches every file it precaches past the browser's HTTP cache, so other
+  files may keep long cache lifetimes (GitHub Pages sends `max-age=600`): an update never
+  installs the previous build's copies. Each ORT runtime file is stored only if its SHA-256
+  matches the build; if the host still serves an older file (e.g. a CDN right after a deploy),
+  the update is not installed and the browser retries it on a later visit.
 - Other files can be cached normally. The service worker serves them from its
   versioned cache.
 
@@ -132,16 +137,19 @@ location = /webgrainy/sw.js {
 
 ## Post-deployment checklist
 
-1. Open the site and check the DevTools console for errors, failed requests or CSP violations.
-2. Analyse a photo with U-Net. The Models dialog should then list U-Net as *Cached*, and the photo should finish `done`.
-3. Go offline (DevTools → Network → Offline), reload, and analyse again. It must work
+1. GitHub Pages: in the *Deploy app to GitHub Pages* run, check that the **deploy** job ran
+   (not *skipped*), and that the live `sw.js` has the same `BUILD_HASH` as `dist/sw.js` of the
+   release commit (`curl -s https://<owner>.github.io/<repo>/sw.js | grep BUILD_HASH`).
+2. Open the site and check the DevTools console for errors, failed requests or CSP violations.
+3. Analyse a photo with U-Net. The Models dialog should then list U-Net as *Cached*, and the photo should finish `done`.
+4. Go offline (DevTools → Network → Offline), reload, and analyse again. It must work
    without network access once the model and runtime are cached.
-4. Export a summary JSON and confirm that the model hash (`metadata.analysis.modelSha256` in a
+5. Export a summary JSON and confirm that the model hash (`metadata.analysis.modelSha256` in a
    photo summary, `metadata.photos[i].modelSha256` in a site summary) matches the pinned hash in
    `src/modules/modelCache.ts`.
 
 Run `npm run test:e2e:browser` locally against the exact `dist/` you deploy. It checks
-steps 1–2 headlessly.
+steps 2–3 headlessly.
 
 ## Browser support (expected; not exhaustively tested)
 

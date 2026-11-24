@@ -219,6 +219,21 @@ for (const [from, to] of [['LICENSE', 'LICENSE.txt'], ['THIRD_PARTY_NOTICES.md',
   fs.copyFileSync(path.join(rootDir, from), path.join(distDir, to));
   console.log(`[build] Copied ${from} to dist/${to}.`);
 }
+// The ONNX Runtime WebAssembly binary in dist/ort/ contains compiled third-party code (Protocol
+// Buffers, Abseil, RE2, ONNX, ...) whose licences require their notices to travel with it. The
+// npm package does not include them: they are vendored from the official onnxruntime wheel of
+// the same version, and an ONNX Runtime update without matching notices fails the build.
+{
+  const ortNotices = path.join(rootDir, 'licenses', `onnxruntime-${ortPkg.version}-ThirdPartyNotices.txt`);
+  if (!fs.existsSync(ortNotices)) {
+    throw new Error(
+      `[build] Missing ${path.relative(rootDir, ortNotices)}: add the ThirdPartyNotices.txt of ONNX Runtime ${ortPkg.version} ` +
+        `(onnxruntime/ThirdPartyNotices.txt in the official onnxruntime ${ortPkg.version} wheel on PyPI) and update THIRD_PARTY_NOTICES.md.`,
+    );
+  }
+  fs.copyFileSync(ortNotices, path.join(ortDistDir, 'ThirdPartyNotices.txt'));
+  console.log(`[build] Copied ${path.relative(rootDir, ortNotices)} to dist/ort/ThirdPartyNotices.txt.`);
+}
 
 // 6b. Every `new URL('<relative>', import.meta.url)` in the built code must name a file in dist/
 //     (a library user's worker would otherwise 404).
@@ -262,8 +277,18 @@ const SHELL_ASSETS = [
   // Linked from the About dialog: available offline too.
   './LICENSE.txt',
   './THIRD_PARTY_NOTICES.md',
+  './ort/ThirdPartyNotices.txt',
 ];
 const ORT_ASSETS = ORT_RUNTIME_FILES.map((f) => `./ort/${f}`);
+// SHA-256 of each runtime file: the service worker stores a runtime file only if it matches,
+// and names the runtime cache by them (a cache with other or stale files is never reused).
+const sha256File = (rel) => crypto.createHash('sha256').update(fs.readFileSync(path.join(distDir, rel))).digest('hex');
+const ORT_SHA256 = Object.fromEntries(ORT_ASSETS.map((rel) => [rel, sha256File(rel)]));
+const ortFilesId = crypto
+  .createHash('sha256')
+  .update(ORT_ASSETS.map((rel) => `${rel}:${ORT_SHA256[rel]}`).join('\n'))
+  .digest('hex')
+  .slice(0, 12);
 const hash = crypto.createHash('sha256');
 for (const rel of SHELL_ASSETS.slice(1)) {
   hash.update(rel);
@@ -276,9 +301,11 @@ const swSrc = fs
   .replace('__WEBGRAINY_BUILD_HASH__', buildHash)
   .replace('__WEBGRAINY_ORT_VERSION__', ortPkg.version)
   .replace('__WEBGRAINY_SHELL_ASSETS__', JSON.stringify(SHELL_ASSETS))
-  .replace('__WEBGRAINY_ORT_ASSETS__', JSON.stringify(ORT_ASSETS));
+  .replace('__WEBGRAINY_ORT_ASSETS__', JSON.stringify(ORT_ASSETS))
+  .replace('__WEBGRAINY_ORT_SHA256__', JSON.stringify(ORT_SHA256))
+  .replace('__WEBGRAINY_ORT_FILES_ID__', ortFilesId);
 if (swSrc.includes('__WEBGRAINY_')) {
   throw new Error('[build] Unreplaced placeholder in dist/sw.js');
 }
 fs.writeFileSync(swPath, swSrc);
-console.log(`[build] Stamped dist/sw.js (build ${buildHash}, ORT ${ortPkg.version}).`);
+console.log(`[build] Stamped dist/sw.js (build ${buildHash}, ORT ${ortPkg.version}, runtime files ${ortFilesId}).`);

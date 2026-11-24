@@ -126,6 +126,7 @@ validation/      benchmarks and their data: held-out accuracy, parity with upstr
                  Cellpose/ImageGrains, K1 field comparison, preprocessing and
                  quantization studies, GPU-vs-CPU checks, numerical oracle
 docs/            settings guide
+licenses/        third-party notices shipped with the app (ONNX Runtime's, per version)
 ```
 
 ### Library use

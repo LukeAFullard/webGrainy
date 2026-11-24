@@ -65,6 +65,9 @@ jobs:
 
   deploy:
     needs: build
+    # Required: without it the implicit `success()` also looks at `ci`, which is skipped on every
+    # push to main (workflow_run), so the deploy was skipped too while the run still showed green.
+    if: ${{ !cancelled() && needs.build.result == 'success' }}
     runs-on: ubuntu-latest
     environment:
       name: github-pages
