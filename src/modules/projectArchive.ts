@@ -86,6 +86,11 @@ interface ArchivedResultRecord
   serializedSession?: ArchivedSerializedSession;
 }
 
+/** Control characters (C0, DEL, C1) replaced by spaces in untrusted display text. */
+function stripControlChars(text: string): string {
+  return text.replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ');
+}
+
 export interface ProjectArchiveV1 {
   format: 'webgrainy-project';
   version: 1;
@@ -645,10 +650,11 @@ export async function importProjectArchive(
   // the page on every start-up), and no record times in the future (they pin the site first).
   let site: SiteRecord = {
     siteId: arch.site.siteId,
-    name: arch.site.name.slice(0, 1024),
+    // No control characters in names shown in reports and file names.
+    name: stripControlChars(arch.site.name).slice(0, 1024),
     // Only photos in this file, each once (a dangling or repeated id would list a missing photo).
     photoOrder: [...new Set(arch.site.photoOrder.filter((id): id is string => isId(id) && importedPhotoIds.has(id)))],
-    ...(typeof arch.site.place === 'string' ? { place: arch.site.place } : {}),
+    ...(typeof arch.site.place === 'string' ? { place: stripControlChars(arch.site.place).slice(0, 1024) } : {}),
     ...(typeof arch.site.surveyDate === 'string' ? { surveyDate: arch.site.surveyDate } : {}),
     options: sanitizeSiteOptions(arch.site.options),
     createdAt: clampRecordTime(arch.site.createdAt, importNow),

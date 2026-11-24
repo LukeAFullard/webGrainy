@@ -110,8 +110,18 @@ const fmt = (v: number, digits = 2): string => (Number.isFinite(v) ? v.toFixed(d
  * download). In the app's pop-up the app's CSP blocks this inline script and the app binds the
  * button itself; `data-bound` keeps the two from both binding it.
  */
-export const PRINT_SCRIPT =
-  "<script>(function(){var b=document.querySelector('[data-print]');if(b&&!b.hasAttribute('data-bound')){b.setAttribute('data-bound','');b.addEventListener('click',function(){window.print();});}})();</script>";
+export const PRINT_SCRIPT_SOURCE =
+  "(function(){var b=document.querySelector('[data-print]');if(b&&!b.hasAttribute('data-bound')){b.setAttribute('data-bound','');b.addEventListener('click',function(){window.print();});}})();";
+export const PRINT_SCRIPT = `<script>${PRINT_SCRIPT_SOURCE}</script>`;
+/** CSP hash of PRINT_SCRIPT_SOURCE (checked by a test), the only script the report may run. */
+export const PRINT_SCRIPT_SHA256 = 'UQ9mwXc+eDEpUBj4UsroUwQ64OVmwr+EOGFiiXlQLiU=';
+
+/**
+ * The report's own Content-Security-Policy, so a report opened as a file (from the results .zip
+ * or a download) can load nothing from the network and run nothing but the Print button script,
+ * whatever text an imported project put into it.
+ */
+export const REPORT_CSP = `default-src 'none'; style-src 'unsafe-inline'; img-src data:; script-src 'sha256-${PRINT_SCRIPT_SHA256}'; base-uri 'none'; form-action 'none'`;
 
 /** A number cell tied to its row in the site summary CSV. */
 function num(v: number, csv: string, digits = 2): string {
@@ -142,12 +152,15 @@ const fmtLen = (mm: number): string => (mm >= 1000 ? `${mm / 1000} m` : mm >= 10
  * and page numbers, the shared styles, and the Print button.
  */
 export function reportDocument(title: string, footerText: string, body: string): string {
-  // Plain text for the CSS page footer (<style> is raw text: no entities, and no "<" so it cannot close the tag).
-  const footerCss = footerText.replace(/[\\"<>\n\r]/g, ' ').slice(0, 100);
+  // Plain text for the CSS page footer (<style> is raw text: no entities, and no "<" so it cannot
+  // close the tag). Every control character goes: CSS turns a form feed into a newline, which
+  // would end the string and let the rest of the text be read as CSS rules.
+  const footerCss = footerText.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029\\"'<>]/g, ' ').slice(0, 100);
   return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="${REPORT_CSP}">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(title)}</title>
 <style>

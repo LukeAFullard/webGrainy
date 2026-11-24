@@ -986,7 +986,7 @@ export function renderCompositionBarsSvg(
       const v = Math.max(0, s.w[c.key]);
       const w = (v / 100) * plotW;
       if (w > 0) {
-        parts.push(`<rect x="${x.toFixed(1)}" y="${y + 3}" width="${w.toFixed(1)}" height="${rowH - 7}" fill="${c.fill}"><title>${esc(s.name)}: ${c.label} ${v.toFixed(1)}%</title></rect>`);
+        parts.push(`<rect x="${x.toFixed(1)}" y="${y + 3}" width="${w.toFixed(1)}" height="${rowH - 7}" fill="${c.fill}"><title>${esc(s.name)}: ${esc(c.label)} ${v.toFixed(1)}%</title></rect>`);
         if (w > 26) parts.push(`<text x="${(x + w / 2).toFixed(1)}" y="${y + 14}" text-anchor="middle" fill="#1a202c" font-size="8.5" ${font}>${v.toFixed(0)}%</text>`);
       }
       x += w;
@@ -996,7 +996,7 @@ export function renderCompositionBarsSvg(
   classes.forEach((c, i) => {
     const lx = 8 + i * 98;
     parts.push(`<rect x="${lx}" y="${ly - 8}" width="9" height="9" fill="${c.fill}"/>`);
-    parts.push(`<text x="${lx + 12}" y="${ly}" fill="${muted}" font-size="8.5" ${font}>${c.label}</text>`);
+    parts.push(`<text x="${lx + 12}" y="${ly}" fill="${muted}" font-size="8.5" ${font}>${esc(c.label)}</text>`);
   });
   return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Size-class composition by site">${parts.join('')}</svg>`;
 }

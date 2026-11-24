@@ -4,12 +4,16 @@
 import { describe, expect, it } from 'vitest';
 import { computeFabricRoseStats } from '../src/modules/morphometricsExt.js';
 import { majorAxisDirection, orientationFromMoments } from '../src/modules/orientationGeometry.js';
-import { renderFabricRoseSvg } from '../src/ui/charts.js';
+import { renderCompositionBarsSvg, renderFabricRoseSvg } from '../src/ui/charts.js';
 import type { GrainMorphometrics } from '../src/types/index.js';
 import { validateSiteCalibration } from '../src/modules/siteCalibration.js';
 import type { SitePhotoInput } from '../src/modules/siteTypes.js';
 import { comparisonStatistics } from '../src/ui/compareReport.js';
 import type { ComparisonView } from '../src/ui/comparisonView.js';
+import { createHash } from 'node:crypto';
+import { PARAM_RANGES, parseParamInput, sanitizeAnalysisParams } from '../src/ui/savedSettings.js';
+import { POSTPROCESS_LIMITS } from '../src/modules/postprocessCore.js';
+import { PRINT_SCRIPT_SHA256, PRINT_SCRIPT_SOURCE, REPORT_CSP, reportDocument } from '../src/ui/report.js';
 
 function grainAt(id: number, orientationRad: number): GrainMorphometrics {
   return {
@@ -78,5 +82,50 @@ describe('F-02: "Compare in pixels" is honoured for calibrated sites', () => {
     expect(row?.[1]).toBe('mm');
     const pxView = { plotted: [], unit: 'px', commonCutoffMm: null } as unknown as ComparisonView;
     expect(comparisonStatistics({}, pxView, true).find(([k]) => k === 'Compared in')?.[1]).toMatch(/^pixels/);
+  });
+});
+
+describe('F-06: printable report footer and CSP', () => {
+  it('no control character can end the CSS footer string', () => {
+    const html = reportDocument('t', 'Reach\f}}body{background:red}/*\u000b\u2028x', '<p>body</p>');
+    const footer = /content: "([^"]*)"; font/.exec(html)?.[1] ?? '';
+    expect(footer).not.toMatch(/[\u0000-\u001f\u2028]/);
+    expect(footer).toContain('}}body{background:red}');
+    // Still one @page rule: the injected braces stayed inside the string.
+    expect(html.match(/@bottom-left \{ content: "[^"]*"; font/g)).toHaveLength(1);
+  });
+
+  it('carries a CSP that blocks the network and allows only the Print script', () => {
+    const html = reportDocument('t', 'f', '');
+    expect(html).toContain(`<meta http-equiv="Content-Security-Policy" content="${REPORT_CSP}">`);
+    expect(REPORT_CSP).toMatch(/default-src 'none'/);
+    expect(createHash('sha256').update(PRINT_SCRIPT_SOURCE).digest('base64')).toBe(PRINT_SCRIPT_SHA256);
+  });
+});
+
+describe('F-09: composition chart is well-formed XML', () => {
+  it('escapes "<" in the class labels', () => {
+    const svg = renderCompositionBarsSvg([{ name: 'A & <B>', color: '#000', w: { sandPct: 30, gravelPct: 40, cobblePct: 20, boulderPct: 10 } }]);
+    // A "<" not starting a tag name or closing tag is a fatal XML error (breaks SVG / PNG export).
+    expect(svg).not.toMatch(/<(?![a-zA-Z/])/);
+    expect(svg).toContain('Sand (&lt; 2 mm)');
+  });
+});
+
+describe('F-14: settings the UI accepts are settings the analysis accepts', () => {
+  it('rejects a seed density below 1', () => {
+    expect(parseParamInput('minSeedDensity', '0')).toHaveProperty('error');
+    expect(parseParamInput('minSeedDensity', '0.5')).toHaveProperty('error');
+    expect(parseParamInput('minSeedDensity', '1')).toEqual({ value: 1 });
+    expect(sanitizeAnalysisParams({ minSeedDensity: 0 }).minSeedDensity).not.toBe(0);
+  });
+
+  it('every UI range lies inside the post-processing limits', () => {
+    for (const [key, range] of Object.entries(PARAM_RANGES)) {
+      const lim = (POSTPROCESS_LIMITS as Record<string, readonly [number, number, boolean]>)[key];
+      if (!lim || !range) continue;
+      expect(range[0], key).toBeGreaterThanOrEqual(lim[0]);
+      expect(range[1], key).toBeLessThanOrEqual(lim[1]);
+    }
   });
 });

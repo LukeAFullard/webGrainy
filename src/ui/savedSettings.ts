@@ -22,7 +22,7 @@ export const PARAM_RANGES: Partial<Record<keyof UiAnalysisParams, [number, numbe
   maxGrainAreaFraction: [0, 1],
   excludeBorderMargin: [0, 100],
   niter: [1, 10_000],
-  minSeedDensity: [0, 1e6],
+  minSeedDensity: [1, 1e6], // the analysis refuses < 1 (POSTPROCESS_LIMITS)
 };
 
 export function sanitizeAnalysisParams(raw: unknown): UiAnalysisParams {

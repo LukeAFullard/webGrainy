@@ -75,8 +75,14 @@ export function buildSiteGeoPackage(o: SiteGeoPackageInput): { bytes: Uint8Array
   const unit = o.report?.unit ?? 'px';
   for (const { input, georef } of plan.placed) {
     const s = input.session;
-    const counted = s.countedGrainIds(metric, o.siteOptions ? photoCutoffs(o.siteOptions, o.report, input.photoId) : undefined);
-    const fc = JSON.parse(s.exportGeoJson(undefined, o.countedOnly ? counted : undefined)) as Fc;
+    // A photo left out of the site contributes no grains to its statistics.
+    const counted = input.included
+      ? s.countedGrainIds(metric, o.siteOptions ? photoCutoffs(o.siteOptions, o.report, input.photoId) : undefined)
+      : new Set<number>();
+    const fc: Fc =
+      o.countedOnly && !input.included
+        ? { type: 'FeatureCollection', features: [] }
+        : (JSON.parse(s.exportGeoJson(undefined, o.countedOnly ? counted : undefined)) as Fc);
     for (const f of toCoords(fc, georef).features) {
       const id = f.properties?.['grainId'];
       f.properties = {
