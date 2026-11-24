@@ -726,7 +726,8 @@ function renderAll(state: AppState): void {
     prev.retentionDays !== state.retentionDays ||
     prev.retentionNotice !== state.retentionNotice ||
     prev.retentionHeld !== state.retentionHeld ||
-    prev.storageFullNotice !== state.storageFullNotice
+    prev.storageFullNotice !== state.storageFullNotice ||
+    prev.storageOpenError !== state.storageOpenError
   ) {
     renderSidebar(state);
   }
@@ -1556,11 +1557,13 @@ async function bootstrap(): Promise<void> {
   // the disk is low). Removal then follows the user's choice only.
   void navigator.storage?.persist?.().then(() => refreshStorageInfo()).catch(() => undefined);
 
-  await Promise.all([
-    refreshCapabilities(),
-    registerServiceWorker(),
-    createDefaultOrLoadSites(),
-  ]);
+  // One failing start-up step must not stop the others (or the launch queue) from running.
+  const steps: Array<[string, Promise<void>]> = [
+    ['capability check', refreshCapabilities()],
+    ['service worker registration', registerServiceWorker()],
+    ['loading sites', createDefaultOrLoadSites()],
+  ];
+  await Promise.all(steps.map(([name, p]) => p.catch((err: unknown) => console.error(`Start-up step failed: ${name}`, err))));
   setupLaunchQueue();
   // A tab left open for days still removes sites past their date (hourly check).
   setInterval(() => void actions.purgeExpiredSites().catch(() => undefined), 3_600_000);

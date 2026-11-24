@@ -392,6 +392,12 @@ export function retentionBannerHtml(state: AppState, now = Date.now(), since = r
       <div class="row" style="margin-top:6px;"><button type="button" class="btn btn-xs" data-action="dismiss-retention-explained">Got it</button> ${helpButton('backup')}</div>
     </div>`);
   }
+  if (state.storageOpenError) {
+    parts.push(`<div class="warning-banner" role="alert"><strong>Browser storage could not be opened, so your sites cannot be loaded or saved.</strong>
+      This happens in private / incognito windows, when the browser or an organisation policy blocks site storage, when the disk is full, or when the stored data is damaged.
+      Try a normal window, check the browser's site-data settings and free disk space, then try again. <span class="summary-note">(${esc(state.storageOpenError)})</span>
+      <div class="row" style="margin-top:6px;"><button type="button" class="btn btn-xs btn-primary" data-action="retry-storage">Try again</button></div></div>`);
+  }
   if (state.storageFullNotice) {
     parts.push(`<div class="warning-banner" role="alert"><strong>Browser storage is full.</strong> ${esc(state.storageFullNotice)}
       <div class="row" style="margin-top:6px;gap:4px;flex-wrap:wrap;">

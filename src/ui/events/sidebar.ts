@@ -153,6 +153,7 @@ export const sidebarActions: Record<string, ActionHandler> = {
     void ctx.actions.removeHeldSite(site.siteId);
   },
   'dismiss-storage-full': (_el, ctx) => ctx.store.setState({ storageFullNotice: null }),
+  'retry-storage': (_el, ctx) => void ctx.actions.createDefaultOrLoadSites(),
   'free-space': (_el, ctx) => {
     const st = ctx.store.getState();
     if (st.batchRunning) return;

@@ -372,7 +372,22 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
     await deps.syncViewport(true);
   }
 
+  /**
+   * Loads the sites (creating a first one) at start-up. Never throws: if browser storage cannot
+   * be opened (private browsing, a storage policy, a full disk, damaged data), says so in
+   * `storageOpenError` (shown with a retry button) instead of leaving an empty workspace.
+   */
   async function createDefaultOrLoadSites(): Promise<void> {
+    try {
+      await loadOrCreateSites();
+      if (store.getState().storageOpenError !== null) store.setState({ storageOpenError: null });
+    } catch (err) {
+      console.error('Could not open browser storage', err);
+      store.setState({ storageOpenError: err instanceof Error ? `${err.name}: ${err.message}` : String(err) });
+    }
+  }
+
+  async function loadOrCreateSites(): Promise<void> {
     // Remove expired sites before any site is opened (opening one restarts its clock).
     await purgeExpiredSites().catch(() => undefined);
     let sites = await storage.listSites();

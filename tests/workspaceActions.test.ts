@@ -600,4 +600,16 @@ describe('browser storage full', () => {
     await actions.loadSiteData('s');
     expect(store.getState().photos.map((p) => p.photoId)).toEqual(['m', 'z', 'a']);
   });
+  it('F-11: storage that cannot be opened at start-up is reported, and Try again recovers', async () => {
+    const world = fakeWorld();
+    const listSites = world.storage.listSites;
+    world.storage.listSites = async () => { throw new DOMException('The user denied permission to access the database.', 'InvalidStateError'); };
+    const { store, actions } = setup(world);
+    await expect(actions.createDefaultOrLoadSites()).resolves.toBeUndefined();
+    expect(store.getState().storageOpenError).toMatch(/InvalidStateError/);
+    world.storage.listSites = listSites;
+    await actions.createDefaultOrLoadSites();
+    expect(store.getState().storageOpenError).toBeNull();
+    expect(store.getState().sites).toHaveLength(1);
+  });
 });

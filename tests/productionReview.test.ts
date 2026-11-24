@@ -11,6 +11,9 @@ import type { SitePhotoInput } from '../src/modules/siteTypes.js';
 import { comparisonStatistics } from '../src/ui/compareReport.js';
 import type { ComparisonView } from '../src/ui/comparisonView.js';
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import pako from 'pako';
+import { decodeTiffBuffer, validateTiffStructure } from '../src/modules/tiffDecode.js';
 import { PARAM_RANGES, parseParamInput, sanitizeAnalysisParams } from '../src/ui/savedSettings.js';
 import { POSTPROCESS_LIMITS } from '../src/modules/postprocessCore.js';
 import { PRINT_SCRIPT_SHA256, PRINT_SCRIPT_SOURCE, REPORT_CSP, reportDocument } from '../src/ui/report.js';
@@ -127,5 +130,107 @@ describe('F-14: settings the UI accepts are settings the analysis accepts', () =
       expect(range[0], key).toBeGreaterThanOrEqual(lim[0]);
       expect(range[1], key).toBeLessThanOrEqual(lim[1]);
     }
+  });
+});
+
+/** A little-endian TIFF: one IFD at offset 8 with the given entries, then `extra` bytes. */
+function tiff(entries: Array<[tag: number, type: number, num: number, value: number]>, opts: { next?: number; extra?: Uint8Array } = {}): ArrayBuffer {
+  const ifdBytes = 2 + entries.length * 12 + 4;
+  const extra = opts.extra ?? new Uint8Array(0);
+  const buf = new ArrayBuffer(8 + ifdBytes + extra.length);
+  const dv = new DataView(buf);
+  dv.setUint16(0, 0x4949, true);
+  dv.setUint16(2, 42, true);
+  dv.setUint32(4, 8, true);
+  dv.setUint16(8, entries.length, true);
+  entries.forEach(([tag, type, num, value], i) => {
+    const e = 10 + i * 12;
+    dv.setUint16(e, tag, true);
+    dv.setUint16(e + 2, type, true);
+    dv.setUint32(e + 4, num, true);
+    if (type === 3 && num === 1) dv.setUint16(e + 8, value, true);
+    else dv.setUint32(e + 8, value, true);
+  });
+  dv.setUint32(10 + entries.length * 12, opts.next ?? 0, true);
+  new Uint8Array(buf).set(extra, 8 + ifdBytes);
+  return buf;
+}
+const dataStart = (nEntries: number): number => 8 + 2 + nEntries * 12 + 4;
+
+describe('F-07: hostile TIFFs are refused instead of hanging the tab', () => {
+  it('the 26-byte TIFF whose IFD chain points back to itself', () => {
+    const buf = tiff([[256, 3, 1, 1]], { next: 8 });
+    expect(buf.byteLength).toBe(26);
+    expect(() => decodeTiffBuffer(buf)).toThrow(/damaged or not a valid TIFF/);
+  });
+
+  it('sub-IFD lists that point to the same IFD many times', () => {
+    // SubIFDs (330) with 4 offsets, all pointing back at the IFD itself.
+    const at = dataStart(1);
+    const extra = new Uint8Array(16);
+    new DataView(extra.buffer).setUint32(0, 8, true);
+    for (let i = 0; i < 4; i++) new DataView(extra.buffer).setUint32(i * 4, 8, true);
+    expect(() => validateTiffStructure(tiff([[330, 4, 4, at]], { extra }))).toThrow(/referenced twice/);
+  });
+
+  it('a tag claiming billions of values', () => {
+    expect(() => validateTiffStructure(tiff([[273, 4, 0xffffffff, 8]]))).toThrow(/past the end/);
+  });
+
+  it('zero tile sizes', () => {
+    const buf = tiff([[256, 3, 1, 4], [257, 3, 1, 4], [258, 3, 1, 8], [277, 3, 1, 1], [322, 3, 1, 0], [323, 3, 1, 0], [324, 4, 1, 8], [325, 4, 1, 1]]);
+    expect(() => decodeTiffBuffer(buf)).toThrow(/tile size/);
+  });
+
+  it('a DEFLATE strip that expands far beyond the frame', () => {
+    const bomb = pako.deflate(new Uint8Array(20_000_000)) as Uint8Array;
+    const n = 9;
+    const buf = tiff(
+      [[256, 3, 1, 10], [257, 3, 1, 10], [258, 3, 1, 8], [259, 3, 1, 8], [262, 3, 1, 1], [273, 4, 1, dataStart(n)], [277, 3, 1, 1], [278, 3, 1, 10], [279, 4, 1, bomb.length]],
+      { extra: bomb },
+    );
+    expect(() => decodeTiffBuffer(buf)).toThrow(/expands far beyond/);
+  });
+
+  it('a small valid DEFLATE TIFF still decodes', () => {
+    const px = new Uint8Array(100).map((_, i) => i * 2);
+    const z = pako.deflate(px) as Uint8Array;
+    const n = 9;
+    const buf = tiff(
+      [[256, 3, 1, 10], [257, 3, 1, 10], [258, 3, 1, 8], [259, 3, 1, 8], [262, 3, 1, 1], [273, 4, 1, dataStart(n)], [277, 3, 1, 1], [278, 3, 1, 10], [279, 4, 1, z.length]],
+      { extra: z },
+    );
+    const img = decodeTiffBuffer(buf);
+    expect([img.width, img.height]).toEqual([10, 10]);
+    expect(img.data[4 * 7]).toBe(14);
+  });
+});
+
+describe('F-10: colour tokens work without light-dark()', () => {
+  it('the @supports fallback defines every light-dark() token with the same light and dark values', () => {
+    const css = readFileSync(new URL('../src/ui/main.css', import.meta.url), 'utf8');
+    const root = css.slice(css.indexOf(':root {'), css.indexOf('@supports not (color: light-dark('));
+    const tokens = [...root.matchAll(/^\s*(--[\w-]+):\s*light-dark\((.+)\);\s*$/gm)].map((m) => {
+      const args = m[2]!;
+      let depth = 0;
+      let cut = -1;
+      for (let i = 0; i < args.length && cut < 0; i++) {
+        if (args[i] === '(') depth++;
+        else if (args[i] === ')') depth--;
+        else if (args[i] === ',' && depth === 0) cut = i;
+      }
+      return { name: m[1]!, light: args.slice(0, cut).trim(), dark: args.slice(cut + 1).trim() };
+    });
+    expect(tokens.length).toBeGreaterThan(20);
+    const fallback = css.slice(css.indexOf('@supports not (color: light-dark('));
+    const media = fallback.indexOf('@media (prefers-color-scheme: light)');
+    const darkPart = fallback.slice(0, media);
+    const lightPart = fallback.slice(media);
+    for (const t of tokens) {
+      expect(darkPart, t.name).toContain(`${t.name}: ${t.dark};`);
+      expect(lightPart, t.name).toContain(`${t.name}: ${t.light};`);
+    }
+    // Outside :root, light-dark() would have no fallback.
+    expect(css.slice(css.indexOf('@supports not')).match(/light-dark\(/g)).toHaveLength(1);
   });
 });

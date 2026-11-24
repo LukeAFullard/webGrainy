@@ -96,6 +96,8 @@ export interface AppState {
   retentionHeld: string[];
   /** Browser storage is full: what failed and what to do (shown until dismissed). */
   storageFullNotice: string | null;
+  /** Browser storage (IndexedDB) could not be opened at start-up: the error, shown with a retry. */
+  storageOpenError: string | null;
   /** "Download results": also include the project file with the photos. */
   downloadIncludeProject: boolean;
   /** Outline / mask exports: only the grains counted in the statistics (default: every grain). */
@@ -204,6 +206,7 @@ export function createInitialState(): AppState {
     retentionNotice: null,
     retentionHeld: [],
     storageFullNotice: null,
+    storageOpenError: null,
     downloadIncludeProject: false,
     exportCountedOnly: false,
     reportOptions: readReportOptions(),
