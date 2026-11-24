@@ -17,7 +17,7 @@ The code itself is in very good shape:
 
 - **Build, type safety and audit:** the build is clean, the type check has 0 errors, and `npm audit` reports 0 vulnerabilities.
 - **Tests:** all 847 unit/parity/E2E tests pass on 3 runs (including strict perf). Both browser smoke tests (U-Net and Cellpose-SAM) and the service-worker update test pass. The numerical oracle and the CRS/PROJ check pass.
-- **Accuracy:** I reproduced the README's U-Net accuracy end to end from the raw held-out data, and the regenerated per-image file is byte-identical to the committed one. The Cellpose-SAM re-run matches exactly so far (every image finished at the time of writing).
+- **Accuracy:** I reproduced the README's U-Net accuracy end to end from the raw held-out data, and the regenerated per-image file is byte-identical to the committed one. The Cellpose-SAM re-run reached 31 of the 40 images before its time limit, and all 31 match the committed results exactly.
 - **Privacy, offline and security:** the privacy claim and the offline mode hold in a real browser. Model integrity checks are sound, and fuzzing found no crash in the TIFF and project-file parsers. Accessibility scans are clean.
 
 **One release-blocking defect remains: the documented release path does not deploy.** Since the review batches merged, `pages.yml` builds on every push to `main` but **skips its `deploy` job**, and the run still reports success. The live site is still the pre-review build from 23 Nov. Merging v0.1.0 to `main` would therefore not publish it, and nothing would turn red.
@@ -180,7 +180,7 @@ PASS means I ran it and it passed. UNVERIFIED means I could not run it here.
 | b-axis / Feret / d_eq | oracle; `SIZE_METRIC_DEFINITION` | PASS | b = 4√λ₂ equals `skimage` `minor_axis_length`; Feret via rotating calipers matches the oracle. |
 | README accuracy table vs `validation/` | recomputed from `heldout_app_results_per_image.csv` | PASS | Every number matches. My site-cluster bootstrap CIs agree within Monte-Carlo noise. The earlier-benchmark table matches `heldout_summary.json` (`ts_cellpose_guard040`, `pytorch_ref`), as do the 17.5% tail, PQ 0.994/0.966 (`quantization/README.md`), K1 −22%/−31%/+3% (`k1_app_results.md`), 40 images / 13 sites (manifest) and the DEPLOYMENT thread timings (`cpu_threads_results.txt`). |
 | U-Net accuracy reproduced from scratch | `fetch_ig2_files.py` (80 files from Zenodo) → `run_app_heldout.mjs unet` → `score_app_heldout.py unet`, in a scratch copy | PASS | 40/40 images in 3 min 45 s. The regenerated per-image CSV is **byte-identical** to the committed one; the table matches the README exactly. |
-| Cellpose-SAM accuracy reproduced | `run_app_heldout.mjs cpsam` (INT8, CPU) | PARTIAL / UNVERIFIED (remainder) | About 3 min per image on this machine. Every image finished at the time of writing is **identical** to the committed per-image values (6 of 6 when this report was written). The full 40 was not finished; see §5. |
+| Cellpose-SAM accuracy reproduced | `run_app_heldout.mjs cpsam` (INT8, CPU) | PARTIAL / UNVERIFIED (remainder) | About 3 min per image on this machine. The re-run stopped at its 2-hour time limit after **31 of 40** images; all 31 are **identical** to the committed per-image values (grain count, D16, D50, D84). The last 9 were not run; see §5. |
 | CPU (WASM) path and worker | smoke long-task check; harnesses | PASS | Inference runs in the worker (longest main-thread task 0.07 s). Cross-origin isolated through the SW on reload; "3 CPU threads" on 4 cores. |
 | WebGPU path | `gpucheck.html` headless | UNVERIFIED | No GPU here. The page degrades cleanly ("No WebGPU adapter…", no errors). The fallback logic (no adapter, no shader-f16, device loss, NaN output) is unit-tested in `onnxInference.test.ts`. |
 | Edge-case inputs | `edge.cjs` on `dist/` | PASS | CMYK JPEG, CMYK TIFF, 16-bit PNG and TIFF, RGBA, 1×1, 8×8, uniform grey (0 grains), 20000×100, and 48 MP JPEG all analysed (`12 done, 0 failed`, 30 s). Corrupt, fake-HEIC and empty files were refused with a message (m3). |
@@ -224,7 +224,7 @@ PASS means I ran it and it passed. UNVERIFIED means I could not run it here.
 | --- | --- | --- |
 | WebGPU inference (FP16 Cellpose-SAM, U-Net on GPU, device-loss fallback, NaN fallback) | No GPU in the container | On Chrome or Edge ≥ 121 with a `shader-f16` adapter, open `/webGrainy/gpucheck.html`, run it and save the report. Analyse one photo with Cellpose-SAM FP16 and compare D50 with the CPU INT8 result. Repeat on at least one other GPU vendor: `validation/gpu/` covers only an Intel Xe. |
 | Manual "Run workflow" Pages deploy | Not run since the F-17 change; it would publish to the live site | After fixing B1, run it once and confirm the live `sw.js` `BUILD_HASH` and the `main.js` banner commit. |
-| Full Cellpose-SAM held-out re-run | CPU only, about 3 min per image (about 2 h for 40) | `node validation/heldout/run_app_heldout.mjs cpsam`, then `score_app_heldout.py cpsam`, then `git diff validation/heldout/`. A byte-identical CSV confirms it. Every image I completed matched exactly. |
+| Last 9 of the 40 Cellpose-SAM held-out images | CPU only, 3–9 min per image here; the run stopped at its 2-hour limit after 31 images (all identical) | `node validation/heldout/run_app_heldout.mjs cpsam` (it skips images already done), then `score_app_heldout.py cpsam`, then `git diff validation/heldout/`. A byte-identical CSV confirms it. |
 | Safari (macOS/iOS), Firefox, Android | Only Chromium is installed | Manual pass on Safari ≥ 17.4 and current Firefox: load, U-Net analysis, export, offline reload, update prompt. On phones: U-Net on a downscaled photo, and check memory warnings. |
 | Real camera photos (EXIF orientation, very large JPEGs from phones and drones) and real HEIC | Synthetic inputs only | Use a handful of real field photos, including a rotated EXIF JPEG and an iPhone HEIC in Safari. |
 | Low-memory devices (Cellpose-SAM needs about 2–4 GB) | No device | Test on an 8 GB laptop and a phone; confirm the out-of-memory message (`siteBatch.ts:108-112`) appears rather than a crash. |
@@ -259,7 +259,7 @@ All F-items with tests pass at HEAD (`productionReview.test.ts` and companions: 
 2. ~~Fix M1~~: **done** (section 8). Users of the pre-release will re-download the ~30 MB runtime once.
 3. ~~Fix M2~~: **done** (section 8).
 4. Minor fixes: m1–m5 and m10 are **done** (section 9). m6 is resolved by B1; m7 is step 7 below; m8, m9 and m11 remain optional.
-5. Finish the Cellpose-SAM held-out re-run and confirm `git diff validation/heldout/` shows no data change.
+5. Finish the Cellpose-SAM held-out re-run (31 of 40 done, all identical; the script skips completed images) and confirm `git diff validation/heldout/` shows no data change.
 6. Run the manual WebGPU check (`gpucheck.html`) on at least one shader-f16 GPU, and a short manual pass on Safari and Firefox.
 7. Set the final release date consistently in `README.md:9`, `CHANGELOG.md:6` and `CITATION.cff` (`date-released`).
 8. Tag `v0.1.0` on the deployed commit and create the GitHub release; the CHANGELOG link points to it. Optionally attach the tutorial videos (`npm run tutorials`).
@@ -313,7 +313,7 @@ Each fix comes with a regression test, and I checked that each test **fails on t
 | `npm run test:e2e:browser` (`SMOKE_MODEL=cpsam`) | PASS (n = 53 grains, same as before the fixes) |
 | `npm run test:e2e:sw` (now with `max-age=600`) | PASS (9/9 checks) |
 | Offline after first load (`offline.cjs`) | PASS |
-| Cellpose-SAM held-out re-run (scratch copy) | 21 of 40 images re-run so far, all **identical** to the committed per-image results (still running, about 3 min per image) |
+| Cellpose-SAM held-out re-run (scratch copy) | Stopped at its 2-hour time limit after **31 of 40** images, all **identical** to the committed per-image results (grain count, D16, D50, D84) |
 
 `CHANGELOG.md` has a new "Fixed before release (production readiness review)" subsection for these three fixes. Minor issues m1–m5 and m10 were fixed afterwards (section 9).
 
