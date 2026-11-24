@@ -474,3 +474,12 @@ describe('F-26: provenance in site exports and label GeoTIFFs', () => {
     expect(diffs.map((d) => d.setting)).toContain('Tidy outlines');
   });
 });
+
+describe('F-31: every chart is announced as an image with a label', () => {
+  it('every <svg> root in charts.ts has role="img" and an aria-label', () => {
+    const src = readFileSync(new URL('../src/ui/charts.ts', import.meta.url), 'utf8');
+    const roots = src.match(/<svg viewBox=[^>]*>/g) ?? [];
+    expect(roots.length).toBeGreaterThan(20);
+    for (const r of roots) expect(r, r).toMatch(/role="img" aria-label="[^"]+"/);
+  });
+});

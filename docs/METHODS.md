@@ -164,9 +164,9 @@ separated: their pixels flow to different centres.
 | | U-Net | Cellpose-SAM |
 |---|---|---|
 | Basis | Cellpose 3 network, retrained on gravel (ImageGrains 2.0) | Cellpose 4 network built on Meta's Segment Anything (a large vision transformer), retrained on gravel |
-| Size / speed | 25 MB, a few seconds per photo | 180–620 MB depending on the weights, from seconds (with a graphics card) to minutes (CPU) per photo |
+| Size / speed | 26.5 MB, a few seconds per photo | 180–620 MB depending on the weights, from seconds (with a graphics card) to minutes (CPU) per photo |
 | Accuracy | good on uniform gravel | better outlines, especially on mixed sizes, shadows and complex beds |
-| Weights | 32-bit (25 MB) | 16-bit (617 MB, graphics card), or compressed 8-bit (316 MB) / 4-bit (183 MB) versions with the same benchmark accuracy |
+| Weights | 32-bit (26.5 MB) | 16-bit (617 MB, graphics card), or compressed 8-bit (316 MB) / 4-bit (183 MB) versions with the same benchmark accuracy |
 
 **Auto model choice.** *Auto* picks U-Net on phones, without a suitable graphics card (WebGPU
 with 16-bit support) or with less than 4 GB of memory. Otherwise it scores the photo's
@@ -535,14 +535,17 @@ you have:
    2 photos, 65–75% with 3 and 75–80% with 5. The app therefore reports a *t-interval on the
    log scale* around the site value:
 
-   > SE_boot = (ln upper − ln lower) / (2 × 1.96) × √(n/(n−1))
+   > SE_boot = (ln upper − ln lower) / (2 × z) × √(n/(n−1))
    > SE = larger of SE_boot and the leave-one-photo-out jackknife SE of ln D
    > interval = D × exp(± t × SE)
 
-   where n is the number of photos and t the Student-t value with n − 1 degrees of freedom
+   where z = 1.96 for a 95% and 1.645 for a 90% bootstrap range, n is the number of photos and t
+   the Student-t value (at the chosen level) with n − 1 degrees of freedom
    (12.7 for 2 photos, 4.3 for 3, 2.8 for 5). In the same simulation this interval contained
    the truth about 90–97% of the time for 3–20 photos (the bootstrap SE alone gave 88–96%).
-   Folk & Ward φ measures use the bootstrap rule on their own scale. The plain bootstrap range
+   The Folk & Ward measures use the same t-interval with the bootstrap SE (no jackknife): on the
+   φ scale for the mean and the skewness (kept within −1 to 1), and on the log scale for the
+   sorting, the kurtosis and the mean in mm, so they never go below zero. The plain bootstrap range
    is kept in the JSON export (`bootstrapPercentileCi`), and the SE in `ciLogSe`; the site
    comparison test (Section 13) uses that same SE.
 
@@ -564,7 +567,7 @@ bed. Options:
 The random draws use a fixed seed (42), so the same data always give the same interval.
 
 Coverage was also checked in every pooling mode (physical-area, equal-photo, number-weighted,
-facies-weighted, virtual Wolman on real label masks) and with the two-stage bootstrap: 91–98% for
+facies-weighted, virtual Wolman on real label masks) and with the two-stage bootstrap: 91–99% for
 3–10 photos (two-stage: 96–100%, i.e. conservative); see `validation/interval_coverage/`. That bed
 varies only in its median from photo to photo. On beds that vary more (every photo the same
 footprint, so fine patches give more grains; sorting varying between photos; 10% of photos of a
@@ -697,10 +700,11 @@ spacing are ignored) and are drawn as one line over time.
 - ROI use, manual edits, and the statistics settings (pooling, size measure, cutoffs);
 - bootstrap seed and number of draws, the interval method and its status (ok, approximate, single photo, not estimable), and the date.
 
-CSV files start with this information in lines beginning with `#`; read them with, for
-example, `pandas.read_csv(path, comment='#')`. In those lines, commas, semicolons and tabs are
-written as `%2C`, `%3B` and `%09` (and `%` as `%25`), so spreadsheets keep each line in one
-cell.
+Grain-table CSV files start with this information in lines beginning with `#`; read them with,
+for example, `pandas.read_csv(path, comment='#')`. In those lines, commas, semicolons, `|` and
+tabs are written as `%2C`, `%3B`, `%7C` and `%09` (and `%` as `%25`), so spreadsheets keep each
+line in one cell. Summary CSVs (section, metric, value, unit) hold the same information as rows
+whose first cell is `metadata`.
 
 **Same input, same output.** Given the same photo, scale, settings and model, the app gives the
 same outlines and numbers (bootstrap draws use a fixed seed). U-Net gives the same results on
@@ -750,6 +754,14 @@ transform and its GeoKeys (the coordinate system, also a user-defined one). It t
   that reason;
 - a **world file** for the 16-bit PNG mask (`mask16.pgw`) with a `mask16.png.aux.xml` sidecar
   naming the CRS (a world file alone holds no CRS);
+- **GeoPackage** outlines (`outlines_EPSG<code>.gpkg`, or `outlines_lonlat.gpkg` /
+  photo-pixel `.gpkg` when the CRS is not supported), an SQLite file that ArcGIS Pro and QGIS open
+  directly, with each grain's measurements as attributes. The **site GeoPackage** puts every photo
+  of a site in one file: a `grain_outlines` layer (with `photo_id` and `included_in_stats`) and a
+  `photo_footprints` layer (each photo's outline with its D16/D50/D84 and number of grains),
+  in the photos' shared CRS, in longitude / latitude when they differ, or in photo pixels for
+  photos without georeferencing. It is written by the app's own SQLite writer and checked with
+  SQLite's integrity check;
 - the **photo and the mask reprojected to Web Mercator** (`photo_webmercator.tif`,
   `mask_webmercator.tif`, EPSG:3857, north-up). A projected GeoTIFF's pixel rows run along grid
   east, which differs from true east by the grid convergence (−1.49° for NZTM at 175.3°E). A web
@@ -871,9 +883,10 @@ full resolution of a photo larger than 1024 px) gives more, smaller fragments.
   the closest 2D equivalent.
 - **Fine grains are truncated** below the detection limit (Section 8). Fines between and under
   the grains, and the subsurface, are not measured.
-- **Lens distortion is not corrected.** It is small for most phone cameras, but wide-angle and
-  action cameras can change sizes by 7–22% towards the photo edges. Undistort such photos
-  first.
+- **Lens distortion is not corrected.** It is small for most phone cameras, but uncorrected
+  wide-angle and action cameras can bias the photo's D50 by 7–22% (scale bar at the photo
+  centre), and sizes near the photo edges by up to 19–33% (`validation/heldout/lens_distortion_results.json`).
+  Undistort such photos first.
 - **Outline resolution.** Outlines are traced on the working image (section 4), so on a large photo analysed at *Auto* each outline step is several photo pixels: exported masks and GeoJSON/SVG outlines have stepped edges. Analyse at *Scale Mode: 1.0x Full* for finer outlines (photos over 16.7 megapixels are still read at 16.7 MP). Outline coordinates are photo pixels, except the map-coordinate exports of GeoTIFF photos (section 14).
 - **One scale per photo.** Photos must be taken straight down over a roughly flat bed, or be
   rectified. Tilted photos change the scale across the image.
@@ -902,6 +915,8 @@ full resolution of a photo larger than 1024 px) gives more, smaller fragments.
   two samples. *Earth Surface Dynamics* 7, 789–806.
 - Folk, R. L., Ward, W. C. (1957). Brazos River bar: a study in the significance of grain size
   parameters. *Journal of Sedimentary Petrology* 27, 3–26.
+- Holm, S. (1979). A simple sequentially rejective multiple test procedure. *Scandinavian Journal
+  of Statistics* 6, 65–70.
 - ISO 9276-2:2014. Representation of results of particle size analysis: calculation of average
   particle sizes/diameters and moments from particle size distributions.
 - Kellerhals, R., Bray, D. I. (1971). Sampling procedures for coarse fluvial sediments. *Journal
@@ -909,5 +924,9 @@ full resolution of a photo larger than 1024 px) gives more, smaller fragments.
 - Kish, L. (1965). *Survey Sampling*. Wiley, New York.
 - Lotspeich, F. B., Everest, F. H. (1981). A new method for reporting and interpreting textural
   composition of spawning gravel. USDA Forest Service Research Note PNW-369.
+- Pachitariu, M., Rariden, M., Stringer, C. (2025). Cellpose-SAM: superhuman generalization for
+  cellular segmentation. *bioRxiv* 2025.04.28.651001, doi:10.1101/2025.04.28.651001.
+- Welch, B. L. (1947). The generalization of "Student's" problem when several different
+  population variances are involved. *Biometrika* 34, 28–35.
 - Wentworth, C. K. (1922). A scale of grade and class terms for clastic sediments. *Journal of
   Geology* 30, 377–392.

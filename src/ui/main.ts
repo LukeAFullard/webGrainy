@@ -506,6 +506,16 @@ function renderViewportExtras(state: AppState): void {
   const session = activePhoto ? state.sessions.get(activePhoto.photoId) ?? null : null;
   emptyStateEl.style.display = activePhoto ? 'none' : 'flex';
 
+  // Tell screen-reader users which photo the canvas shows and what is on it.
+  const stage = document.getElementById('canvas-stage');
+  if (stage) {
+    const what = activePhoto
+      ? `Photo ${activePhoto.label}${session ? `, ${session.getResult().grainCount} grains detected` : ', not analysed yet'}`
+      : 'No photo open';
+    const label = `${what}. Use arrow keys to pan, plus or minus to zoom, 0 to fit.`;
+    if (stage.getAttribute('aria-label') !== label) stage.setAttribute('aria-label', label);
+  }
+
   const pt = viewport?.getCursorImgPt();
   const zoomPct = viewport ? Math.round(viewport.getZoom() * 100) : 100;
   footerEl.innerHTML = `
@@ -638,8 +648,43 @@ function renderDashboard(state: AppState): void {
   dashboardEl.scrollTop = scroll;
 }
 
+/** A key that finds "the same" control again after its HTML is rebuilt. */
+function controlKey(el: Element): string | null {
+  if (el.id) return `#${CSS.escape(el.id)}`;
+  // Controls are identified by their data-* attributes (and name / radio value).
+  const parts: string[] = [];
+  for (const a of Array.from(el.attributes)) {
+    if ((a.name.startsWith('data-') && a.name !== 'data-bound') || a.name === 'name' || (a.name === 'value' && el.getAttribute('type') === 'radio')) {
+      parts.push(`[${a.name}="${CSS.escape(a.value)}"]`);
+    }
+  }
+  return parts.length > 0 ? `${el.tagName.toLowerCase()}${parts.join('')}` : null;
+}
+
+let lastModalKey = '';
+/** Where focus was before the dialog opened, restored when it closes. */
+let modalReturnFocus: { el: HTMLElement; key: string | null } | null = null;
+
+function restoreFocus(target: { el: HTMLElement; key: string | null } | null, scope: ParentNode): void {
+  if (!target) return;
+  const el = target.el.isConnected ? target.el : target.key ? scope.querySelector<HTMLElement>(target.key) : null;
+  el?.focus({ preventScroll: true });
+}
+
 function renderModals(state: AppState): void {
   if (!appDialogEl) return;
+  // Re-rendering an open dialog (progress ticks, checkboxes) replaces its HTML: keep keyboard
+  // focus on the same control and the body's scroll position.
+  const wasOpen = appDialogEl.open;
+  const active = document.activeElement;
+  const focusInside = wasOpen && active instanceof HTMLElement && appDialogEl.contains(active) ? { el: active, key: controlKey(active) } : null;
+  // The same dialog (and help topic) re-rendered: keep its scroll position; another one starts at the top.
+  const modalKey = `${state.activeModal ?? ''}|${state.helpTopic ?? ''}`;
+  const sameModal = wasOpen && modalKey === lastModalKey;
+  lastModalKey = modalKey;
+  const scrollTop = sameModal ? appDialogEl.querySelector('.modal-body')?.scrollTop ?? 0 : 0;
+  // Expanded sections (<details>) are not in the state: keep them expanded across the re-render.
+  const openDetails = sameModal ? Array.from(appDialogEl.querySelectorAll('details')).map((d) => d.open) : [];
   if (state.activeModal === 'models') {
     appDialogEl.innerHTML = renderModelsModalHtml(state, actions.getCachedQuota());
   } else if (state.activeModal === 'export') {
@@ -657,11 +702,24 @@ function renderModals(state: AppState): void {
       appDialogEl.close();
     }
     appDialogEl.innerHTML = '';
+    // Back to where the user was (the opener may have been re-rendered: find it again).
+    const back = modalReturnFocus;
+    modalReturnFocus = null;
+    restoreFocus(back, document);
     return;
   }
 
   if (!appDialogEl.open) {
+    modalReturnFocus = active instanceof HTMLElement && active !== document.body ? { el: active, key: controlKey(active) } : null;
     appDialogEl.showModal();
+  } else {
+    if (sameModal) {
+      const details = appDialogEl.querySelectorAll('details');
+      if (details.length === openDetails.length) details.forEach((d, i) => (d.open = openDetails[i] === true));
+    }
+    const body = appDialogEl.querySelector('.modal-body');
+    if (body && sameModal) body.scrollTop = scrollTop;
+    restoreFocus(focusInside && !focusInside.el.isConnected ? focusInside : null, appDialogEl);
   }
 }
 
@@ -698,6 +756,8 @@ function renderAll(state: AppState): void {
     prev.capabilities !== state.capabilities ||
     prev.isOnline !== state.isOnline ||
     prev.swStatus !== state.swStatus ||
+    prev.updateReady !== state.updateReady ||
+    prev.staleBuild !== state.staleBuild ||
     prev.photos.length !== state.photos.length ||
     prev.sites.length !== state.sites.length
   ) {

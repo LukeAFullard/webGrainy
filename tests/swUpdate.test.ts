@@ -127,4 +127,20 @@ describe('service worker updates', () => {
   it('with nothing to update, applyUpdate does nothing', () => {
     expect(harness().ctl.applyUpdate()).toBe(false);
   });
+  it('F-33: an update already installing when registration resolved is still offered', () => {
+    const w = { state: 'installing', cbs: [] as Array<() => void>, postMessage: vi.fn() };
+    const onUpdateReady = vi.fn();
+    manageSwUpdates({ waiting: null, installing: w, addEventListener: () => {} }, {
+      hadController: true,
+      hasController: () => true,
+      reload: vi.fn(),
+      onUpdateReady,
+      isBusy: () => false,
+      addControllerChangeListener: () => {},
+      onStateChange: (_w, cb) => w.cbs.push(cb),
+    });
+    w.state = 'installed';
+    w.cbs.forEach((c) => c());
+    expect(onUpdateReady).toHaveBeenCalledTimes(1);
+  });
 });

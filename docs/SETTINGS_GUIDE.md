@@ -75,7 +75,7 @@ analyse a photo. They do not change photos that are already analysed.
 ### Model
 | | |
 |---|---|
-| **Options** | `Auto (Router)` · `U-Net (25 MB)` · `CP-SAM` |
+| **Options** | `Auto (Router)` · `U-Net (26.5 MB)` · `CP-SAM` |
 | **Default** | `Auto` |
 | **What it does** | Chooses which neural network finds the grains. |
 

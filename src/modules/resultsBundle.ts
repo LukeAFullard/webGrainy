@@ -80,7 +80,7 @@ export async function resultsBundleEntries(input: ResultsBundleInput): Promise<Z
   }
   if (input.reportHtml) {
     entries.push({ name: 'site_report.html', data: input.reportHtml });
-    listed.push('site_report.html\n    Printable one-page report (open in a browser, print or save as PDF).');
+    listed.push('site_report.html\n    Printable site report (open in a browser, print or save as PDF).');
   }
   const used = new Set<string>();
   let photoCount = 0;

@@ -1,5 +1,5 @@
 /**
- * One-page printable site report (Export → Printable report): an HTML page laid out for
+ * Printable site report (Export → Printable report): an HTML document laid out for
  * printing or "Save as PDF". Every number carries its exact value and the matching row of the
  * site summary CSV (`data-csv="section/metric"`, `data-value`), so a test can check that the
  * report and the CSV agree.
@@ -87,7 +87,7 @@ export interface ReportInput {
   /** Number of included photos with manual outline edits in this session. */
   manualEditsCount?: number;
   tidiedPhotosCount?: number;
-  /** Number of included photos where optional AI pre-processing enhancement was applied. */
+  /** Number of included photos with an image enhancement (2× AI upscaling or Richardson–Lucy deblurring). */
   enhancedPhotosCount?: number;
   /** Min/max calibration scale across included photos (mm/px), when calibrated. */
   resolutionRangeMmPerPx?: [number, number];
@@ -296,7 +296,7 @@ export function buildSiteReportHtml(input: ReportInput): string {
       : undefined;
   const enhText =
     input.enhancedPhotosCount !== undefined && input.enhancedPhotosCount > 0
-      ? `Optional AI pre-processing enhancement applied to ${input.enhancedPhotosCount} photo${input.enhancedPhotosCount === 1 ? '' : 's'} prior to segmentation`
+      ? `Optional image enhancement (2× AI upscaling or Richardson–Lucy deblurring) applied to ${input.enhancedPhotosCount} photo${input.enhancedPhotosCount === 1 ? '' : 's'} before segmentation`
       : undefined;
   const modelName = input.metadata['modelId'] ? String(input.metadata['modelId']) : 'ImageGrains 2.0 ONNX';
   // One model: its fingerprint in the methods sentence (several are listed in the settings table).

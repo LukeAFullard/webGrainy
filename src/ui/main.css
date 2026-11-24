@@ -12,7 +12,7 @@
 
   --text-primary: light-dark(#0f172a, #e8eef4);
   --text-secondary: light-dark(#334155, #9fb0c0);
-  --text-muted: light-dark(#475569, #8395a7);
+  --text-muted: light-dark(#475569, #889aac);
 
   --accent: light-dark(#1565c0, #3b9eff);
   --accent-hover: light-dark(#0d47a1, #69b7ff);
@@ -24,7 +24,7 @@
   --warning: light-dark(#9a3412, #f5a623);
   --warning-dim: light-dark(rgba(154, 52, 18, 0.12), rgba(245, 166, 35, 0.16));
   --warning-text: light-dark(#7c2d12, #ffd485);
-  --danger: light-dark(#b91c1c, #e74c3c);
+  --danger: light-dark(#b91c1c, #ef5b4b);
   --danger-dim: light-dark(rgba(185, 28, 28, 0.12), rgba(231, 76, 60, 0.16));
   --danger-text: light-dark(#991b1b, #ff8577);
 
@@ -56,7 +56,7 @@
     --border-strong: #3b4b5c;
     --text-primary: #e8eef4;
     --text-secondary: #9fb0c0;
-    --text-muted: #8395a7;
+    --text-muted: #889aac;
     --accent: #3b9eff;
     --accent-hover: #69b7ff;
     --accent-dim: rgba(59, 158, 255, 0.16);
@@ -66,7 +66,7 @@
     --warning: #f5a623;
     --warning-dim: rgba(245, 166, 35, 0.16);
     --warning-text: #ffd485;
-    --danger: #e74c3c;
+    --danger: #ef5b4b;
     --danger-dim: rgba(231, 76, 60, 0.16);
     --danger-text: #ff8577;
     --scrollbar-track: #161d24;
@@ -976,7 +976,18 @@ details summary {
 .help-btn:focus-visible {
   border-color: var(--accent);
   color: var(--accent);
-  outline: none;
+  /* Transparent, not none: Forced Colors mode draws it, so keyboard focus stays visible there. */
+  outline: 2px solid transparent;
+}
+
+/* A 24 x 24 px target (WCAG 2.2 target size) around the 16 px circle. */
+.help-btn {
+  position: relative;
+}
+.help-btn::before {
+  content: '';
+  position: absolute;
+  inset: -4px;
 }
 
 .help-btn:focus-visible {
