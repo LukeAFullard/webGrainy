@@ -239,6 +239,20 @@ models (U-Net PQ −0.01 to −0.02, Cellpose-SAM −0.03 to −0.04) and made s
 - **Increase the margin** (5–10 px) if the photo edges are blurred, vignetted or
   distorted. The margin applies the next time photos are analysed.
 
+### Tidy outlines after analysis
+| | |
+|---|---|
+| **Default** | **On** (ticked) |
+| **What it does** | After each analysis, makes every grain one solid piece: specks of a grain that do not touch it are joined to the neighbouring grain, made grains of their own or removed, and holes inside a grain are filled (details in section 5, *Tidy outlines*). |
+
+**When to change it:**
+- **Keep it on.** On the held-out test photos about 7–8% of grains had such specks; tidying them
+  did not lower accuracy (section 5).
+- **Untick it** only to see or export the models' raw outlines (as the original ImageGrains
+  software gives them). Like the other analysis settings it applies from the next analysis; for
+  photos analysed with it unticked, use the toolbar's *Tidy outlines*. Right after an analysis,
+  *Undo* also shows the raw outlines of that photo.
+
 ### Advanced (rarely needed): Flow steps, Seed density
 | | |
 |---|---|
@@ -321,11 +335,11 @@ redone, and statistics update immediately.
 | **Merge** | One stone was cut into pieces. Select the pieces, then press `Merge`. |
 | **Delete** | Something that isn't a grain was outlined (a leaf, a ruler, a shadow). |
 | **Add** | A grain was missed. Draw around it, then press *Finish shape* (or double-click / Enter). |
-| **Tidy outlines** (optional) | You see specks or small holes in the outlines: pixels of a grain that do not touch it, often in the dark gaps between stones, or a grain drawn as several pieces in a GIS. Toolbar: tidies the photo shown; photo list → *Select* → *Tidy outlines*: the selected photos. |
+| **Tidy outlines** | Done after every analysis while *Tidy outlines after analysis* is ticked (the default). Use the button for photos analysed with it unticked, or after edits that left specks: pixels of a grain that do not touch it, often in the dark gaps between stones, or a grain drawn as several pieces in a GIS. Toolbar: tidies the photo shown; photo list → *Select* → *Tidy outlines*: the selected photos. |
 
-**Tidy outlines** is off unless you choose it: the analysis never applies it. It makes every
-grain one solid piece, the way GIS clean-up tools do (GDAL's sieve filter, ArcGIS *Eliminate*,
-QGIS *Delete holes*):
+**Tidy outlines** runs after every analysis unless *Tidy outlines after analysis* is unticked
+(section 3). It makes every grain one solid piece, the way GIS clean-up tools do (GDAL's sieve
+filter, ArcGIS *Eliminate*, QGIS *Delete holes*):
 
 - Each grain's connected parts are found (pixels that meet only at a corner count as separate
   parts, as in the outlines), and the largest part stays the grain.
@@ -336,14 +350,16 @@ QGIS *Delete holes*):
   is one piece: in a GIS each grain is a single polygon.
 - Holes enclosed by one grain are filled, as Cellpose does. Gaps between two grains are kept.
 
-Each photo's tidy is one undo step, and exports and the printable report say it was applied.
+Each photo's tidy is one undo step (right after an analysis, *Undo* shows the raw outlines), and
+exports and the printable report say it was applied.
 On the 40 held-out test images it changed a median 0.005% (U-Net) and 0.003% (Cellpose-SAM) of
 each image's pixels. Outline agreement (PQ) was unchanged, and the median D50 error was unchanged
 with U-Net and slightly lower with Cellpose-SAM (2.9% → 2.6%; METHODS, Section 15, and
 `validation/tidy/`). Specks pull a
 grain's measured long axis and Feret widths outward, so tidying removes that bias. On very fine
 gravel (grains of 15–30 px), where a few pixels are a large share of a grain, it can move D50 by
-a few percent, so use it consistently across the photos you compare.
+a few percent, so use it consistently across the photos you compare (the app flags photos of a
+site or a comparison that differ in this).
 
 *Can a setting prevent the specks instead?* Not without a cost, on the 40 held-out test photos
 with U-Net (`validation/tidy/settings_sweep_unet.md`). Raising *Cellprob Thresh* to +0.5 removed
@@ -353,7 +369,7 @@ from 5.7% to 7.1%; *Seed density*, *Flow steps* and *Min Size* made no differenc
 grain (*1.0x Full* for a photo larger than 1024 px, or *Enlarge for fine grains*) gives better
 outlines of small grains but more specks, which Tidy removes: on the one large test photo of
 fine gravel, *1.0x Full* raised PQ from 0.63 to 0.69 and cut the D50 error from 8.5% to 2.9%.
-So keep the defaults, give small grains enough pixels, and tidy.
+So keep the defaults (Tidy included), and give small grains enough pixels.
 
 ---
 
@@ -529,9 +545,9 @@ a drag moves the photo when zoomed in and scrolls the page otherwise; a tap uses
 
 | Panel | Settings |
 |---|---|
-| **Left panel → Analysis settings** | Model, CP-SAM weights, Scale mode, Exclude border grains; *Fine-tuning:* Flow threshold, Cellprob threshold, Min size, Max area fraction, Border margin; *Advanced:* Flow steps, Seed density, CPU threads, Skip areas outside the ROI, Apply CLAHE, CLAHE clip |
+| **Left panel → Analysis settings** | Model, CP-SAM weights, Scale mode, Exclude border grains, Tidy outlines after analysis; *Fine-tuning:* Flow threshold, Cellprob threshold, Min size, Max area fraction, Border margin; *Advanced:* Flow steps, Seed density, CPU threads, Skip areas outside the ROI, Apply CLAHE, CLAHE clip |
 | **Left sidebar → photo list** | Include/exclude photo from the site; Facies weight (Facies-weighted mode only) |
-| **Toolbar (above the photo)** | *Scale:* Calibrate, Rectify · *Areas:* ROI, Exclude, Brush, Clear areas · *Edit grains* (after analysis): Split, Merge, Delete, Add · Display |
+| **Toolbar (above the photo)** | *Scale:* Calibrate, Rectify · *Areas:* ROI, Exclude, Brush, Clear areas · *Edit grains* (after analysis): Split, Merge, Delete, Add, Tidy outlines · Display |
 | **Right-hand panel → Statistics settings** | Pooling mode, Size metric, Field-count cutoff, Min b-axis, Exclusion overlap, Harmonize cutoff, *Uncertainty & sampling:* Confidence level, Bootstrap repeats, Bootstrap seed, Two-stage bootstrap, Virtual Wolman points |
 
 All settings are recorded in every export.
@@ -566,7 +582,7 @@ by hand (`validation/heldout/heldout_app_results.md`):
 
 On these figures webGrainy is **as accurate as the original ImageGrains software**: the
 small differences are within the noise of 40 photos. Its grain outlines are as precise as the
-original's (panoptic quality against the hand-drawn outlines: Cellpose-SAM 0.654 vs 0.642,
+original's (panoptic quality against the hand-drawn outlines: Cellpose-SAM 0.655 vs 0.642,
 U-Net 0.540 vs 0.528; `validation/heldout/heldout_app_results.md`, `validation/quantization/README.md`).
 
 **Important limits:**

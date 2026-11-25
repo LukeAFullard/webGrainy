@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // K1 field comparison with the app as shipped: the built engine (dist/) with the app's default
 // analysis settings (upstream-exact Cellpose pipeline, Auto image scale, default
-// post-processing, WASM backend) and the app's own site statistics (analyzeSite with
+// post-processing, Tidy outlines after analysis, WASM backend) and the app's own site statistics (analyzeSite with
 // DEFAULT_SITE_OPTIONS), with and without a field-count cutoff. Replaces the earlier
 // run_engine_k1.mjs + analyze_k1.py numbers, which used the legacy full-resolution pipeline
 // and a separate Python percentile routine.
@@ -94,7 +94,7 @@ const lines = [
   `# K1 field comparison with the shipped app (webGrainy ${APP_VERSION})`,
   '',
   'Produced by `node validation/k1/run_app_k1.mjs` (see the script header). Both K1 demo photos, 0.39 mm/px,',
-  'app default analysis (Cellpose pipeline, Auto image scale, default post-processing, CPU/WASM) and',
+  'app default analysis (Cellpose pipeline, Auto image scale, default post-processing, Tidy outlines after analysis, CPU/WASM) and',
   'the app\'s site statistics (`analyzeSite`, default settings: area-weighted, b-axis, 15 px cutoff, harmonised',
   'detection limit, 95% interval with the few-photo correction).',
   '',

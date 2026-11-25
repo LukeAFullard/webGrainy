@@ -126,6 +126,12 @@ describe('panel renderers', () => {
 
   it('sidebar: empty site', () => {
     const html = renderSidebarHtml(emptyState(), sidebarView);
+    // Tidy outlines after analysis: ticked by default; unticking it counts as a changed setting.
+    expect(html).toMatch(/<input type="checkbox" data-param="tidyOutlines" checked \/> Tidy outlines after analysis/);
+    expect(html).toContain('tested defaults');
+    const untidy = renderSidebarHtml({ ...emptyState(), analysisParams: { ...emptyState().analysisParams, tidyOutlines: false } }, sidebarView);
+    expect(untidy).toMatch(/<input type="checkbox" data-param="tidyOutlines"  \/>/);
+    expect(untidy).toContain('1 setting changed');
     expect(html).toContain('GUIDE');
     expect(html).toContain('Rakaia &lt;reach&gt; 3 (2)');
     expect(html).toContain('Photos (0');

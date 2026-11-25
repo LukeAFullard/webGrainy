@@ -193,4 +193,16 @@ describe('AnalysisSession.tidyOutlines', () => {
     // Tidying again changes nothing.
     expect(s.tidyOutlines()).toBeNull();
   });
+
+  it('after an analysis (countIfUnchanged), outlines that needed no change count as tidied', () => {
+    const s = session();
+    expect(s.tidyOutlines({ countIfUnchanged: true })).not.toBeNull();
+    expect(s.getTidyCount()).toBe(1);
+    // Already tidy: the toolbar button changes and counts nothing; the automatic step counts it.
+    expect(s.tidyOutlines()).toBeNull();
+    expect(s.getTidyCount()).toBe(1);
+    const clean = AnalysisSession.fromSerialized(s.toSerialized());
+    expect(clean.tidyOutlines({ countIfUnchanged: true })).toBeNull();
+    expect(clean.getTidyCount()).toBe(2);
+  });
 });

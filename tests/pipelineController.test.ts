@@ -242,6 +242,23 @@ describe('pipelineController (ImageGrainsEngine & AnalysisSession)', () => {
     await engine.dispose();
   });
 
+  it('analyzeImage() applies Tidy outlines by default, and not with tidyOutlines: false', async () => {
+    const engine = new ImageGrainsEngine({
+      sessionFactory: async (kind) => createMockSession(kind, [{ cx: 40, cy: 40, rx: 14, ry: 10 }], { width: 128, height: 128 }),
+    });
+    const img = makeRgbaImage(128, 128, 'uniform');
+    // These outlines need no change: they still count as tidied (a site would otherwise list
+    // them as analysed differently from its photos that Tidy did change).
+    const tidied = await engine.analyzeImage(img, { model: 'unet', scaleMode: '1.0x' });
+    expect(tidied.getTidyCount()).toBe(1);
+    expect(JSON.stringify(tidied.getExportMetadata())).toContain('Tidy outlines applied');
+    expect(tidied.undo()).toBe(false); // nothing changed, so nothing to undo
+    const raw = await engine.analyzeImage(img, { model: 'unet', scaleMode: '1.0x', tidyOutlines: false });
+    expect(raw.getTidyCount()).toBe(0);
+    expect(JSON.stringify(raw.getExportMetadata())).not.toContain('Tidy outlines applied');
+    await engine.dispose();
+  });
+
   it('analyzeImage() supports CP-SAM tiled inference and auto model routing', async () => {
     Object.defineProperty(globalThis, 'navigator', {
       value: {

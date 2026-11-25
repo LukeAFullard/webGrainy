@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Held-out benchmark with the app as shipped: the built engine (dist/) with the app's default
 // analysis (upstream-exact Cellpose pipeline, Auto image scale, default post-processing,
-// CPU/WASM) on the 40 test images of the ImageGrains 2.0 data, and the numbers the app itself
+// Tidy outlines after analysis, CPU/WASM) on the 40 test images of the ImageGrains 2.0 data, and the numbers the app itself
 // reports for each photo (area-weighted b-axis D16/D50/D84 in photo px, interior grains,
 // 15 px cutoff: session.getStats). Scored against the hand outlines by score_app_heldout.py.
 //

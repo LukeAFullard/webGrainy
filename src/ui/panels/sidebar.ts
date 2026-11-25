@@ -233,6 +233,9 @@ export function renderSidebarHtml(state: AppState, view: SidebarView): string {
         <label class="checkbox-label" style="margin-top:8px;">
           <input type="checkbox" data-param="excludeBorder" ${p.excludeBorder ? 'checked' : ''} /> Exclude border grains ${helpButton('excludeBorder')}
         </label>
+        <label class="checkbox-label" style="margin-top:4px;">
+          <input type="checkbox" data-param="tidyOutlines" ${p.tidyOutlines ? 'checked' : ''} /> Tidy outlines after analysis ${helpButton('tidyOutlines')}
+        </label>
         <details class="advanced-block" style="margin-top:8px;" data-keep-open="fine-tuning">
           <summary>Fine-tuning</summary>
           <div class="grid-2" style="margin-top:6px;">
@@ -481,7 +484,7 @@ export function bulkBarHtml(state: AppState): string {
     <button type="button" class="btn btn-xs" data-action="photo-bulk" data-bulk="include" ${dis}>Include</button>
     <button type="button" class="btn btn-xs" data-action="photo-bulk" data-bulk="exclude" ${dis}>Leave out</button>
     <button type="button" class="btn btn-xs" data-action="photo-bulk" data-bulk="reanalyse" ${dis}>Re-analyse</button>
-    <button type="button" class="btn btn-xs" data-action="photo-bulk" data-bulk="tidy" ${dis} title="Optional: make every grain one solid piece in the selected analysed photos (detached specks reassigned or removed, holes inside a grain filled). Undo restores each photo.">Tidy outlines</button>
+    <button type="button" class="btn btn-xs" data-action="photo-bulk" data-bulk="tidy" ${dis} title="Make every grain one solid piece in the selected analysed photos (detached specks reassigned or removed, holes inside a grain filled). Done after every analysis while Analysis settings → Tidy outlines after analysis is ticked; use this for photos analysed without it. Undo restores each photo.">Tidy outlines</button>
     <button type="button" class="btn btn-xs btn-danger" data-action="photo-bulk" data-bulk="delete" ${dis}>Delete…</button>
   </div>`;
 }

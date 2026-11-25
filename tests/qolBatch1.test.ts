@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { ScreenWakeLock, type WakeLockEnv } from '../src/ui/wakeLock.js';
 import { jobTitle, shouldNotify } from '../src/ui/doneSignal.js';
 import { loadAnalysisParams, sanitizeAnalysisParams, saveAnalysisParams, SETTINGS_KEY } from '../src/ui/savedSettings.js';
-import { defaultAnalysisParams } from '../src/ui/state.js';
+import { defaultAnalysisParams, toAnalysisConfig } from '../src/ui/state.js';
 
 function fakeEnv() {
   let visible = true;
@@ -92,6 +92,19 @@ describe('remembered analysis settings', () => {
     const changed = { ...defaultAnalysisParams(), model: 'unet' as const, flowThreshold: 0.6 };
     saveAnalysisParams(changed, s);
     expect(loadAnalysisParams(s)).toEqual(changed);
+  });
+
+  it('Tidy outlines after analysis: on by default, also for settings saved before it existed, and passed to the analysis', () => {
+    const d = defaultAnalysisParams();
+    expect(d.tidyOutlines).toBe(true);
+    expect(toAnalysisConfig(d).tidyOutlines).toBe(true);
+    // Settings saved by an earlier version have no tidyOutlines field: they get the default.
+    const { tidyOutlines: _omit, ...older } = d;
+    expect(sanitizeAnalysisParams({ ...older, model: 'unet' }).tidyOutlines).toBe(true);
+    const off = sanitizeAnalysisParams({ ...d, tidyOutlines: false });
+    expect(off.tidyOutlines).toBe(false);
+    expect(toAnalysisConfig(off).tidyOutlines).toBe(false);
+    expect(sanitizeAnalysisParams({ ...d, tidyOutlines: 'no' }).tidyOutlines).toBe(true); // wrong type
   });
 
   it('falls back to defaults for corrupt, old or out-of-range values', () => {

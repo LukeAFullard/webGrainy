@@ -379,12 +379,22 @@ try {
     await page.waitForTimeout(500);
     if (/\d+ excluded by ROI/.test(await page.evaluate(() => document.body.innerText))) fail('Clear areas did not remove the ROI');
     console.log('ok: ROI tool excludes grains outside it; Clear areas removes it');
-    // Tidy outlines (optional clean-up): reports what it changed, or that nothing needed tidying.
+    // Tidy outlines runs after every analysis by default: the toolbar button finds nothing left.
+    const tidyStatus = () => (document.getElementById('viewport-footer')?.innerText ?? '').match(/(Tidied 1 photo[^\n]*|Tidy outlines: nothing to tidy[^\n]*)/)?.[0] ?? '';
     await page.click('button[data-action="tidy-outlines"]');
-    await page.waitForFunction(() => /Tidied 1 photo|nothing to tidy/.test(document.body.innerText), null, { timeout: 15000 });
-    const tidyMsg = await page.evaluate(() => document.body.innerText.match(/(Tidied 1 photo[^\n]*|Tidy outlines: nothing to tidy[^\n]*)/)?.[0] ?? '');
-    if (/^Tidied/.test(tidyMsg)) await page.click('button[data-action="undo"]'); // keep the counts below as analysed
-    console.log(`ok: Tidy outlines: ${tidyMsg.slice(0, 120)}`);
+    await page.waitForFunction(tidyStatus, null, { timeout: 15000 });
+    const tidyMsg = await page.evaluate(tidyStatus);
+    if (!/nothing to tidy/.test(tidyMsg)) fail(`the analysis did not tidy the outlines (Tidy outlines after analysis is on by default): ${tidyMsg}`);
+    if (SMOKE_MODEL === 'unet') {
+      // This image's raw U-Net outlines have holes: the automatic tidy is one undo step, so Undo
+      // gives the raw outlines back, and Tidy outlines tidies them again (as analysed).
+      await page.click('button[data-action="undo"]');
+      await page.click('button[data-action="tidy-outlines"]');
+      await page.waitForFunction(() => /Tidied 1 photo/.test(document.getElementById('viewport-footer')?.innerText ?? ''), null, { timeout: 15000 });
+      console.log(`ok: Tidy outlines after analysis; Undo gives the raw outlines, Tidy again: ${(await page.evaluate(tidyStatus)).slice(0, 110)}`);
+    } else {
+      console.log(`ok: Tidy outlines after analysis (${tidyMsg.slice(0, 80)})`);
+    }
     // Save image: the photo as shown, at the photo's own resolution, with provenance text.
     await page.click('.save-view-menu > summary');
     const [viewDl] = await Promise.all([page.waitForEvent('download'), page.click('button[data-action="save-view"][data-area="photo"]')]);

@@ -270,6 +270,13 @@ export interface AnalysisConfig {
   inferenceRoi?: import('../modules/roiAndRectify.js').RoiExclusionConfig;
   /** Skip tiles outside the photo's ROI during batch analysis (default true). */
   skipTilesOutsideRoi?: boolean;
+  /**
+   * "Tidy outlines" right after the analysis (default true): every grain becomes one solid
+   * piece (detached specks joined, made grains of their own or removed; enclosed holes filled;
+   * see tidyGrains.ts). One undo step on the returned session, so the raw outlines stay one Undo
+   * away. false gives the raw post-processing output.
+   */
+  tidyOutlines?: boolean;
   scaleMode?: ScaleMode;
   /**
    * Enlarge the working image by this factor before inference (e.g. 1.5). In testing this

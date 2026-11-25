@@ -21,6 +21,7 @@ Photos and results never leave your device. The only network requests are the on
 - **Measurement.**
   - Per grain: b-axis (moment-ellipse minor axis), minimum and maximum Feret width, equal-area diameter, shape and orientation.
   - Sizes are in mm after two-point calibration, perspective rectification, or from GeoTIFF georeferencing.
+- **Tidy outlines.** After each analysis every grain is made one solid piece: detached specks are joined to a neighbouring grain or removed, and holes inside a grain are filled (about 7–8% of grains have specks otherwise). On by default; it can be turned off in the analysis settings, and Undo shows the raw outlines.
 - **Editing.** Split, merge, delete and draw grains, with undo/redo. Regions of interest and exclusion areas.
 - **Statistics.**
   - Area-weighted (grid-by-number) and number-weighted percentiles D5–D95.
@@ -43,12 +44,12 @@ How every step works (models, outlines, measurements, statistics, uncertainty, c
 
 Measured on the held-out test split of the ImageGrains 2.0 data (`IG2_data.zip`, 40 images from 13 sites) against hand-digitised grain outlines. Errors are absolute percentage errors of each image's area-weighted b-axis percentile (in pixels); PQ is panoptic quality of the outlines.
 
-**The app as shipped** (default settings, the numbers the app reports: log2 interpolation, interior grains, grains under 15 px left out of both prediction and hand outlines; 95% intervals resample whole sites, since photos of one site are not independent; [`validation/heldout/heldout_app_results.md`](validation/heldout/heldout_app_results.md)):
+**The app as shipped** (default settings, including *Tidy outlines after analysis*; the numbers the app reports: log2 interpolation, interior grains, grains under 15 px left out of both prediction and hand outlines; 95% intervals resample whole sites, since photos of one site are not independent; [`validation/heldout/heldout_app_results.md`](validation/heldout/heldout_app_results.md)):
 
 | Model | D50 error: mean [95% CI] | D50 error: median [95% CI] | D16 / D84 median error | D50 error > 50% | PQ vs hand outlines |
 | :--- | :--- | :--- | :--- | ---: | ---: |
-| U-Net | 15.6% [7.3, 25.1] | 5.7% [2.8, 19.3] | 8.4% / 2.4% | 10% of images | 0.540 |
-| Cellpose-SAM (INT8) | 8.9% [3.7, 14.9] | 2.9% [1.9, 5.3] | 5.1% / 1.1% | 5% of images | 0.654 |
+| U-Net | 15.7% [7.5, 25.2] | 5.7% [2.8, 19.3] | 8.4% / 2.9% | 10% of images | 0.540 |
+| Cellpose-SAM (INT8) | 8.7% [3.7, 14.6] | 2.6% [1.9, 4.7] | 5.1% / 1.1% | 5% of images | 0.655 |
 
 **Earlier benchmark with the upstream PyTorch ImageGrains for reference** (linear interpolation, no size cutoff, intervals resampling images rather than sites, so not directly comparable with the table above):
 

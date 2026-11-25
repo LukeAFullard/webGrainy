@@ -230,7 +230,7 @@ webGrainy's own implementation of Cellpose's procedure.
 You can then correct the outlines by hand: split, merge, delete or draw grains, with undo.
 Edits are kept with the results, and the number of edited photos is reported.
 
-**Detached fragments and holes; optional *Tidy outlines*.** Step 4 gives a pixel to the grain
+**Detached fragments and holes; *Tidy outlines*.** Step 4 gives a pixel to the grain
 whose centre its flow reaches, without checking that the pixel touches that grain. Near grain
 edges, where the predicted flows are weak (often in the dark gaps between stones), a few pixels
 can therefore carry a grain's label while lying apart from it, and small holes can be left
@@ -239,9 +239,11 @@ small grains, but does not split off detached parts). Such fragments pull a grai
 ellipse and convex hull outward (long axis, Feret widths), and make its exported outline a
 multipart polygon.
 
-*Tidy outlines* is an optional clean-up the user applies to chosen photos; the analysis never
-applies it. It works on the label mask, as GIS raster clean-up does (GDAL's sieve filter, ArcGIS
-*Eliminate*), so measurements, masks and outlines stay consistent:
+*Tidy outlines* removes them. It runs after every analysis while *Tidy outlines after analysis* is
+ticked in the analysis settings (the default; untick it for the models' raw outlines, as upstream
+Cellpose gives them), and can be applied from the toolbar to photos analysed without it. It works
+on the label mask, as GIS raster clean-up does (GDAL's sieve filter, ArcGIS *Eliminate*), so
+measurements, masks and outlines stay consistent:
 
 1. Each grain's 4-connected parts are found (pixels meeting only at a corner are separate parts,
    matching the traced outlines). The largest part remains the grain.
@@ -256,9 +258,11 @@ applies it. It works on the label mask, as GIS raster clean-up does (GDAL's siev
 3. Background regions enclosed by one grain (not touching the image edge or another grain) are
    filled, as Cellpose's `fill_holes_and_remove_small_masks` does. Gaps between grains are kept.
 
-Each photo's tidy is one undoable edit; it is saved with the results, stated in every export's
-provenance (`outlinesTidied`) and counted in the printable report. Its effect on the held-out test
-images is in Section 15.
+Each photo's tidy is one undoable edit (right after an analysis, Undo shows the raw outlines); it is
+saved with the results, stated in every export's provenance (`outlinesTidied`) and counted in the
+printable report. A photo whose outlines needed no change also counts as tidied, so photos analysed
+the same way compare as such. Its effect on the held-out test images is in Section 15; the accuracy
+figures of Section 15 are those of the default analysis, with Tidy.
 
 **Defaults** (changeable under *Advanced analysis*, but the defaults are the tested values):
 
@@ -809,11 +813,11 @@ caveats:
   50%. **Always check the outlines.**
 - The table above used an earlier percentile calculation (linear, no 15 px cutoff). Re-run with
   the app as shipped (log2 interpolation, 15 px cutoff on prediction and hand outlines, default
-  settings), U-Net gives a D50 error of 15.6% mean [7.3, 25.1] and 5.7% median, D16 / D84 median
-  errors of 8.4% / 2.4%, 10% of photos above 50%, and PQ 0.540
-  and Cellpose-SAM (INT8 weights) 8.9% mean [3.7, 14.9] and 2.9% median, D16 / D84 5.1% / 1.1%,
-  5% of photos above 50%, PQ 0.654 (`validation/heldout/heldout_app_results.md`; 95% intervals
-  resample whole sites).
+  settings including *Tidy outlines after analysis*), U-Net gives a D50 error of 15.7% mean
+  [7.5, 25.2] and 5.7% median, D16 / D84 median errors of 8.4% / 2.9%, 10% of photos above 50%,
+  and PQ 0.540 and Cellpose-SAM (INT8 weights) 8.7% mean [3.7, 14.6] and 2.6% median, D16 / D84
+  5.1% / 1.1%, 5% of photos above 50%, PQ 0.655 (`validation/heldout/heldout_app_results.md`;
+  95% intervals resample whole sites).
 
 **Same networks as the original software.** With the same photo, the networks' outputs, run
 through Cellpose's own post-processing, match the original PyTorch ImageGrains exactly (U-Net)
@@ -824,12 +828,13 @@ The 8-bit and 4-bit Cellpose-SAM versions give the same benchmark accuracy as th
 (outline agreement 0.994 and 0.966).
 
 **Field comparison (one site).** At the K1 site (two photos, 0.39 mm/px, field count of 251
-b-axes, smallest 13 mm, field D50 27.0 mm), the app as shipped (default settings) gives:
+b-axes, smallest 13 mm, field D50 27.0 mm), the app as shipped (default settings, including *Tidy
+outlines after analysis*) gives:
 
 | | Cellpose-SAM | U-Net |
 |---|---|---|
 | D50, all detected grains | 18.7 mm (−31%) | 21.1 mm (−22%) |
-| D50, field-count cutoff 13 mm | 27.8 mm (+3%) | 27.7 mm (+3%) |
+| D50, field-count cutoff 13 mm | 27.9 mm (+3%) | 27.7 mm (+3%) |
 | D84, field-count cutoff 13 mm | 45.3 mm (−6%) | 45.9 mm (−5%) |
 
 With the field count's size range applied to the photos, both models agree with the field count
@@ -840,7 +845,7 @@ below about 10 mm, and its D50 without a cutoff happened to match the field coun
 Caveats: one site and two photos, both of which overlap the ImageGrains training
 data, so this is a consistency check, not an independent validation; the 13 mm cutoff is the
 smallest clast in the field data, not a documented protocol (with 10 or 16 mm the D50 difference
-is −8% or +12% for Cellpose-SAM). Reproduce with `node validation/k1/run_app_k1.mjs`
+is −9% or +12% for Cellpose-SAM). Reproduce with `node validation/k1/run_app_k1.mjs`
 (`validation/k1/k1_app_results.md`). Always match the size range when comparing with field data
 (Section 8).
 
@@ -849,8 +854,9 @@ orientation, Feret widths, tiling and rectification are checked automatically ag
 independent Python implementations (numpy, scipy, scikit-image) on every code change. The
 site-comparison test was checked by simulation (Section 13).
 
-**Optional *Tidy outlines* (Section 6).** On the same 40 test images, with each model's default
-analysis, then *Tidy outlines* on every image (`validation/tidy/`):
+***Tidy outlines* (Section 6).** On the same 40 test images, each model's raw analysis (Tidy
+unticked), then *Tidy outlines* on every image (`validation/tidy/`). This is why it is on by
+default:
 
 | Model | Images with fragments or holes | Outline quality (PQ), before → after | D50 error, median, before → after | Largest change in one image's D50 error |
 |---|---|---|---|---|

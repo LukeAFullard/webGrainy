@@ -183,7 +183,8 @@ for (const [i, row] of rows.entries()) {
   }
   const img = await decode(local(row.image));
   const gt = readMask(local(row.mask));
-  const session = await engine.analyzeImage(img, { model: kind, cpsamWeights: 'int8', scaleMode: 'auto' });
+  // The raw analysis (tidyOutlines: false), then Tidy outlines as a separate step, to compare them.
+  const session = await engine.analyzeImage(img, { model: kind, cpsamWeights: 'int8', scaleMode: 'auto', tidyOutlines: false });
   const wi = session.workingImage;
   const atPhoto = () => resizeLabelsNearest(session.getWorkingMasks(), wi.width, wi.height, wi.originalWidth, wi.originalHeight);
   const gtD50 = d50(computeAllGrainMorphometrics(gt.labels, gt.w, gt.h, 2));
