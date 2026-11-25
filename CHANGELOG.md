@@ -29,8 +29,8 @@ First public release.
 
 ### Validation
 
-- Held-out ImageGrains 2.0 test split (40 images, 13 sites): median D50 error 2.9% (Cellpose-SAM) and
-  5.7% (U-Net). See the README and `validation/`.
+- Held-out ImageGrains 2.0 test split (40 images, 13 sites), default settings: median D50 error 2.6%
+  (Cellpose-SAM) and 5.7% (U-Net). See the README and `validation/`.
 - Site intervals and the survey-change test were checked by simulation (`validation/comparison/`,
   `validation/interval_coverage/`), including the test's power for a 20% change.
 

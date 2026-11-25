@@ -813,11 +813,11 @@ caveats:
   50%. **Always check the outlines.**
 - The table above used an earlier percentile calculation (linear, no 15 px cutoff). Re-run with
   the app as shipped (log2 interpolation, 15 px cutoff on prediction and hand outlines, default
-  settings), U-Net gives a D50 error of 15.6% mean [7.3, 25.1] and 5.7% median, D16 / D84 median
-  errors of 8.4% / 2.4%, 10% of photos above 50%, and PQ 0.540
-  and Cellpose-SAM (INT8 weights) 8.9% mean [3.7, 14.9] and 2.9% median, D16 / D84 5.1% / 1.1%,
-  5% of photos above 50%, PQ 0.654 (`validation/heldout/heldout_app_results.md`; 95% intervals
-  resample whole sites).
+  settings including *Tidy outlines after analysis*), U-Net gives a D50 error of 15.7% mean
+  [7.5, 25.2] and 5.7% median, D16 / D84 median errors of 8.4% / 2.9%, 10% of photos above 50%,
+  and PQ 0.540 and Cellpose-SAM (INT8 weights) 8.7% mean [3.7, 14.6] and 2.6% median, D16 / D84
+  5.1% / 1.1%, 5% of photos above 50%, PQ 0.655 (`validation/heldout/heldout_app_results.md`;
+  95% intervals resample whole sites).
 
 **Same networks as the original software.** With the same photo, the networks' outputs, run
 through Cellpose's own post-processing, match the original PyTorch ImageGrains exactly (U-Net)

@@ -582,7 +582,7 @@ by hand (`validation/heldout/heldout_app_results.md`):
 
 On these figures webGrainy is **as accurate as the original ImageGrains software**: the
 small differences are within the noise of 40 photos. Its grain outlines are as precise as the
-original's (panoptic quality against the hand-drawn outlines: Cellpose-SAM 0.654 vs 0.642,
+original's (panoptic quality against the hand-drawn outlines: Cellpose-SAM 0.655 vs 0.642,
 U-Net 0.540 vs 0.528; `validation/heldout/heldout_app_results.md`, `validation/quantization/README.md`).
 
 **Important limits:**
