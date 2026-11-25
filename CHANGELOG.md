@@ -152,7 +152,7 @@ First public release.
 - Photo and mask GeoTIFFs reprojected to Web Mercator (EPSG:3857, north-up) for web maps that draw a
   projected raster without rotating it by the grid convergence (about 1.5° for NZTM), which made correct
   outlines look slightly rotated. Identical to GDAL's gdalwarp on the NZTM test tile.
-- Export option: outlines and masks of only the grains counted in the statistics, or (default) every grain.
+- Export option: outlines and masks of only the grains counted in the statistics (default), or every detected grain.
 - Export dialog: outlines, mask and photo are exported through three choices (what, format, coordinates)
   and one Download button, with a line describing the selected file, instead of one button per variant.
   Coordinate options name the photo's own CRS.
