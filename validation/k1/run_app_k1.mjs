@@ -94,7 +94,7 @@ const lines = [
   `# K1 field comparison with the shipped app (webGrainy ${APP_VERSION})`,
   '',
   'Produced by `node validation/k1/run_app_k1.mjs` (see the script header). Both K1 demo photos, 0.39 mm/px,',
-  'app default analysis (Cellpose pipeline, Auto image scale, default post-processing, CPU/WASM) and',
+  'app default analysis (Cellpose pipeline, Auto image scale, default post-processing, Tidy outlines after analysis, CPU/WASM) and',
   'the app\'s site statistics (`analyzeSite`, default settings: area-weighted, b-axis, 15 px cutoff, harmonised',
   'detection limit, 95% interval with the few-photo correction).',
   '',

@@ -828,12 +828,13 @@ The 8-bit and 4-bit Cellpose-SAM versions give the same benchmark accuracy as th
 (outline agreement 0.994 and 0.966).
 
 **Field comparison (one site).** At the K1 site (two photos, 0.39 mm/px, field count of 251
-b-axes, smallest 13 mm, field D50 27.0 mm), the app as shipped (default settings) gives:
+b-axes, smallest 13 mm, field D50 27.0 mm), the app as shipped (default settings, including *Tidy
+outlines after analysis*) gives:
 
 | | Cellpose-SAM | U-Net |
 |---|---|---|
 | D50, all detected grains | 18.7 mm (−31%) | 21.1 mm (−22%) |
-| D50, field-count cutoff 13 mm | 27.8 mm (+3%) | 27.7 mm (+3%) |
+| D50, field-count cutoff 13 mm | 27.9 mm (+3%) | 27.7 mm (+3%) |
 | D84, field-count cutoff 13 mm | 45.3 mm (−6%) | 45.9 mm (−5%) |
 
 With the field count's size range applied to the photos, both models agree with the field count
@@ -844,7 +845,7 @@ below about 10 mm, and its D50 without a cutoff happened to match the field coun
 Caveats: one site and two photos, both of which overlap the ImageGrains training
 data, so this is a consistency check, not an independent validation; the 13 mm cutoff is the
 smallest clast in the field data, not a documented protocol (with 10 or 16 mm the D50 difference
-is −8% or +12% for Cellpose-SAM). Reproduce with `node validation/k1/run_app_k1.mjs`
+is −9% or +12% for Cellpose-SAM). Reproduce with `node validation/k1/run_app_k1.mjs`
 (`validation/k1/k1_app_results.md`). Always match the size range when comparing with field data
 (Section 8).
 
