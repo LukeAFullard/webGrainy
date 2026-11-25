@@ -107,7 +107,7 @@ export interface AppState {
   storageOpenError: string | null;
   /** "Download results": also include the project file with the photos. */
   downloadIncludeProject: boolean;
-  /** Outline / mask exports: only the grains counted in the statistics (default: every grain). */
+  /** Outline / mask exports: only the grains counted in the statistics (default: on; untick for every grain). */
   exportCountedOnly: boolean;
   /** Printable report options (photo overlay, layout, optional sections); remembered in this browser. */
   reportOptions: ReportOptions;
@@ -218,7 +218,7 @@ export function createInitialState(): AppState {
     storageFullNotice: null,
     storageOpenError: null,
     downloadIncludeProject: false,
-    exportCountedOnly: false,
+    exportCountedOnly: true,
     reportOptions: readReportOptions(),
     exportWhat: 'outlines',
     exportFormat: 'geojson',

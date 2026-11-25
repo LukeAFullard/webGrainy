@@ -777,9 +777,9 @@ transform and its GeoKeys (the coordinate system, also a user-defined one). It t
   neighbour (mask) or bilinear (photo). On the NZTM test tile the mask is identical to GDAL's
   `gdalwarp` and the photo within 0.25 grey levels on average.
 
-Outline and mask exports hold every detected grain by default; an option in the Export and
-Download dialogs limits them to the grains counted in the statistics (border rule, ROI and size
-cutoffs: the grains with `included_in_stats = true` in the grain table).
+Outline and mask exports hold, by default, only the grains counted in the statistics (border rule,
+ROI and size cutoffs: the grains with `included_in_stats = true` in the grain table); an option in
+the Export and Download dialogs exports every detected grain instead.
 
 All of these were checked with GDAL 3.12 on an NZTM 2000 orthomosaic tile: CRS and extent equal the
 source GeoTIFF's, and the mask GeoTIFF holds the same grain ids as the PNG mask. The map position

@@ -443,7 +443,7 @@ export function reportOptionsHtml(state: AppState, hasSiteReport: boolean): stri
 function countedOnlyCheckbox(id: string, checked: boolean): string {
   return `<label class="checkbox-label" style="margin-top:8px;">
       <input type="checkbox" id="${id}" ${checked ? 'checked' : ''} />
-      <span>Outlines and masks: only the grains counted in the statistics (above the size cutoff, inside the ROI, not on the photo edge). Unticked: every detected grain. Grain tables always list every grain, marked <code>included_in_stats</code>.</span>
+      <span>Outlines and masks: only the grains used in the statistics (recommended). The statistics leave out grains below the size cutoff, outside the ROI or touching the photo edge; ticked, these files leave them out too. Untick to export every detected grain. Grain tables always list every grain, with an <code>included_in_stats</code> column.</span>
     </label>`;
 }
 
