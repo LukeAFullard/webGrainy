@@ -46,15 +46,21 @@ First public release.
   `photo_footprints` layer with each photo's D16 / D50 / D84. In the photos' shared map CRS, or
   longitude/latitude when they differ.
 
-### Optional outline clean-up
+### Outline clean-up
 
-- **Tidy outlines** (toolbar, or photo list → *Select* → *Tidy outlines*), only when the user chooses
-  it: every grain becomes one solid piece. Detached specks of a grain join the neighbouring grain they
-  share the longest edge with, become grains of their own (at least *Min size*) or are removed; holes
-  enclosed by one grain are filled. One undo step per photo; recorded in exports and the printable
-  report. Checked with both models on the 40 held-out test images (`validation/tidy/`), with
-  before/after examples: outline agreement unchanged; median D50 error unchanged (U-Net) or slightly
-  lower (Cellpose-SAM, 2.9% → 2.6%).
+- **Tidy outlines**: every grain becomes one solid piece. Detached specks of a grain join the
+  neighbouring grain they share the longest edge with, become grains of their own (at least *Min
+  size*) or are removed; holes enclosed by one grain are filled. One undo step per photo; recorded in
+  exports and the printable report. Checked with both models on the 40 held-out test images
+  (`validation/tidy/`), with before/after examples: outline agreement unchanged; median D50 error
+  unchanged (U-Net) or slightly lower (Cellpose-SAM, 2.9% → 2.6%).
+- **Tidy outlines after analysis**, on by default (analysis settings): every analysis is tidied, since
+  about 7–8% of the grains of the raw outlines have detached specks. Untick it for the models' raw
+  outlines; right after an analysis, Undo also shows them. The toolbar button (or photo list →
+  *Select* → *Tidy outlines*) tidies photos analysed without it. A photo whose outlines needed no
+  change counts as tidied, so the photos of a site are not listed as analysed differently. The
+  accuracy figures (README, METHODS) are for this default. Library: `AnalysisConfig.tidyOutlines`
+  (default `true`).
 
 ### Reports and comparisons
 

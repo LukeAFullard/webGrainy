@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // K1 field comparison with the app as shipped: the built engine (dist/) with the app's default
 // analysis settings (upstream-exact Cellpose pipeline, Auto image scale, default
-// post-processing, WASM backend) and the app's own site statistics (analyzeSite with
+// post-processing, Tidy outlines after analysis, WASM backend) and the app's own site statistics (analyzeSite with
 // DEFAULT_SITE_OPTIONS), with and without a field-count cutoff. Replaces the earlier
 // run_engine_k1.mjs + analyze_k1.py numbers, which used the legacy full-resolution pipeline
 // and a separate Python percentile routine.

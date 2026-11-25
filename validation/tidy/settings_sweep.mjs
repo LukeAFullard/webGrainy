@@ -141,7 +141,8 @@ for (const [i, row] of rows.entries()) {
   const gtD50 = d50(computeAllGrainMorphometrics(gt.labels, gt.w, gt.h, 2));
   for (const c of todo) {
     const t1 = Date.now();
-    const s = await engine.analyzeImage(img, { model: kind, cpsamWeights: 'int8', scaleMode: 'auto', ...CONFIGS[c] });
+    // Raw outlines (tidyOutlines: false): this counts the fragments each setting leaves before Tidy.
+    const s = await engine.analyzeImage(img, { model: kind, cpsamWeights: 'int8', scaleMode: 'auto', tidyOutlines: false, ...CONFIGS[c] });
     const wi = s.workingImage;
     const atPhoto = () => resizeLabelsNearest(s.getWorkingMasks(), wi.width, wi.height, wi.originalWidth, wi.originalHeight);
     const mp = multipart(s.getWorkingMasks(), wi.width);

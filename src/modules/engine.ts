@@ -470,6 +470,9 @@ export class ImageGrainsEngine {
         postProcess: { ...DEFAULT_POSTPROCESS_OPTIONS, ...stripUndefined(config?.postProcess) },
       }),
     });
+    // Tidy outlines (default on): every grain one solid piece. About 7–8% of grains otherwise
+    // keep detached specks (held-out test photos), with no measured cost in accuracy.
+    if (config?.tidyOutlines ?? true) analysisSession.tidyOutlines({ countIfUnchanged: true });
 
     emit('done', {
       grainCount: analysisSession.getResult().grainCount,

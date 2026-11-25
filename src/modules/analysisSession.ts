@@ -334,7 +334,7 @@ export class AnalysisSession {
       ...(this.tidyRuns > 0
         ? {
             outlinesTidied:
-              'Tidy outlines applied (user choice): detached grain fragments joined the neighbouring grain, became grains of their own (at least Min size) or were removed, and holes enclosed by one grain were filled',
+              'Tidy outlines applied (after the analysis, the default, or from the toolbar): detached grain fragments joined the neighbouring grain, became grains of their own (at least Min size) or were removed, and holes enclosed by one grain were filled',
           }
         : {}),
     };
@@ -714,16 +714,24 @@ export class AnalysisSession {
   }
 
   /**
-   * "Tidy outlines" (only when the user chooses it): every grain becomes one solid piece (see
-   * tidyGrains.ts). One undoable step; returns what changed, or null when nothing needed tidying.
+   * "Tidy outlines": every grain becomes one solid piece (see tidyGrains.ts). Applied after each
+   * analysis by default (AnalysisConfig.tidyOutlines), or from the toolbar. One undoable step;
+   * returns what changed, or null when nothing needed tidying.
+   *
+   * `countIfUnchanged` (the automatic step after an analysis): outlines that needed no change
+   * are tidy all the same, so they count as tidied, like the photos the step did change. A site
+   * would otherwise list its photos as analysed differently. There is nothing to undo then.
    */
-  tidyOutlines(): Omit<TidyResult, 'bbox' | 'affectedIds'> | null {
+  tidyOutlines(options?: { countIfUnchanged?: boolean }): Omit<TidyResult, 'bbox' | 'affectedIds'> | null {
     const w = this.workingImage.width;
     const prevMasks = this.workingMasks.slice();
     const prevGrains = this.workingGrains.map(cloneGrain);
     const minSize = this.provenance?.postProcess?.minSize ?? DEFAULT_POSTPROCESS_OPTIONS.minSize;
     const res = tidyLabelMask(this.workingMasks, w, this.workingImage.height, { minSize });
-    if (res.bbox === null) return null;
+    if (res.bbox === null) {
+      if (options?.countIfUnchanged) this.tidyRuns++;
+      return null;
+    }
     const nextGrains = computeAllGrainMorphometrics(this.workingMasks, w, this.workingImage.height, this.borderMargin);
     this.tidyRuns++;
     this.history.push({

@@ -75,6 +75,8 @@ export interface UiAnalysisParams {
   minSeedDensity: number;
   /** Skip inference tiles outside the photo's ROI / exclusions. */
   skipTilesOutsideRoi: boolean;
+  /** "Tidy outlines" after each analysis: every grain one solid piece (default on). */
+  tidyOutlines: boolean;
 }
 
 export interface AppState {
@@ -330,6 +332,7 @@ export function toAnalysisConfig(
     claheClipLimit: params.claheClipLimit,
     excludeBorder: params.excludeBorder,
     skipTilesOutsideRoi: params.skipTilesOutsideRoi,
+    tidyOutlines: params.tidyOutlines,
     postProcess: {
       flowThreshold: params.flowThreshold,
       cellprobThreshold: params.cellprobThreshold,
@@ -361,5 +364,6 @@ export function defaultAnalysisParams(): UiAnalysisParams {
   niter: DEFAULT_POSTPROCESS_OPTIONS.niter,
   minSeedDensity: DEFAULT_POSTPROCESS_OPTIONS.minSeedDensity,
   skipTilesOutsideRoi: true,
+  tidyOutlines: true,
 };
 }

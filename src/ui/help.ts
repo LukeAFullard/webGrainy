@@ -297,11 +297,11 @@ export const HELP_TOPICS = {
     when: 'Always check the outlines and fix obvious mistakes before reporting results.',
   },
   tidyOutlines: {
-    title: 'Tidy outlines (optional)',
-    group: 'Tools',
-    what: 'Makes every grain one solid piece. The analysis can give a grain a few pixels that do not touch it (specks along its edge, often in the dark gaps between stones) and leave small holes inside it. Tidy finds each grain\'s connected parts (pixels meeting only at a corner count as separate) and keeps the largest. Each other part joins the neighbouring grain it shares the longest edge with, becomes a grain of its own if it is at least Min size, or is removed if it touches no other grain; specks of several grains that touch only each other (floating in a gap) are removed, so afterwards every grain is one piece. Holes enclosed by one grain are filled; gaps between grains are kept. Toolbar: the photo shown. Photo list → Select: several photos. One undo step per photo; recorded in every export.',
-    default: 'Off: only applied when you choose it',
-    when: 'When you see specks or holes in the outlines (or multi-part grains in GIS exports). On the 40 held-out test images it changed about 0.005% of the pixels and left outline agreement and the median D50 error unchanged, but on very fine gravel (grains of 15–30 px) it can move D50 by a few percent. See METHODS, section 6.',
+    title: 'Tidy outlines',
+    group: 'Analysis',
+    what: 'Makes every grain one solid piece. The models can give a grain a few pixels that do not touch it (specks along its edge, often in the dark gaps between stones) and leave small holes inside it: on the held-out test photos about 7–8% of grains had such specks. Tidy finds each grain\'s connected parts (pixels meeting only at a corner count as separate) and keeps the largest. Each other part joins the neighbouring grain it shares the longest edge with, becomes a grain of its own if it is at least Min size, or is removed if it touches no other grain; specks of several grains that touch only each other (floating in a gap) are removed, so afterwards every grain is one piece. Holes enclosed by one grain are filled; gaps between grains are kept. "Tidy outlines after analysis" (Analysis settings) does this to every photo you analyse. The toolbar button tidies the photo shown, and Photo list → Select tidies several: for photos analysed with the box unticked. One undo step per photo (Undo right after an analysis shows the models\' raw outlines); recorded in every export.',
+    default: 'On: "Tidy outlines after analysis" is ticked',
+    when: 'Keep it on. On the 40 held-out test images it changed about 0.005% of the pixels and left outline agreement and the median D50 error unchanged or slightly better, but on very fine gravel (grains of 15–30 px) it can move D50 by a few percent. Untick it only to see or export the models\' raw outlines (as the original ImageGrains software gives them); like the other analysis settings, it applies from the next analysis. See METHODS, section 6.',
   },
 } as const satisfies Record<string, HelpTopic>;
 

@@ -843,8 +843,9 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
   }
 
   /**
-   * "Tidy outlines" for the given analysed photos (only when the user chooses it): every grain
-   * becomes one solid piece (tidyGrains.ts). Each photo's tidy is one undoable step.
+   * "Tidy outlines" for the given analysed photos (toolbar / photo list; the analysis also applies
+   * it while the setting is on): every grain becomes one solid piece (tidyGrains.ts). Each
+   * photo's tidy is one undoable step.
    */
   async function tidyOutlines(photoIds: readonly string[]): Promise<void> {
     const state = store.getState();

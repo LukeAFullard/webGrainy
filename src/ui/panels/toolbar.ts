@@ -56,7 +56,7 @@ export function renderToolbarHtml(state: AppState): { toolbar: string; subToolba
           .join('')}</span>`,
       )
       .join('')}
-    ${session ? `<button type="button" class="btn btn-sm" data-action="tidy-outlines" ${state.batchRunning || state.enhancing ? 'disabled' : ''} title="Optional clean-up, only if you see specks or holes in the outlines: every grain becomes one solid piece. Detached fragments join the neighbouring grain they touch, become grains of their own (if at least Min size) or are removed; holes inside one grain are filled. Changes sizes slightly; Undo restores.">Tidy outlines</button>${helpButton('tidyOutlines')}` : ''}
+    ${session ? `<button type="button" class="btn btn-sm" data-action="tidy-outlines" ${state.batchRunning || state.enhancing ? 'disabled' : ''} title="Every grain becomes one solid piece: detached fragments join the neighbouring grain they touch, become grains of their own (if at least Min size) or are removed; holes inside one grain are filled. Done after every analysis while Analysis settings → Tidy outlines after analysis is ticked (the default); use this for photos analysed without it. Undo restores.">Tidy outlines</button>${helpButton('tidyOutlines')}` : ''}
     ${helpButton('editing')}
     ${
       state.activeTool === 'merge' && state.selectedGrainIds.size >= 2

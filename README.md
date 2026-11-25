@@ -21,6 +21,7 @@ Photos and results never leave your device. The only network requests are the on
 - **Measurement.**
   - Per grain: b-axis (moment-ellipse minor axis), minimum and maximum Feret width, equal-area diameter, shape and orientation.
   - Sizes are in mm after two-point calibration, perspective rectification, or from GeoTIFF georeferencing.
+- **Tidy outlines.** After each analysis every grain is made one solid piece: detached specks are joined to a neighbouring grain or removed, and holes inside a grain are filled (about 7–8% of grains have specks otherwise). On by default; it can be turned off in the analysis settings, and Undo shows the raw outlines.
 - **Editing.** Split, merge, delete and draw grains, with undo/redo. Regions of interest and exclusion areas.
 - **Statistics.**
   - Area-weighted (grid-by-number) and number-weighted percentiles D5–D95.
