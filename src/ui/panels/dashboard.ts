@@ -174,8 +174,15 @@ export function renderDashboardHtml(state: AppState, view: DashboardView): strin
           }</div>`,
       )
       .join('');
+    const downscaleBannerHtml =
+      !isSite && activeSession && activeSession.workingImage.effectiveScaleFactor < 0.3
+        ? `<div class="warning-banner" style="margin-top:6px;">
+            This large photo (${activeSession.workingImage.originalWidth}×${activeSession.workingImage.originalHeight} px) was scaled down to <strong>${Math.round(activeSession.workingImage.effectiveScaleFactor * 100)}%</strong> (${activeSession.workingImage.width}×${activeSession.workingImage.height} px) for analysis, which can miss smaller pebbles. Try setting <strong>Image scale</strong> to <code>0.5×</code> or <code>1.0×</code> (or crop an orthomosaic into tiles) and re-running.
+          </div>`
+        : '';
     tabContent = `
       ${enhBannerHtml}
+      ${downscaleBannerHtml}
       ${photoWarnHtml}
       <div class="row-between" style="margin-top:8px;">
         <div class="row">${
