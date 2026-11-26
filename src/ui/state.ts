@@ -162,6 +162,9 @@ export interface AppState {
   calibrationPreset: string;
   calibrationLength: number;
   calibrationUnit: 'mm' | 'cm';
+  /** Calibrate tool: a known scale typed in, and whether it is mm per pixel or pixels per mm. */
+  calibrationScaleValue: number | null;
+  calibrationScaleUnit: 'mmPerPx' | 'pxPerMm';
   rectifyWidthMm: number;
   rectifyHeightMm: number;
 
@@ -270,6 +273,8 @@ export function createInitialState(): AppState {
     calibrationPreset: '100|mm',
     calibrationLength: 100,
     calibrationUnit: 'mm',
+    calibrationScaleValue: null,
+    calibrationScaleUnit: 'mmPerPx',
     rectifyWidthMm: 500,
     rectifyHeightMm: 500,
 

@@ -58,16 +58,18 @@ function records(text: string): string[] {
   return out;
 }
 
-const NUMERIC = /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/;
+// A plain number, optionally with a unit made of letters (e.g. -4φ) and closing punctuation: no
+// operator, reference or function, so a spreadsheet cannot evaluate it as anything.
+const NUMERIC = /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?[\p{L}\p{M}%°]*[)\]}.,:;]*\s*$/u;
 function expectNoFormulaCells(text: string, what: string): void {
   for (const rec of records(text)) {
-    if (rec.startsWith('#')) {
-      // Comment lines: no delimiter at all, so the whole line stays in its first cell.
-      expect(/[,;\t]/.test(rec), `${what}: delimiter in comment line ${JSON.stringify(rec)}`).toBe(false);
-      continue;
-    }
-    for (const delim of [',', ';', '\t']) {
-      for (const c of cells(rec, delim)) {
+    // Comment lines are plain text: a spreadsheet may split them on any delimiter (quotes are not
+    // special there), and no resulting cell may be a formula.
+    const isComment = rec.startsWith('#');
+    for (const delim of [',', ';', '\t', '|']) {
+      const parts = isComment ? rec.split(delim) : cells(rec, delim);
+      for (const raw of parts) {
+        const c = raw.trimStart();
         if (/^[=+\-@]/.test(c) && !NUMERIC.test(c)) {
           throw new Error(`${what}: formula cell ${JSON.stringify(c)} (delimiter ${JSON.stringify(delim)}) in ${JSON.stringify(rec)}`);
         }
@@ -136,7 +138,19 @@ describe('csvCell: spaces before a formula character (LibreOffice "Trim spaces" 
     expect(csvCell('foo +@SUM(1 1)')).toBe("foo '+@SUM(1 1)");
     // F-29: any whitespace (e.g. a no-break space) between a delimiter and a formula character.
     expect(csvCell('a|\u00a0=1+1')).toBe("a|\u00a0'=1+1");
-    // Comment lines: pipe escaped, formula words guarded.
-    expect(escapeCommentText('label: a|b =1+1')).toBe("label: a%7Cb '=1+1");
+    // Comment lines: plain text, formula words and cells guarded.
+    expect(escapeCommentText('label: a|b =1+1')).toBe("label: a|b '=1+1");
+    expect(escapeCommentText('label: a,=1+1')).toBe("label: a,'=1+1");
+    expect(escapeCommentText('cutoffs: [4, -2.5]')).toBe('cutoffs: [4, -2.5]');
+  });
+
+  it('keeps negative phi and other number-with-unit words as they are', async () => {
+    const { csvCell, escapeCommentText } = await import('../src/modules/provenance.js');
+    expect(csvCell('Coarse Gravel (-5φ to -4φ) [16-32 mm]')).toBe('Coarse Gravel (-5φ to -4φ) [16-32 mm]');
+    expect(csvCell('depth -5mm, -3°')).toBe('"depth -5mm, -3°"');
+    expect(escapeCommentText('range: -2φ to -1φ')).toBe('range: -2φ to -1φ');
+    // Not a number with a unit: still guarded.
+    expect(csvCell('x -2A1')).toBe("x '-2A1");
+    expect(csvCell('x -1+2φ')).toBe("x '-1+2φ");
   });
 });

@@ -116,24 +116,26 @@ export function flattenMetadata(meta: Record<string, unknown>): Array<[string, s
   return out;
 }
 
-/** Note written above the comment lines, so readers know how to decode them. */
-export const COMMENT_ESCAPE_NOTE = '# escaping: in these # lines %25 = percent  %2C = comma  %3B = semicolon  %7C = pipe  %09 = tab';
-
 /**
- * Text of one `#` comment line with every spreadsheet cell delimiter (comma, semicolon, TAB)
- * percent-escaped, so a spreadsheet keeps the whole line in its first cell (which starts with
- * `#`) and a user-controlled value (photo label, site name, place) can never begin a new cell
- * holding a formula. Reversible with `decodeURIComponent`-style replacement of the 4 escapes.
+ * Text of one `#` comment line, kept readable: line breaks and tabs become spaces, and commas,
+ * semicolons and pipes are written as they are. A spreadsheet may then split the line over a few
+ * cells, so a user-controlled value (photo label, site name, place) that would start a formula
+ * after a delimiter or a space is prefixed with `'` (as in `csvCell`), and can never become one.
  */
 export function escapeCommentText(text: string): string {
-  return guardInnerFormulaStarts(
-    text
-      .replace(/[\r\n]+/g, ' ')
-      .replace(/%/g, '%25')
-      .replace(/,/g, '%2C')
-      .replace(/;/g, '%3B')
-      .replace(/\|/g, '%7C')
-      .replace(/\t/g, '%09'),
+  return guardAfterDelimiters(guardInnerFormulaStarts(text.replace(/[\r\n\t]+/g, ' ')));
+}
+
+/** A plain number, optionally followed by a unit made of letters, `%` or `°` (e.g. `-4φ`, `-5mm`). */
+const NUMBER_WITH_UNIT = /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?[\p{L}\p{M}%°]*[)\]}.,:;]*$/u;
+
+/**
+ * Prefixes `'` to a formula character (`=` `+` `-` `@`) that follows a cell delimiter (`,` `;` `|`
+ * TAB or a line break) and any whitespace, unless it starts a plain number such as `-3` or `-4φ`.
+ */
+function guardAfterDelimiters(text: string): string {
+  return text.replace(/([,;|\t\r\n])(\s*)([=+\-@])([^,;|\t\r\n]*)/g, (m, d: string, sp: string, f: string, rest: string) =>
+    (f === '-' || f === '+') && NUMBER_WITH_UNIT.test(`${f}${rest.split(/\s/, 1)[0] ?? ''}`) ? m : `${d}${sp}'${f}${rest}`,
   );
 }
 
@@ -141,20 +143,21 @@ export function escapeCommentText(text: string): string {
  * A spreadsheet told to split on spaces would start a cell at every word: prefix `'` to a word
  * that would start a formula: `=` or `@`, or `+` / `-` followed by anything (`-2+3+cmd|...`,
  * `+$A$1`, `+=1+1`, `--1+1`) unless the word is a plain number or an arrow. A lone "-" or "+"
- * (as in "IMG 1 - copy"), arrows ("->") and numbers such as "-5" are kept.
+ * (as in "IMG 1 - copy"), arrows ("->") and numbers such as "-5", "-4φ" or "-5mm" are kept: a
+ * number followed only by letters cannot run anything.
  */
 function guardInnerFormulaStarts(text: string): string {
   return text.replace(/(?<=\S)( +)(\S+)/g, (m, spaces: string, word: string) => {
     const formula =
       /^[=@]/.test(word) ||
-      (/^[+-][^\s<>]/.test(word) && !/^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?%?$/.test(word));
+      (/^[+-][^\s<>]/.test(word) && !NUMBER_WITH_UNIT.test(word));
     return formula ? `${spaces}'${word}` : m;
   });
 }
 
 /** `# key: value` comment lines for prefixing tabular CSV exports (delimiters escaped). */
 export function metadataCommentLines(meta: Record<string, unknown>): string[] {
-  return [...flattenMetadata(meta).map(([k, v]) => `# ${escapeCommentText(`${k}: ${v}`)}`), COMMENT_ESCAPE_NOTE];
+  return flattenMetadata(meta).map(([k, v]) => `# ${escapeCommentText(`${k}: ${v}`)}`);
 }
 
 /**
@@ -176,7 +179,7 @@ export function csvCell(val: string | number | boolean): string {
       str = `'${str}`;
     }
     // Any whitespace after the delimiter (a trimming import also drops no-break spaces).
-    str = str.replace(/([,;|\t\r\n])(\s*)([=+\-@])/g, "$1$2'$3");
+    str = guardAfterDelimiters(str);
   }
   // Quote on `;` and TAB too: spreadsheets in many locales split CSV files on them. Quote `#`:
   // the documented readers (pandas `comment="#"`, R `comment.char="#"`) cut an unquoted line there.
@@ -189,4 +192,12 @@ export function csvCell(val: string | number | boolean): string {
 /** `metadata,<key>,<value>,meta` rows for section/metric/value/unit summary CSVs. */
 export function metadataSummaryRows(meta: Record<string, unknown>): string[] {
   return flattenMetadata(meta).map(([k, v]) => `metadata,${csvCell(k)},${csvCell(v)},meta`);
+}
+
+/**
+ * A CSV file as a Blob, UTF-8 with a byte-order mark: without it Excel reads the file as the
+ * local code page and shows `φ` as `Ï†` and `–` as `â€“`. pandas, R readr and LibreOffice skip the mark.
+ */
+export function csvBlob(text: string): Blob {
+  return new Blob(['\uFEFF', text], { type: 'text/csv;charset=utf-8' });
 }

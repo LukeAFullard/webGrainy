@@ -31,6 +31,26 @@ export class ScaleCalibrator {
     };
   }
 
+  /**
+   * A scale typed in by the user (e.g. a known mm/px from the camera set-up or survey report).
+   * `mmPerPx` is per pixel of the photo as it is now. The two points are a synthetic span (as for
+   * GeoTIFF scales) so the record has the same shape as a measured one.
+   */
+  static fromKnownScale(mmPerPx: number, photoWidthPx: number): CalibrationResult {
+    if (!Number.isFinite(mmPerPx) || mmPerPx <= 0) {
+      throw new Error('The scale must be a positive number.');
+    }
+    const spanPx = Math.min(100, Math.max(10, Math.round((Number.isFinite(photoWidthPx) ? photoWidthPx : 400) / 4)));
+    return {
+      mmPerPx,
+      pointA: { x: 0, y: 0 },
+      pointB: { x: spanPx, y: 0 },
+      pixelDistance: spanPx,
+      physicalLengthMm: spanPx * mmPerPx,
+      source: 'entered',
+    };
+  }
+
   static scaleMorphometrics(
     grain: GrainMorphometrics,
     calibration: CalibrationResult | number,

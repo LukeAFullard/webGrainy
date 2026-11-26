@@ -271,7 +271,7 @@ export const HELP_TOPICS = {
   calibrate: {
     title: 'Calibrate',
     group: 'Tools',
-    what: 'Sets the photo scale by clicking both ends of a known length (ruler, coin or quadrat). Without it, all sizes are in pixels.',
+    what: 'Sets the photo scale by clicking both ends of a known length (ruler, coin or quadrat), or by typing a scale you already know (mm/px or px/mm) and pressing Set scale. Without it, all sizes are in pixels.',
     default: 'Not calibrated',
     when: 'Always calibrate before reporting sizes. Use the longest reference available, lying flat on the gravel near the middle of the photo.',
   },

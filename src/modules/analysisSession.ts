@@ -321,7 +321,9 @@ export class AnalysisSession {
                     ? 'GeoTIFF pixel size (ground distance)'
                     : this.calibration.source === 'copied'
                       ? `copied from photo "${this.calibration.copiedFrom ?? 'unknown'}"`
-                      : 'two-point',
+                      : this.calibration.source === 'entered'
+                        ? 'known scale entered by the user (mm/px)'
+                        : 'two-point',
               referenceLengthMm: this.calibration.physicalLengthMm,
               referencePixelDistance: this.calibration.pixelDistance,
             }

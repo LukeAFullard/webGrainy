@@ -162,7 +162,7 @@ export async function resultsBundleEntries(input: ResultsBundleInput): Promise<Z
       : 'Outlines and masks hold every detected grain; grains.csv marks the ones counted in the statistics (included_in_stats).',
     'Every CSV records the app and model versions, model SHA-256 and all settings. The per-grain tables',
     "(grains.csv, site_pooled_grains.csv) start with '#' metadata lines: read them with e.g.",
-    "pandas.read_csv(path, comment='#'). In the '#' lines, % , ; | and TAB are written as %25 %2C %3B %7C %09.",
+    "pandas.read_csv(path, comment='#'). CSV files are UTF-8 with a byte-order mark, so Excel shows φ, µ and – correctly.",
     'The summary CSVs (section,metric,value,unit) hold the same metadata as rows whose first cell is "metadata".',
     '',
     georeferenced > 0

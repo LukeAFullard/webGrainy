@@ -196,9 +196,10 @@ export interface CalibrationResult {
   pixelDistance: number;
   /**
    * Where the scale came from: measured on the photo (default when absent), perspective
-   * rectification, GeoTIFF georeferencing, or copied from another photo.
+   * rectification, GeoTIFF georeferencing, copied from another photo, or a known scale typed in
+   * (mm/px or px/mm; `pointA`/`pointB` are then a synthetic span, not points on the photo).
    */
-  source?: 'manual' | 'rectification' | 'geotiff' | 'copied';
+  source?: 'manual' | 'rectification' | 'geotiff' | 'copied' | 'entered';
   /** Label of the photo a copied scale came from. */
   copiedFrom?: string;
 }

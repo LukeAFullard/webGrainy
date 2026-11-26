@@ -141,6 +141,14 @@ export function renderToolbarHtml(state: AppState): { toolbar: string; subToolba
         <option value="mm" ${calUnit === 'mm' ? 'selected' : ''}>mm</option>
         <option value="cm" ${calUnit === 'cm' ? 'selected' : ''}>cm</option>
       </select>
+      <span class="toolbar-sep" aria-hidden="true"></span>
+      <span title="Type a scale you already know (from the camera set-up, survey report or orthophoto), instead of clicking two points">or known scale:</span>
+      <input class="input" id="cal-scale-value" type="number" value="${state.calibrationScaleValue ?? ''}" step="any" min="0" placeholder="e.g. 0.25" aria-label="Known scale value" style="width:80px;padding:2px 6px;" />
+      <select class="select" id="cal-scale-unit" aria-label="Known scale unit" style="width:auto;padding:2px 6px;">
+        <option value="mmPerPx" ${state.calibrationScaleUnit === 'pxPerMm' ? '' : 'selected'}>mm/px</option>
+        <option value="pxPerMm" ${state.calibrationScaleUnit === 'pxPerMm' ? 'selected' : ''}>px/mm</option>
+      </select>
+      <button type="button" class="btn btn-sm" data-action="cal-scale-apply" ${activePhoto ? '' : 'disabled'} title="Give the active photo this scale. It is per pixel of the photo as taken (before any 2× upscale).">Set scale</button>
       <button type="button" class="btn btn-sm" data-action="copy-scale-start" ${activePhoto?.calibration ? '' : 'disabled'} title="Choose photos taken with the same camera and height, and give them this photo's scale">Copy scale to photos…</button>
     `;
   } else if (state.activeTool === 'rectify') {

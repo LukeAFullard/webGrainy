@@ -129,6 +129,25 @@ export const toolbarActions: Record<string, ActionHandler> = {
   // "Copy scale to photos…": pick the target photos in the photo list (select mode), with
   // compatible photos (same pixel size, no scale yet) pre-selected; nothing changes until
   // "Copy scale" is pressed, and overwriting a photo's own scale asks first.
+  // "Set scale": a known mm/px or px/mm typed in, instead of two clicked points.
+  'cal-scale-apply': (_el, ctx) => {
+    const state = ctx.store.getState();
+    const active = getActivePhoto(state);
+    if (!active) return;
+    const v = state.calibrationScaleValue;
+    if (v === null || !Number.isFinite(v) || v <= 0) {
+      ctx.store.setState({ statusMessage: 'Type a scale greater than 0 first (mm per pixel or pixels per mm).' });
+      return;
+    }
+    const mmPerPx = state.calibrationScaleUnit === 'pxPerMm' ? 1 / v : v;
+    if (
+      active.calibration?.source === 'rectification' &&
+      !ctx.ui.confirm(`${active.label} was rectified, so its pixels no longer match the camera's. Replace the rectified scale with ${mmPerPx.toPrecision(4)} mm/px anyway?`)
+    ) {
+      return;
+    }
+    void ctx.actions.applyKnownScaleToActive(mmPerPx);
+  },
   'copy-scale-start': (_el, ctx) => {
     const state = ctx.store.getState();
     const active = getActivePhoto(state);
@@ -264,6 +283,16 @@ export function handleToolbarChange(target: ControlLike, ctx: EventContext): boo
     } else {
       ctx.store.setState({ calibrationPreset: 'custom' });
     }
+    return true;
+  }
+  if (target.id === 'cal-scale-value') {
+    const raw = target.value.trim().replace(',', '.');
+    const v = Number(raw);
+    ctx.store.setState({ calibrationScaleValue: raw !== '' && Number.isFinite(v) && v > 0 ? v : null });
+    return true;
+  }
+  if (target.id === 'cal-scale-unit') {
+    ctx.store.setState({ calibrationScaleUnit: target.value === 'pxPerMm' ? 'pxPerMm' : 'mmPerPx' });
     return true;
   }
   if (target.id === 'cal-length') {

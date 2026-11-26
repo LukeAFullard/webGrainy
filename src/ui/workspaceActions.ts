@@ -25,6 +25,7 @@ import {
 } from '../modules/siteComparison.js';
 import { ScaleCalibrator } from '../modules/interactiveEditor.js';
 import {
+  photoUpscaleFactor,
   scaleCalibrationAndRoi,
   revertedCalibrationAndRoi,
   type EnhanceKind,
@@ -922,6 +923,32 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
       return;
     }
 
+    await commitCalibration(photo, cal);
+  }
+
+  /**
+   * Gives the active photo a scale typed in by the user. `mmPerPxAsTaken` is per pixel of the photo
+   * as imported: after a 2× upscale each pixel covers half as much, so the scale is divided by the
+   * upscale factor.
+   */
+  async function applyKnownScaleToActive(mmPerPxAsTaken: number): Promise<void> {
+    const state = store.getState();
+    const photo = getActivePhoto(state);
+    if (!photo) return;
+    let cal: CalibrationResult;
+    try {
+      const up = photoUpscaleFactor(photo);
+      cal = ScaleCalibrator.fromKnownScale(mmPerPxAsTaken / (up > 0 ? up : 1), photo.width);
+    } catch (err) {
+      store.setState({ statusMessage: `Scale not set: ${err instanceof Error ? err.message : String(err)}` });
+      return;
+    }
+    await commitCalibration(photo, cal);
+  }
+
+  /** Stores a new scale on the photo and its session, refreshes results, and saves both. */
+  async function commitCalibration(photo: PhotoRecord, cal: CalibrationResult): Promise<void> {
+    const state = store.getState();
     const updatedPhoto: PhotoRecord = { ...photo, calibration: cal };
     const session = state.sessions.get(photo.photoId);
     if (session) {
@@ -1347,6 +1374,7 @@ export function createWorkspaceActions(deps: WorkspaceDeps) {
     persistActiveSession,
     tidyOutlines,
     applyCalibrationToActive,
+    applyKnownScaleToActive,
     applyRectificationToActive,
     undoRectificationActive,
     enhanceActivePhoto,

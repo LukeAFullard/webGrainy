@@ -5,7 +5,7 @@
 import type { GrainMorphometrics } from '../types/index.js';
 import { extraStatsCsvRows } from './grainStatsExtra.js';
 import { computeExtendedMorphometrics, type ExtendedGrainMorphometrics } from './morphometricsExt.js';
-import { baseExportMetadata, csvCell, metadataCommentLines, metadataSummaryRows } from './provenance.js';
+import { baseExportMetadata, csvBlob, csvCell, metadataCommentLines, metadataSummaryRows } from './provenance.js';
 import { filterGrainsByRoiAndExclusion } from './roiAndRectify.js';
 import { filterBorderGrains } from './sedimentStats.js';
 import { PSD_KEYS, siteCutoffReason } from './sitePooling.js';
@@ -294,7 +294,7 @@ export function exportSiteSummaryCsv(
     }
   }
 
-  return new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+  return csvBlob(lines.join('\n'));
 }
 
 /**
@@ -439,7 +439,7 @@ export function exportPooledGrainsCsv(
     }
   }
 
-  return new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+  return csvBlob(lines.join('\n'));
 }
 
 export const exportSiteGrainsCsv = exportPooledGrainsCsv;
