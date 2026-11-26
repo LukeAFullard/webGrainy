@@ -705,9 +705,10 @@ spacing are ignored) and are drawn as one line over time.
 - bootstrap seed and number of draws, the interval method and its status (ok, approximate, single photo, not estimable), and the date.
 
 Grain-table CSV files start with this information in lines beginning with `#`; read them with,
-for example, `pandas.read_csv(path, comment='#')`. In those lines, commas, semicolons, `|` and
-tabs are written as `%2C`, `%3B`, `%7C` and `%09` (and `%` as `%25`), so spreadsheets keep each
-line in one cell. Summary CSVs (section, metric, value, unit) hold the same information as rows
+for example, `pandas.read_csv(path, comment='#')`. Those lines are written as plain text (a
+spreadsheet may spread one over a few cells); any text in them that a spreadsheet could read as a
+formula is prefixed with `'`. CSV files are UTF-8 with a byte-order mark, so Excel shows `φ`, `µ`
+and `–` correctly. Summary CSVs (section, metric, value, unit) hold the same information as rows
 whose first cell is `metadata`.
 
 **Same input, same output.** Given the same photo, scale, settings and model, the app gives the

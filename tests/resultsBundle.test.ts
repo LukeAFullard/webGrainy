@@ -64,6 +64,6 @@ describe('Download results (.zip)', () => {
     const dirs = new Set([...files.keys()].filter((k) => k.endsWith('/grains.csv')));
     expect(dirs.size).toBe(4);
     const readme = new TextDecoder().decode(files.get('README.txt'));
-    expect(readme).toContain('%7C');
+    expect(readme).toContain('byte-order mark');
   });
 });

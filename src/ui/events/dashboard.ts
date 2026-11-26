@@ -1,5 +1,5 @@
 /** Results panel events: scope, tabs, chart options and downloads, site statistics settings, compare. */
-import { baseExportMetadata } from '../../modules/provenance.js';
+import { baseExportMetadata, csvBlob } from '../../modules/provenance.js';
 import { effectiveRoi } from '../../modules/siteWorkspace.js';
 import { sanitizeSiteOptions, SITE_OPTION_LIMITS } from '../../modules/siteOptions.js';
 import { comparisonCsv } from '../../modules/siteComparison.js';
@@ -56,7 +56,7 @@ export const dashboardActions: Record<string, ActionHandler> = {
       comparisonSettings: Object.fromEntries(comparisonStatistics(state.siteOptions, buildComparisonView(cmp.sites, state.compareByDate, 1), state.compareInPixels)),
       sites: cmp.sites.map((s) => s.name).join('; '),
     });
-    ctx.ui.download(new Blob([csv], { type: 'text/csv' }), 'site_comparison.csv');
+    ctx.ui.download(csvBlob(csv), 'site_comparison.csv');
   },
 };
 

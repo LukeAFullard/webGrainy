@@ -824,7 +824,8 @@ export class CanvasViewport {
         const b = this.calPoints[1]!;
         parts.push(`<line x1="${toSx(a.x).toFixed(1)}" y1="${toSy(a.y).toFixed(1)}" x2="${toSx(b.x).toFixed(1)}" y2="${toSy(b.y).toFixed(1)}" stroke="#2ecc71" stroke-width="2" />`);
       }
-    } else if (this.photo?.calibration) {
+    } else if (this.photo?.calibration && this.photo.calibration.source !== 'entered') {
+      // A typed-in scale has no reference line on the photo.
       const c = this.photo.calibration;
       parts.push(`<line x1="${toSx(c.pointA.x).toFixed(1)}" y1="${toSy(c.pointA.y).toFixed(1)}" x2="${toSx(c.pointB.x).toFixed(1)}" y2="${toSy(c.pointB.y).toFixed(1)}" stroke="#2ecc71" stroke-width="2" stroke-dasharray="5,3" />`);
     }

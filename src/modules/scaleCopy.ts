@@ -58,6 +58,7 @@ const SOURCE_LABEL: Record<ScaleSource, string> = {
   rectification: 'from perspective rectification',
   geotiff: 'from GeoTIFF georeferencing',
   copied: 'copied from another photo',
+  entered: 'typed in as a known scale',
 };
 
 /** What copying `source`'s scale to `targetIds` would change. */

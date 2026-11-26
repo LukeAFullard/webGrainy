@@ -10,7 +10,7 @@ import { geoJsonToLonLat, geoJsonToMap, gpkgMapSrs, mapGeoJsonName, pamAuxXml, p
 import { geoJsonToGeoPackage, PIXEL_SRS, WGS84_SRS } from './geopackage.js';
 import { buildSiteGeoPackage } from './siteGeoPackage.js';
 import { encodeGeoTiff, encodeLabelGeoTiff } from './geotiffWriter.js';
-import { baseExportMetadata } from './provenance.js';
+import { baseExportMetadata, csvBlob } from './provenance.js';
 import { warpLabelsToWebMercator, warpRgbaToWebMercator, webMercatorGeoref, webMercatorGrid } from './webMercatorWarp.js';
 import {
   buildSiteExportMetadata,
@@ -166,23 +166,20 @@ export async function buildExport(kind: ExportKind, ctx: ExportContext): Promise
     case 'photo-grains-csv':
       return session
         ? {
-            blob: new Blob(
-              [
-                session.exportCsv({
-                  includeMetadata: true,
-                  sizeMetric,
-                  ...(photoMeta ? { photoMetadata: photoMeta } : {}),
-                  ...(cutoffs ? { cutoffs } : {}),
-                }),
-              ],
-              { type: 'text/csv' },
+            blob: csvBlob(
+              session.exportCsv({
+                includeMetadata: true,
+                sizeMetric,
+                ...(photoMeta ? { photoMetadata: photoMeta } : {}),
+                ...(cutoffs ? { cutoffs } : {}),
+              }),
             ),
             filename: `${photoFile}_grains.csv`,
           }
         : null;
     case 'photo-summary-csv': {
       return session
-        ? { blob: new Blob([session.exportSummaryCsv(sizeMetric, cutoffs, photoMeta)], { type: 'text/csv' }), filename: `${photoFile}_summary.csv` }
+        ? { blob: csvBlob(session.exportSummaryCsv(sizeMetric, cutoffs, photoMeta)), filename: `${photoFile}_summary.csv` }
         : null;
     }
     case 'photo-summary-json': {

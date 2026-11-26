@@ -65,6 +65,7 @@ function setup() {
     clearStoredSiteInputs: vi.fn(),
     refreshCapabilities: vi.fn(async () => {}),
     applyCalibrationToActive: vi.fn(async () => {}),
+    applyKnownScaleToActive: vi.fn(async () => {}),
     updateActiveRoi: vi.fn(),
     tidyOutlines: vi.fn(async () => {}),
   };
@@ -232,6 +233,25 @@ describe('event routing', () => {
     const r = { key: 'y', ctrlKey: true, metaKey: false, shiftKey: false, preventDefault: vi.fn() };
     handleShortcutKey(r, ctx);
     expect(r.preventDefault).not.toHaveBeenCalled(); // nothing to redo
+  });
+});
+
+describe('known scale typed in (Calibrate tool)', () => {
+  it('converts px/mm to mm/px, rejects empty or non-positive values, and accepts a decimal comma', () => {
+    const { ctx, store, actions } = setup();
+    store.setState({ photos: [{ photoId: 'p1', label: 'p1.jpg' } as never], activePhotoId: 'p1' });
+    click(el({ 'data-action': 'cal-scale-apply' }), ctx);
+    expect(actions.applyKnownScaleToActive).not.toHaveBeenCalled();
+    routeChange(el({}, { id: 'cal-scale-value', tagName: 'INPUT', type: 'number', value: '4' }), ctx);
+    routeChange(el({}, { id: 'cal-scale-unit', tagName: 'SELECT', value: 'pxPerMm' }), ctx);
+    click(el({ 'data-action': 'cal-scale-apply' }), ctx);
+    expect(actions.applyKnownScaleToActive).toHaveBeenLastCalledWith(0.25);
+    routeChange(el({}, { id: 'cal-scale-unit', tagName: 'SELECT', value: 'mmPerPx' }), ctx);
+    routeChange(el({}, { id: 'cal-scale-value', tagName: 'INPUT', type: 'text', value: '0,3' }), ctx);
+    click(el({ 'data-action': 'cal-scale-apply' }), ctx);
+    expect(actions.applyKnownScaleToActive).toHaveBeenLastCalledWith(0.3);
+    routeChange(el({}, { id: 'cal-scale-value', tagName: 'INPUT', type: 'number', value: '-2' }), ctx);
+    expect(store.getState().calibrationScaleValue).toBeNull();
   });
 });
 

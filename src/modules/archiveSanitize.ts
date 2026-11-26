@@ -137,7 +137,7 @@ export function sanitizeCalibration(raw: unknown): CalibrationResult | undefined
   if (!finite(raw['mmPerPx']) || raw['mmPerPx'] <= 0 || a === null || b === null) return undefined;
   // A stored length or pixel distance must be positive; otherwise rebuild it from the points.
   const positive = (v: unknown): v is number => finite(v) && v > 0;
-  const source = oneOf(raw['source'], ['manual', 'rectification', 'geotiff', 'copied'] as const);
+  const source = oneOf(raw['source'], ['manual', 'rectification', 'geotiff', 'copied', 'entered'] as const);
   const copiedFrom = text(raw['copiedFrom'], 1024);
   return {
     mmPerPx: raw['mmPerPx'],

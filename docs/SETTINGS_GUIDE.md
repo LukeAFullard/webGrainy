@@ -306,6 +306,11 @@ and some statistics (Folk & Ward, Wentworth classes) are switched off.
 1. Pick a preset (`100 mm Ruler`, `25 mm Coin`, `500 mm Quadrat`) or `Custom…`.
 2. Click the two ends of the known length on the photo.
 
+**Already know the scale?** (e.g. from the camera set-up, a survey report or an orthophoto) Type
+it in the **known scale** box, choose `mm/px` or `px/mm`, and press **Set scale**. The value is per
+pixel of the photo as taken: after a 2× upscale the app halves it for you. Exports record it as a
+scale entered by hand.
+
 **Tips:**
 - Measure the **longest** reference you can. Short references give larger errors.
 - Put the reference **flat on the gravel**, not raised above it.

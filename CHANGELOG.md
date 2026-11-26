@@ -13,8 +13,8 @@ First public release.
   (FP16 for WebGPU, or the smaller INT8 / FP4 weights). Runs on the GPU (WebGPU) where supported,
   otherwise on the CPU (WebAssembly) in a background worker. Model files are pinned and checked by SHA-256.
 - **Measurement per grain:** b-axis (moment-ellipse minor axis), minimum and maximum Feret width,
-  equal-area diameter, shape and orientation. Sizes in mm from two-point calibration, perspective
-  rectification or GeoTIFF georeferencing.
+  equal-area diameter, shape and orientation. Sizes in mm from two-point calibration, a known scale
+  typed in (mm/px or px/mm), perspective rectification or GeoTIFF georeferencing.
 - **Editing:** split, merge, delete and draw grains, with undo / redo; regions of interest and exclusion areas.
 - **Statistics:** area-weighted (grid-by-number) and number-weighted percentiles D5–D95, Folk & Ward,
   Wentworth classes, moment statistics and fabric.
@@ -276,6 +276,10 @@ First public release.
 
 ### Fixed before release (production readiness review)
 
+- **CSV files open correctly in Excel.** They are now UTF-8 with a byte-order mark, so `φ`, `µ` and
+  `–` no longer show as `Ï†`, `Âµ` and `â€“`. Negative φ values in text (`-5φ to -4φ`) are no longer
+  prefixed with `'`, and the `#` metadata lines are written as plain text instead of with `%2C`,
+  `%3B`, `%7C` escapes. Text that a spreadsheet could read as a formula is still neutralised.
 - **GitHub Pages deploys again on every push to `main`.** Since the manual-deploy gate was added,
   the deploy job was skipped (its unconditional `needs` saw the skipped manual-only CI job) while
   the run still showed success, so the site stayed on an older build. A test now checks the

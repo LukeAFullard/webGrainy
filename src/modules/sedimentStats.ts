@@ -1,4 +1,4 @@
-import { csvCell } from './provenance.js';
+import { csvBlob, csvCell } from './provenance.js';
 import { weightedPsdPercentiles } from './percentiles.js';
 import { grainSizeIn } from './grainSize.js';
 import { buildContourGeoJson, buildContourSvg, encodeMaskPng } from './exportFormats.js';
@@ -435,7 +435,7 @@ export function exportGrainsCsv(grains: readonly GrainMorphometrics[]): Blob {
     lines.push(row);
   }
 
-  return new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+  return csvBlob(lines.join('\n'));
 }
 
 /**
@@ -511,7 +511,7 @@ export function summaryCsvRows(report: SedimentStatsReport): string[] {
  */
 export function exportSummaryCsv(report: SedimentStatsReport): Blob {
   const lines = ['section,metric,value,unit', ...summaryCsvRows(report)];
-  return new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+  return csvBlob(lines.join('\n'));
 }
 
 // ============================================================================

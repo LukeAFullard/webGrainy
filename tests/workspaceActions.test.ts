@@ -506,6 +506,25 @@ describe('workspace actions', () => {
     await actions.applyCalibrationToActive({ x: 0, y: 0 }, { x: 100, y: 0 }, 25, 'cm');
     expect(store.getState().singlePhotoStats!.areaWeightedB.D50).toBeCloseTo(pxD50 * 2.5, 3);
     expect(store.getState().siteReport!.psd.D50).toBeCloseTo(pxD50 * 2.5, 3);
+
+    // A known scale typed in: 0.75 mm/px, saved as an entered scale.
+    await actions.applyKnownScaleToActive(0.75);
+    expect(store.getState().singlePhotoStats!.areaWeightedB.D50).toBeCloseTo(pxD50 * 0.75, 3);
+    expect(world.photos.get('p1')!.calibration).toMatchObject({ mmPerPx: 0.75, source: 'entered' });
+  });
+
+  it('a typed-in scale is per pixel of the photo as taken: halved on a 2× upscaled photo', async () => {
+    const world = fakeWorld();
+    world.sites.set('a', site('a', ['p1']));
+    world.photos.set('p1', { ...photo('p1', 'a'), metadata: { enhancement: { scaleFactor: 2 } } } as PhotoRecord);
+    const { store, actions } = setup(world);
+    await actions.createDefaultOrLoadSites();
+    await actions.applyKnownScaleToActive(0.5);
+    expect(world.photos.get('p1')!.calibration).toMatchObject({ mmPerPx: 0.25, source: 'entered' });
+    expect(store.getState().photos[0]!.calibration!.mmPerPx).toBe(0.25);
+    await actions.applyKnownScaleToActive(-1);
+    expect(store.getState().statusMessage).toMatch(/Scale not set/);
+    expect(world.photos.get('p1')!.calibration!.mmPerPx).toBe(0.25);
   });
 });
 
