@@ -32,7 +32,7 @@ export async function run(d) {
   await d.caption('The <b>Getting started</b> list walks you through each step and ticks them off. Setting the scale is optional for a first look: without it, sizes are in pixels.');
   await d.ring(null);
 
-  await d.caption('Click <b>Analyse</b>. The first time, the model downloads, about 26 megabytes. After that it works offline.', { hold: 0 });
+  await d.caption('Click <b>Analyse</b>. The first time, the model downloads: 26 megabytes for U-Net, more for Cellpose-SAM. After that it works offline.', { hold: 0 });
   await d.click(page.locator('[data-action="run-batch"]').last(), { after: 800 });
   await d.wait(1500);
   await d.ring('#activity-bar');

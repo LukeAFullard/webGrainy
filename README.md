@@ -103,13 +103,15 @@ npm run tutorials             # all 25, into tutorials/out/
 npm run tutorials -- 03 12    # only those whose file name contains "03" or "12"
 ```
 
-For each tutorial `NN-name` this writes `NN-name.mp4`, the on-screen text as subtitles (`.srt`, `.vtt`), as a timed voiceover script (`.transcript.md`, with the seconds and words of each line) and as `.transcript.json`, plus `transcripts.md` with all of them. Captions stay up long enough to be read aloud at `TUTORIAL_WPS` words per second (default 2.5, about 150 words a minute).
+For each tutorial `NN-name` this writes `NN-name.mp4`, the on-screen text as subtitles (`.srt`, `.vtt`), as a timed voiceover script (`.transcript.md`, with the seconds and words of each line) and as `.transcript.json`, plus `transcripts.md` with all of them. Captions stay up long enough to be read aloud at `TUTORIAL_WPS` words per second (default 2.2, about 130 words a minute).
 
-To add a spoken voiceover, `scripts/tutorials/narrate.py` reads every caption aloud with the open-weight [Kokoro](https://huggingface.co/hexgrad/Kokoro-82M) text-to-speech model (Python 3.10–3.12, `pip install kokoro soundfile`) and places each line where its caption appears. It writes `NN-name.narrated.mp4` and the voiceover alone as `NN-name.narration.mp3`. Pronunciations of abbreviations and names are set in `scripts/tutorials/pronunciations.json`.
+To add a spoken voiceover, `scripts/tutorials/narrate.py` reads every caption aloud with the open-weight [Kokoro](https://huggingface.co/hexgrad/Kokoro-82M) text-to-speech model (Python 3.10–3.12, `pip install kokoro soundfile`) and places each line where its caption appears. Voices alternate between videos (British English female and male by default). Intro music fades in under the title card and out as the tutorial starts, and the end of the same piece plays under the closing card, lowered while the voice speaks. It writes `NN-name.narrated.mp4` and the soundtrack alone as `NN-name.narration.mp3`. Pronunciations of abbreviations and names are set in `scripts/tutorials/pronunciations.json`.
+
+The music is "Inspired" by Kevin MacLeod ([incompetech.com](https://incompetech.com)), licensed under [Creative Commons: By Attribution 4.0](https://creativecommons.org/licenses/by/4.0/). It is downloaded once (checked by SHA-256) and credited on every video's closing card; credit it wherever you publish the videos too. Set `TUTORIAL_MUSIC_CREDIT=0` when recording videos you will not add the music to, and `--music none` to leave it out.
 
 ```bash
 python scripts/tutorials/narrate.py                       # every recorded tutorial
-python scripts/tutorials/narrate.py 03 --voice bm_george  # one tutorial, another voice
+python scripts/tutorials/narrate.py 03 --voices bm_george  # one tutorial, another voice
 ```
 
 To record them all, with the voiceover, in Google Colab and save them to Google Drive, open [`scripts/tutorials/webGrainy_tutorial_videos.ipynb`](scripts/tutorials/webGrainy_tutorial_videos.ipynb) in Colab and choose *Runtime → Run all*.

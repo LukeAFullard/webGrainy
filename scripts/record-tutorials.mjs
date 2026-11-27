@@ -64,7 +64,7 @@ writeFileSync(join(OUT, 'transcripts.md'), [
   '',
   'Each row is one caption or title card as it appears in the video, with its start and end',
   'time (minutes:seconds) and the time available to say it. Captions are timed for a voiceover',
-  `at about ${transcripts[0]?.wordsPerSecond ?? 2.5} words a second.`,
+  `at about ${transcripts[0]?.wordsPerSecond ?? 2.2} words a second.`,
   '',
   ...transcripts.map(transcriptMarkdown),
 ].join('\n'));

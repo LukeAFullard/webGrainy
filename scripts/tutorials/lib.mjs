@@ -155,6 +155,7 @@ function overlayInit() {
         #__tut .intro-kicker{font-size:18px;letter-spacing:.14em;text-transform:uppercase;color:#9cc3ff}
         #__tut .intro-title{font-size:44px;font-weight:700;max-width:1050px;line-height:1.15}
         #__tut .intro-sub{font-size:22px;color:#cbd5e1;max-width:900px;line-height:1.45}
+        #__tut .intro-credit{position:absolute;left:0;right:0;bottom:22px;font-size:14px;color:#94a3b8;text-align:center}
         #__tut .imgpanel{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:rgba(15,23,42,.94);opacity:0;transition:opacity .5s}
         #__tut .imgpanel.on{opacity:1}
         #__tut .imgframe{width:min(1000px,84vw);height:76vh;overflow:hidden;border-radius:10px;background:#fff;box-shadow:0 12px 40px rgba(0,0,0,.5)}
@@ -169,7 +170,7 @@ function overlayInit() {
       <div class="card"><div class="kicker"></div><div class="title"></div><div class="sub"></div></div>
       <div class="imgpanel"><div class="imgframe"><img alt=""></div><div class="imglabel"></div></div>
       <div class="intro"><div class="intro-logo"></div><div class="intro-brand">web<span>Grainy</span></div><div class="intro-tag"></div>
-        <div class="intro-rest"><div class="intro-rule"></div><div class="intro-kicker"></div><div class="intro-title"></div><div class="intro-sub"></div></div></div>`;
+        <div class="intro-rest"><div class="intro-rule"></div><div class="intro-kicker"></div><div class="intro-title"></div><div class="intro-sub"></div></div><div class="intro-credit"></div></div>`;
     document.documentElement.appendChild(root);
     const front = () => {
       if (!root.isConnected) document.documentElement.appendChild(root);
@@ -237,6 +238,7 @@ function overlayInit() {
         if (o.kicker !== undefined) $('.intro-kicker').textContent = o.kicker;
         if (o.title !== undefined) $('.intro-title').textContent = o.title;
         if (o.sub !== undefined) $('.intro-sub').textContent = o.sub;
+        if (o.credit !== undefined) $('.intro-credit').textContent = o.credit;
         c.classList.toggle('on', stage > 0);
         c.classList.toggle('s1', stage > 0);
         c.classList.toggle('s2', stage > 1);
@@ -278,12 +280,20 @@ function overlayInit() {
 /** The app's logo (src/icon.svg), drawn on the intro and outro cards. */
 const LOGO_SVG = readFileSync(join(ROOT, 'src', 'icon.svg'), 'utf8');
 export const APP_URL = 'lukeafullard.github.io/webGrainy';
+/**
+ * Credit for the intro music that narrate.py adds (CC BY 4.0 asks for it), shown on the closing
+ * card. TUTORIAL_MUSIC_CREDIT=0 leaves it out, for videos without that music.
+ */
+export const MUSIC_CREDIT = process.env.TUTORIAL_MUSIC_CREDIT === '0'
+  ? ''
+  : 'Music: "Inspired" by Kevin MacLeod (incompetech.com), licensed under CC BY 4.0';
 
 /**
  * Narration pace. Captions stay on screen long enough to be read aloud by a voiceover at
- * TUTORIAL_WPS words a second (default 2.5, about 150 words a minute), plus a short pause.
+ * TUTORIAL_WPS words a second (default 2.2, about 130 words a minute: the pace of the slower
+ * narration voice), plus a short pause.
  */
-const WPS = Number(process.env.TUTORIAL_WPS) > 0 ? Number(process.env.TUTORIAL_WPS) : 2.5;
+const WPS = Number(process.env.TUTORIAL_WPS) > 0 ? Number(process.env.TUTORIAL_WPS) : 2.2;
 
 /** Caption HTML as plain text for the transcript (D<sub>50</sub> → D50). */
 export function plainText(html) {
@@ -482,7 +492,7 @@ export async function startTutorial(name, { width = 1280, height = 720, prepare,
       const { index, total, title, chapter, summary } = meta;
       const kicker = [index && total ? `Tutorial ${index} of ${total}` : 'Tutorial', chapter].filter(Boolean).join(' · ');
       await page.evaluate(([o]) => window.__tut.intro(1, o), [{
-        logo: LOGO_SVG, tag: 'Grain sizes from photos · runs in your browser', kicker, title: title ?? '', sub: summary ?? '',
+        logo: LOGO_SVG, tag: 'Grain sizes from photos · runs in your browser', kicker, title: title ?? '', sub: summary ?? '', credit: '',
       }]);
       const say = `webGrainy. ${index ? `Tutorial ${index}: ` : ''}${title ?? ''}.${summary ? ` ${summary}` : ''}`;
       const seg = begin('title', say);
@@ -502,7 +512,7 @@ export async function startTutorial(name, { width = 1280, height = 720, prepare,
       });
       const next = meta.next;
       const o = {
-        logo: LOGO_SVG, tag: APP_URL,
+        logo: LOGO_SVG, tag: APP_URL, credit: MUSIC_CREDIT,
         kicker: next ? 'Next' : 'End of the series',
         title: next ?? 'Thanks for watching',
         sub: next ? '' : 'Help (top right) explains every setting.',
