@@ -9,7 +9,7 @@ exports and the printable report, project files, and help.
 
 This plan comes from going through every control in the app (`src/ui/panels/*`, `src/ui/modals.ts`,
 `src/ui/help.ts`) and every section of [SETTINGS_GUIDE.md](SETTINGS_GUIDE.md). It has 24 short videos
-(about 1½–3 minutes each, about an hour in all) in six chapters, so each video teaches one task and can
+(about 1½–3 minutes each, about 50 minutes in all) in six chapters, so each video teaches one task and can
 be watched on its own.
 
 | # | Video | Covers |
