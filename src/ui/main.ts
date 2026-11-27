@@ -12,7 +12,7 @@ import {
   type SiteRecord,
 } from '../modules/projectStorage.js';
 import { broadcastNoticeChannel, createSyncedRecords, threeWayMerge } from '../modules/recordSync.js';
-import { rectifyPerspective } from '../modules/roiAndRectify.js';
+import { orderQuadCorners, rectifyPerspective } from '../modules/roiAndRectify.js';
 import { sizeCutoffExplanation } from '../modules/sedimentStats.js';
 import {
   buildSiteInputs,
@@ -1077,11 +1077,8 @@ function mountShell(): void {
             void syncViewport(false);
             return;
           }
-          void applyRectificationToActive(
-            [next[0]!, next[1]!, next[2]!, next[3]!],
-            pw,
-            ph,
-          );
+          // Corners can be clicked in any order: sort them into TL, TR, BR, BL.
+          void applyRectificationToActive(orderQuadCorners(next), pw, ph);
         } else {
           void syncViewport(false);
         }

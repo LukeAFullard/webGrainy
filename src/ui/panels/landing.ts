@@ -817,7 +817,7 @@ export function renderLandingHtml(state: AppState, view: LandingView): string {
                 </th>
                 <td>617 MB</td>
                 <td>Desktop or laptop with a supported graphics card</td>
-                <td>Used automatically on a graphics card with WebGPU float16 support</td>
+                <td>Best on a graphics card with WebGPU float16 support (chosen by Auto there)</td>
                 <td>FP16 ONNX conversion of Cellpose-SAM; high outline accuracy for results you will report or publish</td>
               </tr>
               <tr>
@@ -827,7 +827,7 @@ export function renderLandingHtml(state: AppState, view: LandingView): string {
                 </th>
                 <td>316 MB</td>
                 <td>Desktop or laptop running on the CPU</td>
-                <td>Used automatically on the CPU (about 2 GB memory, half of FP16)</td>
+                <td>Best for the CPU, chosen by Auto there: about 2 GB of memory, half of FP16</td>
                 <td>Quantized ONNX (INT8) build of Cellpose-SAM; matches FP16 accuracy in testing and loads faster on CPU</td>
               </tr>
               <tr>
@@ -878,9 +878,6 @@ export function renderLandingHtml(state: AppState, view: LandingView): string {
           <button type="button" class="btn btn-primary" data-open-modal="models">
             Manage &amp; Pre-Download Offline Models
           </button>
-          <a class="btn" href="./gpucheck.html">
-            Check Graphics Card Compatibility
-          </a>
         </div>
       </section>
 

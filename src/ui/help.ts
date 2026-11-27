@@ -42,7 +42,7 @@ export const HELP_TOPICS = {
     group: 'Analysis',
     what: 'Which copy of the Cellpose-SAM network to download and run. FP16 is the original (617 MB). INT8 (316 MB) and FP4 (183 MB) store the same network in compressed form. All three gave the same accuracy on the 40-photo benchmark (outline score 0.652–0.653, median D50 error 2.8–2.9%). Only used when the model is CP-SAM.',
     default: 'Auto: FP16 on a graphics card (WebGPU with float16), otherwise INT8 (always INT8 on phones and tablets)',
-    when: 'On a computer without a suitable graphics card, INT8 needs about half the memory of FP16 (about 2 GB vs 3.8 GB), loads much faster, and is as fast or faster (up to about 2× in the benchmark, depending on the computer). Choose FP4 for the smallest download on a slow or metered connection (it needs about as much memory as FP16 while running). On a graphics card, FP16 has been checked against the CPU on one integrated Intel GPU so far (other makers not yet; the GPU check page can test yours); INT8 and FP4 have not, so the app always runs them on the CPU (the GPU check page can test them on your graphics card). Keep the same choice for all photos you compare, and note it when reporting results (it is recorded in the export).',
+    when: 'On a computer without a suitable graphics card, INT8 needs about half the memory of FP16 (about 2 GB vs 3.8 GB), loads much faster, and is as fast or faster (up to about 2× in the benchmark, depending on the computer). Choose FP4 for the smallest download on a slow or metered connection (it needs about as much memory as FP16 while running). On a graphics card, FP16 has been checked against the CPU on one integrated Intel GPU so far (other makers not yet); INT8 and FP4 have not, so the app always runs them on the CPU. Keep the same choice for all photos you compare, and note it when reporting results (it is recorded in the export).',
   },
   scaleMode: {
     title: 'Scale mode',
@@ -280,7 +280,7 @@ export const HELP_TOPICS = {
     group: 'Tools',
     what: 'Straightens a photo taken at an angle, using four points that form a rectangle on the ground (e.g. quadrat corners).',
     default: 'Not applied',
-    when: 'Use whenever the camera was noticeably tilted. Click the corners in order around the rectangle (top-left, top-right, bottom-right, bottom-left). Rectifying replaces the photo; Undo rectify (toolbar) restores the original with its scale and areas (after several rectifications, the photo as it was before the first). Re-analyse the photo afterwards.',
+    when: 'Use whenever the camera was noticeably tilted. Type the rectangle\'s real width (its top edge in the photo) and height in mm, then click its four corners in any order: the app sorts them. Rectifying replaces the photo; Undo rectify (toolbar) restores the original with its scale and areas (after several rectifications, the photo as it was before the first). Re-analyse the photo afterwards.',
   },
   exclusion: {
     title: 'ROI and exclusion tools',
@@ -358,7 +358,6 @@ export function renderHelpModalHtml(focus: HelpKey | null): string {
       </div>
       <div class="modal-body" tabindex="0">
         <p class="help-intro"><strong>New here?</strong> <button type="button" class="btn btn-sm" data-action="show-guide">Show the getting-started guide</button> <button type="button" class="btn btn-sm" data-open-modal="shortcuts">Keyboard shortcuts</button> (or press <kbd>?</kbd>)</p>
-        <p class="help-intro"><strong>Using a GPU?</strong> The <a href="./gpucheck.html" target="_blank" rel="noopener">GPU check</a> page tests whether your graphics card gives the same results as the CPU (please send us the report).</p>
         <p class="help-intro">The defaults are the settings that were tested. For most photos: calibrate the scale, check the outlines, and set the field-count cutoff if you compare with a pebble count. Change other settings only for the reasons below, and note what you changed (exports record all settings).</p>
         ${focus ? topicHtml(focus, true) : ''}
         ${focus ? '<h3 class="help-group">All settings</h3>' : ''}

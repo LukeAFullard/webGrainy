@@ -7,6 +7,7 @@ import {
   filterGrainsByRoiAndExclusion,
   invert3x3,
   isConvexQuad,
+  orderQuadCorners,
   rectifyPerspective,
   solveHomography,
 } from '../src/modules/roiAndRectify.js';
@@ -355,5 +356,31 @@ describe('rectification input checks (audit B16)', () => {
     }
     expect(filled).toBeGreaterThan(1000);
     expect(behind).toBe(0);
+  });
+});
+
+describe('orderQuadCorners', () => {
+  const TL = { x: 10, y: 20 };
+  const TR = { x: 110, y: 15 };
+  const BR = { x: 120, y: 130 };
+  const BL = { x: 5, y: 125 };
+  const perms = (a: Array<{ x: number; y: number }>): Array<Array<{ x: number; y: number }>> =>
+    a.length <= 1 ? [a] : a.flatMap((p, i) => perms([...a.slice(0, i), ...a.slice(i + 1)]).map((r) => [p, ...r]));
+
+  it('returns top-left, top-right, bottom-right, bottom-left whatever the click order', () => {
+    for (const order of perms([TL, TR, BR, BL])) {
+      expect(orderQuadCorners(order)).toEqual([TL, TR, BR, BL]);
+    }
+  });
+
+  it('sorts a tilted (perspective) quadrilateral so it is convex and rectifies', () => {
+    const quad = [{ x: 316, y: 133 }, { x: 254, y: 639 }, { x: 785, y: 631 }, { x: 754, y: 128 }]; // TL, BL, BR, TR
+    const sorted = orderQuadCorners(quad);
+    expect(sorted).toEqual([quad[0], quad[3], quad[2], quad[1]]);
+    expect(isConvexQuad(sorted)).toBe(true);
+  });
+
+  it('needs exactly four points', () => {
+    expect(() => orderQuadCorners([TL, TR, BR])).toThrow(/4 points/);
   });
 });

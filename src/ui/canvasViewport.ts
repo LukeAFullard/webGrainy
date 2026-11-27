@@ -834,10 +834,10 @@ export class CanvasViewport {
     if (this.rectifyPoints.length > 0 && !v.forExport) {
       const pts = this.rectifyPoints.map((p) => `${toSx(p.x).toFixed(1)},${toSy(p.y).toFixed(1)}`).join(' ');
       parts.push(`<polyline points="${pts}" fill="none" stroke="#ffd166" stroke-width="2" />`);
+      // Numbered in click order: the corners may be clicked in any order (sorted when the 4th is placed).
       this.rectifyPoints.forEach((p, idx) => {
-        const labels = ['TL', 'TR', 'BR', 'BL'];
         parts.push(`<circle cx="${toSx(p.x).toFixed(1)}" cy="${toSy(p.y).toFixed(1)}" r="5" fill="#ffd166" />`);
-        parts.push(`<text x="${(toSx(p.x) + 7).toFixed(1)}" y="${(toSy(p.y) - 5).toFixed(1)}" fill="#ffd166" font-size="11" font-weight="700" font-family="ui-monospace, monospace">${labels[idx] ?? idx + 1}</text>`);
+        parts.push(`<text x="${(toSx(p.x) + 7).toFixed(1)}" y="${(toSy(p.y) - 5).toFixed(1)}" fill="#ffd166" font-size="11" font-weight="700" font-family="ui-monospace, monospace">${idx + 1}</text>`);
       });
     }
 

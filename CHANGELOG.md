@@ -308,5 +308,14 @@ First public release.
   build job, which runs the dependencies and tests, has read access only.
 - `package.json` states the supported Node.js versions (22.13 or later, or 24 and later); the
   README says when CI runs.
+- **Rectify corners in any order.** The four corners of the rectangle can be clicked in any order:
+  the app sorts them into top-left, top-right, bottom-right and bottom-left (the width is the top
+  edge as seen in the photo). Before, any other order than that one crossed the shape and failed.
+  The dots are numbered in click order, and the toolbar says so.
+- **Clearer model descriptions.** The Models dialog and overview page say which Cellpose-SAM
+  weights suit a graphics card (FP16) and the CPU (INT8, about half the memory), rather than only
+  that *Auto* uses them.
+- **The GPU check page is a development tool** and is no longer linked from the app, the help or the
+  README (it is still built, and tells search engines not to index it).
 
 [0.1.0]: https://github.com/LukeAFullard/webGrainy/releases/tag/v0.1.0

@@ -18,7 +18,7 @@ be watched on its own.
 | 01 | Welcome to webGrainy | What the app measures; privacy and offline use; the overview page and its five steps; status chips; *Skip this overview*; tour of the workspace (left panel, toolbar, photo, results, top bar) |
 | 02 | Taking photos that measure well | Shoot straight down; a scale lying flat; smallest grains ≥ 10 px; light and wet stones; 100+ grains and 5+ photos per site; wide-angle lenses; hard conditions; keep originals |
 | 03 | Add photos and run your first analysis | *Add Gravel Photos*; photo list and sites; storage notice; *Getting started* checklist; *Analyse*, model download and the progress bar; zoom, pan, *Fit*; D16/D50/D84 and the curve (in pixels) |
-| 04 | Choosing a model | Auto / U-Net / CP-SAM and their accuracy; CP-SAM weights FP16 / INT8 / FP4; phones; same model for comparisons; engine chip (GPU / CPU threads); *Models* dialog and offline caching; GPU check |
+| 04 | Choosing a model | Auto / U-Net / CP-SAM and their accuracy; CP-SAM weights FP16 / INT8 / FP4; phones; same model for comparisons; engine chip (GPU / CPU threads); *Models* dialog, offline caching and which weights suit the CPU |
 | | **2. Scale** | |
 | 05 | Set the scale | *Calibrate*: presets, custom length and units, clicking both ends zoomed in; scale readout; one scale per photo; *Whole site* once all are scaled |
 | 06 | Type a known scale, or copy one | *known scale* in mm/px or px/mm and *Set scale*; *Copy scale to photos…* (selection, pre-selection, same camera and height only); GeoTIFFs need no calibration |
@@ -47,8 +47,7 @@ be watched on its own.
 | 25 | Open your results in a GIS | A GeoTIFF photo (scale from georeferencing); downloading the *Site GeoPackage* and the photo as a Web Mercator GeoTIFF; adding both to RustGIS (web.rustgis.app); *Zoom To Layer*; outlines over the photo; the attribute table |
 
 **Not shown on screen** (mentioned in captions instead, because the recorder cannot do them
-without extra downloads or hardware): running Cellpose-SAM (a 183–617 MB download), the GPU check
-page, *2× Upscale* (downloads the PULSE model), system notifications and the storage-full flow.
+without extra downloads or hardware): running Cellpose-SAM (a 183–617 MB download), *2× Upscale* (downloads the PULSE model), system notifications and the storage-full flow.
 
 Tutorial 25 records a third-party site, RustGIS, whose interface is drawn on a canvas: the script
 clicks screen positions measured in November 2026 (see the top of `25-results-in-gis.mjs`), so a

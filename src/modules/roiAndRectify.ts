@@ -574,6 +574,27 @@ function edgeLen(a: Point2D, b: Point2D): number {
 }
 
 /**
+ * Puts four clicked corners into the order rectification expects: top-left, top-right,
+ * bottom-right, bottom-left (image coordinates, y down), whatever order they were clicked in.
+ * The corners are sorted by angle around their centroid (clockwise on screen), starting from
+ * the corner nearest the photo's top-left (smallest x + y). The rectangle's width is then the
+ * edge from top-left to top-right. Points that are not the corners of a convex shape keep the
+ * sorted order and are rejected later by isConvexQuad.
+ */
+export function orderQuadCorners(points: readonly Point2D[]): [Point2D, Point2D, Point2D, Point2D] {
+  if (points.length !== 4) throw new Error(`orderQuadCorners needs 4 points, got ${points.length}`);
+  const cx = (points[0]!.x + points[1]!.x + points[2]!.x + points[3]!.x) / 4;
+  const cy = (points[0]!.y + points[1]!.y + points[2]!.y + points[3]!.y) / 4;
+  const sorted = [...points].sort((a, b) => Math.atan2(a.y - cy, a.x - cx) - Math.atan2(b.y - cy, b.x - cx));
+  let first = 0;
+  for (let i = 1; i < 4; i++) {
+    if (sorted[i]!.x + sorted[i]!.y < sorted[first]!.x + sorted[first]!.y) first = i;
+  }
+  const o = [0, 1, 2, 3].map((k) => sorted[(first + k) % 4]!);
+  return [o[0]!, o[1]!, o[2]!, o[3]!];
+}
+
+/**
  * True when the corners, in order, form a strictly convex quadrilateral (every turn the same
  * way). A crossed "bowtie" (corners clicked zig-zag) or a dented shape still gives a solvable
  * homography, but not a meaningful one: it scrambles the photo.
@@ -621,7 +642,7 @@ export function rectifyPerspective(
   const [tl, tr, br, bl] = input.srcCorners;
   if (!isConvexQuad(input.srcCorners)) {
     throw new Error(
-      'The four corners must outline the rectangle without crossing: click them in order around it (top-left, top-right, bottom-right, bottom-left).',
+      'The four points must be the corners of the rectangle (none inside the others), in order around it (top-left, top-right, bottom-right, bottom-left).',
     );
   }
   const meanWpx = 0.5 * (edgeLen(tl, tr) + edgeLen(bl, br));

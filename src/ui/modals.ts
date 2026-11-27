@@ -147,13 +147,13 @@ export function renderModelsModalHtml(
       id: 'ig2_cpsam_fp16',
       title: 'Cellpose-SAM FP16 — ig2_cpsam_fp16.onnx',
       sizeLabel: '617 MB',
-      desc: 'Original weights. Used automatically on a graphics card with WebGPU float16 (shader-f16).',
+      desc: 'Original weights. Best on a graphics card with WebGPU float16 (shader-f16), where CP-SAM weights “Auto” uses it. On the CPU it needs about 3.8 GB of memory.',
     },
     {
       id: 'ig2_cpsam_int8_wo_fp32scale',
       title: 'Cellpose-SAM INT8 — ig2_cpsam_int8_wo_fp32scale.onnx',
       sizeLabel: '316 MB',
-      desc: 'Same accuracy as FP16 in testing. Used automatically on the CPU: half the memory (about 2 GB) and faster loading.',
+      desc: 'Best for the CPU (no suitable graphics card), where CP-SAM weights “Auto” uses it. Same accuracy as FP16 in testing, with about half the memory (about 2.1 GB instead of 3.8 GB) and faster loading.',
     },
     {
       id: 'ig2_cpsam_fp4_e2m1_lut',

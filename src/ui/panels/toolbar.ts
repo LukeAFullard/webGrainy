@@ -156,9 +156,9 @@ export function renderToolbarHtml(state: AppState): { toolbar: string; subToolba
     const rectH = state.rectifyHeightMm ?? 500;
     toolPrompt = `
       <span class="toolbar-sep" aria-hidden="true"></span>
-      <span>4-Pt Rectify (${state.pendingRectifyPoints.length}/4 TL→TR→BR→BL):</span>
-      <input class="input" id="rect-w" type="number" value="${rectW}" step="10" min="10" aria-label="Rectification physical width in mm" style="width:60px;padding:2px 6px;" title="Width (mm)" />×
-      <input class="input" id="rect-h" type="number" value="${rectH}" step="10" min="10" aria-label="Rectification physical height in mm" style="width:60px;padding:2px 6px;" title="Height (mm)" />mm
+      <span title="Click the four corners of a rectangle of known size on the ground (e.g. a quadrat), in any order. Width is its top edge in the photo, height its side.">Rectify: click the 4 corners, any order (${state.pendingRectifyPoints.length}/4) · width × height:</span>
+      <input class="input" id="rect-w" type="number" value="${rectW}" step="10" min="10" aria-label="Rectangle width in mm (its top edge in the photo)" style="width:60px;padding:2px 6px;" title="Width (mm): the rectangle's top edge in the photo" />×
+      <input class="input" id="rect-h" type="number" value="${rectH}" step="10" min="10" aria-label="Rectangle height in mm (its side edge in the photo)" style="width:60px;padding:2px 6px;" title="Height (mm): the rectangle's side edge in the photo" />mm
       <span class="field-hint" title="Rectifying replaces the photo; Undo rectify (toolbar) brings back the original, with its scale and areas.">Replaces the photo; Undo rectify restores it</span>
     `;
   }
