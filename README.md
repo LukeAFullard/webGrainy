@@ -95,24 +95,28 @@ Node.js 22.13 or later (or 24 and later) is required. CI runs all of these excep
 
 ### Tutorial videos
 
-Six short, silent tutorial videos (1280×720 MP4, about a minute each) are generated from the built app, so they can be re-recorded whenever the interface changes:
+25 short tutorial videos (1280×720 MP4, about 1½–3 minutes each) in six chapters are generated from the built app, so they can be re-recorded whenever the interface changes. [docs/TUTORIAL_PLAN.md](docs/TUTORIAL_PLAN.md) lists what each one covers. Each starts with the webGrainy logo and the tutorial's title and ends with the logo and the next tutorial. They have no sound: every caption and title card is also written out with its timing, for subtitles or a voiceover.
 
 ```bash
 npm run build
-npm run tutorials          # all six, into tutorials/out/
-npm run tutorials -- 03    # only those whose file name contains "03"
+npm run tutorials             # all 25, into tutorials/out/
+npm run tutorials -- 03 12    # only those whose file name contains "03" or "12"
 ```
 
-| File | Shows |
-| --- | --- |
-| `01-first-analysis` | adding photos and running a first analysis |
-| `02-set-scale` | calibrating each photo from a ruler; Copy scale and Rectify |
-| `03-edit-outlines` | Inspect, Split, Merge, Delete, excluding the ruler, Flagged grains |
-| `04-site-results` | naming a site; Whole-site results, confidence interval, adequacy, settings |
-| `05-compare-surveys` | a second survey of the same place and the comparison over time |
-| `06-download-and-gis` | the results .zip, and GeoJSON in map coordinates from a GeoTIFF |
+For each tutorial `NN-name` this writes `NN-name.mp4`, the on-screen text as subtitles (`.srt`, `.vtt`), as a timed voiceover script (`.transcript.md`, with the seconds and words of each line) and as `.transcript.json`, plus `transcripts.md` with all of them. Captions stay up long enough to be read aloud at `TUTORIAL_WPS` words per second (default 2.5, about 150 words a minute).
 
-Each tutorial is a Playwright script in `scripts/tutorials/` that drives headless Chromium. Frames come from the Chrome DevTools screencast; an overlay draws the cursor, clicks, captions, highlights and title cards, and ffmpeg (which must be installed) encodes the MP4. Model waits are sped up and say so on screen. The sample photos are two ImageGrains demo images (K1 site; BSD-3-Clause, © 2023 David Mair), downloaded from a pinned commit and checked by SHA-256. Tutorial 6 turns one into an example GeoTIFF at an invented location. Videos are not committed: attach them to a release or upload them elsewhere.
+To record them all in Google Colab and save them to Google Drive, open [`scripts/tutorials/webGrainy_tutorial_videos.ipynb`](scripts/tutorials/webGrainy_tutorial_videos.ipynb) in Colab and choose *Runtime → Run all*.
+
+| Chapter | Tutorials |
+| --- | --- |
+| Getting started | `01-welcome`, `02-good-photos`, `03-first-analysis`, `04-choosing-a-model` |
+| Scale | `05-set-scale`, `06-known-and-copied-scale`, `07-rectify` |
+| Areas and outlines | `08-areas`, `09-inspect-grains`, `10-edit-outlines`, `11-display-and-save-image` |
+| Analysis settings | `12-analysis-settings`, `13-fine-grains-and-enhance` |
+| Results | `14-photo-results`, `15-site-results`, `16-statistics-settings`, `17-many-photos-and-sites`, `18-compare-sites`, `19-surveys-over-time` |
+| Keeping and sharing results | `20-download-results`, `21-export-and-report`, `22-geotiff-and-gis`, `23-save-and-reopen`, `24-help-and-good-practice`, `25-results-in-gis` |
+
+Each tutorial is a Playwright script in `scripts/tutorials/` that drives headless Chromium. Frames come from the Chrome DevTools screencast; an overlay draws the cursor, clicks, captions, highlights and title cards, and ffmpeg (which must be installed) encodes the MP4. Model waits are sped up and say so on screen. The sample photos are two ImageGrains demo images (K1 site; BSD-3-Clause, © 2023 David Mair), downloaded from a pinned commit and checked by SHA-256. Tutorial 7 uses one tilted on purpose with a quadrat drawn on it, and tutorials 22 and 25 turn one into an example GeoTIFF at an invented location. Tutorial 25 opens the results in [RustGIS](https://web.rustgis.app), a GIS that runs in the browser, so it needs internet access to that site. Videos are not committed: attach them to a release or upload them elsewhere.
 
 ### Repository layout
 

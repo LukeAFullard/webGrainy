@@ -138,11 +138,38 @@ function overlayInit() {
         #__tut .card .title{font-size:46px;font-weight:700;max-width:1000px;line-height:1.15}
         #__tut .card .sub{font-size:22px;color:#cbd5e1;max-width:900px;line-height:1.45;white-space:pre-line}
         #__tut .card .sub.mono{font:17px/1.55 ui-monospace,Menlo,Consolas,monospace;text-align:left;background:rgba(0,0,0,.25);padding:14px 22px;border-radius:10px}
+        #__tut .intro{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:40px;background:radial-gradient(ellipse at 50% 38%,#21456f 0%,#0f172a 72%);color:#fff;opacity:0;transition:opacity .6s}
+        #__tut .intro.on{opacity:1}
+        #__tut .intro-logo{width:150px;height:150px;opacity:0;transform:scale(.55) rotate(-10deg);transition:transform 1s cubic-bezier(.2,1.5,.4,1),opacity .6s,width .8s,height .8s;filter:drop-shadow(0 10px 30px rgba(59,158,255,.35))}
+        #__tut .intro-logo svg{width:100%;height:100%;display:block}
+        #__tut .intro-brand{margin-top:22px;font-size:66px;font-weight:800;letter-spacing:-.015em;line-height:1;opacity:0;transform:translateY(16px);transition:opacity .7s .35s,transform .7s .35s,font-size .8s,margin .8s}
+        #__tut .intro-brand span{color:#5ab0ff}
+        #__tut .intro-tag{margin-top:14px;font-size:21px;color:#cbd5e1;letter-spacing:.02em;opacity:0;transition:opacity .7s .7s}
+        #__tut .intro.s1 .intro-logo{opacity:1;transform:none}
+        #__tut .intro.s1 .intro-brand,#__tut .intro.s1 .intro-tag{opacity:1;transform:none}
+        #__tut .intro-rest{display:flex;flex-direction:column;align-items:center;gap:12px;max-height:0;opacity:0;overflow:hidden;transition:max-height .8s,opacity .6s .25s,margin .8s}
+        #__tut .intro.s2 .intro-rest{max-height:360px;opacity:1;margin-top:30px}
+        #__tut .intro.s2 .intro-logo{width:96px;height:96px}
+        #__tut .intro.s2 .intro-brand{font-size:44px;margin-top:14px}
+        #__tut .intro-rule{width:120px;height:3px;border-radius:2px;background:linear-gradient(90deg,#3b9eff,#2ecc71,#f5a623,#e74c3c)}
+        #__tut .intro-kicker{font-size:18px;letter-spacing:.14em;text-transform:uppercase;color:#9cc3ff}
+        #__tut .intro-title{font-size:44px;font-weight:700;max-width:1050px;line-height:1.15}
+        #__tut .intro-sub{font-size:22px;color:#cbd5e1;max-width:900px;line-height:1.45}
+        #__tut .imgpanel{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:rgba(15,23,42,.94);opacity:0;transition:opacity .5s}
+        #__tut .imgpanel.on{opacity:1}
+        #__tut .imgframe{width:min(1000px,84vw);height:76vh;overflow:hidden;border-radius:10px;background:#fff;box-shadow:0 12px 40px rgba(0,0,0,.5)}
+        #__tut .imgframe img{width:100%;display:block;transform:translateY(0)}
+        #__tut .imgframe.contain{background:#0b1220}
+        #__tut .imgframe.contain img{height:100%;object-fit:contain}
+        #__tut .imglabel{color:#fff;font-size:20px;max-width:1000px;text-align:center}
       </style>
       <svg class="cursor" viewBox="0 0 26 26"><path d="M3 2 L3 21 L8.2 16.4 L11.6 24 L15 22.5 L11.7 15 L18.6 15 Z" fill="#fff" stroke="#111" stroke-width="1.6" stroke-linejoin="round"/></svg>
       <div class="ring"></div>
       <div class="caption"></div>
-      <div class="card"><div class="kicker"></div><div class="title"></div><div class="sub"></div></div>`;
+      <div class="card"><div class="kicker"></div><div class="title"></div><div class="sub"></div></div>
+      <div class="imgpanel"><div class="imgframe"><img alt=""></div><div class="imglabel"></div></div>
+      <div class="intro"><div class="intro-logo"></div><div class="intro-brand">web<span>Grainy</span></div><div class="intro-tag"></div>
+        <div class="intro-rest"><div class="intro-rule"></div><div class="intro-kicker"></div><div class="intro-title"></div><div class="intro-sub"></div></div></div>`;
     document.documentElement.appendChild(root);
     const front = () => {
       if (!root.isConnected) document.documentElement.appendChild(root);
@@ -201,6 +228,43 @@ function overlayInit() {
         $('.sub').classList.toggle('mono', !!mono);
         c.classList.add('on');
       },
+      /** Full-screen brand card with the logo. stage 0 hides, 1 shows logo + name, 2 adds the text. */
+      intro(stage, o = {}) {
+        front();
+        const c = $('.intro');
+        if (o.logo) $('.intro-logo').innerHTML = o.logo;
+        if (o.tag !== undefined) $('.intro-tag').textContent = o.tag;
+        if (o.kicker !== undefined) $('.intro-kicker').textContent = o.kicker;
+        if (o.title !== undefined) $('.intro-title').textContent = o.title;
+        if (o.sub !== undefined) $('.intro-sub').textContent = o.sub;
+        c.classList.toggle('on', stage > 0);
+        c.classList.toggle('s1', stage > 0);
+        c.classList.toggle('s2', stage > 1);
+      },
+      /** Shows an image (e.g. a screenshot of another tab) and optionally scrolls through it. */
+      image(src, label, scrollMs) {
+        front();
+        const p = $('.imgpanel');
+        const img = p.querySelector('img');
+        if (!src) return p.classList.remove('on');
+        img.style.transition = 'none';
+        img.style.transform = 'translateY(0)';
+        img.src = src;
+        $('.imglabel').innerHTML = label ?? '';
+        p.querySelector('.imgframe').classList.toggle('contain', !scrollMs);
+        p.classList.add('on');
+        if (scrollMs) {
+          const go = () => {
+            const frame = p.querySelector('.imgframe');
+            const dy = Math.max(0, img.getBoundingClientRect().height - frame.getBoundingClientRect().height);
+            setTimeout(() => {
+              img.style.transition = `transform ${scrollMs}ms cubic-bezier(.45,0,.55,1)`;
+              img.style.transform = `translateY(${-dy}px)`;
+            }, 700);
+          };
+          if (img.complete) go(); else img.onload = go;
+        }
+      },
     };
   };
   if (document.documentElement) install();
@@ -210,22 +274,97 @@ function overlayInit() {
 
 // ---------------------------------------------------------------------------------------
 
+
+/** The app's logo (src/icon.svg), drawn on the intro and outro cards. */
+const LOGO_SVG = readFileSync(join(ROOT, 'src', 'icon.svg'), 'utf8');
+export const APP_URL = 'lukeafullard.github.io/webGrainy';
+
+/**
+ * Narration pace. Captions stay on screen long enough to be read aloud by a voiceover at
+ * TUTORIAL_WPS words a second (default 2.5, about 150 words a minute), plus a short pause.
+ */
+const WPS = Number(process.env.TUTORIAL_WPS) > 0 ? Number(process.env.TUTORIAL_WPS) : 2.5;
+
+/** Caption HTML as plain text for the transcript (D<sub>50</sub> → D50). */
+export function plainText(html) {
+  return String(html ?? '')
+    .replace(/<br\s*\/?>/gi, ' ')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+const words = (text) => (text ? text.split(/\s+/).filter(Boolean).length : 0);
+
+/** Milliseconds a line needs on screen to be read aloud. */
+export const speakTime = (text) => Math.max(2500, (words(plainText(text)) / WPS) * 1000 + 800);
+
+function stamp(sec, sep = ',') {
+  const ms = Math.max(0, Math.round(sec * 1000));
+  const h = Math.floor(ms / 3600000), m = Math.floor(ms / 60000) % 60, s = Math.floor(ms / 1000) % 60;
+  const pad = (n, w = 2) => String(n).padStart(w, '0');
+  return `${pad(h)}:${pad(m)}:${pad(s)}${sep}${pad(ms % 1000, 3)}`;
+}
+const short = (sec) => {
+  const m = Math.floor(sec / 60);
+  return `${String(m).padStart(2, '0')}:${(sec - m * 60).toFixed(1).padStart(4, '0')}`;
+};
+
+/** Writes the on-screen text with its timing: .srt, .vtt, .transcript.md and .transcript.json. */
+export function writeTranscript(name, meta, segments, duration) {
+  const segs = segments.filter((x) => x.text).map((x) => ({ ...x, start: +x.start.toFixed(2), end: +Math.min(x.end, duration).toFixed(2) }));
+  const srt = segs.map((x, i) => `${i + 1}\n${stamp(x.start)} --> ${stamp(x.end)}\n${x.text}\n`).join('\n');
+  writeFileSync(join(OUT, `${name}.srt`), srt);
+  const vtt = `WEBVTT\n\n${segs.map((x) => `${stamp(x.start, '.')} --> ${stamp(x.end, '.')}\n${x.text}\n`).join('\n')}`;
+  writeFileSync(join(OUT, `${name}.vtt`), vtt);
+  const json = { name, video: `${name}.mp4`, ...meta, wordsPerSecond: WPS, duration: +duration.toFixed(2), segments: segs };
+  writeFileSync(join(OUT, `${name}.transcript.json`), `${JSON.stringify(json, null, 2)}\n`);
+  writeFileSync(join(OUT, `${name}.transcript.md`), transcriptMarkdown(json));
+}
+
+/** One video's transcript as Markdown: a timed voiceover script. */
+export function transcriptMarkdown(t) {
+  const lines = [
+    `## ${t.index ? `${t.index}. ` : ''}${t.title}`,
+    '',
+    `Video \`${t.video}\` · ${short(t.duration)} long · chapter: ${t.chapter ?? '—'}`,
+    '',
+    '| Start | End | Time | Words | On-screen text (voiceover) |',
+    '| ---: | ---: | ---: | ---: | :--- |',
+    ...t.segments.map((x) => `| ${short(x.start)} | ${short(x.end)} | ${(x.end - x.start).toFixed(1)} s | ${words(x.text)} | ${x.kind === 'caption' ? '' : `*[${x.kind}]* `}${x.text.replace(/\|/g, '\\|')} |`),
+    '',
+  ];
+  return `${lines.join('\n')}\n`;
+}
+
 /**
  * Opens the app and starts recording. Returns the tutorial "director": helpers that move
- * the cursor, click, caption and wait, plus finish() which writes the MP4.
+ * the cursor, click, caption and wait, plus intro(), outro() and finish() which writes the
+ * MP4 and its timed transcript. `meta` = { index, total, title, chapter, summary, next }.
  */
-export async function startTutorial(name, { width = 1280, height = 720, prepare } = {}) {
+export async function startTutorial(name, { width = 1280, height = 720, prepare, meta = {} } = {}) {
   const { server, base } = await serve();
-  const browser = await chromium.launch({ args: ['--disable-features=WebGPU'] });
-  const context = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: 1 });
+  // Behind an HTTPS proxy (e.g. a sandbox), pages on other sites (tutorial 25) go through it.
+  const proxy = process.env.HTTPS_PROXY || process.env.https_proxy;
+  const browser = await chromium.launch({
+    args: ['--disable-features=WebGPU'],
+    ...(proxy ? { proxy: { server: proxy, bypass: '127.0.0.1,localhost' } } : {}),
+  });
+  const context = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: 1, acceptDownloads: true });
   await context.addInitScript(overlayInit);
-  const page = await context.newPage();
+  let page = await context.newPage();
   const problems = [];
   page.on('pageerror', (e) => problems.push(`pageerror: ${e.message}`));
   page.on('console', (m) => {
     if (m.type() === 'error') problems.push(`console.error: ${m.text()}`);
   });
-  await page.route('https://huggingface.co/**', (route) => {
+  await context.route('https://huggingface.co/**', (route) => {
     const file = new URL(route.request().url()).pathname.split('/').pop();
     if (!MODELS[file]) return route.abort();
     return route.fulfill({ status: 302, headers: { location: `${base}__model/${file}`, 'access-control-allow-origin': '*' } });
@@ -238,23 +377,143 @@ export async function startTutorial(name, { width = 1280, height = 720, prepare 
   await page.mouse.move(mouse.x, mouse.y);
   const ease = (t) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
 
+  // Screencast frames, each with its capture time and the playback speed at that moment.
+  const frameDir = join(OUT, `${name}.frames`);
+  const frames = [];
+  let speed = 1;
+  let recording = false;
+
+  // Video time (seconds into the MP4) of a wall-clock time, from the frames so far.
+  const vt = { i: -1, at: 0 };
+  const videoNow = () => {
+    const t = Date.now() / 1000;
+    if (!recording || frames.length === 0) return 0;
+    while (vt.i + 1 < frames.length && frames[vt.i + 1].t <= t) {
+      if (vt.i >= 0) vt.at += (frames[vt.i + 1].t - frames[vt.i].t) / frames[vt.i].speed;
+      vt.i++;
+    }
+    if (vt.i < 0) return 0;
+    return vt.at + Math.max(0, t - frames[vt.i].t) / frames[vt.i].speed;
+  };
+
+  // Transcript: every caption, card and title shown, with its start and end in video time.
+  const segments = [];
+  let open = null; // the caption on screen: { seg, need } (need = seconds to say it)
+  const begin = (kind, text) => {
+    const seg = { kind, text: plainText(text), start: videoNow(), end: null };
+    segments.push(seg);
+    return seg;
+  };
+  const end = (seg) => {
+    if (seg && seg.end === null) seg.end = videoNow();
+  };
+  /** Waits until the caption on screen has been up long enough to be read aloud. */
+  const letFinish = async () => {
+    if (!open) return;
+    for (let guard = 0; guard < 400; guard++) {
+      const left = open.need - (videoNow() - open.seg.start);
+      if (left <= 0.02) break;
+      const s = frames.at(-1)?.speed ?? speed;
+      await page.waitForTimeout(Math.min(400, Math.max(30, left * 1000 * s)));
+    }
+  };
+  const closeCaption = async () => {
+    if (!open) return;
+    await letFinish();
+    end(open.seg);
+    open = null;
+  };
+
+  let cdp = null;
+  let switchTab;
   const d = {
     page,
+    context,
     base,
+    meta,
     wait: (ms) => page.waitForTimeout(d.instant ? Math.min(ms, 150) : ms),
-    /** Seconds of reading time for a caption: about 3.3 words a second, at least 2.5 s. */
-    readTime: (html) => Math.max(2500, (html.replace(/<[^>]+>/g, '').split(/\s+/).length / 3.3) * 1000),
+    /** Milliseconds a caption needs on screen to be read aloud (see TUTORIAL_WPS). */
+    readTime: speakTime,
+    /**
+     * Shows a caption (HTML; null hides it). It stays up for its reading time (`hold`
+     * overrides; 0 returns at once, leaving it up while the next steps run). A caption is
+     * never replaced before it could be read aloud in full.
+     */
     async caption(html, { hold, pos } = {}) {
       if (d.instant) return;
+      await closeCaption();
       await page.evaluate(([h, p]) => window.__tut.caption(h, p), [html, pos]);
-      if (html && hold !== 0) await page.waitForTimeout(hold ?? d.readTime(html));
+      if (!html) return;
+      open = { seg: begin('caption', html), need: speakTime(html) / 1000 };
+      if (hold !== 0) await page.waitForTimeout(hold ?? speakTime(html));
     },
-    async card(kicker, title, sub, hold = 3500, { mono = false } = {}) {
+    /** A full-screen text card. `say` is its narration (default: title, then sub). */
+    async card(kicker, title, sub, hold, { mono = false, say } = {}) {
       if (d.instant) return;
+      await closeCaption();
+      await page.evaluate(() => window.__tut.caption(null));
+      const text = say ?? [title, mono ? '' : sub].filter(Boolean).join('. ');
       await page.evaluate(([k, t, s, m]) => window.__tut.card(k, t, s, m), [kicker, title, sub, mono]);
-      await page.waitForTimeout(hold);
+      const seg = begin('card', text);
+      await page.waitForTimeout(Math.max(hold ?? 3500, speakTime(text)));
+      end(seg);
       await page.evaluate(() => window.__tut.card(null, null));
       await page.waitForTimeout(600);
+    },
+    /**
+     * Shows an image full-screen (a PNG/JPEG Buffer, e.g. a screenshot of another tab),
+     * scrolling through it if taller than the frame, with `say` as its narration.
+     */
+    async image(buf, { label = '', say, hold = 5000, scroll = true, type = 'jpeg' } = {}) {
+      if (d.instant) return;
+      await closeCaption();
+      await page.evaluate(() => window.__tut.caption(null));
+      const src = `data:image/${type};base64,${buf.toString('base64')}`;
+      const ms = Math.max(hold, say ? speakTime(say) : 0);
+      await page.evaluate(([s, l, sc]) => window.__tut.image(s, l, sc), [src, label, scroll ? ms - 1400 : 0]);
+      const seg = begin('image', say ?? plainText(label));
+      await page.waitForTimeout(ms);
+      end(seg);
+      await page.evaluate(() => window.__tut.image(null));
+      await page.waitForTimeout(600);
+    },
+    /** Opening title: the logo and name, then the tutorial's number, title and summary. */
+    async intro() {
+      const { index, total, title, chapter, summary } = meta;
+      const kicker = [index && total ? `Tutorial ${index} of ${total}` : 'Tutorial', chapter].filter(Boolean).join(' · ');
+      await page.evaluate(([o]) => window.__tut.intro(1, o), [{
+        logo: LOGO_SVG, tag: 'Grain sizes from photos · runs in your browser', kicker, title: title ?? '', sub: summary ?? '',
+      }]);
+      const say = `webGrainy. ${index ? `Tutorial ${index}: ` : ''}${title ?? ''}.${summary ? ` ${summary}` : ''}`;
+      const seg = begin('title', say);
+      await page.waitForTimeout(1900);
+      await page.evaluate(() => window.__tut.intro(2));
+      await page.waitForTimeout(Math.max(3800, speakTime(say) - 1900));
+      end(seg);
+      await page.evaluate(() => window.__tut.intro(0));
+      await page.waitForTimeout(700);
+    },
+    /** Closing card: the logo, the app's address and the next tutorial. */
+    async outro() {
+      await closeCaption();
+      await page.evaluate(() => {
+        window.__tut.caption(null);
+        window.__tut.ring(null);
+      });
+      const next = meta.next;
+      const o = {
+        logo: LOGO_SVG, tag: APP_URL,
+        kicker: next ? 'Next' : 'End of the series',
+        title: next ?? 'Thanks for watching',
+        sub: next ? '' : 'Help (top right) explains every setting.',
+      };
+      await page.evaluate(([x]) => window.__tut.intro(1, x), [o]);
+      const say = next ? `Next: ${next}.` : 'That is the end of the tutorial series. Thanks for watching.';
+      const seg = begin('end', say);
+      await page.waitForTimeout(1500);
+      await page.evaluate(() => window.__tut.intro(2));
+      await page.waitForTimeout(Math.max(3500, speakTime(say)));
+      end(seg);
     },
     async ring(target, pad) {
       if (d.instant) return;
@@ -274,6 +533,17 @@ export async function startTutorial(name, { width = 1280, height = 720, prepare 
         }
       }
     },
+    /** Highlights a screen rectangle { x, y, width, height }. */
+    async ringRect(rect, pad) {
+      if (d.instant) return;
+      await page.evaluate(([b, p]) => window.__tut.ring(b, p), [rect, pad]);
+    },
+    /** Highlights a rectangle of a photo, given in photo pixels (the photo must be fitted). */
+    async ringPhoto(file, x0, y0, x1, y1, pad) {
+      const a = await d.photoPoint(file, x0, y0);
+      const b = await d.photoPoint(file, x1, y1);
+      await d.ringRect({ x: a.x, y: a.y, width: b.x - a.x, height: b.y - a.y }, pad);
+    },
     async moveTo(x, y, ms = 650) {
       if (d.instant) {
         await page.mouse.move(x, y);
@@ -292,11 +562,19 @@ export async function startTutorial(name, { width = 1280, height = 720, prepare 
     /** Glides to the centre of an element (or a point inside it given as fractions). */
     async point(target, { fx = 0.5, fy = 0.5, ms } = {}) {
       const loc = typeof target === 'string' ? page.locator(target).first() : target;
-      await loc.scrollIntoViewIfNeeded();
-      const box = await loc.boundingBox();
-      if (!box) throw new Error(`not visible: ${target}`);
-      await d.moveTo(box.x + box.width * fx, box.y + box.height * fy, ms);
-      return loc;
+      // The app re-renders panels often: retry if the element is replaced mid-way.
+      for (let attempt = 0; ; attempt++) {
+        try {
+          await loc.scrollIntoViewIfNeeded({ timeout: 10000 });
+          const box = await loc.boundingBox({ timeout: 10000 });
+          if (!box) throw new Error(`not visible: ${target}`);
+          await d.moveTo(box.x + box.width * fx, box.y + box.height * fy, ms);
+          return loc;
+        } catch (e) {
+          if (attempt >= 4) throw e;
+          await page.waitForTimeout(400);
+        }
+      }
     },
     async click(target, opts = {}) {
       await d.point(target, opts);
@@ -305,6 +583,43 @@ export async function startTutorial(name, { width = 1280, height = 720, prepare 
       await page.waitForTimeout(90);
       await page.mouse.up();
       await d.wait(opts.after ?? 500);
+    },
+    /** Chooses an option of a <select> with a visible click on it first. */
+    async select(target, value, opts = {}) {
+      const loc = typeof target === 'string' ? page.locator(target).first() : target;
+      await d.point(loc, opts);
+      await d.wait(300);
+      await loc.selectOption(value);
+      await d.wait(opts.after ?? 700);
+    },
+    /**
+     * Opens `url` in a new tab in the background (the video stays on the current tab until
+     * showTab). Returns the tab.
+     */
+    async openTab(url, { waitUntil = 'load' } = {}) {
+      const tab = await context.newPage();
+      await tab.goto(url, { waitUntil, timeout: 120000 });
+      await page.bringToFront();
+      return tab;
+    },
+    /** Cuts the video to another tab (from openTab) and makes it the tab the helpers drive. */
+    async showTab(tab) {
+      await switchTab(tab);
+    },
+    /** Glides to a screen position and clicks there (for apps drawn on a canvas). */
+    async clickAt(x, y, { button = 'left', ms, after = 600 } = {}) {
+      await d.moveTo(x, y, ms);
+      await d.wait(200);
+      await page.mouse.down({ button });
+      await page.waitForTimeout(90);
+      await page.mouse.up({ button });
+      await d.wait(after);
+    },
+    /** Clicks a screen position that opens a file picker and answers it with `files`. */
+    async chooseFilesAt(x, y, files, opts) {
+      const chooser = page.waitForEvent('filechooser', { timeout: 30000 });
+      await d.clickAt(x, y, opts);
+      await (await chooser).setFiles(files);
     },
     /** Clicks a button that opens a file picker and answers it with `files`. */
     async chooseFiles(target, files, opts) {
@@ -344,6 +659,10 @@ export async function startTutorial(name, { width = 1280, height = 720, prepare 
       await d.click('[data-action="fit-view"]', opts);
       view = null;
     },
+    /** Forgets the photo-to-screen transform (after the layout of the view changed). */
+    resetView() {
+      view = null;
+    },
     /** Glides to a photo pixel and clicks it. */
     async clickPhoto(file, x, y, opts = {}) {
       const p = await d.photoPoint(file, x, y);
@@ -353,6 +672,17 @@ export async function startTutorial(name, { width = 1280, height = 720, prepare 
       await page.waitForTimeout(80);
       await page.mouse.up();
       await d.wait(opts.after ?? 400);
+    },
+    /** Drags through photo pixels with the button held (e.g. the exclusion brush). */
+    async dragPhoto(file, points, { ms = 1500 } = {}) {
+      const pts = [];
+      for (const [x, y] of points) pts.push(await d.photoPoint(file, x, y));
+      await d.moveTo(pts[0].x, pts[0].y, 700);
+      await page.mouse.down();
+      const per = ms / Math.max(1, pts.length - 1);
+      for (let i = 1; i < pts.length; i++) await d.moveTo(pts[i].x, pts[i].y, per);
+      await page.mouse.up();
+      await d.wait(500);
     },
     /** Shows a photo by clicking its row in the photo list. */
     async openPhoto(file, opts) {
@@ -366,13 +696,13 @@ export async function startTutorial(name, { width = 1280, height = 720, prepare 
       if (clear) await loc.fill('');
       await loc.pressSequentially(text, { delay: d.instant ? 0 : delay });
     },
-    /** Answers the next window.prompt() (site names) with `value`. */
+    /** Answers the next window.prompt() or confirm() with `value`. */
     answerPrompt(value) {
       page.once('dialog', (dlg) => dlg.accept(value));
     },
     /** Clicks something that downloads a file; returns the saved file's path. */
     async download(target, opts) {
-      const dl = page.waitForEvent('download');
+      const dl = page.waitForEvent('download', { timeout: 120000 });
       await d.click(target, opts);
       const file = await dl;
       const dir = join(OUT, 'downloads');
@@ -380,6 +710,15 @@ export async function startTutorial(name, { width = 1280, height = 720, prepare 
       const path = join(dir, file.suggestedFilename());
       await file.saveAs(path);
       return path;
+    },
+    /** Clicks something that opens a new tab; returns that page once loaded. */
+    async popup(target, opts) {
+      const p = context.waitForEvent('page', { timeout: 120000 });
+      await d.click(target, opts);
+      const tab = await p;
+      await tab.waitForLoadState('load');
+      await page.bringToFront();
+      return tab;
     },
     /** Waits for the batch to end; fails unless every photo finished. */
     async waitForBatch() {
@@ -396,23 +735,34 @@ export async function startTutorial(name, { width = 1280, height = 720, prepare 
         await page.waitForTimeout(gap);
       }
     },
+    /** Scrolls a panel (by element id) smoothly to `top` pixels. */
+    async scrollPanel(id, top, ms = 700) {
+      await page.evaluate(([i, t]) => document.getElementById(i)?.scrollTo({ top: t, behavior: 'smooth' }), [id, top]);
+      await d.wait(ms);
+    },
     /** Playback speed for frames captured from now on (e.g. 8 while a model runs). */
     speed(x) {
       speed = x;
     },
+    videoNow,
     problems,
     /** While true (during prepare), moves and pauses are instant and captions are skipped. */
     instant: false,
-    async finish({ fps = 30, tail = 1500 } = {}) {
+    async finish({ fps = 30, tail = 1200 } = {}) {
+      await closeCaption();
       await page.waitForTimeout(tail);
+      const stopT = Date.now() / 1000;
+      const duration = videoNow();
+      for (const seg of segments) if (seg.end === null) seg.end = duration;
       await cdp.send('Page.stopScreencast').catch(() => {});
       await browser.close();
       server.close();
       if (frames.length < 2) throw new Error('no frames captured');
-      // ffmpeg concat list: each frame lasts until the next one (scaled by its speed).
+      // ffmpeg concat list: each frame lasts until the next one (scaled by its speed); the
+      // last until recording stopped.
       const lines = [];
       for (let i = 0; i < frames.length; i++) {
-        const next = i + 1 < frames.length ? frames[i + 1].t : frames[i].t + tail / 1000;
+        const next = i + 1 < frames.length ? frames[i + 1].t : Math.max(stopT, frames[i].t + 0.05);
         const dur = Math.max(0.001, (next - frames[i].t) / frames[i].speed);
         lines.push(`file '${frames[i].file}'`, `duration ${dur.toFixed(4)}`);
       }
@@ -425,6 +775,9 @@ export async function startTutorial(name, { width = 1280, height = 720, prepare 
         '-vf', `fps=${fps},scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p`,
         '-c:v', 'libx264', '-preset', 'slow', '-crf', '20', '-movflags', '+faststart', mp4,
       ]);
+      writeTranscript(name, {
+        index: meta.index, total: meta.total, title: meta.title, chapter: meta.chapter, summary: meta.summary,
+      }, segments, duration);
       if (!process.env.KEEP_FRAMES) rmSync(frameDir, { recursive: true, force: true });
       return mp4;
     },
@@ -434,23 +787,39 @@ export async function startTutorial(name, { width = 1280, height = 720, prepare 
     await prepare(d);
     d.instant = false;
   }
-  // Screencast frames, each with its capture time and the playback speed at that moment.
-  const frameDir = join(OUT, `${name}.frames`);
   rmSync(frameDir, { recursive: true, force: true });
   mkdirSync(frameDir, { recursive: true });
-  const frames = [];
-  let speed = 1;
-  const cdp = await context.newCDPSession(page);
-  cdp.on('Page.screencastFrame', async ({ data, metadata, sessionId }) => {
-    const file = join(frameDir, `f${String(frames.length).padStart(6, '0')}.jpg`);
-    writeFileSync(file, Buffer.from(data, 'base64'));
-    frames.push({ file, t: metadata.timestamp ?? Date.now() / 1000, speed });
-    await cdp.send('Page.screencastFrameAck', { sessionId }).catch(() => {});
-  });
-  const startCast = () => cdp.send('Page.startScreencast', {
-    format: 'jpeg', quality: 92, maxWidth: width, maxHeight: height, everyNthFrame: 1,
-  });
-  await startCast();
+  // Frame times come from Date.now() when each frame arrives, the same clock videoNow() uses.
+  const startCast = async (p) => {
+    const session = await context.newCDPSession(p);
+    session.on('Page.screencastFrame', async ({ data, sessionId }) => {
+      if (session !== cdp) return;
+      const file = join(frameDir, `f${String(frames.length).padStart(6, '0')}.jpg`);
+      writeFileSync(file, Buffer.from(data, 'base64'));
+      frames.push({ file, t: Date.now() / 1000, speed });
+      await session.send('Page.screencastFrameAck', { sessionId }).catch(() => {});
+    });
+    cdp = session;
+    await session.send('Page.startScreencast', {
+      format: 'jpeg', quality: 92, maxWidth: width, maxHeight: height, everyNthFrame: 1,
+    });
+  };
+  /** Records another tab from now on (the video cuts to it), and points the helpers at it. */
+  switchTab = async (p) => {
+    await closeCaption();
+    const old = cdp;
+    cdp = null;
+    await old?.send('Page.stopScreencast').catch(() => {});
+    await old?.detach().catch(() => {});
+    page = p;
+    d.page = p;
+    view = null;
+    await p.bringToFront();
+    await startCast(p);
+    await p.mouse.move(mouse.x, mouse.y);
+  };
+  await startCast(page);
+  recording = true;
   await page.waitForTimeout(300);
   return d;
 }

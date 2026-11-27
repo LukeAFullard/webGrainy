@@ -533,7 +533,7 @@ These only change what you see, never the results.
 
 | Option | Shows |
 |---|---|
-| **Grain IDs** | Grain numbers. |
+| **Grain IDs** | Fills each grain with its own colour (picked from its grain ID), so neighbouring grains are easy to tell apart; grains left out by an exclusion area are hatched grey. On by default. Untick it, with *Size colours* off, to see the photo without grain fills (also in *Save image*). |
 | **Size colours (Wentworth)** | Colours grains by size class (sand, gravel classes, cobble, boulder). |
 | **Ellipses (a/b axes)** | The fitted ellipse and its axes for each grain. |
 | **Orientation lines** | Grain orientation (long-axis direction). |
