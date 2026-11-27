@@ -1,6 +1,8 @@
+<p align="center"><img src="src/icon.svg" alt="webGrainy logo" width="128" height="128"></p>
+
 # webGrainy — ImageGrains 2.0 in the browser
 
-**Live app:** <https://lukeafullard.github.io/webGrainy/> · **GPU check:** <https://lukeafullard.github.io/webGrainy/gpucheck.html> (tests whether your graphics card gives the same results as the CPU)
+**Live app:** <https://lukeafullard.github.io/webGrainy/>
 
 webGrainy measures gravel and other coarse sediment from photos, entirely in the web browser. It runs the pretrained [ImageGrains 2.0](https://github.com/dmair1989/imagegrains) segmentation models (U-Net and Cellpose-SAM) with ONNX Runtime Web, outlines every grain, and reports grain-size distributions and statistics for single photos, whole sites, and sites compared over time.
 

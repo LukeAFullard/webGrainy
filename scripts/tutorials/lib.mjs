@@ -126,9 +126,10 @@ function overlayInit() {
         #__tut .cursor{position:fixed;left:0;top:0;width:26px;height:26px;transform:translate(-100px,-100px);transition:none;filter:drop-shadow(0 2px 3px rgba(0,0,0,.45))}
         #__tut .ripple{position:fixed;width:44px;height:44px;margin:-22px 0 0 -22px;border-radius:50%;border:3px solid #1d64d8;background:rgba(29,100,216,.18);animation:__tutRipple .55s ease-out forwards}
         @keyframes __tutRipple{from{transform:scale(.3);opacity:1}to{transform:scale(1.4);opacity:0}}
-        #__tut .caption{position:fixed;left:50%;bottom:28px;transform:translate(-50%,12px);max-width:min(980px,86vw);padding:14px 22px;border-radius:12px;background:rgba(15,23,42,.92);color:#fff;font-size:21px;line-height:1.4;text-align:center;box-shadow:0 8px 28px rgba(0,0,0,.35);opacity:0;transition:opacity .35s,transform .35s}
+        #__tut .caption{position:fixed;left:50%;bottom:22px;transform:translate(-50%,12px);max-width:min(900px,84vw);padding:12px 20px;border-radius:12px;background:rgba(15,23,42,.92);color:#fff;font-size:21px;line-height:1.4;text-align:center;box-shadow:0 8px 28px rgba(0,0,0,.35);opacity:0;transition:opacity .35s,transform .35s}
         #__tut .caption.on{opacity:1;transform:translate(-50%,0)}
-        #__tut .caption.top{bottom:auto;top:24px}
+        #__tut .caption.top{bottom:auto;top:16px}
+        #__tut .caption.on.moving{opacity:0;transition:opacity .16s}
         #__tut .caption b{color:#9cc3ff;font-weight:600}
         #__tut .ring{position:fixed;border:3px solid #f59e0b;border-radius:10px;box-shadow:0 0 0 4000px rgba(15,23,42,.28),0 0 18px rgba(245,158,11,.7);opacity:0;transition:opacity .35s,left .45s,top .45s,width .45s,height .45s}
         #__tut .ring.on{opacity:1}
@@ -188,9 +189,55 @@ function overlayInit() {
     }).observe(document.body ?? document.documentElement, { subtree: true, attributes: true, attributeFilter: ['open'], childList: true });
     const $ = (s) => root.querySelector(s);
     const cursor = $('.cursor');
+    let cursorAt = null;
     addEventListener('mousemove', (e) => {
       cursor.style.transform = `translate(${e.clientX - 3}px,${e.clientY - 2}px)`;
+      cursorAt = { x: e.clientX, y: e.clientY };
     }, true);
+
+    // Captions keep out of the way: a caption moves to the top of the screen (and back) when
+    // at the bottom it would cover the highlighted element, the cursor or an open panel that
+    // matters at that moment (grain inspector, flagged list, menus).
+    const AVOID = ['#inspector-card', 'details.flag-list[open] > .flag-groups', 'details.display-menu[open] > .display-options'];
+    let pinned = null; // 'top' or 'bottom' when a tutorial asks for it
+    let lastMove = 0;
+    const overlap = (a, b) => Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left)) * Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
+    const obstacles = () => {
+      const out = [];
+      const ring = root.querySelector('.ring');
+      if (ring.classList.contains('on')) out.push(ring.getBoundingClientRect());
+      if (cursorAt) out.push({ left: cursorAt.x - 50, right: cursorAt.x + 50, top: cursorAt.y - 50, bottom: cursorAt.y + 50 });
+      for (const sel of AVOID) {
+        for (const el of document.querySelectorAll(sel)) {
+          const r = el.getBoundingClientRect();
+          if (r.width > 0 && r.height > 0 && getComputedStyle(el).display !== 'none') out.push(r);
+        }
+      }
+      return out;
+    };
+    const placeCaption = () => {
+      const c = root.querySelector('.caption');
+      if (!c.classList.contains('on') || c.classList.contains('moving')) return;
+      const atTop = c.classList.contains('top');
+      let want = pinned;
+      if (!want) {
+        const h = c.offsetHeight, w = c.offsetWidth, left = (innerWidth - w) / 2, m = 10;
+        const bottom = { left: left - m, right: left + w + m, top: innerHeight - 22 - h - m, bottom: innerHeight - 22 + m };
+        const top = { left: left - m, right: left + w + m, top: 16 - m, bottom: 16 + h + m };
+        const obs = obstacles();
+        const cost = (box) => obs.reduce((t, r) => t + overlap(box, r), 0);
+        const cb = cost(bottom), ct = cost(top);
+        want = cb > 0 && ct < cb ? 'top' : ct > 0 && cb < ct ? 'bottom' : atTop && cb > 0 ? 'top' : 'bottom';
+      }
+      if ((want === 'top') === atTop || Date.now() - lastMove < 600) return;
+      lastMove = Date.now();
+      c.classList.add('moving');
+      setTimeout(() => {
+        c.classList.toggle('top', want === 'top');
+        c.classList.remove('moving');
+      }, 170);
+    };
+    setInterval(placeCaption, 120);
     addEventListener('mousedown', (e) => {
       const r = document.createElement('div');
       r.className = 'ripple';
@@ -206,8 +253,11 @@ function overlayInit() {
         const c = $('.caption');
         if (!html) return c.classList.remove('on');
         c.innerHTML = html;
-        c.classList.toggle('top', pos === 'top');
+        pinned = pos === 'top' || pos === 'bottom' ? pos : null;
+        lastMove = 0;
+        if (pinned) c.classList.toggle('top', pinned === 'top');
         c.classList.add('on');
+        placeCaption();
       },
       ring(rect, pad = 6) {
         front();

@@ -122,7 +122,7 @@ median D50 error 2.8–2.9%; the differences are within measurement noise).
 
 **When to change it:** usually never. On a graphics card, FP16 has been checked against the
 processor on real hardware; INT8 and FP4 have not, so the app always runs them on the
-processor (CPU), even on a graphics card. The GPU check page can test them on yours. Keep the same choice for all photos you compare. The weight file used is recorded in
+processor (CPU), even on a graphics card. Keep the same choice for all photos you compare. The weight file used is recorded in
 every export.
 
 ### Scale Mode
@@ -318,9 +318,11 @@ scale entered by hand.
   Only use it if those photos were taken at the **same height with the same camera and zoom**.
 
 ### 4-Pt Rectify
-Corrects photos taken at an angle. Click four points that form a rectangle on the ground
-(e.g. the corners of a quadrat), in order around it: top-left, top-right, bottom-right,
-bottom-left. The photo is straightened and must then be re-analysed.
+Corrects photos taken at an angle. Type the real width and height of a rectangle on the ground
+(e.g. a quadrat; the width is its top edge as seen in the photo), then click its four corners
+in any order: the app sorts them into top-left, top-right, bottom-right and bottom-left. The
+dots are numbered in the order you click them. The photo is straightened and must then be
+re-analysed.
 **Use it** whenever the camera was noticeably tilted. Perspective makes far grains look
 smaller. **Undo rectify** (toolbar) restores the original photo with its scale and areas;
 after several rectifications it returns to the photo as it was before the first. The

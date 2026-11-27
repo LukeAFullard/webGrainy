@@ -31,7 +31,7 @@ export async function run(d) {
   await d.caption('They apply the next time a photo is analysed; photos already analysed keep their results.');
 
   await d.ring('[data-param="scaleMode"]');
-  await d.caption('<b>Scale mode</b> is the resolution the model works at. Auto shrinks photos to at most 1024 pixels. <b>1.0x Full</b> keeps small grains in big photos; <b>0.5x</b> or <b>0.25x</b> suit close-ups of large cobbles.');
+  await d.caption('<b>Scale mode</b> is the resolution the model works at. Auto shrinks large photos so their longest side is at most 1024 pixels. <b>1.0x Full</b> keeps small grains in big photos; <b>0.5x</b> or <b>0.25x</b> suit close-ups of large cobbles.');
   await d.ring(page.locator('[data-param="excludeBorder"]').locator('xpath=..'));
   await d.caption('<b>Exclude border grains</b> leaves out grains cut off by the photo edge, because they look smaller than they are. Keep it on.');
   await d.ring(page.locator('[data-param="tidyOutlines"]').locator('xpath=..'));

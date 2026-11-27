@@ -30,7 +30,7 @@ export async function run(d) {
   }
   await d.wait(1500);
 
-  await d.caption('Click its four corners in order: <b>top left, top right, bottom right, bottom left</b>.', { hold: 0 });
+  await d.caption('Then click its four corners, in any order. The width is the edge along the top of the photo.', { hold: 0 });
   await d.fit({ after: 500 });
   for (const [i, [x, y]] of corners.entries()) {
     await d.clickPhoto(OBLIQUE, x, y, { ms: 900, after: i === 3 ? 2500 : 700 });
