@@ -350,10 +350,15 @@ export function transcriptMarkdown(t) {
  */
 export async function startTutorial(name, { width = 1280, height = 720, prepare, meta = {} } = {}) {
   const { server, base } = await serve();
-  const browser = await chromium.launch({ args: ['--disable-features=WebGPU'] });
+  // Behind an HTTPS proxy (e.g. a sandbox), pages on other sites (tutorial 25) go through it.
+  const proxy = process.env.HTTPS_PROXY || process.env.https_proxy;
+  const browser = await chromium.launch({
+    args: ['--disable-features=WebGPU'],
+    ...(proxy ? { proxy: { server: proxy, bypass: '127.0.0.1,localhost' } } : {}),
+  });
   const context = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: 1, acceptDownloads: true });
   await context.addInitScript(overlayInit);
-  const page = await context.newPage();
+  let page = await context.newPage();
   const problems = [];
   page.on('pageerror', (e) => problems.push(`pageerror: ${e.message}`));
   page.on('console', (m) => {
@@ -419,6 +424,8 @@ export async function startTutorial(name, { width = 1280, height = 720, prepare,
     open = null;
   };
 
+  let cdp = null;
+  let switchTab;
   const d = {
     page,
     context,
@@ -584,6 +591,35 @@ export async function startTutorial(name, { width = 1280, height = 720, prepare,
       await d.wait(300);
       await loc.selectOption(value);
       await d.wait(opts.after ?? 700);
+    },
+    /**
+     * Opens `url` in a new tab in the background (the video stays on the current tab until
+     * showTab). Returns the tab.
+     */
+    async openTab(url, { waitUntil = 'load' } = {}) {
+      const tab = await context.newPage();
+      await tab.goto(url, { waitUntil, timeout: 120000 });
+      await page.bringToFront();
+      return tab;
+    },
+    /** Cuts the video to another tab (from openTab) and makes it the tab the helpers drive. */
+    async showTab(tab) {
+      await switchTab(tab);
+    },
+    /** Glides to a screen position and clicks there (for apps drawn on a canvas). */
+    async clickAt(x, y, { button = 'left', ms, after = 600 } = {}) {
+      await d.moveTo(x, y, ms);
+      await d.wait(200);
+      await page.mouse.down({ button });
+      await page.waitForTimeout(90);
+      await page.mouse.up({ button });
+      await d.wait(after);
+    },
+    /** Clicks a screen position that opens a file picker and answers it with `files`. */
+    async chooseFilesAt(x, y, files, opts) {
+      const chooser = page.waitForEvent('filechooser', { timeout: 30000 });
+      await d.clickAt(x, y, opts);
+      await (await chooser).setFiles(files);
     },
     /** Clicks a button that opens a file picker and answers it with `files`. */
     async chooseFiles(target, files, opts) {
@@ -754,16 +790,35 @@ export async function startTutorial(name, { width = 1280, height = 720, prepare,
   rmSync(frameDir, { recursive: true, force: true });
   mkdirSync(frameDir, { recursive: true });
   // Frame times come from Date.now() when each frame arrives, the same clock videoNow() uses.
-  const cdp = await context.newCDPSession(page);
-  cdp.on('Page.screencastFrame', async ({ data, sessionId }) => {
-    const file = join(frameDir, `f${String(frames.length).padStart(6, '0')}.jpg`);
-    writeFileSync(file, Buffer.from(data, 'base64'));
-    frames.push({ file, t: Date.now() / 1000, speed });
-    await cdp.send('Page.screencastFrameAck', { sessionId }).catch(() => {});
-  });
-  await cdp.send('Page.startScreencast', {
-    format: 'jpeg', quality: 92, maxWidth: width, maxHeight: height, everyNthFrame: 1,
-  });
+  const startCast = async (p) => {
+    const session = await context.newCDPSession(p);
+    session.on('Page.screencastFrame', async ({ data, sessionId }) => {
+      if (session !== cdp) return;
+      const file = join(frameDir, `f${String(frames.length).padStart(6, '0')}.jpg`);
+      writeFileSync(file, Buffer.from(data, 'base64'));
+      frames.push({ file, t: Date.now() / 1000, speed });
+      await session.send('Page.screencastFrameAck', { sessionId }).catch(() => {});
+    });
+    cdp = session;
+    await session.send('Page.startScreencast', {
+      format: 'jpeg', quality: 92, maxWidth: width, maxHeight: height, everyNthFrame: 1,
+    });
+  };
+  /** Records another tab from now on (the video cuts to it), and points the helpers at it. */
+  switchTab = async (p) => {
+    await closeCaption();
+    const old = cdp;
+    cdp = null;
+    await old?.send('Page.stopScreencast').catch(() => {});
+    await old?.detach().catch(() => {});
+    page = p;
+    d.page = p;
+    view = null;
+    await p.bringToFront();
+    await startCast(p);
+    await p.mouse.move(mouse.x, mouse.y);
+  };
+  await startCast(page);
   recording = true;
   await page.waitForTimeout(300);
   return d;

@@ -8,7 +8,7 @@ re-analysis and enhancement, the single-photo charts, bulk photo handling, compa
 exports and the printable report, project files, and help.
 
 This plan comes from going through every control in the app (`src/ui/panels/*`, `src/ui/modals.ts`,
-`src/ui/help.ts`) and every section of [SETTINGS_GUIDE.md](SETTINGS_GUIDE.md). It has 24 short videos
+`src/ui/help.ts`) and every section of [SETTINGS_GUIDE.md](SETTINGS_GUIDE.md). It has 25 short videos
 (about 1½–3 minutes each, about 50 minutes in all) in six chapters, so each video teaches one task and can
 be watched on its own.
 
@@ -44,10 +44,15 @@ be watched on its own.
 | 22 | GeoTIFFs and GIS | Scale from georeferencing; outlines in longitude / latitude or map coordinates; GeoPackage; label mask GeoTIFF and Web Mercator; *Site GeoPackage*; map files in the zip |
 | 23 | Save and reopen a project | *.webgrainy* archive (contents, size, GPS privacy); in *Download results*; *Open* to reopen; overview page drop and *Open .webgrainy Project* |
 | 24 | Help, shortcuts and good practice | *Help* topics and **?** buttons; getting-started guide; keyboard shortcuts; *About* and citations; checklist before reporting, comparing like with like, what to report |
+| 25 | Open your results in a GIS | A GeoTIFF photo (scale from georeferencing); downloading the *Site GeoPackage* and the photo as a Web Mercator GeoTIFF; adding both to RustGIS (web.rustgis.app); *Zoom To Layer*; outlines over the photo; the attribute table |
 
 **Not shown on screen** (mentioned in captions instead, because the recorder cannot do them
 without extra downloads or hardware): running Cellpose-SAM (a 183–617 MB download), the GPU check
 page, *2× Upscale* (downloads the PULSE model), system notifications and the storage-full flow.
+
+Tutorial 25 records a third-party site, RustGIS, whose interface is drawn on a canvas: the script
+clicks screen positions measured in November 2026 (see the top of `25-results-in-gis.mjs`), so a
+change to RustGIS's layout can break it.
 
 ## Recording
 

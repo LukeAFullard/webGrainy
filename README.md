@@ -95,11 +95,11 @@ Node.js 22.13 or later (or 24 and later) is required. CI runs all of these excep
 
 ### Tutorial videos
 
-24 short tutorial videos (1280×720 MP4, about 1½–3 minutes each) in six chapters are generated from the built app, so they can be re-recorded whenever the interface changes. [docs/TUTORIAL_PLAN.md](docs/TUTORIAL_PLAN.md) lists what each one covers. Each starts with the webGrainy logo and the tutorial's title and ends with the logo and the next tutorial. They have no sound: every caption and title card is also written out with its timing, for subtitles or a voiceover.
+25 short tutorial videos (1280×720 MP4, about 1½–3 minutes each) in six chapters are generated from the built app, so they can be re-recorded whenever the interface changes. [docs/TUTORIAL_PLAN.md](docs/TUTORIAL_PLAN.md) lists what each one covers. Each starts with the webGrainy logo and the tutorial's title and ends with the logo and the next tutorial. They have no sound: every caption and title card is also written out with its timing, for subtitles or a voiceover.
 
 ```bash
 npm run build
-npm run tutorials             # all 24, into tutorials/out/
+npm run tutorials             # all 25, into tutorials/out/
 npm run tutorials -- 03 12    # only those whose file name contains "03" or "12"
 ```
 
@@ -114,9 +114,9 @@ To record them all in Google Colab and save them to Google Drive, open [`scripts
 | Areas and outlines | `08-areas`, `09-inspect-grains`, `10-edit-outlines`, `11-display-and-save-image` |
 | Analysis settings | `12-analysis-settings`, `13-fine-grains-and-enhance` |
 | Results | `14-photo-results`, `15-site-results`, `16-statistics-settings`, `17-many-photos-and-sites`, `18-compare-sites`, `19-surveys-over-time` |
-| Keeping and sharing results | `20-download-results`, `21-export-and-report`, `22-geotiff-and-gis`, `23-save-and-reopen`, `24-help-and-good-practice` |
+| Keeping and sharing results | `20-download-results`, `21-export-and-report`, `22-geotiff-and-gis`, `23-save-and-reopen`, `24-help-and-good-practice`, `25-results-in-gis` |
 
-Each tutorial is a Playwright script in `scripts/tutorials/` that drives headless Chromium. Frames come from the Chrome DevTools screencast; an overlay draws the cursor, clicks, captions, highlights and title cards, and ffmpeg (which must be installed) encodes the MP4. Model waits are sped up and say so on screen. The sample photos are two ImageGrains demo images (K1 site; BSD-3-Clause, © 2023 David Mair), downloaded from a pinned commit and checked by SHA-256. Tutorial 7 uses one tilted on purpose with a quadrat drawn on it, and tutorial 22 turns one into an example GeoTIFF at an invented location. Videos are not committed: attach them to a release or upload them elsewhere.
+Each tutorial is a Playwright script in `scripts/tutorials/` that drives headless Chromium. Frames come from the Chrome DevTools screencast; an overlay draws the cursor, clicks, captions, highlights and title cards, and ffmpeg (which must be installed) encodes the MP4. Model waits are sped up and say so on screen. The sample photos are two ImageGrains demo images (K1 site; BSD-3-Clause, © 2023 David Mair), downloaded from a pinned commit and checked by SHA-256. Tutorial 7 uses one tilted on purpose with a quadrat drawn on it, and tutorials 22 and 25 turn one into an example GeoTIFF at an invented location. Tutorial 25 opens the results in [RustGIS](https://web.rustgis.app), a GIS that runs in the browser, so it needs internet access to that site. Videos are not committed: attach them to a release or upload them elsewhere.
 
 ### Repository layout
 
